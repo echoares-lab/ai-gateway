@@ -13,7 +13,9 @@ Client (Cursor / Python / curl)
         └─► CLIProxyAPI  :8317  (OAuth relay, token auto-refresh every 15 min)
               ├─► Anthropic  (Claude Pro/Max account)
               ├─► OpenAI     (ChatGPT Plus/Pro account)
-              └─► Google     (Gemini Advanced / Google account)
+              ├─► Google     (Gemini Advanced / Google account)
+              ├─► xAI        (Grok / X Premium account)
+              └─► Moonshot   (Kimi account)
 ```
 
 API endpoint: `http://localhost:4000`  
@@ -90,6 +92,28 @@ Auth header: `Authorization: Bearer <LITELLM_MASTER_KEY>` (see `.env`)
 **Health check notes**: All Gemini Pro variants have `disable_background_health_check: true` in `litellm-config.yaml`. Pro models 429 under normal health check frequency (~5 req/min limit, health checks fire every 5 min across 5+ Pro aliases = burst at interval boundary). Flash and Flash-Lite models are safe.
 
 **429 behavior**: CLIProxyAPI returns 429 to LiteLLM, which logs it as a `ServiceUnavailableError`. Does not consume daily quota.
+
+---
+
+## xAI Models (Grok — X Premium/Premium+ subscription)
+
+**Auth**: OAuth via xAI/X login. Stored in `~/.cli-proxy-api/grok-*.json`.
+
+**Features**: Real-time access to X (Twitter) data and web search.
+
+| Alias | Upstream model ID | Notes |
+|-------|-------------------|-------|
+| `grok-beta` | `grok-beta` | Latest experimental |
+| `grok-2` | `grok-2` | |
+| `grok-2-vision` | `grok-2-vision` | |
+
+---
+
+## Moonshot Models (Kimi)
+
+**Auth**: OAuth via Kimi login. Stored in `~/.cli-proxy-api/kimi-*.json`.
+
+**Features**: High-quality web search and long context support.
 
 ---
 

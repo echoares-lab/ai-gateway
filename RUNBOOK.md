@@ -30,6 +30,8 @@ Each command opens a browser OAuth flow and stores a token in `~/.cli-proxy-api/
 ./cliproxy-setup.sh login-claude    # port 54545 callback
 ./cliproxy-setup.sh login-codex     # port 1455 callback
 ./cliproxy-setup.sh login-gemini    # port 8085 callback
+./cliproxy-setup.sh login-grok      # Grok / X Premium
+./cliproxy-setup.sh login-kimi      # Kimi
 ```
 
 > **On a remote server**: set up SSH port forwarding first — see [OAuth on Remote Server](#oauth-on-remote-server).
@@ -158,6 +160,8 @@ OAuth tokens auto-refresh while the container is running. If you see 401s or a p
 ./cliproxy-setup.sh login-claude    # re-auth Claude
 ./cliproxy-setup.sh login-codex     # re-auth ChatGPT/Codex
 ./cliproxy-setup.sh login-gemini    # re-auth Gemini
+./cliproxy-setup.sh login-grok      # re-auth Grok
+./cliproxy-setup.sh login-kimi      # re-auth Kimi
 ```
 
 The running container detects new token files automatically (file watcher, no restart needed).

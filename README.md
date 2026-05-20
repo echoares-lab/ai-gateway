@@ -17,9 +17,9 @@ Provides the "dashboard" and tracing layer for all AI calls.
 *   **Evaluation:** Run automated "Evals" and collect feedback to improve model performance.
 
 ### 3. CLIProxyAPI (The Relay)
-A specialized proxy that allows LiteLLM to use consumer-tier accounts (ChatGPT Plus, Claude Pro, Gemini Advanced).
+A specialized proxy that allows LiteLLM to use consumer-tier accounts (ChatGPT Plus, Claude Pro, Gemini Advanced, X Premium).
 *   **No Token Billing:** Uses your existing subscriptions.
-*   **OAuth Management:** Handles token refreshes and session persistence.
+*   **OAuth Management:** Handles token refreshes and session persistence for OpenAI, Anthropic, Google, xAI (Grok), and Moonshot (Kimi).
 
 ## Advanced Capabilities
 
@@ -52,5 +52,7 @@ graph TD
     CLIProxy --> Anthropic[Anthropic / Claude]
     CLIProxy --> OpenAI[OpenAI / GPT]
     CLIProxy --> Google[Google / Gemini]
+    CLIProxy --> xAI[xAI / Grok]
+    CLIProxy --> Kimi[Moonshot / Kimi]
     LiteLLM --> MCP[MCP Servers / Tools]
 ```

@@ -375,15 +375,31 @@ case "$cmd" in
     "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --login
     ;;
 
+  login-grok)
+    require_bin
+    echo "Opening browser for Grok / X Premium OAuth..."
+    "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --grok-login
+    ;;
+
+  login-kimi)
+    require_bin
+    echo "Opening browser for Kimi OAuth..."
+    "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --kimi-login
+    ;;
+
   login-all)
     require_bin
-    echo "=== Login to all three providers ==="
-    echo "Step 1/3: Claude Pro/Max"
+    echo "=== Login to all providers ==="
+    echo "Step 1/5: Claude Pro/Max"
     "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --claude-login
-    echo "Step 2/3: ChatGPT Plus/Pro (Codex)"
+    echo "Step 2/5: ChatGPT Plus/Pro (Codex)"
     "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --codex-login
-    echo "Step 3/3: Gemini / Google account"
+    echo "Step 3/5: Gemini / Google account"
     "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --login
+    echo "Step 4/5: Grok / X Premium"
+    "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --grok-login
+    echo "Step 5/5: Kimi"
+    "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --kimi-login
     ;;
 
   login-headless)
@@ -393,7 +409,9 @@ case "$cmd" in
       claude)  "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --no-browser --claude-login ;;
       codex)   "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --no-browser --codex-login ;;
       gemini)  "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --no-browser --login ;;
-      *) echo "Unknown provider: $PROVIDER (use: claude, codex, gemini)"; exit 1 ;;
+      grok)    "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --no-browser --grok-login ;;
+      kimi)    "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --no-browser --kimi-login ;;
+      *) echo "Unknown provider: $PROVIDER (use: claude, codex, gemini, grok, kimi)"; exit 1 ;;
     esac
     ;;
 
@@ -435,8 +453,10 @@ Setup:
   login-claude         Authenticate Claude Pro/Max (browser OAuth, port 54545)
   login-codex          Authenticate ChatGPT Plus/Pro (browser OAuth, port 1455)
   login-gemini         Authenticate Gemini / Google account (browser OAuth)
-  login-all            Authenticate all three providers sequentially
-  login-headless <p>   Headless OAuth for SSH servers (p: claude|codex|gemini)
+  login-grok           Authenticate Grok / X Premium (browser OAuth)
+  login-kimi           Authenticate Kimi (browser OAuth)
+  login-all            Authenticate all providers sequentially
+  login-headless <p>   Headless OAuth for SSH servers (p: claude|codex|gemini|grok|kimi)
 
 Operations:
   apply                Full update workflow: upgrade → sync-models → health
