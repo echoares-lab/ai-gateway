@@ -226,3 +226,13 @@ litellm_settings:
   callbacks: ["langfuse"]
   success_callback: ["langfuse"]
   failure_callback: ["langfuse"]
+  cache: true
+  cache_params:
+    type: redis
+    host: redis
+    port: 6379
+    password: os.environ/REDIS_AUTH
+    ttl: 3600
+    supported_call_types:
+      - acompletion
+      - completion
