@@ -82,6 +82,159 @@ probe_model() {
 }
 
 # ──────────────────────────────────────────────
+# Cost / feature metadata helpers
+# ──────────────────────────────────────────────
+
+# Query the LiteLLM container's model registry for cost and feature data for
+# every openai/ model currently in LITELLM_CONFIG. Writes JSON to a temp file
+# and prints the file path. Caller must rm the file when done.
+# Outputs '{}' if the container is unreachable or no openai/ models are found.
+fetch_config_model_costs() {
+  local model_ids
+  model_ids=$(grep -E '^\s+model: openai/' "$LITELLM_CONFIG" \
+    | sed 's/.*openai\///' | sort -u | tr '\n' ' ')
+
+  local costs_file
+  costs_file=$(mktemp)
+
+  if [ -z "${model_ids// }" ]; then
+    echo '{}' > "$costs_file"
+    echo "$costs_file"
+    return
+  fi
+
+  local tmp_out
+  tmp_out=$(mktemp)
+  # Unquoted intentionally: word-splits model IDs into separate argv entries.
+  # Stdout captured to file because litellm writes ANSI startup messages at the
+  # OS fd level — sys.stdout redirection cannot suppress them.
+  # shellcheck disable=SC2086
+  docker compose -f "$SCRIPT_DIR/docker-compose.yml" exec -T litellm \
+    python3 - $model_ids >"$tmp_out" 2>/dev/null <<'PYEOF' || true
+import litellm, json, sys
+
+FIELDS = [
+    'input_cost_per_token', 'output_cost_per_token',
+    'cache_creation_input_token_cost', 'cache_read_input_token_cost',
+    'max_input_tokens', 'max_output_tokens',
+    'supports_prompt_caching', 'supports_vision', 'supports_function_calling',
+]
+result = {}
+for model in sys.argv[1:]:
+    for candidate in [model, 'anthropic/' + model, 'gemini/' + model]:
+        try:
+            info = litellm.get_model_info(candidate)
+            if info and info.get('input_cost_per_token') is not None:
+                result[model] = {k: info[k] for k in FIELDS if info.get(k) is not None}
+                break
+        except Exception:
+            pass
+    if model not in result:
+        result[model] = {}
+print('__COSTS__:' + json.dumps(result))
+PYEOF
+  # Use sentinel prefix to extract our line from litellm's noisy stdout.
+  # Write directly to file — avoids bash variable corruption of large JSON.
+  if grep -q '^__COSTS__:' "$tmp_out" 2>/dev/null; then
+    grep '^__COSTS__:' "$tmp_out" | tail -1 | sed 's/^__COSTS__://' > "$costs_file"
+  else
+    echo '{}' > "$costs_file"
+  fi
+  rm -f "$tmp_out"
+  echo "$costs_file"
+}
+
+# Add or merge model_info blocks into LITELLM_CONFIG for all openai/ entries
+# that lack a base_model field. Preserves existing fields such as
+# disable_background_health_check. Prints "changed" or "no_change".
+apply_model_info() {
+  local costs_file="$1"
+  python3 - "$LITELLM_CONFIG" "$costs_file" <<'PYEOF'
+import sys, json, re
+
+path, costs_file = sys.argv[1], sys.argv[2]
+with open(costs_file) as f:
+    costs = json.load(f)
+
+COST_FIELDS = ['input_cost_per_token', 'output_cost_per_token',
+               'cache_creation_input_token_cost', 'cache_read_input_token_cost']
+INT_FIELDS  = ['max_input_tokens', 'max_output_tokens']
+BOOL_FIELDS = ['supports_prompt_caching', 'supports_vision', 'supports_function_calling']
+
+def sci(v): return f'{float(v):.2e}'
+
+def build_info_lines(model_id, cost_data):
+    out = [f'      base_model: {model_id}']
+    for f in COST_FIELDS:
+        if cost_data.get(f) is not None:
+            out.append(f'      {f}: {sci(cost_data[f])}')
+    for f in INT_FIELDS:
+        if cost_data.get(f) is not None:
+            out.append(f'      {f}: {int(cost_data[f])}')
+    for f in BOOL_FIELDS:
+        if cost_data.get(f) is not None:
+            out.append(f'      {f}: {"true" if cost_data[f] else "false"}')
+    return [l + '\n' for l in out]
+
+with open(path) as f:
+    lines = f.readlines()
+
+out = []
+i = 0
+changed = False
+
+while i < len(lines):
+    line = lines[i]
+    if re.match(r'  - model_name: \S', line):
+        entry = [line]
+        i += 1
+        while i < len(lines) and (lines[i].startswith('    ') or lines[i].strip() == ''):
+            entry.append(lines[i])
+            i += 1
+
+        entry_text = ''.join(entry)
+        m = re.search(r'model: openai/(\S+)', entry_text)
+
+        if not m or 'base_model:' in entry_text:
+            out.extend(entry)
+            continue
+
+        model_id = m.group(1)
+        new_lines = build_info_lines(model_id, costs.get(model_id, {}))
+
+        if any(l.rstrip() == '    model_info:' for l in entry):
+            merged = []
+            for el in entry:
+                merged.append(el)
+                if el.rstrip() == '    model_info:':
+                    merged.extend(new_lines)
+            out.extend(merged)
+        else:
+            last_lp = max(
+                (j for j, el in enumerate(entry)
+                 if el.startswith('      ') and not el.strip().startswith('#')),
+                default=None
+            )
+            if last_lp is not None:
+                mi = ['    model_info:\n'] + new_lines
+                out.extend(entry[:last_lp + 1] + mi + entry[last_lp + 1:])
+            else:
+                out.extend(entry)
+                continue
+
+        changed = True
+    else:
+        out.append(line)
+        i += 1
+
+with open(path, 'w') as f:
+    f.writelines(out)
+
+print('changed' if changed else 'no_change')
+PYEOF
+}
+
+# ──────────────────────────────────────────────
 # Commands
 # ──────────────────────────────────────────────
 
@@ -220,6 +373,20 @@ PYEOF
       echo "503 — skipping"
     fi
   done <<< "$raw_models"
+
+  # Ensure every model entry has model_info with base_model + cost/feature data
+  echo ""
+  echo "Syncing cost metadata from LiteLLM registry..."
+  local costs_file mi_result
+  costs_file=$(fetch_config_model_costs)
+  mi_result=$(apply_model_info "$costs_file")
+  rm -f "$costs_file"
+  if [ "$mi_result" = "changed" ]; then
+    echo "  Cost/feature metadata written."
+    changed=true
+  else
+    echo "  Cost/feature metadata already current."
+  fi
 
   if [ "$changed" = true ]; then
     echo ""

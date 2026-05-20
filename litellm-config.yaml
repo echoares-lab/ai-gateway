@@ -11,6 +11,17 @@ model_list:
       model: openai/claude-opus-4-7
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: claude-opus-4-7
+      input_cost_per_token: 5.00e-06
+      output_cost_per_token: 2.50e-05
+      cache_creation_input_token_cost: 6.25e-06
+      cache_read_input_token_cost: 5.00e-07
+      max_input_tokens: 1000000
+      max_output_tokens: 128000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
     # model_info:
     #   disable_background_health_check: true  # uncomment if health checks burn Opus quota
 
@@ -19,6 +30,17 @@ model_list:
       model: openai/claude-sonnet-4-6
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: claude-sonnet-4-6
+      input_cost_per_token: 3.00e-06
+      output_cost_per_token: 1.50e-05
+      cache_creation_input_token_cost: 3.75e-06
+      cache_read_input_token_cost: 3.00e-07
+      max_input_tokens: 1000000
+      max_output_tokens: 64000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   - model_name: claude-sonnet-4-6-high
     litellm_params:
@@ -26,6 +48,7 @@ model_list:
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
     model_info:
+      base_model: claude-sonnet-4-6(high)
       reasoning_effort: high
 
   - model_name: claude-sonnet-4-6-low
@@ -34,6 +57,7 @@ model_list:
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
     model_info:
+      base_model: claude-sonnet-4-6(low)
       reasoning_effort: low
 
   - model_name: claude-opus-4-6
@@ -41,6 +65,17 @@ model_list:
       model: openai/claude-opus-4-6
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: claude-opus-4-6
+      input_cost_per_token: 5.00e-06
+      output_cost_per_token: 2.50e-05
+      cache_creation_input_token_cost: 6.25e-06
+      cache_read_input_token_cost: 5.00e-07
+      max_input_tokens: 1000000
+      max_output_tokens: 128000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
     # model_info:
     #   disable_background_health_check: true
 
@@ -50,6 +85,17 @@ model_list:
       model: openai/claude-opus-4-5-20251101
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: claude-opus-4-5-20251101
+      input_cost_per_token: 5.00e-06
+      output_cost_per_token: 2.50e-05
+      cache_creation_input_token_cost: 6.25e-06
+      cache_read_input_token_cost: 5.00e-07
+      max_input_tokens: 200000
+      max_output_tokens: 64000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
     # model_info:
     #   disable_background_health_check: true
 
@@ -58,18 +104,51 @@ model_list:
       model: openai/claude-sonnet-4-5-20250929
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: claude-sonnet-4-5-20250929
+      input_cost_per_token: 3.00e-06
+      output_cost_per_token: 1.50e-05
+      cache_creation_input_token_cost: 3.75e-06
+      cache_read_input_token_cost: 3.00e-07
+      max_input_tokens: 200000
+      max_output_tokens: 64000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   - model_name: claude-haiku-4-5
     litellm_params:
       model: openai/claude-haiku-4-5-20251001
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: claude-haiku-4-5-20251001
+      input_cost_per_token: 1.00e-06
+      output_cost_per_token: 5.00e-06
+      cache_creation_input_token_cost: 1.25e-06
+      cache_read_input_token_cost: 1.00e-07
+      max_input_tokens: 200000
+      max_output_tokens: 64000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   - model_name: claude-opus-4-1
     litellm_params:
       model: openai/claude-opus-4-1-20250805
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: claude-opus-4-1-20250805
+      input_cost_per_token: 1.50e-05
+      output_cost_per_token: 7.50e-05
+      cache_creation_input_token_cost: 1.87e-05
+      cache_read_input_token_cost: 1.50e-06
+      max_input_tokens: 200000
+      max_output_tokens: 32000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
     # model_info:
     #   disable_background_health_check: true
 
@@ -80,36 +159,88 @@ model_list:
       model: openai/gpt-5.5
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: gpt-5.5
+      input_cost_per_token: 5.00e-06
+      output_cost_per_token: 3.00e-05
+      cache_read_input_token_cost: 5.00e-07
+      max_input_tokens: 1050000
+      max_output_tokens: 128000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   - model_name: gpt-5-4
     litellm_params:
       model: openai/gpt-5.4
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: gpt-5.4
+      input_cost_per_token: 2.50e-06
+      output_cost_per_token: 1.50e-05
+      cache_read_input_token_cost: 2.50e-07
+      max_input_tokens: 1050000
+      max_output_tokens: 128000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   - model_name: gpt-5-4-mini
     litellm_params:
       model: openai/gpt-5.4-mini
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: gpt-5.4-mini
+      input_cost_per_token: 7.50e-07
+      output_cost_per_token: 4.50e-06
+      cache_read_input_token_cost: 7.50e-08
+      max_input_tokens: 272000
+      max_output_tokens: 128000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   - model_name: gpt-5-3-codex
     litellm_params:
       model: openai/gpt-5.3-codex
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: gpt-5.3-codex
+      input_cost_per_token: 1.75e-06
+      output_cost_per_token: 1.40e-05
+      cache_read_input_token_cost: 1.75e-07
+      max_input_tokens: 272000
+      max_output_tokens: 128000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   - model_name: gpt-5-2
     litellm_params:
       model: openai/gpt-5.2
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: gpt-5.2
+      input_cost_per_token: 1.75e-06
+      output_cost_per_token: 1.40e-05
+      cache_read_input_token_cost: 1.75e-07
+      max_input_tokens: 272000
+      max_output_tokens: 128000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   - model_name: codex-auto-review
     litellm_params:
       model: openai/codex-auto-review
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: codex-auto-review
 
   # Gemini (Google account / Gemini Advanced subscription)
   # Rate limits are the tightest of the three providers:
@@ -123,6 +254,15 @@ model_list:
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
     model_info:
+      base_model: gemini-3.1-pro-preview
+      input_cost_per_token: 2.00e-06
+      output_cost_per_token: 1.20e-05
+      cache_read_input_token_cost: 2.00e-07
+      max_input_tokens: 1048576
+      max_output_tokens: 65536
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
       disable_background_health_check: true  # ~25-50 req/day limit; health checks waste quota
 
   - model_name: gemini-3-1-pro-preview
@@ -131,6 +271,15 @@ model_list:
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
     model_info:
+      base_model: gemini-3.1-pro-preview
+      input_cost_per_token: 2.00e-06
+      output_cost_per_token: 1.20e-05
+      cache_read_input_token_cost: 2.00e-07
+      max_input_tokens: 1048576
+      max_output_tokens: 65536
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
       disable_background_health_check: true
 
   - model_name: gemini-3-pro
@@ -139,6 +288,15 @@ model_list:
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
     model_info:
+      base_model: gemini-3-pro-preview
+      input_cost_per_token: 2.00e-06
+      output_cost_per_token: 1.20e-05
+      cache_read_input_token_cost: 2.00e-07
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
       disable_background_health_check: true
 
   - model_name: gemini-3-pro-preview
@@ -147,9 +305,27 @@ model_list:
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
     model_info:
+      base_model: gemini-3-pro-preview
+      input_cost_per_token: 2.00e-06
+      output_cost_per_token: 1.20e-05
+      cache_read_input_token_cost: 2.00e-07
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
       disable_background_health_check: true
 
     model_info:
+      base_model: gemini-3-pro-preview
+      input_cost_per_token: 2.00e-06
+      output_cost_per_token: 1.20e-05
+      cache_read_input_token_cost: 2.00e-07
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
       disable_background_health_check: true
 
   - model_name: gemini-3-flash
@@ -157,24 +333,64 @@ model_list:
       model: openai/gemini-3-flash-preview
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: gemini-3-flash-preview
+      input_cost_per_token: 5.00e-07
+      output_cost_per_token: 3.00e-06
+      cache_read_input_token_cost: 5.00e-08
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   - model_name: gemini-3-flash-preview
     litellm_params:
       model: openai/gemini-3-flash-preview
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: gemini-3-flash-preview
+      input_cost_per_token: 5.00e-07
+      output_cost_per_token: 3.00e-06
+      cache_read_input_token_cost: 5.00e-08
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   - model_name: gemini-3-1-flash-lite
     litellm_params:
       model: openai/gemini-3.1-flash-lite-preview
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: gemini-3.1-flash-lite-preview
+      input_cost_per_token: 2.50e-07
+      output_cost_per_token: 1.50e-06
+      cache_read_input_token_cost: 2.50e-08
+      max_input_tokens: 1048576
+      max_output_tokens: 65536
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   - model_name: gemini-3-1-flash-lite-preview
     litellm_params:
       model: openai/gemini-3.1-flash-lite-preview
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: gemini-3.1-flash-lite-preview
+      input_cost_per_token: 2.50e-07
+      output_cost_per_token: 1.50e-06
+      cache_read_input_token_cost: 2.50e-08
+      max_input_tokens: 1048576
+      max_output_tokens: 65536
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
 
   - model_name: gemini-2-5-flash-lite
@@ -182,6 +398,16 @@ model_list:
       model: openai/gemini-2.5-flash-lite
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: gemini-2.5-flash-lite
+      input_cost_per_token: 1.00e-07
+      output_cost_per_token: 4.00e-07
+      cache_read_input_token_cost: 1.00e-08
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   # Versioned aliases added by sync-models (kept for client compatibility)
   - model_name: claude-sonnet-4-5-20250929
@@ -189,18 +415,51 @@ model_list:
       model: openai/claude-sonnet-4-5-20250929
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: claude-sonnet-4-5-20250929
+      input_cost_per_token: 3.00e-06
+      output_cost_per_token: 1.50e-05
+      cache_creation_input_token_cost: 3.75e-06
+      cache_read_input_token_cost: 3.00e-07
+      max_input_tokens: 200000
+      max_output_tokens: 64000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   - model_name: claude-haiku-4-5-20251001
     litellm_params:
       model: openai/claude-haiku-4-5-20251001
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: claude-haiku-4-5-20251001
+      input_cost_per_token: 1.00e-06
+      output_cost_per_token: 5.00e-06
+      cache_creation_input_token_cost: 1.25e-06
+      cache_read_input_token_cost: 1.00e-07
+      max_input_tokens: 200000
+      max_output_tokens: 64000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
   - model_name: claude-opus-4-5-20251101
     litellm_params:
       model: openai/claude-opus-4-5-20251101
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: claude-opus-4-5-20251101
+      input_cost_per_token: 5.00e-06
+      output_cost_per_token: 2.50e-05
+      cache_creation_input_token_cost: 6.25e-06
+      cache_read_input_token_cost: 5.00e-07
+      max_input_tokens: 200000
+      max_output_tokens: 64000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
     # model_info:
     #   disable_background_health_check: true
 
@@ -209,6 +468,17 @@ model_list:
       model: openai/claude-opus-4-1-20250805
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      base_model: claude-opus-4-1-20250805
+      input_cost_per_token: 1.50e-05
+      output_cost_per_token: 7.50e-05
+      cache_creation_input_token_cost: 1.87e-05
+      cache_read_input_token_cost: 1.50e-06
+      max_input_tokens: 200000
+      max_output_tokens: 32000
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
     # model_info:
     #   disable_background_health_check: true
 
@@ -217,12 +487,16 @@ model_list:
       model: openai/gemini-3-flash-agent
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
+    model_info:
+      base_model: gemini-3-flash-agent
 
   - model_name: gemini-3-1-pro-low
     litellm_params:
       model: openai/gemini-3.1-pro-low
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
+    model_info:
+      base_model: gemini-3.1-pro-low
 
 
   - model_name: gemini-3-pro-high
@@ -230,30 +504,40 @@ model_list:
       model: openai/gemini-3-pro-high
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
+    model_info:
+      base_model: gemini-3-pro-high
 
   - model_name: gemini-3-pro-low
     litellm_params:
       model: openai/gemini-3-pro-low
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
+    model_info:
+      base_model: gemini-3-pro-low
 
   - model_name: gemini-3-5-flash-low
     litellm_params:
       model: openai/gemini-3.5-flash-low
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
+    model_info:
+      base_model: gemini-3.5-flash-low
 
   - model_name: claude-opus-4-6-thinking
     litellm_params:
       model: openai/claude-opus-4-6-thinking
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
+    model_info:
+      base_model: claude-opus-4-6-thinking
 
   - model_name: gemini-pro-agent
     litellm_params:
       model: openai/gemini-pro-agent
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
+    model_info:
+      base_model: gemini-pro-agent
 
   - model_name: gemini-pro-agent-high
     litellm_params:
@@ -261,6 +545,7 @@ model_list:
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
     model_info:
+      base_model: gemini-pro-agent(high)
       reasoning_effort: high
 
   - model_name: gemini-pro-agent-low
@@ -269,6 +554,7 @@ model_list:
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
     model_info:
+      base_model: gemini-pro-agent(low)
       reasoning_effort: low
 
   - model_name: gemini-3-1-flash-image
@@ -276,12 +562,24 @@ model_list:
       model: openai/gemini-3.1-flash-image
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
+    model_info:
+      base_model: gemini-3.1-flash-image
 
   - model_name: gemini-2-5-pro
     litellm_params:
       model: openai/gemini-2.5-pro
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
+    model_info:
+      base_model: gemini-2.5-pro
+      input_cost_per_token: 1.25e-06
+      output_cost_per_token: 1.00e-05
+      cache_read_input_token_cost: 1.25e-07
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
 
 general_settings:
   forward_client_headers_to_llm_api: true
