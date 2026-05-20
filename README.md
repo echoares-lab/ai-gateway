@@ -27,10 +27,25 @@ A specialized proxy that allows LiteLLM to use consumer-tier accounts (ChatGPT P
 *   **Model-Agnostic Agents:** Build agents that can reason across any model in the gateway.
 *   **MCP (Model Context Protocol):** Connect models to external tools (GitHub, Slack, SQL) using an open standard. LiteLLM can auto-register MCP servers, decoupling tools from model providers.
 
-### Optimization Layer
-*   **Proactive Routing:** The gateway is configured with `enable_pre_call_checks: true`. This allows LiteLLM to locally tokenize and count prompts before sending them. If a prompt exceeds a specific model's context window, it is instantly routed to a larger fallback model, eliminating the "double latency" of a provider-side failure.
-*   **Caching:** Reduces latency and costs by storing previous responses. If two users ask the same question, the result is served in milliseconds without hitting the LLM.
-*   **Vector Stores:** Integrate with stores like Pinecone or Chroma for **RAG (Retrieval-Augmented Generation)**, giving agents "long-term memory" and access to private data.
+## Routing & Reliability
+
+The gateway uses LiteLLM's internal router to ensure high availability and smart traffic distribution.
+
+### Proactive Routing
+The gateway is configured with `enable_pre_call_checks: true`. This allows LiteLLM to locally tokenize and count prompts before sending them. If a prompt exceeds a specific model's context window, it is instantly routed to a larger fallback model, eliminating the "double latency" of a provider-side failure.
+
+### Routing Strategies
+The following strategies are available and can be configured globally or per-key:
+
+1.  **`simple-shuffle` (Current Default):** Randomly distributes requests across all available healthy deployments of a model. This is the best strategy for balancing load across multiple consumer accounts.
+2.  **`usage-based-routing`:** Routes traffic to the deployment with the lowest current usage (RPM or TPM). Ideal for staying under strict consumer rate limits.
+3.  **`latency-based-routing`:** Measures response times and automatically routes requests to the fastest provider at that moment.
+4.  **`least-busy`:** Routes to the deployment with the fewest active requests.
+
+### Fallback Logic
+The gateway is built to assume that consumer-tier accounts will hit rate limits (429 errors).
+*   **Automatic Cooldown:** When a model hits a rate limit, it is placed on a 60-second "cooldown" and skipped by the router.
+*   **Model Escallation:** If your preferred model (e.g., `claude-opus`) is exhausted, the router will automatically attempt the request with a sibling model (e.g., `claude-sonnet`) or a different provider (e.g., `gpt-5`).
 
 ## Client Considerations (Cursor / IDEs)
 
