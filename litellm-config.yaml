@@ -42,24 +42,6 @@ model_list:
       supports_vision: true
       supports_function_calling: true
 
-  - model_name: claude-sonnet-4-6-high
-    litellm_params:
-      model: openai/claude-sonnet-4-6(high)
-      api_base: http://cliproxy:8317/v1
-      api_key: os.environ/CLIPROXY_API_KEY
-    model_info:
-      base_model: claude-sonnet-4-6(high)
-      reasoning_effort: high
-
-  - model_name: claude-sonnet-4-6-low
-    litellm_params:
-      model: openai/claude-sonnet-4-6(low)
-      api_base: http://cliproxy:8317/v1
-      api_key: os.environ/CLIPROXY_API_KEY
-    model_info:
-      base_model: claude-sonnet-4-6(low)
-      reasoning_effort: low
-
   - model_name: claude-opus-4-6
     litellm_params:
       model: openai/claude-opus-4-6
@@ -163,10 +145,8 @@ model_list:
       base_model: gpt-5.5
       input_cost_per_token: 5.00e-06
       output_cost_per_token: 3.00e-05
-      cache_read_input_token_cost: 5.00e-07
       max_input_tokens: 1050000
       max_output_tokens: 128000
-      supports_prompt_caching: true
       supports_vision: true
       supports_function_calling: true
 
@@ -538,24 +518,6 @@ model_list:
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
     model_info:
       base_model: gemini-pro-agent
-
-  - model_name: gemini-pro-agent-high
-    litellm_params:
-      model: openai/gemini-pro-agent(high)
-      api_base: http://cliproxy:8317/v1
-      api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
-    model_info:
-      base_model: gemini-pro-agent(high)
-      reasoning_effort: high
-
-  - model_name: gemini-pro-agent-low
-    litellm_params:
-      model: openai/gemini-pro-agent(low)
-      api_base: http://cliproxy:8317/v1
-      api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
-    model_info:
-      base_model: gemini-pro-agent(low)
-      reasoning_effort: low
 
   - model_name: gemini-3-1-flash-image
     litellm_params:
