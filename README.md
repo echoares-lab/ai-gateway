@@ -17,9 +17,9 @@ Provides the "dashboard" and tracing layer for all AI calls.
 *   **Evaluation:** Run automated "Evals" and collect feedback to improve model performance.
 
 ### 3. CLIProxyAPI (The Relay)
-A specialized proxy that allows LiteLLM to use consumer-tier accounts (ChatGPT Plus, Claude Pro, Gemini Advanced, X Premium).
+A specialized proxy that allows LiteLLM to use consumer-tier accounts (ChatGPT Plus, Claude Pro, Gemini Advanced / Antigravity, X Premium).
 *   **No Token Billing:** Uses your existing subscriptions.
-*   **OAuth Management:** Handles token refreshes and session persistence for OpenAI, Anthropic, Google, xAI (Grok), and Moonshot (Kimi).
+*   **OAuth Management:** Handles token refreshes and session persistence for OpenAI, Anthropic, Google (via Antigravity CLI), xAI (Grok), and Moonshot (Kimi).
 
 ## Advanced Capabilities
 
@@ -28,8 +28,35 @@ A specialized proxy that allows LiteLLM to use consumer-tier accounts (ChatGPT P
 *   **MCP (Model Context Protocol):** Connect models to external tools (GitHub, Slack, SQL) using an open standard. LiteLLM can auto-register MCP servers, decoupling tools from model providers.
 
 ### Optimization Layer
+*   **Proactive Routing:** The gateway is configured with `enable_pre_call_checks: true`. This allows LiteLLM to locally tokenize and count prompts before sending them. If a prompt exceeds a specific model's context window, it is instantly routed to a larger fallback model, eliminating the "double latency" of a provider-side failure.
 *   **Caching:** Reduces latency and costs by storing previous responses. If two users ask the same question, the result is served in milliseconds without hitting the LLM.
 *   **Vector Stores:** Integrate with stores like Pinecone or Chroma for **RAG (Retrieval-Augmented Generation)**, giving agents "long-term memory" and access to private data.
+
+## Client Considerations (Cursor / IDEs)
+
+When using the gateway with smart clients like **Cursor**, keep the following in mind regarding automated fallbacks:
+
+1.  **Metadata Visibility:** By default, LiteLLM returns the actual model used in the response metadata. If a fallback occurs (e.g., from Claude to Gemini), Cursor will see the new model ID.
+2.  **Formatting Drift:** Different models have different output styles. A fallback might result in code blocks or reasoning styles that differ from the primary model, which could occasionally affect Cursor's ability to "Auto-Apply" changes.
+3.  **Proactive vs. Reactive:** While Cursor manages its own context pruning, the gateway's `enable_pre_call_checks` acts as a safety net for other CLI tools or when Cursor's internal math slightly exceeds provider limits.
+
+### Cursor Setup Guide
+
+To use this gateway in Cursor, follow these steps:
+
+1.  **Open Settings:** Go to `Cursor Settings` -> `Models`.
+2.  **Configure OpenAI API:**
+    *   **API Base URL:** `http://localhost:4000/v1`
+    *   **API Key:** Use the `LITELLM_MASTER_KEY` from your `.env` file.
+3.  **Manage Models:**
+    *   **Disable default models** (like Cursor's built-in Claude) to ensure all traffic routes through your local gateway for tracking and cost management.
+    *   **Add Custom Models:** Click `+ Add Model` and enter the IDs exactly as they appear in `litellm-config.yaml`.
+4.  **Recommended Model IDs:**
+    *   `claude-sonnet-4-6` (Standard)
+    *   `claude-sonnet-4-6-high` (Deep Thinking mode)
+    *   `gemini-pro-agent-high` (Google's agentic reasoning)
+    *   `gpt-5-5` (Latest OpenAI flagship)
+5.  **Verify Connection:** Use the `Cursor Chat` and ask a question. Check your **Langfuse dashboard** (`http://localhost:3000`) to verify the request was captured.
 
 ### Claude Code Plugins
 *   Modular packages that extend the AI's capabilities in the local environment.
@@ -51,7 +78,7 @@ graph TD
     LiteLLM --> CLIProxy[CLIProxyAPI :8317]
     CLIProxy --> Anthropic[Anthropic / Claude]
     CLIProxy --> OpenAI[OpenAI / GPT]
-    CLIProxy --> Google[Google / Gemini]
+    CLIProxy --> Google[Google / Antigravity]
     CLIProxy --> xAI[xAI / Grok]
     CLIProxy --> Kimi[Moonshot / Kimi]
     LiteLLM --> MCP[MCP Servers / Tools]

@@ -88,9 +88,6 @@ services:
       context: .
       dockerfile: Dockerfile.cliproxy
     restart: always
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
     volumes:
       - ${HOME}/.cliproxy/config.yaml:/config/config.yaml
       - ${HOME}/.cli-proxy-api:/home/dev/.cli-proxy-api

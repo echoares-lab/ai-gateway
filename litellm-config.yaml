@@ -149,11 +149,6 @@ model_list:
     model_info:
       disable_background_health_check: true
 
-  - model_name: gemini-2-5-pro
-    litellm_params:
-      model: openai/gemini-2.5-pro
-      api_base: http://cliproxy:8317/v1
-      api_key: os.environ/CLIPROXY_API_KEY
     model_info:
       disable_background_health_check: true
 
@@ -229,11 +224,6 @@ model_list:
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
 
-  - model_name: gpt-oss-120b-medium
-    litellm_params:
-      model: openai/gpt-oss-120b-medium
-      api_base: http://cliproxy:8317/v1
-      api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
 
   - model_name: gemini-3-pro-high
     litellm_params:
@@ -287,6 +277,12 @@ model_list:
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
 
+  - model_name: gemini-2-5-pro
+    litellm_params:
+      model: openai/gemini-2.5-pro
+      api_base: http://cliproxy:8317/v1
+      api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
+
 general_settings:
   forward_client_headers_to_llm_api: true
   store_model_in_db: true
@@ -302,6 +298,9 @@ general_settings:
   # background_health_checks: true
   # health_check_interval: 300        # seconds between full sweeps (default: 300)
   # health_check_concurrency: 5       # max parallel probes (default: all at once)
+
+router_settings:
+  enable_pre_call_checks: true
 
 litellm_settings:
   callbacks: ["langfuse"]

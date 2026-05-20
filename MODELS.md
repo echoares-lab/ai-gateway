@@ -11,11 +11,11 @@ No API billing. Limits are consumer subscription quotas, not API tier limits.
 Client (Cursor / Python / curl)
   └─► LiteLLM  :4000   (OpenAI-compatible API, model routing, Langfuse logging)
         └─► CLIProxyAPI  :8317  (OAuth relay, token auto-refresh every 15 min)
-              ├─► Anthropic  (Claude Pro/Max account)
-              ├─► OpenAI     (ChatGPT Plus/Pro account)
-              ├─► Google     (Gemini Advanced / Google account)
-              ├─► xAI        (Grok / X Premium account)
-              └─► Moonshot   (Kimi account)
+              ├─► Anthropic    (Claude Pro/Max account)
+              ├─► OpenAI       (ChatGPT Plus/Pro account)
+              ├─► Antigravity  (Google account / Antigravity CLI)
+              ├─► xAI          (Grok / X Premium account)
+              └─► Moonshot     (Kimi account)
 ```
 
 API endpoint: `http://localhost:4000`  
@@ -69,9 +69,9 @@ Auth header: `Authorization: Bearer <LITELLM_MASTER_KEY>` (see `.env`)
 
 ---
 
-## Gemini Models (Google account — Gemini Advanced subscription)
+## Antigravity Models (Google account — Antigravity CLI transition)
 
-**Auth**: OAuth via Gemini CLI login. Token uses Google's `token`/`auto` auth fields (no explicit expiry). Stored in `~/.cli-proxy-api/gemini-*.json`. Token is refreshed by CLIProxyAPI's file watcher.
+**Auth**: OAuth via Antigravity CLI login (`agy login`). Gemini CLI is being phased out as of May 19, 2026. Tokens are stored in `~/.gemini/antigravity-cli/` and relayed by CLIProxyAPI.
 
 **Rate limits**: Strictest of all three providers. Per-day and per-minute caps enforced at the account level.
 
@@ -88,6 +88,8 @@ Auth header: `Authorization: Bearer <LITELLM_MASTER_KEY>` (see `.env`)
 | `gemini-3-1-flash-lite-preview` | `gemini-3.1-flash-lite-preview` | ~1000+ | ~30 | enabled |
 | `gemini-2-5-flash` | `gemini-2.5-flash` | ~500–1000 | ~15 | enabled |
 | `gemini-2-5-flash-lite` | `gemini-2.5-flash-lite` | ~1000+ | ~30 | enabled |
+
+**Migration Note**: Gemini CLI requests for consumer accounts will be discontinued on **June 18, 2026**. Transition to `agy` login now.
 
 **Health check notes**: All Gemini Pro variants have `disable_background_health_check: true` in `litellm-config.yaml`. Pro models 429 under normal health check frequency (~5 req/min limit, health checks fire every 5 min across 5+ Pro aliases = burst at interval boundary). Flash and Flash-Lite models are safe.
 

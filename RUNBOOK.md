@@ -15,10 +15,11 @@ Unified access to Claude Pro, ChatGPT Plus, and Gemini consumer accounts via Lit
 - Docker + Docker Compose installed
 - Claude Pro/Max account
 - ChatGPT Plus or Pro account
-- Google account (Gemini)
+- Antigravity CLI installed (`curl -fsSL https://antigravity.google/cli/install.sh | bash`)
+- Google account (Gemini / Antigravity)
 - SSH port forwarding if on a remote server (see [OAuth on Remote Server](#oauth-on-remote-server))
 
-### 1. Install CLIProxyAPI binary (for login commands)
+### 1. Install binaries
 ```bash
 ./cliproxy-setup.sh install
 ```
@@ -27,11 +28,11 @@ Unified access to Claude Pro, ChatGPT Plus, and Gemini consumer accounts via Lit
 Each command opens a browser OAuth flow and stores a token in `~/.cli-proxy-api/`.
 
 ```bash
-./cliproxy-setup.sh login-claude    # port 54545 callback
-./cliproxy-setup.sh login-codex     # port 1455 callback
-./cliproxy-setup.sh login-gemini    # port 8085 callback
-./cliproxy-setup.sh login-grok      # Grok / X Premium
-./cliproxy-setup.sh login-kimi      # Kimi
+./cliproxy-setup.sh login-claude       # port 54545 callback
+./cliproxy-setup.sh login-codex        # port 1455 callback
+./cliproxy-setup.sh login-antigravity  # Google account / Antigravity
+./cliproxy-setup.sh login-grok         # Grok / X Premium
+./cliproxy-setup.sh login-kimi         # Kimi
 ```
 
 > **On a remote server**: set up SSH port forwarding first — see [OAuth on Remote Server](#oauth-on-remote-server).
@@ -157,11 +158,11 @@ Or run steps individually:
 OAuth tokens auto-refresh while the container is running. If you see 401s or a provider shows stale `last_refresh` in `health`, re-authenticate:
 
 ```bash
-./cliproxy-setup.sh login-claude    # re-auth Claude
-./cliproxy-setup.sh login-codex     # re-auth ChatGPT/Codex
-./cliproxy-setup.sh login-gemini    # re-auth Gemini
-./cliproxy-setup.sh login-grok      # re-auth Grok
-./cliproxy-setup.sh login-kimi      # re-auth Kimi
+./cliproxy-setup.sh login-claude       # re-auth Claude
+./cliproxy-setup.sh login-codex        # re-auth ChatGPT/Codex
+./cliproxy-setup.sh login-antigravity  # re-auth Antigravity
+./cliproxy-setup.sh login-grok         # re-auth Grok
+./cliproxy-setup.sh login-kimi         # re-auth Kimi
 ```
 
 The running container detects new token files automatically (file watcher, no restart needed).
@@ -189,7 +190,9 @@ Then run login commands from that forwarded session:
 ```bash
 ./cliproxy-setup.sh login-headless claude
 ./cliproxy-setup.sh login-headless codex
-./cliproxy-setup.sh login-headless gemini
+./cliproxy-setup.sh login-headless antigravity
+./cliproxy-setup.sh login-headless grok
+./cliproxy-setup.sh login-headless kimi
 ```
 
 ---
