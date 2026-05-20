@@ -1,0 +1,228 @@
+model_list:
+  # --- Consumer account models via CLIProxyAPI (OAuth, no API billing) ---
+  # Requires CLIProxyAPI running on host: ./cliproxy-setup.sh start
+  # Authenticate first: ./cliproxy-setup.sh login-all
+
+  # Claude — latest/flagship
+  # Claude — latest/flagship
+  # Rate limits: ~10-20 msg/5h (Opus), ~50-100 msg/5h (Sonnet) on Claude Pro; resets on a rolling 5h window
+  - model_name: claude-opus-4-7
+    litellm_params:
+      model: openai/claude-opus-4-7
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+    # model_info:
+    #   disable_background_health_check: true  # uncomment if health checks burn Opus quota
+
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: openai/claude-sonnet-4-6
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: claude-opus-4-6
+    litellm_params:
+      model: openai/claude-opus-4-6
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+    # model_info:
+    #   disable_background_health_check: true
+
+  # Claude — 4.5 series
+  - model_name: claude-opus-4-5
+    litellm_params:
+      model: openai/claude-opus-4-5-20251101
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+    # model_info:
+    #   disable_background_health_check: true
+
+  - model_name: claude-sonnet-4-5
+    litellm_params:
+      model: openai/claude-sonnet-4-5-20250929
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      model: openai/claude-haiku-4-5-20251001
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: claude-opus-4-1
+    litellm_params:
+      model: openai/claude-opus-4-1-20250805
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+    # model_info:
+    #   disable_background_health_check: true
+
+  # GPT / Codex (ChatGPT Plus/Pro subscription)
+  # Rate limits: ~50-80 msg/3h rolling window for GPT-4 class; Codex models may have separate quotas
+  - model_name: gpt-5-5
+    litellm_params:
+      model: openai/gpt-5.5
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: gpt-5-4
+    litellm_params:
+      model: openai/gpt-5.4
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: gpt-5-4-mini
+    litellm_params:
+      model: openai/gpt-5.4-mini
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: gpt-5-3-codex
+    litellm_params:
+      model: openai/gpt-5.3-codex
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: gpt-5-2
+    litellm_params:
+      model: openai/gpt-5.2
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: codex-auto-review
+    litellm_params:
+      model: openai/codex-auto-review
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  # Gemini (Google account / Gemini Advanced subscription)
+  # Rate limits are the tightest of the three providers:
+  #   Pro models:        ~25-50 req/day, ~5 req/min
+  #   Flash models:      ~500-1000 req/day, ~15 req/min
+  #   Flash-Lite models: ~1000+ req/day, ~30 req/min
+  # Pro models WILL 429 under background health checks — disable_background_health_check recommended
+  - model_name: gemini-3-1-pro
+    litellm_params:
+      model: openai/gemini-3.1-pro-preview
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      disable_background_health_check: true  # ~25-50 req/day limit; health checks waste quota
+
+  - model_name: gemini-3-1-pro-preview
+    litellm_params:
+      model: openai/gemini-3.1-pro-preview
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      disable_background_health_check: true
+
+  - model_name: gemini-3-pro
+    litellm_params:
+      model: openai/gemini-3-pro-preview
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      disable_background_health_check: true
+
+  - model_name: gemini-3-pro-preview
+    litellm_params:
+      model: openai/gemini-3-pro-preview
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      disable_background_health_check: true
+
+  - model_name: gemini-2-5-pro
+    litellm_params:
+      model: openai/gemini-2.5-pro
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+    model_info:
+      disable_background_health_check: true
+
+  - model_name: gemini-3-flash
+    litellm_params:
+      model: openai/gemini-3-flash-preview
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: gemini-3-flash-preview
+    litellm_params:
+      model: openai/gemini-3-flash-preview
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: gemini-3-1-flash-lite
+    litellm_params:
+      model: openai/gemini-3.1-flash-lite-preview
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: gemini-3-1-flash-lite-preview
+    litellm_params:
+      model: openai/gemini-3.1-flash-lite-preview
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: gemini-2-5-flash
+    litellm_params:
+      model: openai/gemini-2.5-flash
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: gemini-2-5-flash-lite
+    litellm_params:
+      model: openai/gemini-2.5-flash-lite
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  # Versioned aliases added by sync-models (kept for client compatibility)
+  - model_name: claude-sonnet-4-5-20250929
+    litellm_params:
+      model: openai/claude-sonnet-4-5-20250929
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: claude-haiku-4-5-20251001
+    litellm_params:
+      model: openai/claude-haiku-4-5-20251001
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+
+  - model_name: claude-opus-4-5-20251101
+    litellm_params:
+      model: openai/claude-opus-4-5-20251101
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+    # model_info:
+    #   disable_background_health_check: true
+
+  - model_name: claude-opus-4-1-20250805
+    litellm_params:
+      model: openai/claude-opus-4-1-20250805
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+    # model_info:
+    #   disable_background_health_check: true
+
+general_settings:
+  forward_client_headers_to_llm_api: true
+  store_model_in_db: true
+  store_prompts_in_spend_logs: true
+  drop_params: true
+  # --- Background model health checks ---
+  # Probes each model on a schedule; results appear in LiteLLM UI → Model Health page.
+  # Each check sends 1 request (~6-7 tokens in, max_tokens=1 out) per model per interval.
+  # With 30 models at 300s interval: ~26 req/5min, ~7500 req/day across all providers.
+  # Gemini Pro models are excluded via disable_background_health_check (see model_info above).
+  # To enable: uncomment the three lines below and restart LiteLLM.
+  #
+  # background_health_checks: true
+  # health_check_interval: 300        # seconds between full sweeps (default: 300)
+  # health_check_concurrency: 5       # max parallel probes (default: all at once)
+
+litellm_settings:
+  callbacks: ["langfuse"]
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]

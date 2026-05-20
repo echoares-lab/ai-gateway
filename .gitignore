@@ -1,0 +1,19 @@
+# Secrets — never commit
+.env
+.env.local
+.env.production
+
+# OAuth token files and CLIProxyAPI credentials
+.cli-proxy-api/
+*.json
+
+# Local config overrides
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
