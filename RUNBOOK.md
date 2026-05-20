@@ -89,6 +89,45 @@ docker compose logs langfuse-web -f  # Langfuse UI logs
 
 ---
 
+## Management UI (CLIProxyAPI Web Dashboard)
+
+CLIProxyAPI ships a built-in web UI at `/management.html` since v6.0.19.
+
+**URL**: `http://<server-ip>:8317/management.html`  
+**Management key**: stored in `~/.cliproxy/config.yaml` under `management-key`
+
+> This key is separate from the `api-keys` list used by LiteLLM. Keep it private.
+
+### What the UI provides
+
+| Page | What it shows |
+|------|---------------|
+| Dashboard | Connection status, server version, model count snapshot |
+| Config Panel | Visual editor for `config.yaml` with YAML diff preview on save |
+| AI Providers | Per-provider key/URL/alias settings |
+| Auth Files | Upload/download/delete OAuth token JSON files, view supported models per credential |
+| OAuth | Start OAuth/device flows for Claude, Codex, Gemini, Grok, Kimi without the CLI |
+| Quota Management | Quota limits and usage per provider |
+| Logs | Tail logs with search, auto-refresh, hide management traffic |
+| System | Update check, model list (`/v1/models`), local login data cleanup |
+
+### Connecting
+
+1. Open `http://<server-ip>:8317/management.html` in a browser
+2. Enter the management key from `~/.cliproxy/config.yaml`
+3. The address field auto-detects from the page URL — override if needed
+
+### Security note
+
+Port 8317 is now exposed on `0.0.0.0` (all interfaces). On a shared or public network, consider firewalling this port to trusted IPs only, or reverting to `127.0.0.1:8317:8317` in `docker-compose.yml` and using SSH forwarding:
+
+```bash
+ssh -L 8317:127.0.0.1:8317 dev@10.10.10.52 -p 22
+# then open http://localhost:8317/management.html locally
+```
+
+---
+
 ## Update Workflow
 
 Run this whenever CLIProxyAPI releases a new version or you want to sync new models:
@@ -276,7 +315,7 @@ docker compose up -d
 | `litellm-config.yaml` | Model routing (auto-managed by sync-models) |
 | `.env` | Secrets (keys, passwords) — never commit |
 | `cliproxy-setup.sh` | Setup, auth, sync, health CLI |
-| `~/.cliproxy/config.yaml` | CLIProxyAPI config (port, API key) |
+| `~/.cliproxy/config.yaml` | CLIProxyAPI config (port, API key, management key) |
 | `~/.cli-proxy-api/*.json` | OAuth token files (Claude, Codex, Gemini) |
 
 ---

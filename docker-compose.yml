@@ -92,10 +92,10 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     volumes:
-      - ${HOME}/.cliproxy/config.yaml:/config/config.yaml:ro
+      - ${HOME}/.cliproxy/config.yaml:/config/config.yaml
       - ${HOME}/.cli-proxy-api:/home/dev/.cli-proxy-api
     ports:
-      - "127.0.0.1:8317:8317"
+      - "8317:8317"
 
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
