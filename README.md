@@ -26,6 +26,16 @@ A specialized proxy that allows LiteLLM to use consumer-tier accounts (ChatGPT P
 ### Agents & Tool Use
 *   **Model-Agnostic Agents:** Build agents that can reason across any model in the gateway.
 *   **MCP (Model Context Protocol):** Connect models to external tools (GitHub, Slack, SQL) using an open standard. LiteLLM can auto-register MCP servers, decoupling tools from model providers.
+*   **Search Tools:** The stack supports AI-native search (Tavily, Exa) and zero-key traditional search (DuckDuckGo). These act as the "eyes and ears" of the agent, providing real-time grounding and reducing hallucinations.
+
+### Optimization Layer
+*   **Proactive Routing:** The gateway is configured with `enable_pre_call_checks: true`. This allows LiteLLM to locally tokenize and count prompts before sending them. If a prompt exceeds a specific model's context window, it is instantly routed to a larger fallback model, eliminating the "double latency" of a provider-side failure.
+*   **Caching:** Reduces latency and costs by storing previous responses in Redis. If two users ask the same question, the result is served in milliseconds without hitting the LLM.
+*   **Vector Stores:** Integrate with stores like Pinecone or Qdrant for **RAG (Retrieval-Augmented Generation)**, giving agents "long-term memory" and access to private data.
+
+### Claude Code Plugins
+*   Modular, shareable packages that extend the AI's capabilities in the local environment.
+*   Bundle specialized agents, custom slash commands, and MCP servers into unified units for team-wide AI workflows.
 
 ## Routing & Reliability
 
