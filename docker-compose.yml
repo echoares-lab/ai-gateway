@@ -94,6 +94,16 @@ services:
     ports:
       - "8317:8317"
 
+  translator:
+    build:
+      context: .
+      dockerfile: Dockerfile.translator
+    restart: always
+    depends_on:
+      - litellm
+    ports:
+      - "4000:4000"
+
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     restart: always
@@ -101,7 +111,7 @@ services:
       - cliproxy
       - redis
     ports:
-      - "4000:4000"
+      - "4001:4000"
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - DATABASE_URL=${LITELLM_DATABASE_URL}
