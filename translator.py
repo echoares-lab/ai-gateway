@@ -263,46 +263,6 @@ def _add_prefix_to_models_response(body: bytes) -> bytes:
     return json.dumps(data).encode()
 
 
-# Maps model name prefixes → real provider for UI display
-_REAL_PROVIDERS = [
-    ("claude-",  "anthropic"),
-    ("gemini-",  "google"),
-    ("gpt-",     "openai"),
-    ("codex-",   "openai"),
-    ("o1",       "openai"),
-    ("o3",       "openai"),
-]
-
-
-def _to_real_provider_model(model_str: str) -> str:
-    """Rewrite 'openai/claude-opus-4-7' → 'anthropic/claude-opus-4-7' for display."""
-    if not isinstance(model_str, str):
-        return model_str
-    _, _, name = model_str.partition("/")
-    if not name:
-        name = model_str
-    for start, provider in _REAL_PROVIDERS:
-        if name.lower().startswith(start):
-            return f"{provider}/{name}"
-    return model_str
-
-
-def _rewrite_model_info_providers(body: bytes) -> bytes:
-    """Rewrite litellm_params.model in /v1/model/info to show real provider in UI."""
-    try:
-        data = json.loads(body)
-    except Exception:
-        return body
-    if not isinstance(data.get("data"), list):
-        return body
-    for entry in data["data"]:
-        if not isinstance(entry, dict):
-            continue
-        params = entry.get("litellm_params", {})
-        if isinstance(params.get("model"), str):
-            params["model"] = _to_real_provider_model(params["model"])
-    return json.dumps(data).encode()
-
 
 # ── Body patching ────────────────────────────────────────────────────────────
 
@@ -395,11 +355,6 @@ async def proxy(path: str, request: Request):
     # Add model prefix to /v1/models response
     if path.rstrip("/") in ("v1/models", "models") and resp.status_code == 200:
         resp_body = _add_prefix_to_models_response(resp_body)
-        resp_headers["content-length"] = str(len(resp_body))
-
-    # Rewrite provider in /v1/model/info response (LiteLLM UI)
-    if path.rstrip("/") in ("v1/model/info", "model/info") and resp.status_code == 200:
-        resp_body = _rewrite_model_info_providers(resp_body)
         resp_headers["content-length"] = str(len(resp_body))
 
     return Response(content=resp_body, status_code=resp.status_code, headers=resp_headers)
