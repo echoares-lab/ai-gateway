@@ -543,27 +543,6 @@ model_list:
       supports_vision: true
       supports_function_calling: true
 
-search_tools:
-  - search_tool_name: brave_search
-    litellm_params:
-      search_provider: brave
-      api_key: os.environ/BRAVE_API_KEY
-
-  - search_tool_name: tavily
-    litellm_params:
-      search_provider: tavily
-      api_key: os.environ/TAVILY_API_KEY
-
-  - search_tool_name: exa
-    litellm_params:
-      search_provider: exa_ai
-      api_key: os.environ/EXA_API_KEY
-
-  - search_tool_name: serper
-    litellm_params:
-      search_provider: serper
-      api_key: os.environ/SERPER_API_KEY
-
 general_settings:
   forward_client_headers_to_llm_api: true
   store_model_in_db: true
