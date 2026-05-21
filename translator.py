@@ -12,6 +12,11 @@ Handles all known Responses API input types:
 
 Also normalises content arrays in requests that already use `messages` but
 contain Responses API content types (e.g. input_text).
+
+Model prefixing:
+  GET /v1/models response  → all model IDs prefixed with MODEL_PREFIX
+  POST /v1/chat/completions → MODEL_PREFIX stripped from `model` field
+  This lets Cursor distinguish gateway models from its own built-in ones.
 """
 import json
 import logging
@@ -24,6 +29,7 @@ log = logging.getLogger("translator")
 
 app = FastAPI()
 LITELLM = "http://litellm:4000"
+MODEL_PREFIX = "AI-Gateway:"
 
 # ── Content normalisation ────────────────────────────────────────────────────
 
@@ -227,6 +233,36 @@ def _normalize_tools(tools: list) -> tuple[list, bool]:
     return out, changed
 
 
+# ── Model prefix ─────────────────────────────────────────────────────────────
+
+def _strip_prefix(body: bytes) -> tuple[bytes, bool]:
+    """Strip MODEL_PREFIX from the `model` field in a request body."""
+    try:
+        data = json.loads(body)
+    except Exception:
+        return body, False
+    model = data.get("model", "")
+    if isinstance(model, str) and model.startswith(MODEL_PREFIX):
+        data["model"] = model[len(MODEL_PREFIX):]
+        return json.dumps(data).encode(), True
+    return body, False
+
+
+def _add_prefix_to_models_response(body: bytes) -> bytes:
+    """Prefix all model IDs in a /v1/models response with MODEL_PREFIX."""
+    try:
+        data = json.loads(body)
+    except Exception:
+        return body
+    if not isinstance(data.get("data"), list):
+        return body
+    for entry in data["data"]:
+        if isinstance(entry, dict) and isinstance(entry.get("id"), str):
+            if not entry["id"].startswith(MODEL_PREFIX):
+                entry["id"] = MODEL_PREFIX + entry["id"]
+    return json.dumps(data).encode()
+
+
 # ── Body patching ────────────────────────────────────────────────────────────
 
 def _patch_body(path: str, body: bytes) -> tuple[bytes, bool]:
@@ -269,7 +305,15 @@ def _patch_body(path: str, body: bytes) -> tuple[bytes, bool]:
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 async def proxy(path: str, request: Request):
     raw = await request.body()
-    body, changed = _patch_body(path, raw)
+
+    # Strip model prefix before format patching
+    body, prefix_stripped = _strip_prefix(raw)
+    body, fmt_changed = _patch_body(path, body if prefix_stripped else raw)
+    if not fmt_changed and prefix_stripped:
+        body = body  # already set by _strip_prefix
+    elif not fmt_changed and not prefix_stripped:
+        body = raw
+    changed = prefix_stripped or fmt_changed
 
     headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
     if changed:
@@ -304,8 +348,12 @@ async def proxy(path: str, request: Request):
         log.warning("Upstream %d for %s — raw: %s", resp.status_code, path,
                     raw[:600].decode(errors="replace"))
 
-    return Response(
-        content=resp.content,
-        status_code=resp.status_code,
-        headers=dict(resp.headers),
-    )
+    resp_body = resp.content
+    resp_headers = dict(resp.headers)
+
+    # Add model prefix to /v1/models response
+    if path.rstrip("/") in ("v1/models", "models") and resp.status_code == 200:
+        resp_body = _add_prefix_to_models_response(resp_body)
+        resp_headers["content-length"] = str(len(resp_body))
+
+    return Response(content=resp_body, status_code=resp.status_code, headers=resp_headers)
