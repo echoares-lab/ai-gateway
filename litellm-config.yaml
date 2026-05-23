@@ -583,6 +583,14 @@ litellm_settings:
   callbacks: ["langfuse"]
   success_callback: ["langfuse"]
   failure_callback: ["langfuse"]
+  fallbacks:
+    - claude-sonnet-4-6: ["gpt-5-4", "gemini-3-flash"]
+    - claude-opus-4-7: ["gpt-5-5", "gemini-3-1-pro"]
+    - claude-opus-4-6: ["gpt-5-4", "gemini-3-1-pro"]
+    - claude-opus-4-5: ["gpt-5-4", "gemini-3-pro"]
+    - claude-haiku-4-5: ["gpt-5-4-mini", "gemini-3-flash"]
+    - gpt-5-4: ["claude-sonnet-4-6", "gemini-3-flash"]
+    - gpt-5-5: ["claude-opus-4-7", "gemini-3-1-pro"]
   cache: true
   cache_params:
     type: redis
