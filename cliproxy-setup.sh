@@ -618,6 +618,47 @@ case "$cmd" in
       | python3 -m json.tool
     ;;
 
+  test-all)
+    # One representative model per provider; tests the full translator→litellm→cliproxy path
+    declare -A PROVIDER_MODELS=(
+      [claude]="claude-sonnet-4-6"
+      [gemini]="gemini-3-flash"
+      [openai]="gpt-5-4"
+      [xai]="grok-4"
+      [kimi]="kimi-k2"
+    )
+    PASS=0; FAIL=0; SKIP=0
+    echo "=== Provider flow test (translator → LiteLLM → CLIProxy) ==="
+    for provider in claude gemini openai xai kimi; do
+      model="${PROVIDER_MODELS[$provider]}"
+      # skip if model not in litellm config
+      if ! grep -q "model_name: ${model}$" "$LITELLM_CONFIG" 2>/dev/null; then
+        printf "  %-10s %-28s SKIP (not in config)\n" "$provider" "$model"
+        (( SKIP++ )) || true
+        continue
+      fi
+      response=$(curl -s --max-time 30 -X POST http://localhost:4000/v1/chat/completions \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $LITELLM_KEY" \
+        -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly one word: OK\"}],\"max_tokens\":10}")
+      content=$(echo "$response" | python3 -c \
+        "import sys,json; r=json.load(sys.stdin); print(r['choices'][0]['message']['content'].strip())" 2>/dev/null)
+      if [ -n "$content" ]; then
+        printf "  %-10s %-28s PASS  (%s)\n" "$provider" "$model" "$content"
+        (( PASS++ )) || true
+      else
+        err=$(echo "$response" | python3 -c \
+          "import sys,json; r=json.load(sys.stdin); print(r.get('error',{}).get('message','no response')[:60])" 2>/dev/null \
+          || echo "empty response")
+        printf "  %-10s %-28s FAIL  (%s)\n" "$provider" "$model" "$err"
+        (( FAIL++ )) || true
+      fi
+    done
+    echo ""
+    echo "Results: ${PASS} passed, ${FAIL} failed, ${SKIP} skipped"
+    [ "$FAIL" -eq 0 ]
+    ;;
+
   *)
     cat <<EOF
 Usage: $0 <command> [args]
@@ -641,6 +682,7 @@ Operations:
   models               List models grouped by provider from CLIProxyAPI
   test [model]         Test model end-to-end through LiteLLM
   test-direct [model]  Test model directly against CLIProxyAPI
+  test-all             Test one model per provider; reports pass/fail/skip
 
 Legacy (prefer Docker):
   start                Run CLIProxyAPI directly on host (for debugging)

@@ -243,7 +243,8 @@ model_list:
   # Pro models WILL 429 under background health checks — disable_background_health_check recommended
   - model_name: gemini-3-1-pro
     litellm_params:
-      model: openai/gemini-3.1-pro-preview
+      model: gemini-3.1-pro-preview
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 65536
@@ -261,7 +262,8 @@ model_list:
 
   - model_name: gemini-3-1-pro-preview
     litellm_params:
-      model: openai/gemini-3.1-pro-preview
+      model: gemini-3.1-pro-preview
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 65536
@@ -279,7 +281,8 @@ model_list:
 
   - model_name: gemini-3-pro
     litellm_params:
-      model: openai/gemini-3-pro-preview
+      model: gemini-3-pro-preview
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 65535
@@ -297,7 +300,8 @@ model_list:
 
   - model_name: gemini-3-pro-preview
     litellm_params:
-      model: openai/gemini-3-pro-preview
+      model: gemini-3-pro-preview
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 65535
@@ -327,7 +331,8 @@ model_list:
 
   - model_name: gemini-3-flash
     litellm_params:
-      model: openai/gemini-3-flash-preview
+      model: gemini-3-flash-preview
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 65535
@@ -344,7 +349,8 @@ model_list:
 
   - model_name: gemini-3-flash-preview
     litellm_params:
-      model: openai/gemini-3-flash-preview
+      model: gemini-3-flash-preview
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 65535
@@ -361,7 +367,8 @@ model_list:
 
   - model_name: gemini-3-1-flash-lite
     litellm_params:
-      model: openai/gemini-3.1-flash-lite-preview
+      model: gemini-3.1-flash-lite-preview
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 65536
@@ -378,7 +385,8 @@ model_list:
 
   - model_name: gemini-3-1-flash-lite-preview
     litellm_params:
-      model: openai/gemini-3.1-flash-lite-preview
+      model: gemini-3.1-flash-lite-preview
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 65536
@@ -396,7 +404,8 @@ model_list:
 
   - model_name: gemini-2-5-flash-lite
     litellm_params:
-      model: openai/gemini-2.5-flash-lite
+      model: gemini-2.5-flash-lite
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 65535
@@ -417,7 +426,8 @@ model_list:
 
   - model_name: gemini-3-flash-agent
     litellm_params:
-      model: openai/gemini-3-flash-agent
+      model: gemini-3-flash-agent
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
       max_tokens: 65536
@@ -432,7 +442,8 @@ model_list:
 
   - model_name: gemini-3-1-pro-low
     litellm_params:
-      model: openai/gemini-3.1-pro-low
+      model: gemini-3.1-pro-low
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
       max_tokens: 65536
@@ -448,7 +459,8 @@ model_list:
 
   - model_name: gemini-3-pro-high
     litellm_params:
-      model: openai/gemini-3-pro-high
+      model: gemini-3-pro-high
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
       max_tokens: 65535
@@ -464,7 +476,8 @@ model_list:
 
   - model_name: gemini-3-pro-low
     litellm_params:
-      model: openai/gemini-3-pro-low
+      model: gemini-3-pro-low
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
       max_tokens: 65535
@@ -480,7 +493,8 @@ model_list:
 
   - model_name: gemini-3-5-flash-low
     litellm_params:
-      model: openai/gemini-3.5-flash-low
+      model: gemini-3.5-flash-low
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
       max_tokens: 65536
@@ -515,7 +529,8 @@ model_list:
 
   - model_name: gemini-pro-agent
     litellm_params:
-      model: openai/gemini-pro-agent
+      model: gemini-pro-agent
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
       max_tokens: 65536
@@ -530,7 +545,8 @@ model_list:
 
   - model_name: gemini-3-1-flash-image
     litellm_params:
-      model: openai/gemini-3.1-flash-image
+      model: gemini-3.1-flash-image
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
       max_tokens: 65536
@@ -545,7 +561,8 @@ model_list:
 
   - model_name: gemini-2-5-pro
     litellm_params:
-      model: openai/gemini-2.5-pro
+      model: gemini-2.5-pro
+      custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
       max_tokens: 65535

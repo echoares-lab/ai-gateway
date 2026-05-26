@@ -61,6 +61,8 @@ External client (Cursor, curl, SDK)
 
 **Gemini Pro models** have `disable_background_health_check: true` — they have strict per-minute rate limits (~5 req/min) that health check polling exhausts.
 
+**CPA-Manager** runs on port 18317 and provides a management UI plus persistent usage analytics (SQLite) for CLIProxy. On first visit to `http://localhost:18317/management.html`, a setup wizard asks for the CPA URL (`http://cliproxy:8317`) and the Management Key. After setup, the wizard does not appear again. The `Cli-Proxy-API-Management-Center` repo is no longer deployed separately — CPA-Manager embeds the same panel and adds the Usage Service. CLIProxy also serves the built-in panel at `http://localhost:8317/management.html` (since v6.0.19).
+
 ## Key Files
 
 | File | Purpose |

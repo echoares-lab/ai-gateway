@@ -94,6 +94,31 @@ services:
     ports:
       - "8317:8317"
 
+  cpa-manager:
+    image: seakee/cpa-manager:latest
+    restart: always
+    depends_on:
+      - cliproxy
+    ports:
+      - "18317:18317"
+    environment:
+      HTTP_ADDR: "0.0.0.0:18317"
+      USAGE_DB_PATH: "/data/usage.sqlite"
+      USAGE_COLLECTOR_MODE: "auto"
+      USAGE_RESP_QUEUE: "usage"
+      USAGE_RESP_POP_SIDE: "right"
+      USAGE_BATCH_SIZE: "100"
+      USAGE_POLL_INTERVAL_MS: "500"
+      USAGE_QUERY_LIMIT: "50000"
+      USAGE_CORS_ORIGINS: "*"
+    volumes:
+      - cpa_manager_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:18317/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   translator:
     build:
       context: .
@@ -208,6 +233,8 @@ services:
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
 
 volumes:
+  cpa_manager_data:
+    driver: local
   langfuse_postgres_data:
     driver: local
   langfuse_clickhouse_data:
