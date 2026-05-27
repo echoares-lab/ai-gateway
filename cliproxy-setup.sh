@@ -63,6 +63,45 @@ require_bin() {
 # Convert CLIProxyAPI model ID to a LiteLLM-safe alias (dots → dashes)
 model_to_alias() { echo "$1" | tr '.' '-'; }
 
+GEMINI_MAP_FILE="${GEMINI_MAP_FILE:-$SCRIPT_DIR/gemini-model-map.json}"
+
+# Add a dotted→dashed entry to gemini-model-map.json (no-op if key == value or not Gemini)
+gemini_map_add() {
+  local model_id="$1" alias="$2"
+  [[ "$model_id" != gemini-* ]] && return
+  [[ "$model_id" == "$alias" ]] && return
+  python3 - "$GEMINI_MAP_FILE" "$model_id" "$alias" <<'PYEOF'
+import sys, json, os
+path, model_id, alias = sys.argv[1:]
+data = {}
+if os.path.exists(path):
+    with open(path) as f:
+        data = json.load(f)
+data[model_id] = alias
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+PYEOF
+}
+
+# Remove an entry from gemini-model-map.json by its dashed alias (no-op if not Gemini)
+gemini_map_remove() {
+  local alias="$1"
+  [[ "$alias" != gemini-* ]] && return
+  python3 - "$GEMINI_MAP_FILE" "$alias" <<'PYEOF'
+import sys, json, os
+path, alias = sys.argv[1:]
+if not os.path.exists(path):
+    sys.exit(0)
+with open(path) as f:
+    data = json.load(f)
+data = {k: v for k, v in data.items() if v != alias}
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+PYEOF
+}
+
 # Check if a model alias already exists in litellm-config.yaml
 alias_in_config() {
   grep -q "model_name: $1" "$LITELLM_CONFIG" 2>/dev/null
@@ -335,6 +374,7 @@ pattern = rf'\n  - model_name: {re.escape(alias)}\n    litellm_params:.*?api_key
 txt = re.sub(pattern, '\n', txt, flags=re.DOTALL)
 with open(path, 'w') as f: f.write(txt)
 PYEOF
+      gemini_map_remove "$alias"
       changed=true
     fi
   done < <(grep 'model_name:' "$LITELLM_CONFIG" | awk '{print $3}')
@@ -368,6 +408,7 @@ with open(path) as f: txt = f.read()
 txt = txt.replace('\ngeneral_settings:', entry + '\ngeneral_settings:', 1)
 with open(path, 'w') as f: f.write(txt)
 PYEOF
+      gemini_map_add "$model_id" "$alias"
       changed=true
     else
       echo "503 — skipping"

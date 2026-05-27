@@ -6,6 +6,7 @@
 # OAuth token files and CLIProxyAPI credentials
 .cli-proxy-api/
 *.json
+!gemini-model-map.json
 
 # Local config overrides
 docker-compose.override.yml
