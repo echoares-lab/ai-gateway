@@ -23,6 +23,12 @@ docker compose restart litellm
 # Probe all CLIProxy models and sync litellm-config.yaml
 ./cliproxy-setup.sh sync-models
 
+# Quota summary: per-provider usage counts from CLIProxy
+./cliproxy-setup.sh quota-summary
+
+# Run translator unit tests (no container restart needed)
+docker compose exec translator pytest test_translator.py -v
+
 # View logs
 docker compose logs translator -f
 docker compose logs litellm -f
@@ -58,6 +64,14 @@ External client (Cursor, curl, SDK)
 **`litellm-config.yaml`** defines all models. Every model routes through CLIProxy using the `openai/` provider prefix (CLIProxy is OpenAI-compatible) with `api_base: http://cliproxy:8317/v1`. Model aliases use dashes instead of dots (`gpt-5-4` not `gpt-5.4`) for LiteLLM compatibility; the `model:` field under `litellm_params` uses the original dotted name that CLIProxy expects.
 
 **Redis caching** is enabled in `litellm_settings`. Only non-streaming requests are cached (LiteLLM limitation).
+
+**Translator env vars** (all optional, set in `.env`):
+| Variable | Default | Purpose |
+|---|---|---|
+| `LITELLM_URL` | `http://litellm:4000` | Internal LiteLLM endpoint |
+| `WEB_CONCURRENCY` | `1` | Number of uvicorn worker processes |
+| `HTTPX_MAX_KEEPALIVE` | `20` | httpx connection pool keep-alive connections |
+| `HTTPX_MAX_CONNECTIONS` | `100` | httpx connection pool max connections |
 
 **Gemini Pro models** have `disable_background_health_check: true` — they have strict per-minute rate limits (~5 req/min) that health check polling exhausts.
 
