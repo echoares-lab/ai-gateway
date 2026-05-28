@@ -14,6 +14,7 @@ Auth normalisation:
   Codex CLI   Authorization: Bearer  → forwarded as-is
   Claude CLI  x-api-key: sk-...      → Authorization: Bearer sk-...
 """
+import asyncio
 import json
 import logging
 import os
@@ -27,8 +28,42 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("translator")
 
 app = FastAPI()
-LITELLM = "http://litellm:4000"
+LITELLM = os.environ.get("LITELLM_URL", "http://litellm:4000")
 MODEL_PREFIX = "AI-Gateway:"
+
+
+@app.middleware("http")
+async def _log_requests(request: Request, call_next):
+    req_id = uuid.uuid4().hex[:8]
+    request.state.req_id = req_id
+
+    model = "-"
+    if request.method in ("POST", "PUT", "PATCH"):
+        try:
+            body_bytes = await request.body()
+            model = json.loads(body_bytes).get("model", "-")
+        except Exception:
+            pass
+
+    log.info("[%s] → %s %s model=%s", req_id, request.method, request.url.path, model)
+    start = time.monotonic()
+    response = await call_next(request)
+    ms = (time.monotonic() - start) * 1000
+    log.info("[%s] ← %d (%.0fms)", req_id, response.status_code, ms)
+    return response
+
+
+async def _post_with_retry(url: str, headers: dict, content: bytes, retries: int = 2) -> httpx.Response:
+    """POST to LiteLLM with retry on transient 502/503."""
+    for attempt in range(retries + 1):
+        async with httpx.AsyncClient(timeout=300) as client:
+            resp = await client.post(url, headers=headers, content=content)
+        if resp.status_code in (502, 503) and attempt < retries:
+            log.warning("LiteLLM %d on attempt %d, retrying…", resp.status_code, attempt + 1)
+            await asyncio.sleep(1)
+            continue
+        return resp
+    return resp
 
 
 # ── Shared content normalisation (Responses API / Cursor) ────────────────────
@@ -429,54 +464,57 @@ async def _gemini_stream(oai_lines):
     """Convert OpenAI SSE lines to Gemini SSE chunks."""
     tool_buffers: dict[int, dict] = {}
 
-    async for line in oai_lines:
-        if not line.startswith("data: "):
-            continue
-        data = line[6:]
-        if data == "[DONE]":
-            break
-        try:
-            chunk = json.loads(data)
-        except Exception:
-            continue
+    try:
+        async for line in oai_lines:
+            if not line.startswith("data: "):
+                continue
+            data = line[6:]
+            if data == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data)
+            except Exception:
+                continue
 
-        choice = chunk.get("choices", [{}])[0]
-        delta = choice.get("delta", {})
-        finish = choice.get("finish_reason")
+            choice = chunk.get("choices", [{}])[0]
+            delta = choice.get("delta", {})
+            finish = choice.get("finish_reason")
 
-        parts = []
-        if delta.get("content"):
-            parts.append({"text": delta["content"]})
+            parts = []
+            if delta.get("content"):
+                parts.append({"text": delta["content"]})
 
-        for tc in delta.get("tool_calls", []):
-            idx = tc.get("index", 0)
-            fn = tc.get("function", {})
-            if idx not in tool_buffers:
-                tool_buffers[idx] = {"name": fn.get("name", ""), "args": ""}
-            if fn.get("name"):
-                tool_buffers[idx]["name"] = fn["name"]
-            if fn.get("arguments"):
-                tool_buffers[idx]["args"] += fn["arguments"]
+            for tc in delta.get("tool_calls", []):
+                idx = tc.get("index", 0)
+                fn = tc.get("function", {})
+                if idx not in tool_buffers:
+                    tool_buffers[idx] = {"name": fn.get("name", ""), "args": ""}
+                if fn.get("name"):
+                    tool_buffers[idx]["name"] = fn["name"]
+                if fn.get("arguments"):
+                    tool_buffers[idx]["args"] += fn["arguments"]
 
-        # Flush completed tool calls on the finish chunk
-        if finish:
-            for tb in tool_buffers.values():
-                if tb["name"]:
-                    try:
-                        args = json.loads(tb["args"] or "{}")
-                    except Exception:
-                        args = {}
-                    parts.append({"functionCall": {"name": tb["name"], "args": args}})
+            # Flush completed tool calls on the finish chunk
+            if finish:
+                for tb in tool_buffers.values():
+                    if tb["name"]:
+                        try:
+                            args = json.loads(tb["args"] or "{}")
+                        except Exception:
+                            args = {}
+                        parts.append({"functionCall": {"name": tb["name"], "args": args}})
 
-        if parts or finish:
-            gemini_chunk = {
-                "candidates": [{
-                    "content": {"role": "model", "parts": parts},
-                    "finishReason": GEMINI_FINISH_MAP.get(finish, "") if finish else None,
-                    "index": 0,
-                }]
-            }
-            yield f"data: {json.dumps(gemini_chunk)}\n\n"
+            if parts or finish:
+                gemini_chunk = {
+                    "candidates": [{
+                        "content": {"role": "model", "parts": parts},
+                        "finishReason": GEMINI_FINISH_MAP.get(finish, "") if finish else None,
+                        "index": 0,
+                    }]
+                }
+                yield f"data: {json.dumps(gemini_chunk)}\n\n"
+    except httpx.HTTPError as exc:
+        log.error("Gemini stream connection error: %s", exc)
 
 
 @app.api_route("/v1beta/models/{model_action:path}", methods=["GET", "POST"])
@@ -531,9 +569,7 @@ async def gemini_proxy(model_action: str, request: Request):
                         yield chunk
         return StreamingResponse(generate(), media_type="text/event-stream")
 
-    async with httpx.AsyncClient(timeout=300) as client:
-        resp = await client.post(f"{LITELLM}/v1/chat/completions",
-                                 headers=headers, content=oai_bytes)
+    resp = await _post_with_retry(f"{LITELLM}/v1/chat/completions", headers, oai_bytes)
 
     if resp.status_code >= 400:
         log.warning("Gemini upstream %d: %s", resp.status_code, resp.text[:300])
@@ -653,65 +689,68 @@ async def _oai_to_responses_stream(oai_lines):
     text_buffer = ""
     tool_buffers: dict[int, dict] = {}  # index → {id, name, args}
 
-    async for line in oai_lines:
-        if not line.startswith("data: "):
-            continue
-        data = line[6:]
-        if data == "[DONE]":
-            break
-        try:
-            chunk = json.loads(data)
-        except Exception:
-            continue
+    try:
+        async for line in oai_lines:
+            if not line.startswith("data: "):
+                continue
+            data = line[6:]
+            if data == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data)
+            except Exception:
+                continue
 
-        choice = chunk.get("choices", [{}])[0]
-        delta = choice.get("delta", {})
+            choice = chunk.get("choices", [{}])[0]
+            delta = choice.get("delta", {})
 
-        text = delta.get("content", "")
-        if text:
-            if not text_started:
-                text_started = True
-                yield _sse("response.output_item.added", {
-                    "type": "response.output_item.added",
-                    "output_index": 0,
-                    "item": {"type": "message", "id": msg_id, "role": "assistant",
-                             "content": [], "status": "in_progress"},
-                })
-                yield _sse("response.content_part.added", {
-                    "type": "response.content_part.added",
+            text = delta.get("content", "")
+            if text:
+                if not text_started:
+                    text_started = True
+                    yield _sse("response.output_item.added", {
+                        "type": "response.output_item.added",
+                        "output_index": 0,
+                        "item": {"type": "message", "id": msg_id, "role": "assistant",
+                                 "content": [], "status": "in_progress"},
+                    })
+                    yield _sse("response.content_part.added", {
+                        "type": "response.content_part.added",
+                        "item_id": msg_id, "output_index": 0, "content_index": 0,
+                        "part": {"type": "output_text", "text": "", "annotations": []},
+                    })
+                text_buffer += text
+                yield _sse("response.output_text.delta", {
+                    "type": "response.output_text.delta",
                     "item_id": msg_id, "output_index": 0, "content_index": 0,
-                    "part": {"type": "output_text", "text": "", "annotations": []},
+                    "delta": text,
                 })
-            text_buffer += text
-            yield _sse("response.output_text.delta", {
-                "type": "response.output_text.delta",
-                "item_id": msg_id, "output_index": 0, "content_index": 0,
-                "delta": text,
-            })
 
-        for tc_delta in delta.get("tool_calls", []):
-            idx = tc_delta.get("index", 0)
-            fn = tc_delta.get("function", {})
-            if idx not in tool_buffers:
-                tc_id = tc_delta.get("id", f"call_{uuid.uuid4().hex[:24]}")
-                tc_name = fn.get("name", "")
-                tool_buffers[idx] = {"id": tc_id, "name": tc_name, "args": ""}
-                yield _sse("response.output_item.added", {
-                    "type": "response.output_item.added",
-                    "output_index": idx,
-                    "item": {"type": "function_call", "id": tc_id, "call_id": tc_id,
-                             "name": tc_name, "arguments": "", "status": "in_progress"},
-                })
-            if fn.get("name") and not tool_buffers[idx]["name"]:
-                tool_buffers[idx]["name"] = fn["name"]
-            if fn.get("arguments"):
-                tool_buffers[idx]["args"] += fn["arguments"]
-                yield _sse("response.function_call_arguments.delta", {
-                    "type": "response.function_call_arguments.delta",
-                    "item_id": tool_buffers[idx]["id"],
-                    "output_index": idx,
-                    "delta": fn["arguments"],
-                })
+            for tc_delta in delta.get("tool_calls", []):
+                idx = tc_delta.get("index", 0)
+                fn = tc_delta.get("function", {})
+                if idx not in tool_buffers:
+                    tc_id = tc_delta.get("id", f"call_{uuid.uuid4().hex[:24]}")
+                    tc_name = fn.get("name", "")
+                    tool_buffers[idx] = {"id": tc_id, "name": tc_name, "args": ""}
+                    yield _sse("response.output_item.added", {
+                        "type": "response.output_item.added",
+                        "output_index": idx,
+                        "item": {"type": "function_call", "id": tc_id, "call_id": tc_id,
+                                 "name": tc_name, "arguments": "", "status": "in_progress"},
+                    })
+                if fn.get("name") and not tool_buffers[idx]["name"]:
+                    tool_buffers[idx]["name"] = fn["name"]
+                if fn.get("arguments"):
+                    tool_buffers[idx]["args"] += fn["arguments"]
+                    yield _sse("response.function_call_arguments.delta", {
+                        "type": "response.function_call_arguments.delta",
+                        "item_id": tool_buffers[idx]["id"],
+                        "output_index": idx,
+                        "delta": fn["arguments"],
+                    })
+    except httpx.HTTPError as exc:
+        log.error("Responses stream connection error: %s", exc)
 
     # Close text
     if text_started:
@@ -785,9 +824,7 @@ async def responses_proxy(request: Request):
                         yield event
         return StreamingResponse(generate(), media_type="text/event-stream")
 
-    async with httpx.AsyncClient(timeout=300) as client:
-        resp = await client.post(f"{LITELLM}/v1/chat/completions",
-                                 headers=headers, content=oai_bytes)
+    resp = await _post_with_retry(f"{LITELLM}/v1/chat/completions", headers, oai_bytes)
 
     if resp.status_code >= 400:
         log.warning("Codex upstream %d: %s", resp.status_code, resp.text[:300])
@@ -972,55 +1009,58 @@ async def _oai_to_claude_stream(oai_lines, model: str):
     finish_reason = "end_turn"
     output_tokens = 0
 
-    async for line in oai_lines:
-        if not line.startswith("data: "):
-            continue
-        data = line[6:]
-        if data == "[DONE]":
-            break
-        try:
-            chunk = json.loads(data)
-        except Exception:
-            continue
+    try:
+        async for line in oai_lines:
+            if not line.startswith("data: "):
+                continue
+            data = line[6:]
+            if data == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data)
+            except Exception:
+                continue
 
-        choice = chunk.get("choices", [{}])[0]
-        delta = choice.get("delta", {})
-        finish = choice.get("finish_reason")
-        usage = chunk.get("usage", {})
+            choice = chunk.get("choices", [{}])[0]
+            delta = choice.get("delta", {})
+            finish = choice.get("finish_reason")
+            usage = chunk.get("usage", {})
 
-        if usage.get("completion_tokens"):
-            output_tokens = usage["completion_tokens"]
-        if finish:
-            if finish == "tool_calls":
-                finish_reason = "tool_use"
-            elif finish == "length":
-                finish_reason = "max_tokens"
+            if usage.get("completion_tokens"):
+                output_tokens = usage["completion_tokens"]
+            if finish:
+                if finish == "tool_calls":
+                    finish_reason = "tool_use"
+                elif finish == "length":
+                    finish_reason = "max_tokens"
 
-        text = delta.get("content", "")
-        if text:
-            if text_block_index is None:
-                text_block_index = next_block
-                next_block += 1
-                yield f"event: content_block_start\ndata: {json.dumps({'type': 'content_block_start', 'index': text_block_index, 'content_block': {'type': 'text', 'text': ''}})}\n\n"
-            text_buffer += text
-            yield f"event: content_block_delta\ndata: {json.dumps({'type': 'content_block_delta', 'index': text_block_index, 'delta': {'type': 'text_delta', 'text': text}})}\n\n"
+            text = delta.get("content", "")
+            if text:
+                if text_block_index is None:
+                    text_block_index = next_block
+                    next_block += 1
+                    yield f"event: content_block_start\ndata: {json.dumps({'type': 'content_block_start', 'index': text_block_index, 'content_block': {'type': 'text', 'text': ''}})}\n\n"
+                text_buffer += text
+                yield f"event: content_block_delta\ndata: {json.dumps({'type': 'content_block_delta', 'index': text_block_index, 'delta': {'type': 'text_delta', 'text': text}})}\n\n"
 
-        for tc_delta in delta.get("tool_calls", []):
-            idx = tc_delta.get("index", 0)
-            fn = tc_delta.get("function", {})
-            if idx not in tool_blocks:
-                tc_id = tc_delta.get("id", f"toolu_{uuid.uuid4().hex[:24]}")
-                tc_name = fn.get("name", "")
-                bi = next_block
-                next_block += 1
-                tool_blocks[idx] = {"id": tc_id, "name": tc_name, "args": "", "block_index": bi}
-                yield f"event: content_block_start\ndata: {json.dumps({'type': 'content_block_start', 'index': bi, 'content_block': {'type': 'tool_use', 'id': tc_id, 'name': tc_name, 'input': {}}})}\n\n"
-            if fn.get("name") and not tool_blocks[idx]["name"]:
-                tool_blocks[idx]["name"] = fn["name"]
-            if fn.get("arguments"):
-                tool_blocks[idx]["args"] += fn["arguments"]
-                bi = tool_blocks[idx]["block_index"]
-                yield f"event: content_block_delta\ndata: {json.dumps({'type': 'content_block_delta', 'index': bi, 'delta': {'type': 'input_json_delta', 'partial_json': fn['arguments']}})}\n\n"
+            for tc_delta in delta.get("tool_calls", []):
+                idx = tc_delta.get("index", 0)
+                fn = tc_delta.get("function", {})
+                if idx not in tool_blocks:
+                    tc_id = tc_delta.get("id", f"toolu_{uuid.uuid4().hex[:24]}")
+                    tc_name = fn.get("name", "")
+                    bi = next_block
+                    next_block += 1
+                    tool_blocks[idx] = {"id": tc_id, "name": tc_name, "args": "", "block_index": bi}
+                    yield f"event: content_block_start\ndata: {json.dumps({'type': 'content_block_start', 'index': bi, 'content_block': {'type': 'tool_use', 'id': tc_id, 'name': tc_name, 'input': {}}})}\n\n"
+                if fn.get("name") and not tool_blocks[idx]["name"]:
+                    tool_blocks[idx]["name"] = fn["name"]
+                if fn.get("arguments"):
+                    tool_blocks[idx]["args"] += fn["arguments"]
+                    bi = tool_blocks[idx]["block_index"]
+                    yield f"event: content_block_delta\ndata: {json.dumps({'type': 'content_block_delta', 'index': bi, 'delta': {'type': 'input_json_delta', 'partial_json': fn['arguments']}})}\n\n"
+    except httpx.HTTPError as exc:
+        log.error("Claude stream connection error: %s", exc)
 
     if text_block_index is not None:
         yield f"event: content_block_stop\ndata: {json.dumps({'type': 'content_block_stop', 'index': text_block_index})}\n\n"
@@ -1068,9 +1108,7 @@ async def claude_proxy(request: Request):
                         yield event
         return StreamingResponse(generate(), media_type="text/event-stream")
 
-    async with httpx.AsyncClient(timeout=300) as client:
-        resp = await client.post(f"{LITELLM}/v1/chat/completions",
-                                 headers=headers, content=oai_bytes)
+    resp = await _post_with_retry(f"{LITELLM}/v1/chat/completions", headers, oai_bytes)
 
     if resp.status_code >= 400:
         log.warning("Claude upstream %d: %s", resp.status_code, resp.text[:300])
@@ -1115,12 +1153,15 @@ async def proxy(path: str, request: Request):
 
     if is_stream:
         async def generate():
-            async with httpx.AsyncClient(timeout=300) as client:
-                async with client.stream(
-                    request.method, url, headers=headers, content=body, params=params
-                ) as resp:
-                    async for chunk in resp.aiter_bytes():
-                        yield chunk
+            try:
+                async with httpx.AsyncClient(timeout=300) as client:
+                    async with client.stream(
+                        request.method, url, headers=headers, content=body, params=params
+                    ) as resp:
+                        async for chunk in resp.aiter_bytes():
+                            yield chunk
+            except httpx.HTTPError as exc:
+                log.error("Proxy stream connection error: %s", exc)
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     async with httpx.AsyncClient(timeout=300) as client:
