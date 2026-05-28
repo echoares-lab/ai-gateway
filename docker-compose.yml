@@ -121,15 +121,15 @@ services:
 
   translator:
     build:
-      context: .
-      dockerfile: Dockerfile.translator
+      context: ./services/translator
+      dockerfile: Dockerfile
     restart: always
     depends_on:
       - litellm
     ports:
       - "4000:4000"
     volumes:
-      - ./gemini-model-map.json:/app/gemini-model-map.json:ro
+      - ./services/translator/gemini-model-map.json:/app/gemini-model-map.json:ro
 
   litellm:
     image: ghcr.io/berriai/litellm:main-latest

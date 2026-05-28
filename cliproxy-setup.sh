@@ -63,7 +63,7 @@ require_bin() {
 # Convert CLIProxyAPI model ID to a LiteLLM-safe alias (dots → dashes)
 model_to_alias() { echo "$1" | tr '.' '-'; }
 
-GEMINI_MAP_FILE="${GEMINI_MAP_FILE:-$SCRIPT_DIR/gemini-model-map.json}"
+GEMINI_MAP_FILE="${GEMINI_MAP_FILE:-$SCRIPT_DIR/services/translator/gemini-model-map.json}"
 
 # Add a dotted→dashed entry to gemini-model-map.json (no-op if key == value or not Gemini)
 gemini_map_add() {
@@ -338,6 +338,7 @@ cmd_upgrade() {
 cmd_sync_models() {
   local api_key
   api_key=$(get_api_key)
+  local AUDIT_LOG="$SCRIPT_DIR/sync-models.log"
 
   echo "Fetching model list from CLIProxyAPI..."
   local raw_models
@@ -366,6 +367,7 @@ print(m.group(1) if m else '')
       echo "  OK   $alias"
     else
       echo "  DEAD $alias — removing"
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) REMOVED $alias (probe 503)" >> "$AUDIT_LOG"
       python3 - "$LITELLM_CONFIG" "$alias" <<'PYEOF'
 import sys, re
 path, alias = sys.argv[1], sys.argv[2]
@@ -391,6 +393,7 @@ PYEOF
     echo -n "  NEW  $model_id → testing... "
     if probe_model "$model_id"; then
       echo "OK — adding as $alias"
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ADDED $alias (upstream: $model_id)" >> "$AUDIT_LOG"
       local api_key_val
       api_key_val=$(get_api_key)
       # Append new entry before the general_settings block

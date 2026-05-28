@@ -131,6 +131,67 @@ ssh -L 8317:127.0.0.1:8317 dev@10.10.10.52 -p 22
 
 ---
 
+## Per-Account Outbound Proxy
+
+Each OAuth credential can route its outbound traffic through a different proxy. Useful when running multiple accounts from the same provider under different IP addresses.
+
+**How it works**: CLIProxy reads `proxy_url` from each credential JSON file. When set it takes priority over the global `proxy-url` in `~/.cliproxy/config.yaml`. Supported schemes: `socks5://`, `socks5h://`, `http://`, `https://`, or `direct` (bypass any global proxy).
+
+Priority chain: per-credential `proxy_url` → global `proxy-url` in config → `HTTPS_PROXY` env var → direct.
+
+### Set via management API
+
+Persists to the credential file immediately; no restart needed.
+
+```bash
+source .env
+curl -X PATCH "http://localhost:8317/v0/management/auth-files/fields" \
+  -H "X-Management-Key: $CLIPROXY_MANAGEMENT_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"antigravity-account@gmail.com.json","proxy_url":"socks5://proxy1:1080"}'
+```
+
+Clear a proxy assignment by setting `proxy_url` to `""`.
+
+### Set by editing the credential file directly
+
+CLIProxy hot-reloads on file change (~30s):
+
+```bash
+# e.g. ~/.cli-proxy-api/claude-firetvstream@gmail.com.json
+{
+  "email": "firetvstream@gmail.com",
+  "type": "claude",
+  "proxy_url": "socks5://proxy2:1080",
+  ...
+}
+```
+
+### List current assignments
+
+```bash
+source .env
+curl -s "http://localhost:8317/v0/management/auth-files" \
+  -H "X-Management-Key: $CLIPROXY_MANAGEMENT_KEY" \
+  | python3 -c "
+import sys, json
+for f in json.load(sys.stdin).get('files', []):
+    proxy = f.get('proxy_url') or '(none)'
+    print(f['id'], '->', proxy)
+"
+```
+
+### Credential filenames
+
+| File | Provider |
+|------|----------|
+| `antigravity-{email}.json` | Google Antigravity (Gemini OAuth) |
+| `claude-{email}.json` | Anthropic Claude OAuth |
+| `codex-{email}-plus.json` | OpenAI Codex OAuth |
+| `gemini-{email}-{project}.json` | Gemini CLI OAuth |
+
+---
+
 ## Update Workflow
 
 Run this whenever CLIProxyAPI releases a new version or you want to sync new models:
@@ -318,6 +379,9 @@ docker compose up -d
 | File | Purpose |
 |------|---------|
 | `docker-compose.yml` | Full stack definition |
+| `services/translator/translator.py` | FastAPI proxy — Responses API translation + model prefix |
+| `services/translator/Dockerfile` | Builds the translator container |
+| `services/translator/gemini-model-map.json` | Dotted→dashed Gemini model alias map (auto-managed by sync-models) |
 | `Dockerfile.cliproxy` | CLIProxyAPI container image |
 | `litellm-config.yaml` | Model routing (auto-managed by sync-models) |
 | `.env` | Secrets (keys, passwords) — never commit |

@@ -38,8 +38,8 @@ All 9 services will start. Wait ~15 seconds after `docker compose up -d` for Lit
 ### Linting
 
 ```bash
-ruff check translator.py        # lint
-pyright translator.py            # type check
+ruff check services/translator/translator.py        # lint
+pyright services/translator/translator.py            # type check
 bash -n cliproxy-setup.sh        # shell syntax
 ```
 
@@ -54,6 +54,6 @@ Upstream 502 errors from CLIProxy are expected without OAuth tokens — the tran
 
 ### Rebuilding after code changes
 
-- `translator.py` changes: `docker compose build translator && docker compose up -d translator`
+- `services/translator/translator.py` or `services/translator/Dockerfile` changes: `docker compose build translator && docker compose up -d translator`
 - `litellm-config.yaml` changes: `docker compose restart litellm`
 - `Dockerfile.cliproxy` changes: `docker compose build cliproxy && docker compose up -d cliproxy`

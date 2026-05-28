@@ -50,7 +50,7 @@ External client (Cursor, curl, SDK)
                           └─► Moonshot (Kimi OAuth)
 ```
 
-**`translator.py`** is the real entry point — clients hit port 4000 which is the translator, not LiteLLM directly. LiteLLM is only accessible internally (and on port 4001 for its UI). The translator does three things:
+**`services/translator/translator.py`** is the real entry point — clients hit port 4000 which is the translator, not LiteLLM directly. LiteLLM is only accessible internally (and on port 4001 for its UI). The translator does three things:
 1. **Responses API → Chat Completions**: Cursor Agent mode sends `input` (not `messages`) using OpenAI Responses API format. The translator converts all item types: plain `{role,content}` dicts, `function_call`, `function_call_output`, and content types like `input_text`/`input_image`.
 2. **Tool format normalisation**: Cursor sends `{type, name, parameters}` (Responses API); LiteLLM needs `{type, function: {name, parameters}}` (Chat Completions).
 3. **Model prefix**: `/v1/models` responses are prefixed with `AI-Gateway:` so Cursor can distinguish gateway models from its built-ins. The prefix is stripped from incoming requests before forwarding.
@@ -67,8 +67,8 @@ External client (Cursor, curl, SDK)
 
 | File | Purpose |
 |------|---------|
-| `translator.py` | FastAPI proxy: Responses API translation + model prefix |
-| `Dockerfile.translator` | Builds the translator container |
+| `services/translator/translator.py` | FastAPI proxy: Responses API translation + model prefix |
+| `services/translator/Dockerfile` | Builds the translator container |
 | `litellm-config.yaml` | All model definitions (auto-managed by `sync-models`) |
 | `cliproxy-setup.sh` | Auth, sync, health, upgrade CLI |
 | `.env` | All secrets — gitignored, never commit |
