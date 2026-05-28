@@ -552,6 +552,25 @@ cmd_apply() {
   cmd_health
 }
 
+cmd_quota_summary() {
+  local api_key
+  api_key=$(get_api_key)
+  echo "Quota / usage summary from CLIProxyAPI:"
+  curl -sf -H "Authorization: Bearer $api_key" "http://localhost:$CLIPROXY_PORT/v1/models" \
+    | python3 -c "
+import sys, json, collections
+data = json.load(sys.stdin).get('data', [])
+by_provider = collections.Counter(m.get('owned_by', 'unknown') for m in data)
+print()
+print('  Provider           Models')
+print('  ──────────────────────────────')
+for provider, count in sorted(by_provider.items()):
+    print(f'  {provider:<20} {count}')
+print()
+print(f'  Total: {sum(by_provider.values())} models across {len(by_provider)} providers')
+" 2>/dev/null || echo "  CLIProxyAPI not reachable on port $CLIPROXY_PORT"
+}
+
 # ──────────────────────────────────────────────
 # Main dispatch
 # ──────────────────────────────────────────────
@@ -564,6 +583,7 @@ case "$cmd" in
   sync-models)     cmd_sync_models ;;
   health)          cmd_health ;;
   models)          cmd_models ;;
+  quota-summary)   cmd_quota_summary ;;
   apply)           cmd_apply ;;
 
   login-claude)
@@ -724,6 +744,7 @@ Operations:
   upgrade              Download newer binary + rebuild Docker image if available
   health               Show per-provider auth status and container state
   models               List models grouped by provider from CLIProxyAPI
+  quota-summary        Show model counts per provider (quick usage overview)
   test [model]         Test model end-to-end through LiteLLM
   test-direct [model]  Test model directly against CLIProxyAPI
   test-all             Test one model per provider; reports pass/fail/skip
