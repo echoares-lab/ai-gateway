@@ -1,0 +1,73 @@
+# Standalone dev stack — NOT an override of docker-compose.yml.
+# Run via dev-env.sh, which sets COMPOSE_PROJECT_NAME=aidev<slot> and port env vars.
+# Each slot gets its own Docker network (aidev<slot>_default) — no ai_default join.
+
+networks:
+  default: {}
+
+volumes:
+  dev_auth:    # seeded from ~/.cli-proxy-api at dev-env start; writes stay isolated
+  dev_pgdata:  # postgres data for litellm
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: litellm
+    volumes:
+      - dev_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  cliproxy:
+    build:
+      context: /home/dev/repos/CLIProxyAPI
+      dockerfile: Dockerfile
+    command: ["./CLIProxyAPI", "--config", "/config/config.yaml"]
+    restart: unless-stopped
+    volumes:
+      - ${CLIPROXY_DEV_CONFIG:-${HOME}/.cliproxy/config.yaml}:/config/config.yaml:ro
+      - dev_auth:/home/dev/.cli-proxy-api
+    environment:
+      MANAGEMENT_PASSWORD: dev-management-key
+    ports:
+      - "${DEV_CLIPROXY_PORT:-8327}:8317"
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cliproxy:
+        condition: service_started
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/litellm
+      CLIPROXY_API_KEY: ${CLIPROXY_API_KEY}
+      DISABLE_CACHE: "true"
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      - "${DEV_LITELLM_PORT:-4011}:4000"
+
+  translator:
+    build:
+      context: ./services/translator
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on: [litellm]
+    environment:
+      LITELLM_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+    ports:
+      - "${DEV_TRANSLATOR_PORT:-4010}:4000"
+    volumes:
+      - ./services/translator/gemini-model-map.json:/app/gemini-model-map.json:ro

@@ -1026,6 +1026,10 @@ def _claude_msg_to_oai(msg: dict) -> list[dict]:
 
 
 def _claude_req_to_oai(body: dict) -> dict:
+    model = body.get("model", "")
+    if "[" in model and model.endswith("]"):
+        model = model.split("[")[0]
+
     messages = []
 
     system = body.get("system", "")
@@ -1270,6 +1274,11 @@ async def claude_proxy(request: Request):
     except Exception as e:
         log.error("Claude response conversion error: %s", e)
         return Response(content=resp.content, status_code=resp.status_code)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 
 # ── Catch-all proxy (Cursor / generic OpenAI-compatible clients) ─────────────
