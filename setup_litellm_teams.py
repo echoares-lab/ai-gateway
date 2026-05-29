@@ -10,6 +10,7 @@ Requirements:
   - gh CLI (https://cli.github.com/) — logged in with repo read access
 """
 
+import json
 import os
 import re
 import subprocess
@@ -188,13 +189,33 @@ def _setup_codex_gateway_home(repo_dir: str):
 
     _write_codex_toml(config_path, global_kvs, project_trust)
     log(f"  codex: updated {config_path} (approval_policy=never, trusted {repo_dir})")
-    _ensure_bashrc_wrapper()
 
-_BASHRC_SENTINEL_START = "# >>> codex-gateway wrapper start <<<"
-_BASHRC_SENTINEL_END   = "# >>> codex-gateway wrapper end <<<"
+# --- Gemini trust setup ---
+
+def _setup_gemini_trust(repo_dir: str):
+    """Add repo_dir to ~/.gemini/trustedFolders.json (TRUST_FOLDER level)."""
+    trusted_path = os.path.expanduser("~/.gemini/trustedFolders.json")
+    trusted = {}
+    if os.path.exists(trusted_path):
+        try:
+            trusted = json.loads(open(trusted_path).read())
+        except Exception:
+            pass
+    trusted[repo_dir] = "TRUST_FOLDER"
+    with open(trusted_path, "w") as f:
+        json.dump(trusted, f, indent=2)
+        f.write("\n")
+    log(f"  gemini: trusted {repo_dir} in {trusted_path}")
+
+# --- ~/.bashrc gateway wrappers ---
+
+_BASHRC_SENTINEL_START = "# >>> ai-gateway wrappers start <<<"
+_BASHRC_SENTINEL_END   = "# >>> ai-gateway wrappers end <<<"
 _BASHRC_WRAPPER = """\
-# >>> codex-gateway wrapper start <<<
+# >>> ai-gateway wrappers start <<<
 # Managed by setup_litellm_teams.py — do not edit manually.
+
+# Codex: per-repo key from .env, CODEX_HOME → gateway config, yolo mode
 export CODEX_HOME=~/.codex-gateway
 codex() {
     local key dir="$PWD"
@@ -205,36 +226,58 @@ codex() {
         fi
         dir=$(dirname "$dir")
     done
-    if [[ -z "$key" ]]; then
-        echo "[codex-gateway] no OPENAI_API_KEY found in .env above $PWD" >&2
-    fi
+    [[ -z "$key" ]] && echo "[codex-gateway] no OPENAI_API_KEY in .env above $PWD" >&2
     CODEX_HOME=~/.codex-gateway OPENAI_API_KEY="$key" command codex -c "api_key=\\"$key\\"" "$@"
 }
-# >>> codex-gateway wrapper end <<<
+
+# Claude: per-repo key from .env, routes via gateway, yolo mode
+claude() {
+    local key dir="$PWD"
+    while [[ "$dir" != "/" ]]; do
+        if [[ -f "$dir/.env" ]]; then
+            key=$(grep '^ANTHROPIC_API_KEY=' "$dir/.env" | cut -d= -f2 | head -1)
+            [[ -n "$key" ]] && break
+        fi
+        dir=$(dirname "$dir")
+    done
+    [[ -z "$key" ]] && echo "[claude-gateway] no ANTHROPIC_API_KEY in .env above $PWD" >&2
+    ANTHROPIC_BASE_URL="http://localhost:4000" ANTHROPIC_API_KEY="$key" command claude --dangerously-skip-permissions "$@"
+}
+
+# Gemini: per-repo key from .env, routes via gateway, yolo mode
+gemini() {
+    local key dir="$PWD"
+    while [[ "$dir" != "/" ]]; do
+        if [[ -f "$dir/.env" ]]; then
+            key=$(grep '^GEMINI_API_KEY=' "$dir/.env" | cut -d= -f2 | head -1)
+            [[ -n "$key" ]] && break
+        fi
+        dir=$(dirname "$dir")
+    done
+    [[ -z "$key" ]] && echo "[gemini-gateway] no GEMINI_API_KEY in .env above $PWD" >&2
+    GOOGLE_GEMINI_BASE_URL="http://localhost:4000" GEMINI_API_KEY="$key" command gemini --yolo "$@"
+}
+# >>> ai-gateway wrappers end <<<
 """
 
 def _ensure_bashrc_wrapper():
-    """Write (or replace) the codex-gateway wrapper block in ~/.bashrc."""
+    """Write (or replace) the gateway wrapper block in ~/.bashrc."""
     bashrc = os.path.expanduser("~/.bashrc")
     content = open(bashrc).read() if os.path.exists(bashrc) else ""
 
-    start = content.find(_BASHRC_SENTINEL_START)
-    end   = content.find(_BASHRC_SENTINEL_END)
+    # Handle old single-sentinel block name as well as new name.
+    old_start = "# >>> codex-gateway wrapper start <<<"
+    old_end   = "# >>> codex-gateway wrapper end <<<"
+    for s, e in [(old_start, old_end), (_BASHRC_SENTINEL_START, _BASHRC_SENTINEL_END)]:
+        si, ei = content.find(s), content.find(e)
+        if si != -1 and ei != -1:
+            content = content[:si] + content[ei + len(e):]
+            break
 
-    if start != -1 and end != -1:
-        # Replace existing block.
-        content = content[:start] + _BASHRC_WRAPPER + content[end + len(_BASHRC_SENTINEL_END):]
-        # Strip the leftover newline that follows the end sentinel.
-        content = content.replace(_BASHRC_WRAPPER + "\n", _BASHRC_WRAPPER)
-    else:
-        # Append fresh block.
-        if not content.endswith("\n"):
-            content += "\n"
-        content += "\n" + _BASHRC_WRAPPER
-
+    content = content.rstrip("\n") + "\n\n" + _BASHRC_WRAPPER
     with open(bashrc, "w") as f:
         f.write(content)
-    log(f"  codex: updated ~/.bashrc wrapper (source ~/.bashrc to activate)")
+    log("  bashrc: updated gateway wrappers (source ~/.bashrc to activate)")
 
 
 # --- Main ---
@@ -336,6 +379,8 @@ def main():
                 _setup_codex_gateway_home(repo_dir)
                 # OPENAI_BASE_URL was the old codex routing var; CODEX_HOME replaces it.
                 stale_vars.append("OPENAI_BASE_URL")
+            elif client == "gemini":
+                _setup_gemini_trust(repo_dir)
 
         if env_vars:
             safe_update_env(env_path, env_vars, remove_vars=stale_vars)
@@ -346,6 +391,7 @@ def main():
 
         log(f"  Done: {repo}")
 
+    _ensure_bashrc_wrapper()
     log("\nAll repos processed.")
 
 if __name__ == "__main__":
