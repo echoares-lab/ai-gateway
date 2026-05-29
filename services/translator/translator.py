@@ -309,6 +309,10 @@ def _normalize_tools(tools: list) -> tuple[list, bool]:
     return out, changed
 
 
+def _normalize_model(name: str) -> str:
+    return name.replace(".", "-")
+
+
 def _strip_prefix(body: bytes) -> tuple[bytes, bool]:
     try:
         data = json.loads(body)
@@ -364,6 +368,12 @@ def _patch_body(path: str, body: bytes) -> tuple[bytes, bool]:
         if tools_changed:
             log.info("Normalised %d tools to Chat Completions format", len(data["tools"]))
             changed = True
+
+    raw_model = data.get("model", "")
+    if isinstance(raw_model, str) and "." in raw_model:
+        data["model"] = _normalize_model(raw_model)
+        log.info("Normalised model name %s → %s", raw_model, data["model"])
+        changed = True
 
     if changed:
         return json.dumps(data).encode(), True
@@ -699,7 +709,7 @@ def _responses_req_to_oai(body: dict) -> dict:
     elif isinstance(inp, list):
         messages.extend(_responses_input_to_messages(inp))
 
-    oai: dict = {"model": body.get("model", ""), "messages": messages}
+    oai: dict = {"model": _normalize_model(body.get("model", "")), "messages": messages}
 
     if "max_output_tokens" in body:
         oai["max_tokens"] = body["max_output_tokens"]
@@ -1026,7 +1036,7 @@ def _claude_msg_to_oai(msg: dict) -> list[dict]:
 
 
 def _claude_req_to_oai(body: dict) -> dict:
-    model = body.get("model", "")
+    model = _normalize_model(body.get("model", ""))
     if "[" in model and model.endswith("]"):
         model = model.split("[")[0]
 
@@ -1042,7 +1052,7 @@ def _claude_req_to_oai(body: dict) -> dict:
         messages.extend(_claude_msg_to_oai(msg))
 
     oai: dict = {
-        "model": body.get("model", ""),
+        "model": model,
         "messages": messages,
         "max_tokens": body.get("max_tokens", 4096),
     }

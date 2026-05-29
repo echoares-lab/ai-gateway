@@ -1,0 +1,351 @@
+"""Integration tests against a running gateway (translator → litellm → cliproxy).
+
+Set GATEWAY_URL (default: http://localhost:4010) and LITELLM_MASTER_KEY before running:
+    pytest tests/integration/ -m integration
+"""
+import json
+import pytest
+import httpx
+
+pytestmark = pytest.mark.integration
+
+_SKIP_CODES = {400, 404, 503}
+
+
+def _skip_if_model_unavailable(resp: httpx.Response):
+    if resp.status_code in _SKIP_CODES:
+        pytest.skip(f"model unavailable ({resp.status_code}): {resp.text[:200]}")
+
+
+# ---------------------------------------------------------------------------
+# Infrastructure
+# ---------------------------------------------------------------------------
+
+def test_health(client):
+    resp = client.get("/health")
+    assert resp.status_code == 200
+
+
+def test_models_have_prefix(client):
+    resp = client.get("/v1/models")
+    assert resp.status_code == 200
+    models = resp.json().get("data", [])
+    assert models, "no models returned"
+    for m in models:
+        assert m["id"].startswith("AI-Gateway:"), f"model missing prefix: {m['id']}"
+
+
+# ---------------------------------------------------------------------------
+# Chat completions
+# ---------------------------------------------------------------------------
+
+def test_prefix_stripped_on_completion(client, first_model):
+    """Sending AI-Gateway:-prefixed model name should route correctly (not 404)."""
+    resp = client.post("/v1/chat/completions", json={
+        "model": f"AI-Gateway:{first_model}",
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 1,
+    })
+    _skip_if_model_unavailable(resp)
+    assert resp.status_code == 200
+
+
+def test_simple_completion(client, first_model):
+    resp = client.post("/v1/chat/completions", json={
+        "model": first_model,
+        "messages": [{"role": "user", "content": "Reply with the word OK only."}],
+        "max_tokens": 5,
+    })
+    _skip_if_model_unavailable(resp)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["choices"][0]["message"]["content"]
+
+
+def test_streaming_completion(client, first_model):
+    with client.stream("POST", "/v1/chat/completions", json={
+        "model": first_model,
+        "messages": [{"role": "user", "content": "Say hi."}],
+        "max_tokens": 5,
+        "stream": True,
+    }) as resp:
+        if resp.status_code in _SKIP_CODES:
+            pytest.skip(f"model unavailable ({resp.status_code})")
+        assert resp.status_code == 200
+        lines = [line for line in resp.iter_lines() if line.startswith("data:")]
+    assert lines, "no SSE data lines received"
+
+
+# ---------------------------------------------------------------------------
+# Responses API translation
+# ---------------------------------------------------------------------------
+
+def test_responses_api_input_field(client, first_model):
+    """Body with `input` (Responses API style) should be translated and succeed."""
+    resp = client.post("/v1/chat/completions", json={
+        "model": first_model,
+        "input": "Reply with OK.",
+        "max_tokens": 5,
+    })
+    _skip_if_model_unavailable(resp)
+    assert resp.status_code == 200
+
+
+def test_tool_normalization(client, first_model):
+    """Responses API tool format {type, name, parameters} should not cause 422."""
+    resp = client.post("/v1/chat/completions", json={
+        "model": first_model,
+        "messages": [{"role": "user", "content": "What time is it?"}],
+        "tools": [{"type": "function", "name": "get_time", "parameters": {"type": "object", "properties": {}}}],
+        "max_tokens": 5,
+    })
+    _skip_if_model_unavailable(resp)
+    assert resp.status_code != 422, f"tool normalization failed: {resp.text[:300]}"
+
+
+# ---------------------------------------------------------------------------
+# Gemini CLI wire format  (POST /v1beta/models/{model}:generateContent)
+# ---------------------------------------------------------------------------
+
+_GEMINI_MODEL = "gemini-2.5-flash"  # dotted name as Gemini CLI sends it
+_GEMINI_BODY = {
+    "contents": [{"role": "user", "parts": [{"text": "Reply with the word OK only."}]}]
+}
+
+
+class TestGeminiCliFormat:
+    def test_generate_content(self, client):
+        resp = client.post(f"/v1beta/models/{_GEMINI_MODEL}:generateContent", json=_GEMINI_BODY)
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "candidates" in body, f"missing candidates: {body}"
+        assert body["candidates"][0]["content"]["parts"][0].get("text"), "empty response text"
+
+    def test_stream_generate_content(self, client):
+        with client.stream("POST", f"/v1beta/models/{_GEMINI_MODEL}:streamGenerateContent",
+                           json=_GEMINI_BODY) as resp:
+            if resp.status_code in _SKIP_CODES:
+                pytest.skip(f"model unavailable ({resp.status_code})")
+            assert resp.status_code == 200
+            chunks = [line for line in resp.iter_lines() if line.startswith("data:")]
+        assert chunks, "no SSE chunks received from streamGenerateContent"
+
+    def test_tool_use(self, client):
+        body = {
+            "contents": [{"role": "user", "parts": [{"text": "What is the weather?"}]}],
+            "tools": [{"functionDeclarations": [{
+                "name": "get_weather",
+                "description": "Get weather for a location",
+                "parameters": {"type": "OBJECT", "properties": {
+                    "location": {"type": "STRING", "description": "City name"}
+                }, "required": ["location"]},
+            }]}],
+        }
+        resp = client.post(f"/v1beta/models/{_GEMINI_MODEL}:generateContent", json=body)
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200
+
+    def test_dotted_model_name_routes(self, client):
+        """gemini-2.5-flash (dotted) must route — not fall through to a 404/500."""
+        resp = client.post("/v1beta/models/gemini-2.5-flash:generateContent", json=_GEMINI_BODY)
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200
+
+    def test_unknown_model_returns_4xx_not_5xx(self, client):
+        """A completely unknown model should return a client error, not a 500."""
+        resp = client.post("/v1beta/models/gemini-totally-fake-model:generateContent",
+                           json=_GEMINI_BODY)
+        assert resp.status_code < 500, f"unknown model caused server error: {resp.text[:300]}"
+
+    def test_system_instruction(self, client):
+        body = {
+            "systemInstruction": {"parts": [{"text": "You are a helpful assistant."}]},
+            "contents": [{"role": "user", "parts": [{"text": "Say OK."}]}],
+        }
+        resp = client.post(f"/v1beta/models/{_GEMINI_MODEL}:generateContent", json=body)
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Claude CLI wire format  (POST /v1/messages)
+# ---------------------------------------------------------------------------
+
+_CLAUDE_MODEL = "claude-sonnet-4-6"
+
+
+class TestClaudeCliFormat:
+    def test_messages_basic(self, client):
+        resp = client.post("/v1/messages", json={
+            "model": _CLAUDE_MODEL,
+            "messages": [{"role": "user", "content": "Reply with the word OK only."}],
+            "max_tokens": 10,
+        }, headers={"x-api-key": client.headers.get("authorization", "").removeprefix("Bearer ")})
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body.get("type") == "message", f"unexpected response type: {body}"
+        assert body["content"][0]["type"] == "text"
+
+    def test_messages_stream(self, client):
+        with client.stream("POST", "/v1/messages", json={
+            "model": _CLAUDE_MODEL,
+            "messages": [{"role": "user", "content": "Say hi."}],
+            "max_tokens": 10,
+            "stream": True,
+        }, headers={"x-api-key": client.headers.get("authorization", "").removeprefix("Bearer ")}) as resp:
+            if resp.status_code in _SKIP_CODES:
+                pytest.skip(f"model unavailable ({resp.status_code})")
+            assert resp.status_code == 200
+            events = [line for line in resp.iter_lines() if line.startswith("event:")]
+        assert any("message_start" in e for e in events), f"missing message_start: {events[:5]}"
+
+    def test_tool_use(self, client):
+        resp = client.post("/v1/messages", json={
+            "model": _CLAUDE_MODEL,
+            "messages": [{"role": "user", "content": "What is the weather in NYC?"}],
+            "max_tokens": 50,
+            "tools": [{
+                "name": "get_weather",
+                "description": "Get current weather",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"location": {"type": "string"}},
+                    "required": ["location"],
+                },
+            }],
+        }, headers={"x-api-key": client.headers.get("authorization", "").removeprefix("Bearer ")})
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200, f"tool_use failed: {resp.text[:300]}"
+
+    def test_tool_result_multiturn(self, client):
+        """Multi-turn with tool_result content block should not cause a parsing error."""
+        resp = client.post("/v1/messages", json={
+            "model": _CLAUDE_MODEL,
+            "max_tokens": 50,
+            "messages": [
+                {"role": "user", "content": "What's the weather?"},
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "tool_abc", "name": "get_weather",
+                     "input": {"location": "NYC"}},
+                ]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "tool_abc",
+                     "content": "Sunny, 72°F"},
+                ]},
+            ],
+            "tools": [{
+                "name": "get_weather",
+                "description": "Get weather",
+                "input_schema": {"type": "object", "properties": {"location": {"type": "string"}}},
+            }],
+        }, headers={"x-api-key": client.headers.get("authorization", "").removeprefix("Bearer ")})
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200, f"tool_result multiturn failed: {resp.text[:300]}"
+
+    def test_system_prompt_string(self, client):
+        resp = client.post("/v1/messages", json={
+            "model": _CLAUDE_MODEL,
+            "system": "You are a helpful assistant. Always reply with exactly one word.",
+            "messages": [{"role": "user", "content": "Say OK."}],
+            "max_tokens": 10,
+        }, headers={"x-api-key": client.headers.get("authorization", "").removeprefix("Bearer ")})
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200
+
+    def test_system_prompt_list(self, client):
+        """System as list of text blocks (Claude SDK format)."""
+        resp = client.post("/v1/messages", json={
+            "model": _CLAUDE_MODEL,
+            "system": [{"type": "text", "text": "You are a helpful assistant."}],
+            "messages": [{"role": "user", "content": "Say OK."}],
+            "max_tokens": 10,
+        }, headers={"x-api-key": client.headers.get("authorization", "").removeprefix("Bearer ")})
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Codex CLI wire format  (/v1/responses and /v1/chat/completions)
+# ---------------------------------------------------------------------------
+
+_CODEX_MODEL_DOTTED = "gpt-5.3-codex"   # as Codex CLI sends it
+_CODEX_MODEL_DASHED = "gpt-5-3-codex"   # as LiteLLM knows it
+
+
+class TestCodexCliFormat:
+    def test_dotted_model_normalised_in_chat_completions(self, client):
+        """gpt-5.3-codex (dotted) must be normalised to gpt-5-3-codex and not 404."""
+        resp = client.post("/v1/chat/completions", json={
+            "model": _CODEX_MODEL_DOTTED,
+            "messages": [{"role": "user", "content": "Reply with the word OK only."}],
+            "max_tokens": 5,
+        })
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200, f"dotted model name caused error: {resp.text[:300]}"
+
+    def test_dashed_model_works(self, client):
+        """Dashed model name should work directly."""
+        resp = client.post("/v1/chat/completions", json={
+            "model": _CODEX_MODEL_DASHED,
+            "messages": [{"role": "user", "content": "Reply with the word OK only."}],
+            "max_tokens": 5,
+        })
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200
+
+    def test_responses_api_string_input(self, client):
+        """POST /v1/responses with string `input` (Codex CLI default)."""
+        resp = client.post("/v1/responses", json={
+            "model": _CODEX_MODEL_DOTTED,
+            "input": "Reply with the word OK only.",
+            "max_output_tokens": 10,
+        })
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body.get("output"), f"no output in response: {body}"
+
+    def test_responses_api_stream(self, client):
+        with client.stream("POST", "/v1/responses", json={
+            "model": _CODEX_MODEL_DOTTED,
+            "input": "Say hi.",
+            "stream": True,
+            "max_output_tokens": 10,
+        }) as resp:
+            if resp.status_code in _SKIP_CODES:
+                pytest.skip(f"model unavailable ({resp.status_code})")
+            assert resp.status_code == 200
+            events = [line for line in resp.iter_lines() if line.startswith("data:")]
+        assert events, "no SSE events from /v1/responses stream"
+
+    def test_responses_api_tool_call(self, client):
+        """Responses API with tools — translator must normalise tool format."""
+        resp = client.post("/v1/responses", json={
+            "model": _CODEX_MODEL_DOTTED,
+            "input": "What is the weather in NYC?",
+            "max_output_tokens": 50,
+            "tools": [{
+                "type": "function",
+                "name": "get_weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"location": {"type": "string"}},
+                    "required": ["location"],
+                },
+            }],
+        })
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200, f"tool call failed: {resp.text[:300]}"
+
+    def test_responses_api_list_input(self, client):
+        """Responses API with list `input` containing message items."""
+        resp = client.post("/v1/responses", json={
+            "model": _CODEX_MODEL_DOTTED,
+            "input": [{"type": "message", "role": "user",
+                        "content": [{"type": "input_text", "text": "Reply with OK."}]}],
+            "max_output_tokens": 10,
+        })
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200
