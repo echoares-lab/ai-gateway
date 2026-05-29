@@ -188,6 +188,53 @@ def _setup_codex_gateway_home(repo_dir: str):
 
     _write_codex_toml(config_path, global_kvs, project_trust)
     log(f"  codex: updated {config_path} (approval_policy=never, trusted {repo_dir})")
+    _ensure_bashrc_wrapper()
+
+_BASHRC_SENTINEL_START = "# >>> codex-gateway wrapper start <<<"
+_BASHRC_SENTINEL_END   = "# >>> codex-gateway wrapper end <<<"
+_BASHRC_WRAPPER = """\
+# >>> codex-gateway wrapper start <<<
+# Managed by setup_litellm_teams.py — do not edit manually.
+export CODEX_HOME=~/.codex-gateway
+codex() {
+    local key dir="$PWD"
+    while [[ "$dir" != "/" ]]; do
+        if [[ -f "$dir/.env" ]]; then
+            key=$(grep '^OPENAI_API_KEY=' "$dir/.env" | cut -d= -f2 | head -1)
+            [[ -n "$key" ]] && break
+        fi
+        dir=$(dirname "$dir")
+    done
+    if [[ -z "$key" ]]; then
+        echo "[codex-gateway] no OPENAI_API_KEY found in .env above $PWD" >&2
+    fi
+    CODEX_HOME=~/.codex-gateway OPENAI_API_KEY="$key" command codex -c "api_key=\\"$key\\"" "$@"
+}
+# >>> codex-gateway wrapper end <<<
+"""
+
+def _ensure_bashrc_wrapper():
+    """Write (or replace) the codex-gateway wrapper block in ~/.bashrc."""
+    bashrc = os.path.expanduser("~/.bashrc")
+    content = open(bashrc).read() if os.path.exists(bashrc) else ""
+
+    start = content.find(_BASHRC_SENTINEL_START)
+    end   = content.find(_BASHRC_SENTINEL_END)
+
+    if start != -1 and end != -1:
+        # Replace existing block.
+        content = content[:start] + _BASHRC_WRAPPER + content[end + len(_BASHRC_SENTINEL_END):]
+        # Strip the leftover newline that follows the end sentinel.
+        content = content.replace(_BASHRC_WRAPPER + "\n", _BASHRC_WRAPPER)
+    else:
+        # Append fresh block.
+        if not content.endswith("\n"):
+            content += "\n"
+        content += "\n" + _BASHRC_WRAPPER
+
+    with open(bashrc, "w") as f:
+        f.write(content)
+    log(f"  codex: updated ~/.bashrc wrapper (source ~/.bashrc to activate)")
 
 
 # --- Main ---
