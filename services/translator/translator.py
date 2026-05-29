@@ -15,12 +15,14 @@ Auth normalisation:
   Claude CLI  x-api-key: sk-...      → Authorization: Bearer sk-...
 """
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import time
 import uuid
 import httpx
+import redis.asyncio as aioredis
 from fastapi import FastAPI, Request
 from fastapi.responses import Response, StreamingResponse
 
@@ -32,11 +34,14 @@ LITELLM = os.environ.get("LITELLM_URL", "http://litellm:4000")
 MODEL_PREFIX = "AI-Gateway:"
 
 _client: httpx.AsyncClient | None = None
+CACHE_ENABLED = os.environ.get("CACHE_ENABLED", "true").lower() not in ("0", "false", "no")
+CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "60"))
+_redis: aioredis.Redis | None = None
 
 
 @app.on_event("startup")
 async def _startup():
-    global _client
+    global _client, _redis
     _client = httpx.AsyncClient(
         timeout=300,
         limits=httpx.Limits(
@@ -44,12 +49,63 @@ async def _startup():
             max_connections=int(os.environ.get("HTTPX_MAX_CONNECTIONS", "100")),
         ),
     )
+    redis_url = os.environ.get("REDIS_URL", "")
+    if CACHE_ENABLED and redis_url:
+        try:
+            _redis = aioredis.from_url(redis_url, encoding="utf-8", decode_responses=True)
+            await _redis.ping()
+            log.info("Redis cache connected: %s", redis_url.split("@")[-1])
+        except Exception as exc:
+            log.warning("Redis cache unavailable (%s) — caching disabled", exc)
+            _redis = None
 
 
 @app.on_event("shutdown")
 async def _shutdown():
     if _client is not None:
         await _client.aclose()
+    if _redis is not None:
+        await _redis.aclose()
+
+
+def _cache_key(model: str, messages: list, tools: list | None = None) -> str | None:
+    if not CACHE_ENABLED or _redis is None:
+        return None
+    key_data: dict = {"m": model, "msgs": messages}
+    if tools:
+        key_data["tools"] = tools
+    digest = hashlib.sha256(
+        json.dumps(key_data, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return f"tx:{digest}"
+
+
+async def _cache_get(key: str) -> list[str] | None:
+    try:
+        raw = await _redis.get(key)
+        if raw is not None:
+            return json.loads(raw)
+    except Exception as exc:
+        log.debug("cache get error: %s", exc)
+    return None
+
+
+async def _cache_set(key: str, lines: list[str], ttl: int = CACHE_TTL) -> None:
+    try:
+        await _redis.setex(key, ttl, json.dumps(lines))
+    except Exception as exc:
+        log.debug("cache set error: %s", exc)
+
+
+async def _aiter_list(lst: list[str]):
+    for item in lst:
+        yield item
+
+
+async def _tee_lines(aiter, buf: list[str]):
+    async for line in aiter:
+        buf.append(line)
+        yield line
 
 
 @app.middleware("http")
@@ -575,16 +631,39 @@ async def gemini_proxy(model_action: str, request: Request):
         "content-length": str(len(oai_bytes)),
     }
 
+    ck = _cache_key(oai_body.get("model", ""), oai_body.get("messages", []),
+                    oai_body.get("tools"))
     log.info("Gemini %s → model=%s tools=%d stream=%s",
              action, oai_body["model"], len(oai_body.get("tools", [])), streaming)
 
     if streaming:
         async def generate():
+            if ck:
+                cached = await _cache_get(ck)
+                if cached is not None:
+                    log.info("cache hit (gemini stream) key=%s", ck[:16])
+                    async for chunk in _gemini_stream(_aiter_list(cached)):
+                        yield chunk
+                    return
+            buf: list[str] = []
             async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
                                       headers=headers, content=oai_bytes) as resp:
-                async for chunk in _gemini_stream(resp.aiter_lines()):
+                async for chunk in _gemini_stream(_tee_lines(resp.aiter_lines(), buf)):
                     yield chunk
+            if ck and buf:
+                await _cache_set(ck, buf)
         return StreamingResponse(generate(), media_type="text/event-stream")
+
+    if ck:
+        cached_json = await _cache_get(ck + ":json")
+        if cached_json is not None:
+            log.info("cache hit (gemini) key=%s", ck[:16])
+            try:
+                return Response(content=json.dumps(
+                    _oai_to_gemini_resp(json.loads(cached_json[0]), model)
+                ).encode(), status_code=200, headers={"content-type": "application/json"})
+            except Exception:
+                pass
 
     resp = await _post_with_retry(f"{LITELLM}/v1/chat/completions", headers, oai_bytes)
 
@@ -594,7 +673,10 @@ async def gemini_proxy(model_action: str, request: Request):
                         headers={"content-type": "application/json"})
 
     try:
-        gemini_resp = _oai_to_gemini_resp(resp.json(), model)
+        resp_json = resp.json()
+        if ck:
+            await _cache_set(ck + ":json", [json.dumps(resp_json)])
+        gemini_resp = _oai_to_gemini_resp(resp_json, model)
         return Response(content=json.dumps(gemini_resp).encode(), status_code=200,
                         headers={"content-type": "application/json"})
     except Exception as e:
@@ -829,16 +911,39 @@ async def responses_proxy(request: Request):
     headers["content-type"] = "application/json"
     headers["content-length"] = str(len(oai_bytes))
 
+    ck = _cache_key(oai_body.get("model", ""), oai_body.get("messages", []),
+                    oai_body.get("tools"))
     log.info("Codex Responses API → model=%s tools=%d stream=%s",
              oai_body.get("model"), len(oai_body.get("tools", [])), streaming)
 
     if streaming:
         async def generate():
+            if ck:
+                cached = await _cache_get(ck)
+                if cached is not None:
+                    log.info("cache hit (responses stream) key=%s", ck[:16])
+                    async for event in _oai_to_responses_stream(_aiter_list(cached)):
+                        yield event
+                    return
+            buf: list[str] = []
             async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
                                       headers=headers, content=oai_bytes) as resp:
-                async for event in _oai_to_responses_stream(resp.aiter_lines()):
+                async for event in _oai_to_responses_stream(_tee_lines(resp.aiter_lines(), buf)):
                     yield event
+            if ck and buf:
+                await _cache_set(ck, buf)
         return StreamingResponse(generate(), media_type="text/event-stream")
+
+    if ck:
+        cached_json = await _cache_get(ck + ":json")
+        if cached_json is not None:
+            log.info("cache hit (responses) key=%s", ck[:16])
+            try:
+                return Response(content=json.dumps(
+                    _oai_to_responses_resp(json.loads(cached_json[0]))
+                ).encode(), status_code=200, headers={"content-type": "application/json"})
+            except Exception:
+                pass
 
     resp = await _post_with_retry(f"{LITELLM}/v1/chat/completions", headers, oai_bytes)
 
@@ -848,7 +953,10 @@ async def responses_proxy(request: Request):
                         headers={"content-type": "application/json"})
 
     try:
-        responses_resp = _oai_to_responses_resp(resp.json())
+        resp_json = resp.json()
+        if ck:
+            await _cache_set(ck + ":json", [json.dumps(resp_json)])
+        responses_resp = _oai_to_responses_resp(resp_json)
         return Response(content=json.dumps(responses_resp).encode(), status_code=200,
                         headers={"content-type": "application/json"})
     except Exception as e:
@@ -1112,16 +1220,38 @@ async def claude_proxy(request: Request):
     }
 
     model = oai_body.get("model", "")
+    ck = _cache_key(model, oai_body.get("messages", []), oai_body.get("tools"))
     log.info("Claude Messages API → model=%s tools=%d stream=%s",
              model, len(oai_body.get("tools", [])), streaming)
 
     if streaming:
         async def generate():
+            if ck:
+                cached = await _cache_get(ck)
+                if cached is not None:
+                    log.info("cache hit (claude stream) key=%s", ck[:16])
+                    async for event in _oai_to_claude_stream(_aiter_list(cached), model):
+                        yield event
+                    return
+            buf: list[str] = []
             async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
                                       headers=headers, content=oai_bytes) as resp:
-                async for event in _oai_to_claude_stream(resp.aiter_lines(), model):
+                async for event in _oai_to_claude_stream(_tee_lines(resp.aiter_lines(), buf), model):
                     yield event
+            if ck and buf:
+                await _cache_set(ck, buf)
         return StreamingResponse(generate(), media_type="text/event-stream")
+
+    if ck:
+        cached_json = await _cache_get(ck + ":json")
+        if cached_json is not None:
+            log.info("cache hit (claude) key=%s", ck[:16])
+            try:
+                return Response(content=json.dumps(
+                    _oai_to_claude_resp(json.loads(cached_json[0]))
+                ).encode(), status_code=200, headers={"content-type": "application/json"})
+            except Exception:
+                pass
 
     resp = await _post_with_retry(f"{LITELLM}/v1/chat/completions", headers, oai_bytes)
 
@@ -1131,7 +1261,10 @@ async def claude_proxy(request: Request):
                         headers={"content-type": "application/json"})
 
     try:
-        claude_resp = _oai_to_claude_resp(resp.json())
+        resp_json = resp.json()
+        if ck:
+            await _cache_set(ck + ":json", [json.dumps(resp_json)])
+        claude_resp = _oai_to_claude_resp(resp_json)
         return Response(content=json.dumps(claude_resp).encode(), status_code=200,
                         headers={"content-type": "application/json"})
     except Exception as e:
@@ -1166,17 +1299,46 @@ async def proxy(path: str, request: Request):
     url = f"{LITELLM}/{path}"
     params = dict(request.query_params)
 
+    # Cache only chat completion POST requests
+    ck = None
+    is_chat = path.rstrip("/") in ("v1/chat/completions", "chat/completions")
+    if is_chat and request.method == "POST":
+        try:
+            bd = json.loads(body)
+            ck = _cache_key(bd.get("model", ""), bd.get("messages", []), bd.get("tools"))
+        except Exception:
+            pass
+
     if is_stream:
         async def generate():
+            if ck:
+                cached = await _cache_get(ck)
+                if cached is not None:
+                    log.info("cache hit (proxy stream) key=%s", ck[:16])
+                    for line in cached:
+                        yield (line + "\n").encode()
+                    return
+            buf: list[str] = []
             try:
                 async with _client.stream(
                     request.method, url, headers=headers, content=body, params=params
                 ) as resp:
                     async for chunk in resp.aiter_bytes():
+                        if ck:
+                            buf.append(chunk.decode(errors="replace"))
                         yield chunk
             except httpx.HTTPError as exc:
                 log.error("Proxy stream connection error: %s", exc)
+            if ck and buf:
+                await _cache_set(ck, buf)
         return StreamingResponse(generate(), media_type="text/event-stream")
+
+    if ck:
+        cached_json = await _cache_get(ck + ":json")
+        if cached_json is not None:
+            log.info("cache hit (proxy) key=%s", ck[:16])
+            return Response(content=cached_json[0].encode(), status_code=200,
+                            headers={"content-type": "application/json"})
 
     resp = await _client.request(
         request.method, url, headers=headers, content=body, params=params
@@ -1185,6 +1347,9 @@ async def proxy(path: str, request: Request):
     if resp.status_code >= 400:
         log.warning("Upstream %d for %s — raw: %s", resp.status_code, path,
                     raw[:600].decode(errors="replace"))
+
+    if ck and resp.status_code == 200 and is_chat:
+        await _cache_set(ck + ":json", [resp.text])
 
     resp_body = resp.content
     resp_headers = dict(resp.headers)
