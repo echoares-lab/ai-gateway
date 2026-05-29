@@ -51,6 +51,67 @@ get_api_key() {
   grep -A2 'api-keys:' "$CLIPROXY_CONFIG" 2>/dev/null | grep '^\s*-' | sed 's/.*"\(.*\)".*/\1/' | head -1
 }
 
+get_mgmt_key() {
+  # Try env var first, then .env file, then config.yaml management-key field
+  if [ -n "${CLIPROXY_MANAGEMENT_KEY:-}" ]; then
+    echo "$CLIPROXY_MANAGEMENT_KEY"
+    return
+  fi
+  local from_env
+  from_env=$(grep '^CLIPROXY_MANAGEMENT_KEY=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2)
+  if [ -n "$from_env" ]; then
+    echo "$from_env"
+    return
+  fi
+  grep 'management-key:' "$CLIPROXY_CONFIG" 2>/dev/null | sed 's/.*management-key:\s*//' | tr -d '"' | head -1
+}
+
+cmd_quota_summary() {
+  local mgmt_key
+  mgmt_key=$(get_mgmt_key)
+  if [ -z "$mgmt_key" ]; then
+    echo "ERROR: management key not found. Set CLIPROXY_MANAGEMENT_KEY in .env or ~/.cliproxy/config.yaml"
+    exit 1
+  fi
+
+  local raw
+  raw=$(curl -sf "http://localhost:$CLIPROXY_PORT/v0/management/auth-files" \
+    -H "X-Management-Key: $mgmt_key" 2>/dev/null) || {
+    echo "ERROR: CLIProxy management API not reachable on port $CLIPROXY_PORT"
+    exit 1
+  }
+
+  echo "=== Per-credential quota summary ==="
+  CLIPROXY_QUOTA_RAW="$raw" python3 - <<'PYEOF'
+import os, json
+
+data = json.loads(os.environ["CLIPROXY_QUOTA_RAW"])
+files = data.get("files", [])
+if not files:
+    print("  (no credentials found)")
+    sys.exit(0)
+
+# Group by provider
+by_provider = {}
+for f in files:
+    p = f.get("provider", "?")
+    by_provider.setdefault(p, []).append(f)
+
+for provider, creds in sorted(by_provider.items()):
+    print(f"\n  [{provider}]")
+    for c in creds:
+        email      = c.get("email", c.get("account", "?"))
+        disabled   = c.get("disabled", False)
+        last_ref   = (c.get("last_refresh") or "-")[:19]
+        recent     = c.get("recent_requests", [])
+        success    = sum(r.get("success", 0) for r in recent)
+        failed     = sum(r.get("failed", 0) for r in recent)
+        status     = "DISABLED" if disabled else "active"
+        print(f"    {email:<45}  {status:<8}  last_refresh={last_ref}  "
+              f"recent: ok={success} err={failed}")
+PYEOF
+}
+
 require_bin() {
   if [ ! -x "$CLIPROXY_BIN" ]; then
     echo "CLIProxyAPI binary not found at $CLIPROXY_BIN"
@@ -744,7 +805,7 @@ Operations:
   upgrade              Download newer binary + rebuild Docker image if available
   health               Show per-provider auth status and container state
   models               List models grouped by provider from CLIProxyAPI
-  quota-summary        Show model counts per provider (quick usage overview)
+  quota-summary        Per-credential request counts and last-refresh timestamps
   test [model]         Test model end-to-end through LiteLLM
   test-direct [model]  Test model directly against CLIProxyAPI
   test-all             Test one model per provider; reports pass/fail/skip
