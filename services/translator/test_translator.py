@@ -249,6 +249,34 @@ async def test_post_with_retry_success_on_first_attempt():
     assert mock_client.post.call_count == 1
 
 
+class TestGeminiReqToOai(unittest.TestCase):
+    """_gemini_req_to_oai model name normalisation."""
+
+    def _call(self, model, body=None, gemini_map=None):
+        body = body or {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}
+        gmap = gemini_map or {}
+        with patch.object(t, "_get_gemini_map", return_value=gmap):
+            return t._gemini_req_to_oai(model, body)
+
+    def test_customtools_suffix_stripped(self):
+        oai = self._call("gemini-3.1-pro-preview-customtools",
+                         gemini_map={"gemini-3.1-pro-preview": "gemini-3-1-pro-preview"})
+        assert oai["model"] == "gemini-3-1-pro-preview"
+
+    def test_base_model_unchanged_when_no_suffix(self):
+        oai = self._call("gemini-3.1-pro-preview",
+                         gemini_map={"gemini-3.1-pro-preview": "gemini-3-1-pro-preview"})
+        assert oai["model"] == "gemini-3-1-pro-preview"
+
+    def test_unknown_model_passthrough(self):
+        oai = self._call("some-unknown-model")
+        assert oai["model"] == "some-unknown-model"
+
+    def test_customtools_on_unknown_model_stripped_to_base(self):
+        oai = self._call("some-model-customtools")
+        assert oai["model"] == "some-model"
+
+
 @pytest.mark.asyncio
 async def test_post_with_retry_retries_on_502():
     ok_resp = MagicMock()

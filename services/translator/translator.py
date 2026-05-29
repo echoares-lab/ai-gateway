@@ -478,7 +478,10 @@ def _gemini_req_to_oai(model: str, body: dict) -> dict:
         else:
             messages.append({"role": role, "content": "".join(texts)})
 
-    oai = {"model": _get_gemini_map().get(model, model), "messages": messages}
+    # Google exposes variants like gemini-3.1-pro-preview-customtools for tool-aware routing;
+    # our CLIProxy backend handles tools with the base model so we strip known suffixes.
+    _base_model = model.removesuffix("-customtools")
+    oai = {"model": _get_gemini_map().get(_base_model, _base_model), "messages": messages}
 
     gc = body.get("generationConfig", {})
     if "maxOutputTokens" in gc:
