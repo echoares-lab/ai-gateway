@@ -44,17 +44,27 @@ LITELLM_MASTER_KEY = _load_master_key()
 
 CLIENTS = ["codex", "gemini", "claude", "cursor", "antigravity"]
 
+# Codex CLI (Rust binary) ignores OPENAI_BASE_URL.  It reads OPENAI_API_KEY
+# from the environment, but only routes via HTTP Responses API when it has no
+# stored ChatGPT tokens.  We isolate it with a dedicated CODEX_HOME so the
+# gateway config never collides with the user's personal ChatGPT OAuth session.
+CODEX_GATEWAY_HOME = os.path.expanduser("~/.codex-gateway")
+
 # Maps each client to the env vars its CLI actually reads.
 CLIENT_CONFIG = {
     "claude": {
-        "base_var": "ANTHROPIC_BASE_URL",   # Claude CLI: ANTHROPIC_BASE_URL
+        "base_var": "ANTHROPIC_BASE_URL",    # Claude CLI: ANTHROPIC_BASE_URL
         "key_var":  "ANTHROPIC_API_KEY",
-        "base_path": "",                     # Claude CLI appends /v1/messages itself
+        "base_path": "",                      # Claude CLI appends /v1/messages itself
     },
     "codex": {
-        "base_var": "OPENAI_BASE_URL",       # Codex CLI uses OpenAI env vars
-        "key_var":  "OPENAI_API_KEY",
-        "base_path": "/v1",
+        # CODEX_HOME isolates the gateway config from the user's default ~/.codex.
+        # OPENAI_API_KEY triggers HTTP Responses API mode (no ChatGPT tokens stored
+        # in CODEX_HOME, so Codex falls back to API key auth).
+        "base_var":   "CODEX_HOME",
+        "base_value": CODEX_GATEWAY_HOME,     # static path, not a URL
+        "key_var":    "OPENAI_API_KEY",
+        "base_path":  "/v1",                  # used for openai_base_url in config.toml
     },
     "gemini": {
         "base_var": "GOOGLE_GEMINI_BASE_URL", # Gemini CLI reads GOOGLE_GEMINI_BASE_URL
@@ -108,6 +118,34 @@ def ensure_gitignore(repo_dir):
         if ".env" not in content:
             open(path, "a").write("\n.env\n")
             log("Added .env to existing .gitignore.")
+
+# --- Codex gateway setup ---
+
+def _setup_codex_gateway_home(api_key: str):
+    """
+    Create ~/.codex-gateway/ with a config.toml that points openai_base_url at
+    our gateway.  No auth.json is written — the absence of stored ChatGPT tokens
+    causes Codex to fall back to OPENAI_API_KEY env-var API-key mode.
+
+    Sourcing the repo .env before running Codex:
+        source .env && codex exec "..."
+    routes all inference through the gateway.  The user's default ~/.codex
+    (ChatGPT OAuth) is untouched and still works when .env is not sourced.
+    """
+    os.makedirs(CODEX_GATEWAY_HOME, exist_ok=True)
+
+    config_path = os.path.join(CODEX_GATEWAY_HOME, "config.toml")
+    openai_base_url = f"{GATEWAY_API_URL}/v1"
+
+    # Read existing config and replace/add openai_base_url.
+    lines = open(config_path).readlines() if os.path.exists(config_path) else []
+    kept = [l for l in lines if not l.strip().startswith("openai_base_url")]
+    kept.append(f'openai_base_url = "{openai_base_url}"\n')
+    with open(config_path, "w") as f:
+        f.writelines(kept)
+
+    log(f"  codex: wrote {config_path} (openai_base_url={openai_base_url})")
+
 
 # --- Main ---
 
@@ -190,8 +228,13 @@ def main():
                 continue
 
             cfg = CLIENT_CONFIG[client]
-            env_vars.append((cfg["base_var"], f"{GATEWAY_API_URL}{cfg['base_path']}"))
+            base_value = cfg.get("base_value", f"{GATEWAY_API_URL}{cfg['base_path']}")
+            env_vars.append((cfg["base_var"], base_value))
             env_vars.append((cfg["key_var"], api_key))
+
+            if client == "codex":
+                _setup_codex_gateway_home(api_key)
+
             log(f"  {client}: key created")
 
         if env_vars:
