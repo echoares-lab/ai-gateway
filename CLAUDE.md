@@ -2,6 +2,38 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Development Workflow (REQUIRED)
+
+**Always work in a git worktree + dev stack — never edit the stable stack on port 4000 directly.**
+
+```bash
+# 1. Create a feature worktree (pick any free slot; slot 0 is the stable stack)
+git worktree add ../ai-gateway-<feature> -b feat/<feature>
+ln -s /home/dev/repos/ai-gateway/.env /home/dev/repos/ai-gateway-<feature>/.env
+cd /home/dev/repos/ai-gateway-<feature>
+
+# 2. Start an isolated dev stack in a free slot (use `./dev-env.sh list` to find one)
+./dev-env.sh start 1          # or slot 2, 3, …
+
+# 3. Edit code, then rebuild fast
+./dev-env.sh rebuild 1        # after translator.py changes
+# docker compose restart litellm  ← for litellm-config.yaml changes (from worktree dir)
+
+# 4. Run unit tests (no container restart needed)
+docker exec aidev1-translator-1 pytest test_translator.py -v
+
+# 5. Run integration tests against the slot
+./dev-env.sh test 1
+
+# 6. When all tests pass, commit in the worktree and merge/PR to main
+git add -p && git commit -m "..."
+# Then from the main repo: git merge feat/<feature> (or open a PR)
+
+# 7. Tear down and remove worktree
+./dev-env.sh stop 1
+cd /home/dev/repos/ai-gateway && git worktree remove ../ai-gateway-<feature>
+```
+
 ## Common Commands
 
 ```bash
@@ -100,6 +132,54 @@ ln -s /home/dev/repos/ai-gateway/.env /home/dev/repos/ai-gateway-<feature>/.env
 ```
 
 Run `docker compose` from within the worktree directory when testing changes there. The compose project name is `ai` (set in `docker-compose.yml`) — running from two worktrees simultaneously will conflict on container names.
+
+## Dev Environment (Isolated Dev Stacks)
+
+`dev-env.sh` manages isolated 3-container dev stacks (cliproxy from fork + litellm + translator) so multiple agents can develop and test features without touching the stable gateway on port 4000.
+
+Each **slot N** maps to dedicated ports (slot 0 = stable, reserved):
+| Service | Stable | Slot 1 | Slot 2 |
+|---|---|---|---|
+| translator | :4000 | :4010 | :4020 |
+| litellm UI | :4001 | :4011 | :4021 |
+| cliproxy | :8317 | :8327 | :8337 |
+
+```bash
+# One-time: create a feature worktree
+git worktree add ../ai-gateway-feat-X -b feat/X
+ln -s /home/dev/repos/ai-gateway/.env /home/dev/repos/ai-gateway-feat-X/.env
+
+# From inside the worktree (or repo root for slot testing):
+./dev-env.sh start 1          # build & start — translator:4010, litellm:4011, cliproxy:8327
+
+# After editing translator.py:
+./dev-env.sh rebuild 1        # rebuilds translator only (fast)
+
+# After editing CLIProxyAPI fork:
+cd /home/dev/repos/CLIProxyAPI && git pull
+./dev-env.sh rebuild-cliproxy 1
+
+# Run integration tests against dev slot:
+./dev-env.sh test 1
+
+# Tail all dev logs:
+./dev-env.sh logs 1
+
+# Show all running dev containers across slots:
+./dev-env.sh list
+
+# Tear down (removes auth volume):
+./dev-env.sh stop 1
+
+git worktree remove ../ai-gateway-feat-X
+```
+
+**Dev stack details:**
+- CLIProxy is built from `/home/dev/repos/CLIProxyAPI` (`dev` branch) so our patches are included
+- OAuth tokens are seeded into an isolated Docker volume from `~/.cli-proxy-api/` at `start`; writes never touch host auth files
+- LiteLLM uses SQLite (disposable, no Postgres) and `DISABLE_CACHE=true`
+- If tokens expire mid-session, `./dev-env.sh stop 1 && ./dev-env.sh start 1` re-seeds them
+- Multiple agents can run slots 1, 2, 3… simultaneously — fully isolated networks
 
 ## Cursor Integration
 
