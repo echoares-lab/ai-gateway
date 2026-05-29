@@ -11,6 +11,7 @@ Requirements:
 """
 
 import os
+import re
 import subprocess
 import sys
 
@@ -99,14 +100,25 @@ def run_command(command):
         warn(f"Command failed: {command}\n{e.stderr}")
         return None
 
-def safe_update_env(env_path, variables):
-    """Replace named vars in env_path (or create it) with new values."""
+def safe_update_env(env_path, variables, remove_vars=()):
+    """Replace named vars in env_path (or create it) with new values.
+    vars in remove_vars are stripped without replacement (stale key cleanup)."""
     lines = open(env_path).readlines() if os.path.exists(env_path) else []
-    var_names = {var for var, _ in variables}
+    var_names = {var for var, _ in variables} | set(remove_vars)
     kept = [l for l in lines if l.split("=", 1)[0].strip() not in var_names]
     kept += [f"{var}={value}\n" for var, value in variables]
     with open(env_path, "w") as f:
         f.writelines(kept)
+
+def _read_env_var(env_path, var_name):
+    """Read a single var value from an env file, or None if not found."""
+    if not os.path.exists(env_path):
+        return None
+    for line in open(env_path):
+        line = line.strip()
+        if line.startswith(f"{var_name}="):
+            return line.split("=", 1)[1]
+    return None
 
 def ensure_gitignore(repo_dir):
     path = os.path.join(repo_dir, ".gitignore")
@@ -121,30 +133,61 @@ def ensure_gitignore(repo_dir):
 
 # --- Codex gateway setup ---
 
-def _setup_codex_gateway_home(api_key: str):
-    """
-    Create ~/.codex-gateway/ with a config.toml that points openai_base_url at
-    our gateway.  No auth.json is written — the absence of stored ChatGPT tokens
-    causes Codex to fall back to OPENAI_API_KEY env-var API-key mode.
+def _read_codex_toml(config_path):
+    """Parse codex config.toml into (global_kvs dict, project_trust dict)."""
+    global_kvs, project_trust, current_project = {}, {}, None
+    if not os.path.exists(config_path):
+        return global_kvs, project_trust
+    for line in open(config_path):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        m = re.match(r'\[projects\."(.+?)"\]', stripped)
+        if m:
+            current_project = m.group(1)
+            continue
+        if stripped.startswith("["):
+            current_project = None
+            continue
+        if "=" in stripped:
+            k, _, v = stripped.partition("=")
+            k, v = k.strip(), v.strip().strip('"')
+            if current_project is not None:
+                if k == "trust_level":
+                    project_trust[current_project] = v
+            else:
+                global_kvs[k] = v
+    return global_kvs, project_trust
 
-    Sourcing the repo .env before running Codex:
-        source .env && codex exec "..."
-    routes all inference through the gateway.  The user's default ~/.codex
-    (ChatGPT OAuth) is untouched and still works when .env is not sourced.
+def _write_codex_toml(config_path, global_kvs, project_trust):
+    """Write codex config.toml from (global_kvs, project_trust) dicts."""
+    lines = [f'{k} = "{v}"\n' for k, v in global_kvs.items()]
+    for path, level in sorted(project_trust.items()):
+        lines += [f'\n[projects."{path}"]\n', f'trust_level = "{level}"\n']
+    with open(config_path, "w") as f:
+        f.writelines(lines)
+
+def _setup_codex_gateway_home(repo_dir: str):
+    """
+    Create/update ~/.codex-gateway/config.toml with:
+      - openai_base_url pointing at our gateway
+      - approval_policy = "never"  (yolo / full-auto mode)
+      - [projects."<repo_dir>"] trust_level = "trusted"  (per-repo trust)
+
+    No auth.json is written — the absence of stored ChatGPT tokens causes
+    Codex to fall back to OPENAI_API_KEY env-var API-key mode.
+    User's default ~/.codex (ChatGPT OAuth) is untouched.
     """
     os.makedirs(CODEX_GATEWAY_HOME, exist_ok=True)
-
     config_path = os.path.join(CODEX_GATEWAY_HOME, "config.toml")
-    openai_base_url = f"{GATEWAY_API_URL}/v1"
 
-    # Read existing config and replace/add openai_base_url.
-    lines = open(config_path).readlines() if os.path.exists(config_path) else []
-    kept = [l for l in lines if not l.strip().startswith("openai_base_url")]
-    kept.append(f'openai_base_url = "{openai_base_url}"\n')
-    with open(config_path, "w") as f:
-        f.writelines(kept)
+    global_kvs, project_trust = _read_codex_toml(config_path)
+    global_kvs["openai_base_url"] = f"{GATEWAY_API_URL}/v1"
+    global_kvs["approval_policy"] = "never"
+    project_trust[repo_dir] = "trusted"
 
-    log(f"  codex: wrote {config_path} (openai_base_url={openai_base_url})")
+    _write_codex_toml(config_path, global_kvs, project_trust)
+    log(f"  codex: updated {config_path} (approval_policy=never, trusted {repo_dir})")
 
 
 # --- Main ---
@@ -205,9 +248,12 @@ def main():
                 continue
 
         env_vars = []
+        stale_vars = []
+        env_path = os.path.join(repo_dir, ".env")
 
         for client in CLIENTS:
             alias = f"{repo}-{client}"
+            cfg = CLIENT_CONFIG[client]
             try:
                 resp = requests.post(
                     f"{LITELLM_ADMIN_URL}/key/generate",
@@ -216,31 +262,39 @@ def main():
                     timeout=10,
                 )
                 if resp.status_code == 400 and "already exists" in resp.text:
-                    log(f"  {client}: key already exists, skipping")
-                    continue
-                resp.raise_for_status()
-                api_key = resp.json().get("key")
-                if not api_key:
-                    warn(f"  No key returned for {client}, skipping.")
-                    continue
+                    # Key already exists — we can't retrieve its plaintext value
+                    # from LiteLLM, so read it back from the repo's .env instead.
+                    existing_key = _read_env_var(env_path, cfg["key_var"])
+                    if not existing_key:
+                        warn(f"  {client}: key exists but not in .env; delete and rerun to regenerate")
+                        continue
+                    api_key = existing_key
+                    log(f"  {client}: key already exists, reusing from .env")
+                else:
+                    resp.raise_for_status()
+                    api_key = resp.json().get("key")
+                    if not api_key:
+                        warn(f"  No key returned for {client}, skipping.")
+                        continue
+                    log(f"  {client}: key created")
             except requests.RequestException as e:
                 warn(f"  Failed to create key for {client}: {e}")
                 continue
 
-            cfg = CLIENT_CONFIG[client]
             base_value = cfg.get("base_value", f"{GATEWAY_API_URL}{cfg['base_path']}")
             env_vars.append((cfg["base_var"], base_value))
             env_vars.append((cfg["key_var"], api_key))
 
             if client == "codex":
-                _setup_codex_gateway_home(api_key)
-
-            log(f"  {client}: key created")
+                _setup_codex_gateway_home(repo_dir)
+                # OPENAI_BASE_URL was the old codex routing var; CODEX_HOME replaces it.
+                stale_vars.append("OPENAI_BASE_URL")
 
         if env_vars:
-            env_path = os.path.join(repo_dir, ".env")
-            safe_update_env(env_path, env_vars)
+            safe_update_env(env_path, env_vars, remove_vars=stale_vars)
             log(f"  Written {len(env_vars)//2} client configs to {env_path}")
+            if stale_vars:
+                log(f"  Removed stale vars: {', '.join(stale_vars)}")
             ensure_gitignore(repo_dir)
 
         log(f"  Done: {repo}")
