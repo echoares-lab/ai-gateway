@@ -169,13 +169,17 @@ def main():
         env_vars = []
 
         for client in CLIENTS:
+            alias = f"{repo}-{client}"
             try:
                 resp = requests.post(
                     f"{LITELLM_ADMIN_URL}/key/generate",
                     headers=headers,
-                    json={"team_id": team_id, "key_alias": f"{repo}-{client}"},
+                    json={"team_id": team_id, "key_alias": alias},
                     timeout=10,
                 )
+                if resp.status_code == 400 and "already exists" in resp.text:
+                    log(f"  {client}: key already exists, skipping")
+                    continue
                 resp.raise_for_status()
                 api_key = resp.json().get("key")
                 if not api_key:
