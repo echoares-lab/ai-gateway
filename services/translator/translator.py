@@ -31,6 +31,26 @@ app = FastAPI()
 LITELLM = os.environ.get("LITELLM_URL", "http://litellm:4000")
 MODEL_PREFIX = "AI-Gateway:"
 
+_client: httpx.AsyncClient | None = None
+
+
+@app.on_event("startup")
+async def _startup():
+    global _client
+    _client = httpx.AsyncClient(
+        timeout=300,
+        limits=httpx.Limits(
+            max_keepalive_connections=int(os.environ.get("HTTPX_MAX_KEEPALIVE", "20")),
+            max_connections=int(os.environ.get("HTTPX_MAX_CONNECTIONS", "100")),
+        ),
+    )
+
+
+@app.on_event("shutdown")
+async def _shutdown():
+    if _client is not None:
+        await _client.aclose()
+
 
 @app.middleware("http")
 async def _log_requests(request: Request, call_next):
@@ -56,8 +76,7 @@ async def _log_requests(request: Request, call_next):
 async def _post_with_retry(url: str, headers: dict, content: bytes, retries: int = 2) -> httpx.Response:
     """POST to LiteLLM with retry on transient 502/503."""
     for attempt in range(retries + 1):
-        async with httpx.AsyncClient(timeout=300) as client:
-            resp = await client.post(url, headers=headers, content=content)
+        resp = await _client.post(url, headers=headers, content=content)
         if resp.status_code in (502, 503) and attempt < retries:
             log.warning("LiteLLM %d on attempt %d, retrying…", resp.status_code, attempt + 1)
             await asyncio.sleep(1)
@@ -521,9 +540,8 @@ async def _gemini_stream(oai_lines):
 async def gemini_proxy(model_action: str, request: Request):
     if request.method == "GET":
         # Pass through to LiteLLM (e.g. model info requests)
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(f"{LITELLM}/v1beta/models/{model_action}",
-                                    params=dict(request.query_params))
+        resp = await _client.get(f"{LITELLM}/v1beta/models/{model_action}",
+                                 params=dict(request.query_params), timeout=30)
         return Response(content=resp.content, status_code=resp.status_code,
                         headers={"content-type": "application/json"})
 
@@ -562,11 +580,10 @@ async def gemini_proxy(model_action: str, request: Request):
 
     if streaming:
         async def generate():
-            async with httpx.AsyncClient(timeout=300) as client:
-                async with client.stream("POST", f"{LITELLM}/v1/chat/completions",
-                                         headers=headers, content=oai_bytes) as resp:
-                    async for chunk in _gemini_stream(resp.aiter_lines()):
-                        yield chunk
+            async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
+                                      headers=headers, content=oai_bytes) as resp:
+                async for chunk in _gemini_stream(resp.aiter_lines()):
+                    yield chunk
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     resp = await _post_with_retry(f"{LITELLM}/v1/chat/completions", headers, oai_bytes)
@@ -817,11 +834,10 @@ async def responses_proxy(request: Request):
 
     if streaming:
         async def generate():
-            async with httpx.AsyncClient(timeout=300) as client:
-                async with client.stream("POST", f"{LITELLM}/v1/chat/completions",
-                                         headers=headers, content=oai_bytes) as resp:
-                    async for event in _oai_to_responses_stream(resp.aiter_lines()):
-                        yield event
+            async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
+                                      headers=headers, content=oai_bytes) as resp:
+                async for event in _oai_to_responses_stream(resp.aiter_lines()):
+                    yield event
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     resp = await _post_with_retry(f"{LITELLM}/v1/chat/completions", headers, oai_bytes)
@@ -1101,11 +1117,10 @@ async def claude_proxy(request: Request):
 
     if streaming:
         async def generate():
-            async with httpx.AsyncClient(timeout=300) as client:
-                async with client.stream("POST", f"{LITELLM}/v1/chat/completions",
-                                         headers=headers, content=oai_bytes) as resp:
-                    async for event in _oai_to_claude_stream(resp.aiter_lines(), model):
-                        yield event
+            async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
+                                      headers=headers, content=oai_bytes) as resp:
+                async for event in _oai_to_claude_stream(resp.aiter_lines(), model):
+                    yield event
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     resp = await _post_with_retry(f"{LITELLM}/v1/chat/completions", headers, oai_bytes)
@@ -1154,20 +1169,18 @@ async def proxy(path: str, request: Request):
     if is_stream:
         async def generate():
             try:
-                async with httpx.AsyncClient(timeout=300) as client:
-                    async with client.stream(
-                        request.method, url, headers=headers, content=body, params=params
-                    ) as resp:
-                        async for chunk in resp.aiter_bytes():
-                            yield chunk
+                async with _client.stream(
+                    request.method, url, headers=headers, content=body, params=params
+                ) as resp:
+                    async for chunk in resp.aiter_bytes():
+                        yield chunk
             except httpx.HTTPError as exc:
                 log.error("Proxy stream connection error: %s", exc)
         return StreamingResponse(generate(), media_type="text/event-stream")
 
-    async with httpx.AsyncClient(timeout=300) as client:
-        resp = await client.request(
-            request.method, url, headers=headers, content=body, params=params
-        )
+    resp = await _client.request(
+        request.method, url, headers=headers, content=body, params=params
+    )
 
     if resp.status_code >= 400:
         log.warning("Upstream %d for %s — raw: %s", resp.status_code, path,
