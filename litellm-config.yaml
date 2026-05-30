@@ -642,41 +642,24 @@ model_list:
 
   # xAI / Grok (X Premium subscription via CLIProxy OAuth)
   # Cost unknown — no model_info until pricing is confirmed.
-  - model_name: grok-4
-    litellm_params:
-      model: openai/grok-4
-      api_base: http://cliproxy:8317/v1
-      api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 32000
 
-  - model_name: grok-3
-    litellm_params:
-      model: openai/grok-3
-      api_base: http://cliproxy:8317/v1
-      api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 32000
 
-  - model_name: grok-2
-    litellm_params:
-      model: openai/grok-2
-      api_base: http://cliproxy:8317/v1
-      api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 32000
 
   # Moonshot / Kimi (Kimi subscription via CLIProxy OAuth)
-  - model_name: kimi-k2
-    litellm_params:
-      model: openai/kimi-k2
-      api_base: http://cliproxy:8317/v1
-      api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 32000
 
-  - model_name: kimi-k1-5
-    litellm_params:
-      model: openai/kimi-k1.5
-      api_base: http://cliproxy:8317/v1
-      api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 32000
+
+  - model_name: claude-opus-4-8
+    litellm_params:
+      model: openai/claude-opus-4-8
+      api_base: http://cliproxy:8317/v1
+      api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
+    model_info:
+      base_model: claude-opus-4-8
 
 general_settings:
   forward_client_headers_to_llm_api: true

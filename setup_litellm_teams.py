@@ -181,6 +181,10 @@ def _setup_codex_gateway_home(repo_dir: str):
     """
     os.makedirs(CODEX_GATEWAY_HOME, exist_ok=True)
     config_path = os.path.join(CODEX_GATEWAY_HOME, "config.toml")
+    auth_path = os.path.join(CODEX_GATEWAY_HOME, "auth.json")
+    if os.path.exists(auth_path):
+        os.remove(auth_path)
+        log(f"  codex: removed active {auth_path} to enforce per-repo API key fallback")
 
     global_kvs, project_trust = _read_codex_toml(config_path)
     global_kvs["openai_base_url"] = f"{GATEWAY_API_URL}/v1"
