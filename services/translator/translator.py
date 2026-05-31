@@ -115,6 +115,24 @@ async def _tee_lines(aiter, buf: list[str]):
 
 
 @app.middleware("http")
+async def _limit_request_size(request: Request, call_next):
+    """Reject requests larger than MAX_REQUEST_BYTES to prevent memory exhaustion."""
+    max_bytes = int(os.environ.get("MAX_REQUEST_BYTES", 50 * 1024 * 1024))  # 50MB default
+    if request.headers.get("content-length"):
+        try:
+            content_length = int(request.headers["content-length"])
+            if content_length > max_bytes:
+                log.warning("Request too large: %d bytes (limit: %d)", content_length, max_bytes)
+                return JSONResponse(
+                    {"error": {"message": "request too large", "code": 413}},
+                    status_code=413
+                )
+        except (ValueError, TypeError):
+            pass
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def _log_requests(request: Request, call_next):
     req_id = uuid.uuid4().hex[:8]
     request.state.req_id = req_id
