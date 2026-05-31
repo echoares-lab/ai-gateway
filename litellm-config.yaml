@@ -4,22 +4,7 @@ model_list:
   # Authenticate first: ./cliproxy-setup.sh login-all
 
   # Claude — latest/flagship
-  # Claude — latest/flagship
   # Rate limits: ~10-20 msg/5h (Opus), ~50-100 msg/5h (Sonnet) on Claude Pro; resets on a rolling 5h window
-      max_tokens: 128000
-    model_info:
-      base_model: claude-opus-4-7
-      input_cost_per_token: 5.00e-06
-      output_cost_per_token: 2.50e-05
-      cache_creation_input_token_cost: 6.25e-06
-      cache_read_input_token_cost: 5.00e-07
-      max_input_tokens: 1000000
-      max_output_tokens: 128000
-      supports_prompt_caching: true
-      supports_vision: true
-      supports_function_calling: true
-    # model_info:
-    #   disable_background_health_check: true  # uncomment if health checks burn Opus quota
 
   - model_name: claude-sonnet-4-6
     litellm_params:

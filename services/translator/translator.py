@@ -1026,10 +1026,19 @@ async def responses_proxy(request: Request):
                         yield event
                     return
             buf: list[str] = []
-            async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
-                                      headers=headers, content=oai_bytes) as resp:
-                async for event in _oai_to_responses_stream(_tee_lines(resp.aiter_lines(), buf)):
-                    yield event
+            try:
+                async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
+                                          headers=headers, content=oai_bytes) as resp:
+                    async for event in _oai_to_responses_stream(_tee_lines(resp.aiter_lines(), buf)):
+                        yield event
+            except Exception as exc:
+                log.error("Responses stream upstream error: %s", exc)
+                err_id = f"resp_{uuid.uuid4().hex[:24]}"
+                yield _sse("response.created", {"type": "response.created", "response": {
+                    "id": err_id, "object": "response", "status": "failed", "output": []}})
+                yield _sse("response.completed", {"type": "response.completed", "response": {
+                    "id": err_id, "object": "response", "status": "failed"}})
+                return
             if ck and buf:
                 await _cache_set(ck, buf)
         return StreamingResponse(generate(), media_type="text/event-stream")
