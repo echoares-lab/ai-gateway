@@ -4,7 +4,6 @@ model_list:
   # Authenticate first: ./cliproxy-setup.sh login-all
 
   # Claude — latest/flagship
-  # Claude — latest/flagship
   # Rate limits: ~10-20 msg/5h (Opus), ~50-100 msg/5h (Sonnet) on Claude Pro; resets on a rolling 5h window
   - model_name: claude-opus-4-7
     litellm_params:
