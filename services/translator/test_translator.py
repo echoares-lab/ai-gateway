@@ -281,6 +281,44 @@ class TestGeminiReqToOai(unittest.TestCase):
         oai = self._call("gemini-2.5-pro-preview-05-06", body=body, gemini_map={})
         assert oai["model"] == "gemini-2.5-pro"
 
+    def test_function_call_deterministic_id(self):
+        body = {
+            "contents": [
+                {"role": "user", "parts": [{"text": "hi"}]},
+                {"role": "model", "parts": [{"functionCall": {"name": "read_file", "args": {"path": "a.txt"}}}]},
+            ]
+        }
+        oai = self._call("gemini-3.0-pro", body=body)
+        tool_calls = oai["messages"][1]["tool_calls"]
+        assert len(tool_calls) == 1
+        assert tool_calls[0]["function"]["name"] == "read_file"
+        assert tool_calls[0]["id"].startswith("call_")
+        assert len(tool_calls[0]["id"]) == 25  # "call_" + 20 chars
+
+    def test_function_response_deterministic_id_resolution(self):
+        body = {
+            "contents": [
+                {"role": "user", "parts": [{"text": "hi"}]},
+                {"role": "model", "parts": [{"functionCall": {"name": "read_file", "args": {"path": "a.txt"}}}]},
+                {"role": "user", "parts": [{"functionResponse": {"name": "read_file", "response": {"content": "ok"}}}]},
+            ]
+        }
+        oai = self._call("gemini-3.0-pro", body=body)
+        messages = oai["messages"]
+        # Assistant tool call ID should perfectly match the Tool response tool_call_id
+        assistant_id = messages[1]["tool_calls"][0]["id"]
+        tool_response_id = messages[2]["tool_call_id"]
+        assert assistant_id == tool_response_id
+        assert tool_response_id.startswith("call_")
+
+    def test_generic_tool_call_id_resolution_openai_format(self):
+        history = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "tool_calls": [{"id": "custom_call_999", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]},
+        ]
+        resolved_id = t._find_tool_call_id_in_history(history, "read_file", 2)
+        assert resolved_id == "custom_call_999"
+
 
 def test_responses_preview_model_warns_and_passthrough(caplog):
     caplog.set_level("WARNING")

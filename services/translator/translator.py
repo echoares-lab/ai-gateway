@@ -525,6 +525,43 @@ GEMINI_FINISH_MAP = {
 }
 
 
+def _find_tool_call_id_in_history(history: list, target_name: str, current_index: int) -> str:
+    """Scan backward from current_index in conversation history to find the most recent
+    matching tool call by name and return a deterministic, valid alphanumeric ID.
+    Supports both Gemini 'contents' format and standard OpenAI 'messages' format."""
+    for i in range(current_index - 1, -1, -1):
+        msg = history[i]
+        if not isinstance(msg, dict):
+            continue
+
+        # 1. Check standard OpenAI format (messages)
+        tool_calls = msg.get("tool_calls", [])
+        if isinstance(tool_calls, list):
+            for tc in tool_calls:
+                if isinstance(tc, dict):
+                    fn = tc.get("function", {})
+                    if isinstance(fn, dict) and fn.get("name") == target_name:
+                        tc_id = tc.get("id")
+                        if tc_id:
+                            return tc_id
+                        h = hashlib.md5(f"{target_name}_{i}".encode()).hexdigest()[:20]
+                        return f"call_{h}"
+
+        # 2. Check Gemini format (contents)
+        parts = msg.get("parts", [])
+        if isinstance(parts, list):
+            for p in parts:
+                if isinstance(p, dict) and "functionCall" in p:
+                    fc = p["functionCall"]
+                    if isinstance(fc, dict) and fc.get("name") == target_name:
+                        h = hashlib.md5(f"{target_name}_{i}".encode()).hexdigest()[:20]
+                        return f"call_{h}"
+
+    # Fallback if not found in history
+    h = hashlib.md5(f"{target_name}_fallback".encode()).hexdigest()[:20]
+    return f"call_{h}"
+
+
 def _gemini_req_to_oai(model: str, body: dict) -> dict:
     messages = []
 
@@ -534,7 +571,8 @@ def _gemini_req_to_oai(model: str, body: dict) -> dict:
         if sys_text:
             messages.append({"role": "system", "content": sys_text})
 
-    for content in body.get("contents", []):
+    contents = body.get("contents", [])
+    for content_idx, content in enumerate(contents):
         role = "assistant" if content.get("role") == "model" else content.get("role", "user")
         parts = content.get("parts", [])
 
@@ -545,16 +583,19 @@ def _gemini_req_to_oai(model: str, body: dict) -> dict:
 
         if func_resps:
             for fr in func_resps:
+                tc_id = _find_tool_call_id_in_history(contents, fr["name"], content_idx)
                 messages.append({
                     "role": "tool",
-                    "tool_call_id": fr["name"],
+                    "tool_call_id": tc_id,
                     "content": json.dumps(fr.get("response", {})),
                 })
         elif func_calls:
             tool_calls = []
             for fc in func_calls:
+                h = hashlib.md5(f"{fc['name']}_{content_idx}".encode()).hexdigest()[:20]
+                tc_id = f"call_{h}"
                 tool_calls.append({
-                    "id": fc["name"],
+                    "id": tc_id,
                     "type": "function",
                     "function": {
                         "name": fc["name"],

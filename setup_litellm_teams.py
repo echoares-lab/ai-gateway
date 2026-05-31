@@ -10,6 +10,7 @@ Requirements:
   - gh CLI (https://cli.github.com/) — logged in with repo read access
 """
 
+import argparse
 import json
 import os
 import re
@@ -26,10 +27,10 @@ except ImportError:
 ORG = "echoares-lab"
 
 # Public-facing gateway endpoint (what clients connect to).
-GATEWAY_API_URL = "http://localhost:4000"
+DEFAULT_GATEWAY_API_URL = "http://localhost:4000"
 
 # LiteLLM admin API — port 4001 maps to the LiteLLM container.
-LITELLM_ADMIN_URL = "http://localhost:4001"
+DEFAULT_LITELLM_ADMIN_URL = "http://localhost:4001"
 
 # Read master key from env or .env file; fall back to default only as last resort.
 def _load_master_key():
@@ -52,12 +53,14 @@ CLIENTS = ["codex", "gemini", "claude", "cursor", "antigravity"]
 # gateway config never collides with the user's personal ChatGPT OAuth session.
 CODEX_GATEWAY_HOME = os.path.expanduser("~/.codex-gateway")
 
-# Maps each client to the env vars its CLI actually reads.
+# Extensible client configurations. Future integrations (e.g. MCP, search, vector stores)
+# can be added by declaring additional clients or extra env variables here.
 CLIENT_CONFIG = {
     "claude": {
         "base_var": "ANTHROPIC_BASE_URL",    # Claude CLI: ANTHROPIC_BASE_URL
         "key_var":  "ANTHROPIC_API_KEY",
         "base_path": "",                      # Claude CLI appends /v1/messages itself
+        "extra_vars": {},
     },
     "codex": {
         # CODEX_HOME isolates the gateway config from the user's default ~/.codex.
@@ -67,21 +70,25 @@ CLIENT_CONFIG = {
         "base_value": CODEX_GATEWAY_HOME,     # static path, not a URL
         "key_var":    "OPENAI_API_KEY",
         "base_path":  "/v1",                  # used for openai_base_url in config.toml
+        "extra_vars": {},
     },
     "gemini": {
         "base_var": "GOOGLE_GEMINI_BASE_URL", # Gemini CLI reads GOOGLE_GEMINI_BASE_URL
         "key_var":  "GEMINI_API_KEY",
         "base_path": "",                      # Gemini CLI adds /v1beta/models/... itself
+        "extra_vars": {},
     },
     "cursor": {
         "base_var": "CURSOR_API_BASE",
         "key_var":  "CURSOR_API_KEY",
         "base_path": "/v1",
+        "extra_vars": {},
     },
     "antigravity": {
         "base_var": "ANTIGRAVITY_API_BASE",
         "key_var":  "ANTIGRAVITY_API_KEY",
         "base_path": "/v1",
+        "extra_vars": {},
     },
 }
 
@@ -222,44 +229,50 @@ _BASHRC_WRAPPER = """\
 # Codex: per-repo key from .env, CODEX_HOME → gateway config, yolo mode
 export CODEX_HOME=~/.codex-gateway
 codex() {
-    local key dir="$PWD"
+    local key base dir="$PWD"
     while [[ "$dir" != "/" ]]; do
         if [[ -f "$dir/.env" ]]; then
             key=$(grep '^OPENAI_API_KEY=' "$dir/.env" | cut -d= -f2 | head -1)
+            base=$(grep '^CODEX_BASE_URL=' "$dir/.env" | cut -d= -f2 | head -1)
             [[ -n "$key" ]] && break
         fi
         dir=$(dirname "$dir")
     done
     [[ -z "$key" ]] && echo "[codex-gateway] no OPENAI_API_KEY in .env above $PWD" >&2
+    # Codex CLI config.toml handles the base URL; wrapper just supplies key
     CODEX_HOME=~/.codex-gateway OPENAI_API_KEY="$key" command codex -c "api_key=\\"$key\\"" "$@"
 }
 
 # Claude: per-repo key from .env, routes via gateway, yolo mode
 claude() {
-    local key dir="$PWD"
+    local key base dir="$PWD"
     while [[ "$dir" != "/" ]]; do
         if [[ -f "$dir/.env" ]]; then
             key=$(grep '^ANTHROPIC_API_KEY=' "$dir/.env" | cut -d= -f2 | head -1)
+            base=$(grep '^ANTHROPIC_BASE_URL=' "$dir/.env" | cut -d= -f2 | head -1)
             [[ -n "$key" ]] && break
         fi
         dir=$(dirname "$dir")
     done
     [[ -z "$key" ]] && echo "[claude-gateway] no ANTHROPIC_API_KEY in .env above $PWD" >&2
-    ANTHROPIC_BASE_URL="http://localhost:4000" ANTHROPIC_API_KEY="$key" command claude --dangerously-skip-permissions "$@"
+    [[ -z "$base" ]] && base="http://localhost:4000"
+    ANTHROPIC_BASE_URL="$base" ANTHROPIC_API_KEY="$key" command claude --dangerously-skip-permissions "$@"
 }
 
 # Gemini: per-repo key from .env, routes via gateway, yolo mode
 gemini() {
-    local key dir="$PWD"
+    local key base dir="$PWD"
     while [[ "$dir" != "/" ]]; do
         if [[ -f "$dir/.env" ]]; then
             key=$(grep '^GEMINI_API_KEY=' "$dir/.env" | cut -d= -f2 | head -1)
+            base=$(grep '^GOOGLE_GEMINI_BASE_URL=' "$dir/.env" | cut -d= -f2 | head -1)
             [[ -n "$key" ]] && break
         fi
         dir=$(dirname "$dir")
     done
     [[ -z "$key" ]] && echo "[gemini-gateway] no GEMINI_API_KEY in .env above $PWD" >&2
-    GOOGLE_GEMINI_BASE_URL="http://localhost:4000" GEMINI_API_KEY="$key" command gemini --yolo "$@"
+    [[ -z "$base" ]] && base="http://localhost:4000"
+    GOOGLE_GEMINI_BASE_URL="$base" GEMINI_API_KEY="$key" command gemini --yolo "$@"
 }
 # >>> ai-gateway wrappers end <<<
 """
@@ -286,13 +299,41 @@ def _ensure_bashrc_wrapper():
 
 # --- Main ---
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Automate setup of LiteLLM teams and API keys for a GitHub org.")
+    parser.add_argument("--slot", type=int, default=None, help="Dev stack slot number (e.g. 1, 2, ...)")
+    parser.add_argument("--gateway-url", type=str, default=None, help="Explicit gateway API URL")
+    parser.add_argument("--litellm-url", type=str, default=None, help="Explicit LiteLLM admin API URL")
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
+
+    # Calculate gateway and litellm URLs
+    gateway_url = DEFAULT_GATEWAY_API_URL
+    litellm_admin_url = DEFAULT_LITELLM_ADMIN_URL
+
+    if args.slot is not None:
+        if args.slot == 0:
+            sys.exit("[!] Slot 0 is reserved for the stable stack (default ports 4000/4001).")
+        g_port = 4000 + args.slot * 10
+        l_port = 4001 + args.slot * 10
+        gateway_url = f"http://localhost:{g_port}"
+        litellm_admin_url = f"http://localhost:{l_port}"
+        log(f"Configuring for Dev Slot {args.slot} (gateway={gateway_url}, litellm={litellm_admin_url})")
+
+    if args.gateway_url:
+        gateway_url = args.gateway_url
+    if args.litellm_url:
+        litellm_admin_url = args.litellm_url
+
     headers = {
         "Authorization": f"Bearer {LITELLM_MASTER_KEY}",
         "Content-Type": "application/json",
     }
 
-    log(f"Using LiteLLM at {LITELLM_ADMIN_URL}")
+    log(f"Using LiteLLM at {litellm_admin_url}")
     log(f"Fetching repos from {ORG}...")
 
     repo_names_str = run_command(f"gh repo list {ORG} --json name -q '.[].name'")
@@ -304,7 +345,7 @@ def main():
 
     # Fetch existing teams once up front to avoid duplicates on re-runs.
     try:
-        resp = requests.get(f"{LITELLM_ADMIN_URL}/team/list", headers=headers, timeout=10)
+        resp = requests.get(f"{litellm_admin_url}/team/list", headers=headers, timeout=10)
         resp.raise_for_status()
         existing = resp.json() if isinstance(resp.json(), list) else resp.json().get("teams", [])
         existing_teams = {t["team_alias"]: t["team_id"] for t in existing if t.get("team_alias")}
@@ -328,7 +369,7 @@ def main():
         else:
             try:
                 resp = requests.post(
-                    f"{LITELLM_ADMIN_URL}/team/new",
+                    f"{litellm_admin_url}/team/new",
                     headers=headers,
                     json={"team_alias": repo},
                     timeout=10,
@@ -350,7 +391,7 @@ def main():
             cfg = CLIENT_CONFIG[client]
             try:
                 resp = requests.post(
-                    f"{LITELLM_ADMIN_URL}/key/generate",
+                    f"{litellm_admin_url}/key/generate",
                     headers=headers,
                     json={"team_id": team_id, "key_alias": alias},
                     timeout=10,
@@ -360,10 +401,32 @@ def main():
                     # from LiteLLM, so read it back from the repo's .env instead.
                     existing_key = _read_env_var(env_path, cfg["key_var"])
                     if not existing_key:
-                        warn(f"  {client}: key exists but not in .env; delete and rerun to regenerate")
-                        continue
-                    api_key = existing_key
-                    log(f"  {client}: key already exists, reusing from .env")
+                        log(f"  {client}: key exists in LiteLLM but missing from local .env; deleting and regenerating...")
+                        # Delete key from LiteLLM
+                        del_resp = requests.post(
+                            f"{litellm_admin_url}/key/delete",
+                            headers=headers,
+                            json={"key_aliases": [alias]},
+                            timeout=10,
+                        )
+                        del_resp.raise_for_status()
+
+                        # Regenerate key
+                        resp = requests.post(
+                            f"{litellm_admin_url}/key/generate",
+                            headers=headers,
+                            json={"team_id": team_id, "key_alias": alias},
+                            timeout=10,
+                        )
+                        resp.raise_for_status()
+                        api_key = resp.json().get("key")
+                        if not api_key:
+                            warn(f"  No key returned for {client} after regeneration, skipping.")
+                            continue
+                        log(f"  {client}: key regenerated successfully")
+                    else:
+                        api_key = existing_key
+                        log(f"  {client}: key already exists, reusing from .env")
                 else:
                     resp.raise_for_status()
                     api_key = resp.json().get("key")
@@ -375,9 +438,13 @@ def main():
                 warn(f"  Failed to create key for {client}: {e}")
                 continue
 
-            base_value = cfg.get("base_value", f"{GATEWAY_API_URL}{cfg['base_path']}")
+            base_value = cfg.get("base_value", f"{gateway_url}{cfg['base_path']}")
             env_vars.append((cfg["base_var"], base_value))
             env_vars.append((cfg["key_var"], api_key))
+
+            # Add any extra variables defined for this client
+            for k, v in cfg.get("extra_vars", {}).items():
+                env_vars.append((k, v))
 
             if client == "codex":
                 _setup_codex_gateway_home(repo_dir)
