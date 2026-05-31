@@ -16,7 +16,7 @@ Docker must be running before any `docker compose` commands. In the Cloud Agent 
 docker compose up -d
 ```
 
-All 9 services will start. Wait ~15 seconds after `docker compose up -d` for LiteLLM to complete its database migration before testing.
+All 11 services will start. The translator waits for LiteLLM's healthcheck to pass (DB migration ~20s) before accepting traffic — no manual wait needed.
 
 ### Key ports
 
@@ -26,6 +26,7 @@ All 9 services will start. Wait ~15 seconds after `docker compose up -d` for Lit
 | litellm | 4001 | Internal proxy (UI accessible here) |
 | langfuse-web | 3000 | Observability UI |
 | cliproxy | 8317 | OAuth relay to LLM providers |
+| cpa-manager | 18317 | CLIProxy usage analytics UI |
 | postgres | 5432 | localhost only |
 | redis | 6379 | localhost only |
 
@@ -38,10 +39,14 @@ All 9 services will start. Wait ~15 seconds after `docker compose up -d` for Lit
 ### Linting
 
 ```bash
-ruff check services/translator/translator.py        # lint
-pyright services/translator/translator.py            # type check
-bash -n cliproxy-setup.sh        # shell syntax
+pip install ruff                                      # install first
+ruff check services/translator/translator.py          # lint
+ruff format --check services/translator/translator.py # format check
+bash -n cliproxy-setup.sh                            # shell syntax
+python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"  # YAML validate
 ```
+
+Note: pyright is not configured in this repo; use ruff for linting.
 
 ### Testing the translator
 
@@ -54,6 +59,7 @@ Upstream 502 errors from CLIProxy are expected without OAuth tokens — the tran
 
 ### Rebuilding after code changes
 
-- `services/translator/translator.py` or `services/translator/Dockerfile` changes: `docker compose build translator && docker compose up -d translator`
-- `litellm-config.yaml` changes: `docker compose restart litellm`
+- `services/translator/translator.py` changes: **no action needed** — uvicorn auto-reloads on save (~1s)
+- `litellm-config.yaml` changes: **no action needed** — litellm-reloader sidecar detects changes and restarts LiteLLM (~10s)
+- `services/translator/Dockerfile` or pip dependencies changes: `docker compose build translator && docker compose up -d translator`
 - `Dockerfile.cliproxy` changes: `docker compose build cliproxy && docker compose up -d cliproxy`

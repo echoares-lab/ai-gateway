@@ -393,7 +393,7 @@ docker compose restart litellm
 ```bash
 cd ~/repos/ai-gateway
 docker compose up -d
-# Wait ~20s for LiteLLM DB migration, then:
+# LiteLLM healthcheck gates the translator startup — no manual wait needed
 ./cliproxy-setup.sh health
 ```
 
