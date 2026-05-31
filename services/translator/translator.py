@@ -188,11 +188,29 @@ async def _log_requests(request: Request, call_next):
             pass
 
     log.info("[%s] → %s %s model=%s", req_id, request.method, request.url.path, model)
+    IN_FLIGHT.inc()
+    _record_format(request.url.path)
     start = time.monotonic()
     response = await call_next(request)
-    ms = (time.monotonic() - start) * 1000
-    log.info("[%s] ← %d (%.0fms)", req_id, response.status_code, ms)
+    elapsed = time.monotonic() - start
+    REQUEST_COUNT.labels(request.method, request.url.path, str(response.status_code)).inc()
+    REQUEST_LATENCY.labels(request.method, request.url.path).observe(elapsed)
+    if response.status_code >= 400:
+        UPSTREAM_ERRORS.labels(request.url.path, str(response.status_code)).inc()
+    log.info("[%s] ← %d (%.0fms)", req_id, response.status_code, int(elapsed * 1000))
     return response
+
+
+def _record_format(path: str) -> None:
+    p = path.rstrip("/")
+    if p in ("v1/messages", "messages"):
+        FORMAT_REQUESTS.labels("claude").inc()
+    elif p in ("v1/responses", "responses"):
+        FORMAT_REQUESTS.labels("responses").inc()
+    elif path.startswith("v1beta/models/"):
+        FORMAT_REQUESTS.labels("gemini").inc()
+    else:
+        FORMAT_REQUESTS.labels("proxy").inc()
 
 
 async def _post_with_retry(url: str, headers: dict, content: bytes, retries: int = 2) -> httpx.Response:
