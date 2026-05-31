@@ -58,7 +58,11 @@ services:
     ports:
       - "${DEV_LITELLM_PORT:-4011}:4000"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:4000/health"]
+      test:
+        [
+        "CMD-SHELL",
+        "python - <<'PY'\nimport urllib.request, sys\ntry:\n    r = urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=3)\n    sys.exit(0 if 200 <= r.status < 300 else 1)\nexcept Exception:\n    sys.exit(1)\nPY"
+        ]
       interval: 5s
       timeout: 3s
       retries: 10

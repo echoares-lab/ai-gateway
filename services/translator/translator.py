@@ -1447,9 +1447,10 @@ async def claude_proxy(request: Request):
     oai_bytes = json.dumps(oai_body).encode()
     headers = {
         "content-type": "application/json",
-        "authorization": f"Bearer {api_key}",
         "content-length": str(len(oai_bytes)),
     }
+    if api_key:
+        headers["authorization"] = f"Bearer {api_key}"
 
     model = oai_body.get("model", "")
     ck = _cache_key(model, oai_body.get("messages", []), oai_body.get("tools"))
