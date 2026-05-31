@@ -1,5 +1,7 @@
 # AI Gateway Stack
 
+[![Release v0.2.0](https://img.shields.io/badge/release-v0.2.0-blue)](https://github.com/echoares-lab/ai-gateway/releases/tag/v0.2.0)
+
 This repository manages a production-grade AI Gateway using **LiteLLM**, **Langfuse**, and **CLIProxyAPI**. It provides a unified, reliable, and observable interface for 100+ LLMs using consumer subscriptions (OpenAI, Anthropic, Google) instead of pay-per-token API billing.
 
 ## Core Components
