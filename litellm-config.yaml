@@ -6,11 +6,6 @@ model_list:
   # Claude — latest/flagship
   # Claude — latest/flagship
   # Rate limits: ~10-20 msg/5h (Opus), ~50-100 msg/5h (Sonnet) on Claude Pro; resets on a rolling 5h window
-  - model_name: claude-opus-4-7
-    litellm_params:
-      model: openai/claude-opus-4-7
-      api_base: http://cliproxy:8317/v1
-      api_key: os.environ/CLIPROXY_API_KEY
       max_tokens: 128000
     model_info:
       base_model: claude-opus-4-7

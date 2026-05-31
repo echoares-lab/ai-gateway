@@ -25,7 +25,7 @@ import re
 from dataclasses import dataclass
 import httpx
 import redis.asyncio as aioredis
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import Response, StreamingResponse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -981,6 +981,12 @@ async def _oai_to_responses_stream(oai_lines):
         "type": "response.completed",
         "response": {"id": resp_id, "object": "response", "status": "completed"},
     })
+
+
+@app.websocket("/v1/responses")
+async def responses_ws_unsupported(ws: WebSocket):
+    # Codex CLI probes WebSocket first; close cleanly so it falls back to HTTPS without a 403 warning
+    await ws.close(code=1011, reason="WebSocket not supported; use HTTPS POST")
 
 
 @app.post("/v1/responses")

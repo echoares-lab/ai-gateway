@@ -60,6 +60,16 @@ run_compose() {
     local slot="$1"; shift
     local env_vars
     env_vars="$(compose_env "$slot")"
+
+    local op_run_prefix=""
+    if [ -f "$HOME/.op-token" ]; then
+        export OP_SERVICE_ACCOUNT_TOKEN
+        OP_SERVICE_ACCOUNT_TOKEN=$(cat "$HOME/.op-token")
+        op_run_prefix="op run --"
+    elif grep -q 'op://' "$ENV_FILE" 2>/dev/null; then
+        die "Secrets in $ENV_FILE are 1Password references, but ~/.op-token is missing."
+    fi
+
     # Load .env for LITELLM_MASTER_KEY and CLIPROXY_API_KEY
     if [[ -f "$ENV_FILE" ]]; then
         set -o allexport
@@ -67,7 +77,8 @@ run_compose() {
         source "$ENV_FILE"
         set +o allexport
     fi
-    env $env_vars docker compose -f "$COMPOSE_FILE" "$@"
+    # shellcheck disable=SC2086
+    env $env_vars $op_run_prefix docker compose -f "$COMPOSE_FILE" "$@"
 }
 
 seed_auth_volume() {
@@ -142,8 +153,9 @@ cmd_test() {
         master_key="$(grep -E '^LITELLM_MASTER_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' || true)"
     fi
     echo "running integration tests against ${gateway_url} ..."
+    # shellcheck disable=SC2086
     GATEWAY_URL="$gateway_url" LITELLM_MASTER_KEY="$master_key" \
-        python3 -m pytest "${SCRIPT_DIR}/tests/integration/" -m integration -v "$@"
+        $op_run_prefix python3 -m pytest "${SCRIPT_DIR}/tests/integration/" -m integration -v "$@"
 }
 
 cmd_list() {

@@ -123,6 +123,7 @@ services:
     build:
       context: ./services/translator
       dockerfile: Dockerfile
+    command: uvicorn translator:app --host 0.0.0.0 --port 4000 --reload
     restart: always
     depends_on:
       - litellm
@@ -135,6 +136,7 @@ services:
       - CACHE_ENABLED=${CACHE_ENABLED:-true}
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-60}
     volumes:
+      - ./services/translator:/app
       - ./services/translator/gemini-model-map.json:/app/gemini-model-map.json:ro
 
   litellm:
