@@ -349,3 +349,47 @@ class TestCodexCliFormat:
         })
         _skip_if_model_unavailable(resp)
         assert resp.status_code == 200
+
+    def test_responses_websocket(self):
+        """Test Codex WebSocket connection to /v1/responses."""
+        try:
+            import websockets
+        except ImportError:
+            pytest.skip("websockets library not installed on the host")
+        import asyncio
+        from .conftest import GATEWAY_URL, MASTER_KEY
+        
+        ws_url = GATEWAY_URL.replace("http://", "ws://").replace("https://", "wss://") + "/v1/responses"
+        headers = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
+        
+        async def run_test():
+            async with websockets.connect(ws_url, extra_headers=headers) as ws:
+                req = {
+                    "type": "response.create",
+                    "model": _CODEX_MODEL_DOTTED,
+                    "input": [{"type": "message", "role": "user",
+                               "content": [{"type": "input_text", "text": "Reply with OK."}]}],
+                    "max_output_tokens": 10,
+                }
+                await ws.send(json.dumps(req))
+                
+                # Receive responses
+                response_received = False
+                for _ in range(15):
+                    try:
+                        msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                        data = json.loads(msg)
+                        if data.get("type") in ("response.completed", "error"):
+                            response_received = True
+                            break
+                    except asyncio.TimeoutError:
+                        break
+                assert response_received
+
+        # Run the async test in a loop
+        try:
+            asyncio.run(run_test())
+        except Exception as exc:
+            if "unavailable" in str(exc).lower() or "auth" in str(exc).lower():
+                pytest.skip(f"WebSocket model/auth unavailable: {exc}")
+            raise
