@@ -1,0 +1,37 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.3.5
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      - id: validate-litellm-config
+        name: Validate litellm-config.yaml
+        entry: python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"
+        language: system
+        files: litellm-config.yaml$
+        pass_filenames: false
+
+      - id: prevent-hardcoded-api-keys
+        name: Prevent hardcoded API keys
+        entry: bash .githooks/prevent-hardcoded-keys.sh
+        language: system
+        files: litellm-config.yaml$
+        pass_filenames: false
+
+      - id: validate-yaml-syntax
+        name: Validate YAML syntax in litellm-config.yaml
+        entry: bash .githooks/validate-yaml.sh
+        language: system
+        files: litellm-config.yaml$
+        pass_filenames: false
