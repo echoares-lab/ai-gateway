@@ -657,7 +657,7 @@ model_list:
     litellm_params:
       model: openai/claude-opus-4-8
       api_base: http://cliproxy:8317/v1
-      api_key: cliproxy-Wtgxs0tEBb4Usyam5qYg
+      api_key: os.environ/CLIPROXY_API_KEY
     model_info:
       base_model: claude-opus-4-8
 

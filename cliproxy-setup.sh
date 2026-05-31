@@ -455,18 +455,17 @@ PYEOF
     if probe_model "$model_id"; then
       echo "OK — adding as $alias"
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ADDED $alias (upstream: $model_id)" >> "$AUDIT_LOG"
-      local api_key_val
-      api_key_val=$(get_api_key)
       # Append new entry before the general_settings block
-      python3 - "$LITELLM_CONFIG" "$alias" "$model_id" "$api_key_val" "$CLIPROXY_PORT" <<'PYEOF'
+      # Use os.environ/CLIPROXY_API_KEY reference, not literal key value
+      python3 - "$LITELLM_CONFIG" "$alias" "$model_id" "$CLIPROXY_PORT" <<'PYEOF'
 import sys
-path, alias, model_id, api_key, port = sys.argv[1:]
+path, alias, model_id, port = sys.argv[1:]
 entry = f"""
   - model_name: {alias}
     litellm_params:
       model: openai/{model_id}
       api_base: http://cliproxy:{port}/v1
-      api_key: {api_key}
+      api_key: os.environ/CLIPROXY_API_KEY
 """
 with open(path) as f: txt = f.read()
 txt = txt.replace('\ngeneral_settings:', entry + '\ngeneral_settings:', 1)
