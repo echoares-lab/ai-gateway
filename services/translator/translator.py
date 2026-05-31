@@ -36,7 +36,11 @@ LITELLM = os.environ.get("LITELLM_URL", "http://litellm:4000")
 MODEL_PREFIX = "AI-Gateway:"
 
 _client: httpx.AsyncClient | None = None
-CACHE_ENABLED = os.environ.get("CACHE_ENABLED", "true").lower() not in ("0", "false", "no")
+# NOTE: Translator caching is DISABLED in favor of LiteLLM's auth-aware Redis cache.
+# LiteLLM's cache includes Authorization header in its cache key, preventing cross-user responses.
+# Translator caching layer is redundant when multi-team virtual keys are in use.
+# Set CACHE_ENABLED=true only if LiteLLM's cache is unavailable or disabled.
+CACHE_ENABLED = os.environ.get("CACHE_ENABLED", "false").lower() not in ("0", "false", "no")
 CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "60"))
 _redis: aioredis.Redis | None = None
 
