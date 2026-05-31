@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session Workflow (quick reference)
+
+Every session: **worktree → dev stack → code → unit test → commit → E2E test → merge dev → PR to main → E2E test main → cleanup**
+
+Full workflow details are in `AGENTS.md`. This file has the deep-dive on commands, architecture, and edge cases.
+
 ## Development Workflow (REQUIRED)
 
 **Always work in a git worktree + dev stack — never edit the stable stack on port 4000 directly.**
