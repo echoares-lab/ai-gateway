@@ -178,17 +178,36 @@ alias_in_config() {
   grep -q "model_name: $1" "$LITELLM_CONFIG" 2>/dev/null
 }
 
-# Probe a model via CLIProxyAPI directly; return 0 if it responds with a choice
+# Probe a model via CLIProxyAPI; return status code (0 = success, 429/503 = rate/unavail, other = error)
+# Returns: 0 (success), 429 (rate limit), 503 (unavailable), other HTTP code, or -1 (network error)
 probe_model() {
   local model="$1"
   local api_key
   api_key=$(get_api_key)
+
+  # Capture HTTP status code
+  local http_code
   local result
-  result=$(curl -s --max-time 20 -X POST "http://localhost:$CLIPROXY_PORT/v1/chat/completions" \
+  result=$(curl -s --max-time 20 -w "\n%{http_code}" -X POST "http://localhost:$CLIPROXY_PORT/v1/chat/completions" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $api_key" \
     -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":3}" 2>/dev/null)
-  echo "$result" | python3 -c "import sys,json; r=json.load(sys.stdin); exit(0 if r.get('choices') else 1)" 2>/dev/null
+
+  http_code=$(echo "$result" | tail -1)
+  local body=$(echo "$result" | head -n -1)
+
+  # Check if HTTP code was successful
+  if [ "$http_code" = "200" ]; then
+    # Verify response has choices array
+    if echo "$body" | python3 -c "import sys,json; r=json.load(sys.stdin); exit(0 if r.get('choices') else 1)" 2>/dev/null; then
+      return 0  # Success
+    else
+      return 1  # Invalid response
+    fi
+  else
+    # Return the HTTP code for caller to interpret
+    return "$http_code"
+  fi
 }
 
 # ──────────────────────────────────────────────
@@ -434,17 +453,27 @@ print(m.group(1) if m else '')
 " 2>/dev/null)
     [ -z "$upstream" ] && continue
 
-    if probe_model "$upstream"; then
+    probe_model "$upstream"
+    local status=$?
+
+    if [ "$status" = "0" ]; then
       echo "  OK   $alias"
+    elif [ "$status" = "429" ] || [ "$status" = "503" ]; then
+      # Transient error (rate limit or unavailable) — don't remove, just warn
+      echo "  WARN $alias — rate limited / temporarily unavailable (HTTP $status) — skipping removal"
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) SKIPPED $alias (probe $status - transient, will retry next sync)" >> "$AUDIT_LOG"
     else
-      echo "  DEAD $alias — removing"
-      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) REMOVED $alias (probe 503)" >> "$AUDIT_LOG"
+      # 404 or other error — model likely doesn't exist, mark for removal
+      echo "  DEAD $alias (HTTP $status) — removing"
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) REMOVED $alias (probe $status - model not found)" >> "$AUDIT_LOG"
+      # Use Python to safely remove the model block from YAML
       python3 - "$LITELLM_CONFIG" "$alias" <<'PYEOF'
 import sys, re
 path, alias = sys.argv[1], sys.argv[2]
 with open(path) as f: txt = f.read()
-pattern = rf'\n  - model_name: {re.escape(alias)}\n    litellm_params:.*?api_key: [^\n]+\n'
-txt = re.sub(pattern, '\n', txt, flags=re.DOTALL)
+# Safer pattern: match model_name block up to next model or settings
+pattern = rf'\n  - model_name: {re.escape(alias)}\n    litellm_params:.*?(?=\n  - model_name:|\ngeneral_settings:)'
+txt = re.sub(pattern, '', txt, flags=re.DOTALL)
 with open(path, 'w') as f: f.write(txt)
 PYEOF
       gemini_map_remove "$alias"
@@ -462,7 +491,10 @@ PYEOF
       continue
     fi
     echo -n "  NEW  $model_id → testing... "
-    if probe_model "$model_id"; then
+    probe_model "$model_id"
+    local status=$?
+
+    if [ "$status" = "0" ]; then
       echo "OK — adding as $alias"
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ADDED $alias (upstream: $model_id)" >> "$AUDIT_LOG"
       # Append new entry before the general_settings block
@@ -483,8 +515,12 @@ with open(path, 'w') as f: f.write(txt)
 PYEOF
       gemini_map_add "$model_id" "$alias"
       changed=true
+    elif [ "$status" = "429" ] || [ "$status" = "503" ]; then
+      # Transient error — skip this run, will retry on next sync
+      echo "rate limited / unavailable (HTTP $status) — skipping"
     else
-      echo "503 — skipping"
+      # 404 or other error — model not available
+      echo "not available (HTTP $status) — skipping"
     fi
   done <<< "$raw_models"
 
