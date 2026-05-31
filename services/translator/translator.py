@@ -739,10 +739,15 @@ async def gemini_proxy(model_action: str, request: Request):
                         yield chunk
                     return
             buf: list[str] = []
-            async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
-                                      headers=headers, content=oai_bytes) as resp:
-                async for chunk in _gemini_stream(_tee_lines(resp.aiter_lines(), buf)):
-                    yield chunk
+            try:
+                async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
+                                          headers=headers, content=oai_bytes) as resp:
+                    async for chunk in _gemini_stream(_tee_lines(resp.aiter_lines(), buf)):
+                        yield chunk
+            except Exception as exc:
+                log.error("Gemini stream upstream error model=%s: %s: %s",
+                          oai_body.get("model"), type(exc).__name__, exc)
+                return
             if ck and buf:
                 await _cache_set(ck, buf)
         return StreamingResponse(generate(), media_type="text/event-stream")
@@ -1032,7 +1037,8 @@ async def responses_proxy(request: Request):
                     async for event in _oai_to_responses_stream(_tee_lines(resp.aiter_lines(), buf)):
                         yield event
             except Exception as exc:
-                log.error("Responses stream upstream error: %s", exc)
+                log.error("Responses stream upstream error model=%s: %s: %s",
+                          oai_body.get("model"), type(exc).__name__, exc)
                 err_id = f"resp_{uuid.uuid4().hex[:24]}"
                 yield _sse("response.created", {"type": "response.created", "response": {
                     "id": err_id, "object": "response", "status": "failed", "output": []}})
@@ -1348,10 +1354,18 @@ async def claude_proxy(request: Request):
                         yield event
                     return
             buf: list[str] = []
-            async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
-                                      headers=headers, content=oai_bytes) as resp:
-                async for event in _oai_to_claude_stream(_tee_lines(resp.aiter_lines(), buf), model):
-                    yield event
+            try:
+                async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
+                                          headers=headers, content=oai_bytes) as resp:
+                    async for event in _oai_to_claude_stream(_tee_lines(resp.aiter_lines(), buf), model):
+                        yield event
+            except Exception as exc:
+                log.error("Claude stream upstream error model=%s: %s: %s",
+                          oai_body.get("model"), type(exc).__name__, exc)
+                msg_id = f"msg_{uuid.uuid4().hex[:24]}"
+                yield f"event: message_start\ndata: {json.dumps({'type': 'message_start', 'message': {'id': msg_id, 'type': 'message', 'role': 'assistant', 'content': [], 'model': model, 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}})}\n\n"
+                yield f"event: message_stop\ndata: {json.dumps({'type': 'message_stop'})}\n\n"
+                return
             if ck and buf:
                 await _cache_set(ck, buf)
         return StreamingResponse(generate(), media_type="text/event-stream")
@@ -1446,8 +1460,8 @@ async def proxy(path: str, request: Request):
                         if ck:
                             buf.append(chunk.decode(errors="replace"))
                         yield chunk
-            except httpx.HTTPError as exc:
-                log.error("Proxy stream connection error: %s", exc)
+            except Exception as exc:
+                log.error("Proxy stream upstream error: %s", exc)
             if ck and buf:
                 await _cache_set(ck, buf)
         return StreamingResponse(generate(), media_type="text/event-stream")
