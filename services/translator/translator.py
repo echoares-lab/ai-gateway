@@ -34,11 +34,13 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("translator")
 
+UPSTREAM_TIMEOUT = float(os.environ.get("UPSTREAM_TIMEOUT", "30.0"))
+
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
     global _client, _redis
     _client = httpx.AsyncClient(
-        timeout=300,
+        timeout=httpx.Timeout(UPSTREAM_TIMEOUT, connect=10.0),
         limits=httpx.Limits(
             max_keepalive_connections=int(os.environ.get("HTTPX_MAX_KEEPALIVE", "20")),
             max_connections=int(os.environ.get("HTTPX_MAX_CONNECTIONS", "100")),
@@ -1205,11 +1207,28 @@ async def responses_websocket(ws: WebSocket):
 
             async def upstream_to_client():
                 try:
-                    async for message in upstream:
-                        if isinstance(message, str):
-                            await ws.send_text(message)
-                        elif isinstance(message, bytes):
-                            await ws.send_bytes(message)
+                    received_any = False
+                    while True:
+                        try:
+                            timeout_val = UPSTREAM_TIMEOUT if not received_any else 15.0
+                            message = await asyncio.wait_for(upstream.recv(), timeout=timeout_val)
+                            received_any = True
+                            if isinstance(message, str):
+                                await ws.send_text(message)
+                            elif isinstance(message, bytes):
+                                await ws.send_bytes(message)
+                        except asyncio.TimeoutError:
+                            log.warning("Codex WebSocket upstream read timed out")
+                            err_msg = {
+                                "type": "error",
+                                "error": {
+                                    "message": f"Upstream WebSocket connection timed out after {UPSTREAM_TIMEOUT}s.",
+                                    "type": "timeout_error"
+                                }
+                            }
+                            await ws.send_text(json.dumps(err_msg))
+                            await ws.close(code=1011, reason="Upstream timeout")
+                            break
                 except Exception as exc:
                     log.debug("Codex WebSocket upstream_to_client error: %s", exc)
 
@@ -1272,12 +1291,20 @@ async def responses_proxy(request: Request):
                                           headers=headers, content=oai_bytes) as resp:
                     async for event in _oai_to_responses_stream(_tee_lines(resp.aiter_lines(), buf)):
                         yield event
+            except httpx.TimeoutException as exc:
+                log.error("Responses stream upstream timed out: %s", exc)
+                err_id = f"resp_{uuid.uuid4().hex[:24]}"
+                err_msg = f"Upstream request timed out after {UPSTREAM_TIMEOUT} seconds. Please check LiteLLM readiness."
+                yield _sse("error", {"type": "error", "error": {"message": err_msg, "type": "timeout_error"}})
+                yield _sse("response.completed", {"type": "response.completed", "response": {
+                    "id": err_id, "object": "response", "status": "failed"}})
+                return
             except Exception as exc:
                 log.error("Responses stream upstream error model=%s: %s: %s",
                           oai_body.get("model"), type(exc).__name__, exc)
                 err_id = f"resp_{uuid.uuid4().hex[:24]}"
-                yield _sse("response.created", {"type": "response.created", "response": {
-                    "id": err_id, "object": "response", "status": "failed", "output": []}})
+                err_msg = f"Upstream connection failed: {exc}"
+                yield _sse("error", {"type": "error", "error": {"message": err_msg, "type": "connection_error"}})
                 yield _sse("response.completed", {"type": "response.completed", "response": {
                     "id": err_id, "object": "response", "status": "failed"}})
                 return
@@ -1296,7 +1323,18 @@ async def responses_proxy(request: Request):
             except Exception:
                 pass
 
-    resp = await _post_with_retry(f"{LITELLM}/v1/chat/completions", headers, oai_bytes)
+    try:
+        resp = await _post_with_retry(f"{LITELLM}/v1/chat/completions", headers, oai_bytes)
+    except httpx.TimeoutException as exc:
+        log.error("Codex upstream request timed out: %s", exc)
+        err_msg = f"Upstream request timed out after {UPSTREAM_TIMEOUT} seconds. Please check LiteLLM readiness."
+        return Response(content=json.dumps({"error": {"message": err_msg, "type": "timeout_error"}}).encode(),
+                        status_code=504, headers={"content-type": "application/json"})
+    except Exception as exc:
+        log.error("Codex upstream request failed: %s", exc)
+        err_msg = f"Upstream connection failed: {exc}"
+        return Response(content=json.dumps({"error": {"message": err_msg, "type": "connection_error"}}).encode(),
+                        status_code=502, headers={"content-type": "application/json"})
 
     if resp.status_code >= 400:
         log.warning("Codex upstream %d: %s", resp.status_code, resp.text[:300])

@@ -94,6 +94,7 @@ services:
       LITELLM_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       CLIPROXY_API_KEY: ${CLIPROXY_API_KEY}
+      UPSTREAM_TIMEOUT: ${UPSTREAM_TIMEOUT:-30.0}
     ports:
       - "${DEV_TRANSLATOR_PORT:-4010}:4000"
     volumes:

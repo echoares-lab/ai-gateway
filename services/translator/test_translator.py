@@ -377,3 +377,60 @@ async def test_post_with_retry_stops_after_retries_exhausted():
     assert result.status_code == 503
     # 1 initial + 2 retries = 3 calls
     assert mock_client.post.call_count == 3
+
+
+def test_responses_proxy_timeout_non_stream():
+    from fastapi.testclient import TestClient
+    import httpx
+    client = TestClient(t.app)
+
+    async def mock_post_with_retry(*args, **kwargs):
+        raise httpx.TimeoutException("Simulated upstream timeout")
+
+    with patch("translator._post_with_retry", mock_post_with_retry), \
+         patch.dict(os.environ, {"LITELLM_MASTER_KEY": "test-key"}):
+        response = client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "messages": [{"role": "user", "content": "hello"}]}
+        )
+
+    assert response.status_code == 504
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["type"] == "timeout_error"
+    assert "Upstream request timed out" in data["error"]["message"]
+
+
+def test_responses_proxy_timeout_stream():
+    from fastapi.testclient import TestClient
+    import httpx
+    client = TestClient(t.app)
+
+    mock_client = MagicMock()
+    class MockContextManager:
+        def __init__(self, *args, **kwargs):
+            pass
+        async def __aenter__(self):
+            raise httpx.TimeoutException("Simulated stream timeout")
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    mock_client.stream = MockContextManager
+
+    with patch.object(t, "_client", mock_client), \
+         patch.dict(os.environ, {"LITELLM_MASTER_KEY": "test-key"}):
+        response = client.post(
+            "/v1/responses",
+            json={"model": "gpt-5.4", "stream": True, "messages": [{"role": "user", "content": "hello"}]}
+        )
+
+    assert response.status_code == 200
+    lines = [
+        line.decode("utf-8") if isinstance(line, bytes) else line
+        for line in response.iter_lines()
+        if line
+    ]
+    assert any("timeout_error" in line for line in lines)
+    assert any("response.completed" in line for line in lines)
+
+
