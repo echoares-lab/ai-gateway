@@ -990,7 +990,8 @@ async def _oai_to_responses_stream(oai_lines):
 
 @app.websocket("/v1/responses")
 async def responses_ws_unsupported(ws: WebSocket):
-    # Codex CLI probes WebSocket first; close cleanly so it falls back to HTTPS without a 403 warning
+    # Accept then immediately close so Codex gets a proper WS close frame (not a 403)
+    await ws.accept()
     await ws.close(code=1011, reason="WebSocket not supported; use HTTPS POST")
 
 
