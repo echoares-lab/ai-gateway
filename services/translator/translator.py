@@ -24,7 +24,6 @@ import uuid
 import re
 from dataclasses import dataclass
 import httpx
-import websockets
 import redis.asyncio as aioredis
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, WebSocket
@@ -1111,104 +1110,12 @@ async def _oai_to_responses_stream(oai_lines):
 
 
 @app.websocket("/v1/responses")
-async def responses_websocket(ws: WebSocket):
-    # Accept client WebSocket connection
-    await ws.accept()
-    
-    # Authenticate client connection
-    client_auth = ws.headers.get("authorization", "")
-    expected_master_key = os.environ.get("LITELLM_MASTER_KEY", "sk-a3698c2000395d1181397b256415e680")
-    if expected_master_key:
-        is_authorized = False
-        if client_auth == f"Bearer {expected_master_key}":
-            is_authorized = True
-        elif client_auth == expected_master_key:
-            is_authorized = True
-            
-        if not is_authorized:
-            log.warning("Unauthorized Codex WebSocket connection attempt")
-            try:
-                await ws.close(code=1008, reason="Unauthorized")
-            except Exception:
-                pass
-            return
-
-    # Target CLIProxy WebSocket URL
-    cliproxy_ws_url = os.environ.get("CLIPROXY_WS_URL", "ws://cliproxy:8317/v1/responses")
-    
-    # Filter client handshake headers to forward to CLIProxy
-    headers = {}
-    for k, v in ws.headers.items():
-        k_lower = k.lower()
-        if k_lower not in (
-            "host",
-            "upgrade",
-            "connection",
-            "sec-websocket-key",
-            "sec-websocket-version",
-            "sec-websocket-extensions",
-            "sec-websocket-protocol",
-            "content-length"
-        ):
-            headers[k] = v
-
-    # Translate master key to CLIProxy API Key for the upstream connection
-    cliproxy_api_key = os.environ.get("CLIPROXY_API_KEY", "")
-    if cliproxy_api_key:
-        headers["authorization"] = f"Bearer {cliproxy_api_key}"
-
-    log.info("Proxying Codex WebSocket to upstream: %s", cliproxy_ws_url)
+async def responses_ws_unsupported(ws: WebSocket):
     try:
-        # Determine whether to use additional_headers or extra_headers
-        import inspect
-        connect_sig = inspect.signature(websockets.connect)
-        connect_kwargs = {}
-        if "additional_headers" in connect_sig.parameters:
-            connect_kwargs["additional_headers"] = headers
-        else:
-            connect_kwargs["extra_headers"] = headers
-
-        async with websockets.connect(cliproxy_ws_url, **connect_kwargs) as upstream:
-            async def client_to_upstream():
-                try:
-                    while True:
-                        data = await ws.receive()
-                        if data.get("type") == "websocket.disconnect":
-                            break
-                        
-                        text = data.get("text")
-                        if text is not None:
-                            await upstream.send(text)
-                            continue
-                        
-                        bytes_data = data.get("bytes")
-                        if bytes_data is not None:
-                            await upstream.send(bytes_data)
-                            continue
-                except Exception as exc:
-                    log.debug("Codex WebSocket client_to_upstream error: %s", exc)
-
-            async def upstream_to_client():
-                try:
-                    async for message in upstream:
-                        if isinstance(message, str):
-                            await ws.send_text(message)
-                        elif isinstance(message, bytes):
-                            await ws.send_bytes(message)
-                except Exception as exc:
-                    log.debug("Codex WebSocket upstream_to_client error: %s", exc)
-
-            t1 = asyncio.create_task(client_to_upstream())
-            t2 = asyncio.create_task(upstream_to_client())
-            done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
-            for task in pending:
-                task.cancel()
-    except Exception as exc:
-        log.error("Failed to connect or proxy Codex WebSocket to upstream %s: %s", cliproxy_ws_url, exc)
-        try:
-            await ws.close(code=1011, reason=f"Upstream connection failed: {exc}")
-        except Exception:
-            pass
+        await ws.accept()
+        await ws.close(code=1011, reason="WebSocket not supported; use HTTPS POST")
+    except Exception:
+        pass
 
 
 @app.post("/v1/responses")
