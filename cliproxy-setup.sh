@@ -30,6 +30,16 @@ esac
 # Internal helpers
 # ──────────────────────────────────────────────
 
+validate_yaml() {
+  # Validate YAML syntax
+  local yaml_file="${1:-$LITELLM_CONFIG}"
+  if ! python3 -c "import yaml, sys; yaml.safe_load(open('$yaml_file'))" 2>/dev/null; then
+    echo "❌ YAML validation failed for $yaml_file"
+    return 1
+  fi
+  return 0
+}
+
 write_config() {
   if [ -f "$CLIPROXY_CONFIG" ]; then return; fi
   local apikey
@@ -493,6 +503,13 @@ PYEOF
   fi
 
   if [ "$changed" = true ]; then
+    echo ""
+    echo "Validating YAML syntax..."
+    if ! validate_yaml "$LITELLM_CONFIG"; then
+      echo "❌ Config changes invalid — aborting restart"
+      return 1
+    fi
+    echo "✓ YAML valid"
     echo ""
     echo "Config updated — restarting LiteLLM..."
     docker compose -f "$SCRIPT_DIR/docker-compose.yml" restart litellm

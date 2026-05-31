@@ -642,16 +642,10 @@ model_list:
 
   # xAI / Grok (X Premium subscription via CLIProxy OAuth)
   # Cost unknown — no model_info until pricing is confirmed.
-      max_tokens: 32000
-
-      max_tokens: 32000
-
-      max_tokens: 32000
+  # (Model entries removed — to be re-added when pricing is confirmed)
 
   # Moonshot / Kimi (Kimi subscription via CLIProxy OAuth)
-      max_tokens: 32000
-
-      max_tokens: 32000
+  # (Model entries removed — to be re-added when pricing is confirmed)
 
   - model_name: claude-opus-4-8
     litellm_params:
