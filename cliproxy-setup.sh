@@ -52,6 +52,19 @@ auth-dir: "$HOME/.cli-proxy-api"
 api-keys:
   - "$apikey"
 debug: false
+
+# Usage statistics — required for cpa-manager analytics dashboard
+usage-statistics-enabled: true
+redis-usage-queue-retention-seconds: 60  # how long usage events stay in Redis queue
+
+# Quota handling — fall back to Antigravity credits when quota exceeded
+quota-exceeded:
+  antigravity-credits: true
+
+# Streaming reliability — prevents idle timeouts on slow models (Opus, Gemini Pro)
+streaming:
+  keepalive-seconds: 30      # send SSE keep-alive every 30s during long requests
+  bootstrap-retries: 2       # retry N times before first byte on transient failures
 EOF
   echo "Config written to $CLIPROXY_CONFIG"
   echo "CLIProxyAPI API key: $apikey"
