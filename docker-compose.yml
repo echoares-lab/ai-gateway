@@ -127,7 +127,7 @@ services:
     restart: always
     depends_on:
       litellm:
-        condition: service_healthy
+        condition: service_started
       redis:
         condition: service_started
     ports:
