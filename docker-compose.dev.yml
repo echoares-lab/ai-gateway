@@ -58,6 +58,19 @@ services:
     ports:
       - "${DEV_LITELLM_PORT:-4011}:4000"
 
+  litellm-reloader:
+    build:
+      context: ./services/litellm-reloader
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - LITELLM_CONTAINER=${COMPOSE_PROJECT_NAME:-aidev1}-litellm-1
+    volumes:
+      - ./litellm-config.yaml:/config/litellm-config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - litellm
+
   translator:
     build:
       context: ./services/translator

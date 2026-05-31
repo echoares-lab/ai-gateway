@@ -15,9 +15,10 @@ cd /home/dev/repos/ai-gateway-<feature>
 # 2. Start an isolated dev stack in a free slot (use `./dev-env.sh list` to find one)
 ./dev-env.sh start 1          # or slot 2, 3, …
 
-# 3. Edit code, then rebuild fast
-./dev-env.sh rebuild 1        # after translator.py changes
-# docker compose restart litellm  ← for litellm-config.yaml changes (from worktree dir)
+# 3. Edit code — hot-reload is automatic
+# translator.py changes: uvicorn auto-reloads within ~1s
+# litellm-config.yaml changes: litellm-reloader restarts LiteLLM within ~10s
+# (no rebuild or manual restart needed)
 
 # 4. Run unit tests (no container restart needed)
 docker exec aidev1-translator-1 pytest test_translator.py -v
@@ -40,11 +41,13 @@ cd /home/dev/repos/ai-gateway && git worktree remove ../ai-gateway-<feature>
 # Start full stack
 docker compose up -d
 
-# Rebuild and restart translator only (after translator.py changes)
+# translator.py changes: no action needed, uvicorn auto-reloads
+# (only rebuild needed if Dockerfile or dependencies change)
 docker compose build translator && docker compose up -d translator
 
-# Restart LiteLLM only (after litellm-config.yaml changes)
-docker compose restart litellm
+# litellm-config.yaml changes: automatic via litellm-reloader sidecar
+# (no action needed; litellm-reloader watches and restarts LiteLLM)
+# If you need to force restart: docker compose restart litellm
 
 # Health check
 ./cliproxy-setup.sh health
