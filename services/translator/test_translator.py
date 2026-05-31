@@ -239,10 +239,7 @@ async def test_post_with_retry_success_on_first_attempt():
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=mock_resp)
 
-    with patch("translator.httpx.AsyncClient") as MockClient:
-        MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with patch.object(t, "_client", mock_client):
         result = await t._post_with_retry("http://litellm:4000/v1/chat/completions", {}, b"{}")
 
     assert result.status_code == 200
@@ -276,6 +273,28 @@ class TestGeminiReqToOai(unittest.TestCase):
         oai = self._call("some-model-customtools")
         assert oai["model"] == "some-model"
 
+    def test_unknown_preview_with_tools_falls_back_to_base(self):
+        body = {
+            "contents": [{"role": "user", "parts": [{"text": "hi"}]}],
+            "tools": [{"functionDeclarations": [{"name": "search"}]}],
+        }
+        oai = self._call("gemini-2.5-pro-preview-05-06", body=body, gemini_map={})
+        assert oai["model"] == "gemini-2.5-pro"
+
+
+def test_responses_preview_model_warns_and_passthrough(caplog):
+    caplog.set_level("WARNING")
+    oai = t._responses_req_to_oai({"model": "foo-preview", "input": "hello"})
+    assert oai["model"] == "foo-preview"
+    assert any("model_resolution" in r.message and "preview_passthrough" in r.message for r in caplog.records)
+
+
+def test_patch_body_model_resolution_from_dotted_name():
+    body = json.dumps({"model": "gemini.3.1.pro", "messages": [{"role": "user", "content": "x"}]}).encode()
+    result, changed = t._patch_body("v1/chat/completions", body)
+    assert changed
+    assert json.loads(result)["model"] == "gemini-3-1-pro"
+
 
 @pytest.mark.asyncio
 async def test_post_with_retry_retries_on_502():
@@ -297,11 +316,8 @@ async def test_post_with_retry_retries_on_502():
     mock_client = AsyncMock()
     mock_client.post = fake_post
 
-    with patch("translator.httpx.AsyncClient") as MockClient, \
+    with patch.object(t, "_client", mock_client), \
          patch("translator.asyncio.sleep", new=AsyncMock()):
-        MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
-
         result = await t._post_with_retry("http://litellm:4000/v1/chat/completions", {}, b"{}", retries=1)
 
     assert result.status_code == 200
@@ -316,11 +332,8 @@ async def test_post_with_retry_stops_after_retries_exhausted():
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=err_resp)
 
-    with patch("translator.httpx.AsyncClient") as MockClient, \
+    with patch.object(t, "_client", mock_client), \
          patch("translator.asyncio.sleep", new=AsyncMock()):
-        MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
-
         result = await t._post_with_retry("http://litellm:4000/v1/chat/completions", {}, b"{}", retries=2)
 
     assert result.status_code == 503

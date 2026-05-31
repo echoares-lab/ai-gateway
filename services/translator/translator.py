@@ -21,6 +21,8 @@ import logging
 import os
 import time
 import uuid
+import re
+from dataclasses import dataclass
 import httpx
 import redis.asyncio as aioredis
 from fastapi import FastAPI, Request
@@ -313,6 +315,83 @@ def _normalize_model(name: str) -> str:
     return name.replace(".", "-")
 
 
+@dataclass
+class _ResolvedModel:
+    requested_model: str
+    effective_model: str
+    change_reason: str
+    severity: str
+    tool_capability_assumption: str
+
+
+def _emit_model_resolution(res: _ResolvedModel, endpoint: str, wants_tools: bool) -> None:
+    if res.requested_model == res.effective_model and res.severity == "info":
+        return
+    level = logging.WARNING if res.severity == "warn" else logging.INFO
+    log.log(
+        level,
+        "model_resolution endpoint=%s requested=%s effective=%s reason=%s severity=%s tools=%s assumption=%s",
+        endpoint,
+        res.requested_model,
+        res.effective_model,
+        res.change_reason,
+        res.severity,
+        wants_tools,
+        res.tool_capability_assumption,
+    )
+
+
+_PREVIEW_SUFFIX_RE = re.compile(r"-(preview|exp)(-[0-9]{2}-[0-9]{2})?$")
+
+
+def _maybe_preview_fallback(model: str, wants_tools: bool) -> tuple[str, str, str, str]:
+    if not wants_tools:
+        return model, "unknown_passthrough", "warn", "native"
+    base = _PREVIEW_SUFFIX_RE.sub("", model)
+    if base != model:
+        return base, "preview_suffix_fallback", "warn", "fallback"
+    return model, "unknown_preview_passthrough", "warn", "assumed"
+
+
+def _resolve_model(model: str, endpoint: str, wants_tools: bool = False, gemini_map: dict | None = None) -> _ResolvedModel:
+    requested = model or ""
+    effective = requested
+    reason = "passthrough"
+    severity = "info"
+    assumption = "native"
+
+    if effective.startswith(MODEL_PREFIX):
+        effective = effective[len(MODEL_PREFIX):]
+        reason = "prefix_strip"
+
+    if endpoint == "gemini":
+        base = effective.removesuffix("-customtools")
+        if base != effective:
+            effective = base
+            reason = "customtools_suffix_strip"
+
+        gmap = gemini_map or {}
+        mapped = gmap.get(effective)
+        if mapped:
+            if mapped != effective:
+                reason = "gemini_map"
+            effective = mapped
+        elif "preview" in effective or "exp" in effective:
+            effective, reason, severity, assumption = _maybe_preview_fallback(effective, wants_tools)
+    else:
+        if "." in effective:
+            effective = _normalize_model(effective)
+            reason = "dotted_to_dashed"
+        if ("preview" in effective or "exp" in effective) and endpoint in ("responses", "chat", "claude"):
+            # Warn for drift even when unchanged for non-Gemini paths.
+            severity = "warn"
+            reason = "preview_passthrough"
+
+    res = _ResolvedModel(requested, effective, reason, severity, assumption)
+    _emit_model_resolution(res, endpoint, wants_tools)
+    return res
+
+
 def _strip_prefix(body: bytes) -> tuple[bytes, bool]:
     try:
         data = json.loads(body)
@@ -370,10 +449,11 @@ def _patch_body(path: str, body: bytes) -> tuple[bytes, bool]:
             changed = True
 
     raw_model = data.get("model", "")
-    if isinstance(raw_model, str) and "." in raw_model:
-        data["model"] = _normalize_model(raw_model)
-        log.info("Normalised model name %s → %s", raw_model, data["model"])
-        changed = True
+    if isinstance(raw_model, str):
+        resolved = _resolve_model(raw_model, endpoint="chat", wants_tools=bool(data.get("tools")))
+        if resolved.effective_model != raw_model:
+            data["model"] = resolved.effective_model
+            changed = True
 
     if changed:
         return json.dumps(data).encode(), True
@@ -480,8 +560,8 @@ def _gemini_req_to_oai(model: str, body: dict) -> dict:
 
     # Google exposes variants like gemini-3.1-pro-preview-customtools for tool-aware routing;
     # our CLIProxy backend handles tools with the base model so we strip known suffixes.
-    _base_model = model.removesuffix("-customtools")
-    oai = {"model": _get_gemini_map().get(_base_model, _base_model), "messages": messages}
+    resolved = _resolve_model(model, endpoint="gemini", wants_tools=bool(body.get("tools")), gemini_map=_get_gemini_map())
+    oai = {"model": resolved.effective_model, "messages": messages}
 
     gc = body.get("generationConfig", {})
     if "maxOutputTokens" in gc:
@@ -712,7 +792,8 @@ def _responses_req_to_oai(body: dict) -> dict:
     elif isinstance(inp, list):
         messages.extend(_responses_input_to_messages(inp))
 
-    oai: dict = {"model": _normalize_model(body.get("model", "")), "messages": messages}
+    resolved = _resolve_model(body.get("model", ""), endpoint="responses", wants_tools=bool(body.get("tools")))
+    oai: dict = {"model": resolved.effective_model, "messages": messages}
 
     if "max_output_tokens" in body:
         oai["max_tokens"] = body["max_output_tokens"]
@@ -1039,7 +1120,8 @@ def _claude_msg_to_oai(msg: dict) -> list[dict]:
 
 
 def _claude_req_to_oai(body: dict) -> dict:
-    model = _normalize_model(body.get("model", ""))
+    resolved = _resolve_model(body.get("model", ""), endpoint="claude", wants_tools=bool(body.get("tools")))
+    model = resolved.effective_model
     if "[" in model and model.endswith("]"):
         model = model.split("[")[0]
 
