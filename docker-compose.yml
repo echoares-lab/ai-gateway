@@ -126,8 +126,10 @@ services:
     command: uvicorn translator:app --host 0.0.0.0 --port 4000 --reload --workers 1
     restart: always
     depends_on:
-      - litellm
-      - redis
+      litellm:
+        condition: service_healthy
+      redis:
+        condition: service_started
     ports:
       - "4000:4000"
     environment:
@@ -163,6 +165,12 @@ services:
     volumes:
       - ./litellm-config.yaml:/app/config.yaml
     command: [ "--config", "/app/config.yaml", "--port", "4000" ]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
 
   litellm-reloader:
     build:

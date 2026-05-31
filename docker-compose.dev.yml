@@ -57,6 +57,12 @@ services:
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     ports:
       - "${DEV_LITELLM_PORT:-4011}:4000"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
 
   litellm-reloader:
     build:
@@ -77,7 +83,9 @@ services:
       dockerfile: Dockerfile
     command: uvicorn translator:app --host 0.0.0.0 --port 4000 --reload
     restart: unless-stopped
-    depends_on: [litellm]
+    depends_on:
+      litellm:
+        condition: service_healthy
     environment:
       LITELLM_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
