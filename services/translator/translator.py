@@ -1082,6 +1082,7 @@ async def responses_proxy(request: Request):
 
     ck = _cache_key(oai_body.get("model", ""), oai_body.get("messages", []),
                     oai_body.get("tools"))
+    log.info("Codex request headers: %s", {k: v for k, v in request.headers.items()})
     log.info("Codex Responses API → model=%s tools=%d stream=%s",
              oai_body.get("model"), len(oai_body.get("tools", [])), streaming)
 

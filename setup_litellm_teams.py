@@ -142,10 +142,10 @@ def ensure_gitignore(repo_dir):
 # --- Codex gateway setup ---
 
 def _read_codex_toml(config_path):
-    """Parse codex config.toml into (global_kvs dict, project_trust dict)."""
-    global_kvs, project_trust, current_project = {}, {}, None
+    """Parse codex config.toml into (global_kvs dict, project_settings dict)."""
+    global_kvs, project_settings, current_project = {}, {}, None
     if not os.path.exists(config_path):
-        return global_kvs, project_trust
+        return global_kvs, project_settings
     for line in open(config_path):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
@@ -153,6 +153,7 @@ def _read_codex_toml(config_path):
         m = re.match(r'\[projects\."(.+?)"\]', stripped)
         if m:
             current_project = m.group(1)
+            project_settings.setdefault(current_project, {})
             continue
         if stripped.startswith("["):
             current_project = None
@@ -161,29 +162,30 @@ def _read_codex_toml(config_path):
             k, _, v = stripped.partition("=")
             k, v = k.strip(), v.strip().strip('"')
             if current_project is not None:
-                if k == "trust_level":
-                    project_trust[current_project] = v
+                project_settings[current_project][k] = v
             else:
                 global_kvs[k] = v
-    return global_kvs, project_trust
+    return global_kvs, project_settings
 
-def _write_codex_toml(config_path, global_kvs, project_trust):
-    """Write codex config.toml from (global_kvs, project_trust) dicts."""
+def _write_codex_toml(config_path, global_kvs, project_settings):
+    """Write codex config.toml from (global_kvs, project_settings) dicts."""
     lines = [f'{k} = "{v}"\n' for k, v in global_kvs.items()]
-    for path, level in sorted(project_trust.items()):
-        lines += [f'\n[projects."{path}"]\n', f'trust_level = "{level}"\n']
+    for path, settings in sorted(project_settings.items()):
+        lines += [f'\n[projects."{path}"]\n']
+        for k, v in sorted(settings.items()):
+            lines += [f'{k} = "{v}"\n']
     with open(config_path, "w") as f:
         f.writelines(lines)
 
-def _setup_codex_gateway_home(repo_dir: str):
+def _setup_codex_gateway_home(repo_dir: str, gateway_url: str, api_key: str):
     """
     Create/update ~/.codex-gateway/config.toml with:
       - openai_base_url pointing at our gateway
       - approval_policy = "never"  (yolo / full-auto mode)
-      - [projects."<repo_dir>"] trust_level = "trusted"  (per-repo trust)
+      - [projects."<repo_dir>"] trust_level = "trusted", api_key = "<api_key>"
 
     No auth.json is written — the absence of stored ChatGPT tokens causes
-    Codex to fall back to OPENAI_API_KEY env-var API-key mode.
+    Codex to fall back to api_key mode.
     User's default ~/.codex (ChatGPT OAuth) is untouched.
     """
     os.makedirs(CODEX_GATEWAY_HOME, exist_ok=True)
@@ -193,13 +195,16 @@ def _setup_codex_gateway_home(repo_dir: str):
         os.remove(auth_path)
         log(f"  codex: removed active {auth_path} to enforce per-repo API key fallback")
 
-    global_kvs, project_trust = _read_codex_toml(config_path)
-    global_kvs["openai_base_url"] = f"{GATEWAY_API_URL}/v1"
+    global_kvs, project_settings = _read_codex_toml(config_path)
+    global_kvs["openai_base_url"] = f"{gateway_url}/v1"
     global_kvs["approval_policy"] = "never"
-    project_trust[repo_dir] = "trusted"
+    
+    project_settings.setdefault(repo_dir, {})
+    project_settings[repo_dir]["trust_level"] = "trusted"
+    project_settings[repo_dir]["api_key"] = api_key
 
-    _write_codex_toml(config_path, global_kvs, project_trust)
-    log(f"  codex: updated {config_path} (approval_policy=never, trusted {repo_dir})")
+    _write_codex_toml(config_path, global_kvs, project_settings)
+    log(f"  codex: updated {config_path} (approval_policy=never, trusted & configured {repo_dir})")
 
 # --- Gemini trust setup ---
 
@@ -304,6 +309,7 @@ def parse_args():
     parser.add_argument("--slot", type=int, default=None, help="Dev stack slot number (e.g. 1, 2, ...)")
     parser.add_argument("--gateway-url", type=str, default=None, help="Explicit gateway API URL")
     parser.add_argument("--litellm-url", type=str, default=None, help="Explicit LiteLLM admin API URL")
+    parser.add_argument("--force", action="store_true", help="Force deletion and regeneration of all keys")
     return parser.parse_args()
 
 
@@ -389,6 +395,14 @@ def main():
         for client in CLIENTS:
             alias = f"{repo}-{client}"
             cfg = CLIENT_CONFIG[client]
+            if args.force:
+                log(f"  {client}: --force requested, deleting key {alias} in LiteLLM...")
+                requests.post(
+                    f"{litellm_admin_url}/key/delete",
+                    headers=headers,
+                    json={"key_aliases": [alias]},
+                    timeout=10,
+                )
             try:
                 resp = requests.post(
                     f"{litellm_admin_url}/key/generate",
@@ -447,7 +461,7 @@ def main():
                 env_vars.append((k, v))
 
             if client == "codex":
-                _setup_codex_gateway_home(repo_dir)
+                _setup_codex_gateway_home(repo_dir, gateway_url, api_key)
                 # OPENAI_BASE_URL was the old codex routing var; CODEX_HOME replaces it.
                 stale_vars.append("OPENAI_BASE_URL")
             elif client == "gemini":
