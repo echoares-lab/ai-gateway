@@ -25,6 +25,7 @@ import re
 from dataclasses import dataclass
 import httpx
 import redis.asyncio as aioredis
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
@@ -32,7 +33,33 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("translator")
 
-app = FastAPI()
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    global _client, _redis
+    _client = httpx.AsyncClient(
+        timeout=300,
+        limits=httpx.Limits(
+            max_keepalive_connections=int(os.environ.get("HTTPX_MAX_KEEPALIVE", "20")),
+            max_connections=int(os.environ.get("HTTPX_MAX_CONNECTIONS", "100")),
+        ),
+    )
+    redis_url = os.environ.get("REDIS_URL", "")
+    if CACHE_ENABLED and redis_url:
+        try:
+            _redis = aioredis.from_url(redis_url, encoding="utf-8", decode_responses=True)
+            await _redis.ping()
+            log.info("Redis cache connected: %s", redis_url.split("@")[-1])
+        except Exception as exc:
+            log.warning("Redis cache unavailable (%s) — caching disabled", exc)
+            _redis = None
+    yield
+    if _client is not None:
+        await _client.aclose()
+    if _redis is not None:
+        await _redis.aclose()
+
+
+app = FastAPI(lifespan=_lifespan)
 LITELLM = os.environ.get("LITELLM_URL", "http://litellm:4000")
 MODEL_PREFIX = "AI-Gateway:"
 
@@ -85,35 +112,6 @@ _client: httpx.AsyncClient | None = None
 CACHE_ENABLED = os.environ.get("CACHE_ENABLED", "false").lower() not in ("0", "false", "no")
 CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "60"))
 _redis: aioredis.Redis | None = None
-
-
-@app.on_event("startup")
-async def _startup():
-    global _client, _redis
-    _client = httpx.AsyncClient(
-        timeout=300,
-        limits=httpx.Limits(
-            max_keepalive_connections=int(os.environ.get("HTTPX_MAX_KEEPALIVE", "20")),
-            max_connections=int(os.environ.get("HTTPX_MAX_CONNECTIONS", "100")),
-        ),
-    )
-    redis_url = os.environ.get("REDIS_URL", "")
-    if CACHE_ENABLED and redis_url:
-        try:
-            _redis = aioredis.from_url(redis_url, encoding="utf-8", decode_responses=True)
-            await _redis.ping()
-            log.info("Redis cache connected: %s", redis_url.split("@")[-1])
-        except Exception as exc:
-            log.warning("Redis cache unavailable (%s) — caching disabled", exc)
-            _redis = None
-
-
-@app.on_event("shutdown")
-async def _shutdown():
-    if _client is not None:
-        await _client.aclose()
-    if _redis is not None:
-        await _redis.aclose()
 
 
 def _cache_key(model: str, messages: list, tools: list | None = None) -> str | None:
@@ -1544,9 +1542,7 @@ async def proxy(path: str, request: Request):
 
     body, prefix_stripped = _strip_prefix(raw)
     body, fmt_changed = _patch_body(path, body if prefix_stripped else raw)
-    if not fmt_changed and prefix_stripped:
-        body = body
-    elif not fmt_changed and not prefix_stripped:
+    if not fmt_changed and not prefix_stripped:
         body = raw
     changed = prefix_stripped or fmt_changed
 
