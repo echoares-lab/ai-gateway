@@ -221,12 +221,35 @@ OAuth tokens auto-refresh while the container is running. If you see 401s or a p
 ```bash
 ./cliproxy-setup.sh login-claude       # re-auth Claude
 ./cliproxy-setup.sh login-codex        # re-auth ChatGPT/Codex
-./cliproxy-setup.sh login-antigravity  # re-auth Antigravity
+./cliproxy-setup.sh login-antigravity  # re-auth Gemini / Antigravity (see migration below)
 ./cliproxy-setup.sh login-grok         # re-auth Grok
 ./cliproxy-setup.sh login-kimi         # re-auth Kimi
 ```
 
 The running container detects new token files automatically (file watcher, no restart needed).
+
+### ⚠️ Gemini CLI Sunset — June 18, 2026
+
+**Gemini CLI OAuth tokens stop working June 18, 2026.** All Gemini models must migrate to Antigravity CLI.
+
+**Migration steps:**
+1. **Install Antigravity CLI** (if not already installed):
+   ```bash
+   curl -fsSL https://antigravity.google/cli/install.sh | bash
+   ```
+
+2. **Authenticate with Antigravity** (replaces Gemini CLI):
+   ```bash
+   ./cliproxy-setup.sh login-antigravity
+   ```
+
+3. **Verify Gemini models work:**
+   ```bash
+   ./cliproxy-setup.sh test gemini-3-1-pro
+   ./cliproxy-setup.sh test gemini-3-flash
+   ```
+
+4. **After June 18, 2026:** Any remaining Gemini CLI tokens will be rejected. Ensure all systems use `login-antigravity`.
 
 ---
 
@@ -355,9 +378,11 @@ The model exists in CLIProxyAPI's list but isn't active. Run:
 
 ### Token expired / 401 from a provider
 ```bash
-./cliproxy-setup.sh login-claude   # or login-codex / login-gemini
+./cliproxy-setup.sh login-claude       # or login-codex / login-antigravity / login-grok / login-kimi
 # Container picks up new token automatically within ~30s
 ```
+
+**For Gemini models:** Use `login-antigravity` (Gemini CLI deprecated; see [Gemini CLI Sunset](#-gemini-cli-sunset--june-18-2026))
 
 ### LiteLLM models out of date after config change
 ```bash

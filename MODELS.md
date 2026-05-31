@@ -31,7 +31,7 @@ Auth header: `Authorization: Bearer <LITELLM_MASTER_KEY>` (see `.env`)
 
 | Alias | Upstream model ID | Tier | ~Msgs per 5h window |
 |-------|-------------------|------|---------------------|
-| `claude-opus-4-7` | `claude-opus-4-7` | Flagship Opus | 10–20 |
+| `claude-opus-4-8` | `claude-opus-4-8` | Flagship Opus | 10–20 |
 | `claude-opus-4-6` | `claude-opus-4-6` | Opus | 10–20 |
 | `claude-sonnet-4-6` | `claude-sonnet-4-6` | Sonnet | 50–100 |
 | `claude-opus-4-5` | `claude-opus-4-5-20251101` | Opus | 10–20 |
@@ -171,9 +171,9 @@ curl -s http://localhost:4000/health/readiness
 
 Re-authenticate if you see 401s from a provider:
 ```bash
-./cliproxy-setup.sh login-claude    # port 54545 callback
-./cliproxy-setup.sh login-codex     # port 1455 callback
-./cliproxy-setup.sh login-gemini    # no fixed port
+./cliproxy-setup.sh login-claude       # port 54545 callback
+./cliproxy-setup.sh login-codex        # port 1455 callback
+./cliproxy-setup.sh login-antigravity  # Gemini / Antigravity (Gemini CLI deprecated; see below)
 ```
 
 On a remote server, open SSH port forwards first (run locally):
