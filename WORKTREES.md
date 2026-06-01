@@ -18,8 +18,9 @@ gateway. Worktrees solve this:
 ## Creating a feature worktree
 
 ```bash
-# Always branch off dev (not main)
+# Always branch off main
 cd /home/dev/repos/ai-gateway
+git checkout main
 git worktree add ../ai-gateway-<feature> -b feat/<feature>
 
 # Symlink .env so secrets are available without duplicating the file
@@ -37,19 +38,18 @@ Run `git worktree list` for the live state.
 
 | Directory | Branch | Purpose |
 |-----------|--------|---------|
-| `/home/dev/repos/ai-gateway` | `dev` | Primary repo — stable stack reads from here |
+| `/home/dev/repos/ai-gateway` | `main` | Primary repo — stable stack reads from here |
 
 ---
 
 ## Branch strategy
 
 ```
-feat/<name>  →  dev  →  (PR)  →  main
+feat/<name>  →  (PR)  →  main
 ```
 
-- All feature work branches off `dev`
-- Features merge back to `dev` after testing
-- `dev` → `main` via PR (CI must pass; never direct push)
+- All feature work branches off `main`
+- `feat/<name>` → `main` via PR (CI must pass; never direct push)
 - `main` is the production branch — only tested, reviewed code lands here
 
 ---

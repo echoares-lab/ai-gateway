@@ -95,8 +95,8 @@ cd /home/dev/repos/ai-gateway
 # Check which dev slots are free
 ./dev-env.sh list
 
-# Create a worktree branching off dev (NOT main)
-git checkout dev
+# Create a worktree branching off main
+git checkout main
 git worktree add ../ai-gateway-<short-name> -b feat/<short-name>
 ln -s /home/dev/repos/ai-gateway/.env /home/dev/repos/ai-gateway-<short-name>/.env
 cd /home/dev/repos/ai-gateway-<short-name>
@@ -152,25 +152,15 @@ All tests must pass. Fix any failures before proceeding.
 
 ---
 
-## Step 6 — Merge to dev
+## Step 6 — Open a PR to main
 
-```bash
-cd /home/dev/repos/ai-gateway
-git checkout dev
-git merge feat/<short-name> --no-ff -m "feat(scope): description from issue #NNN"
-docker compose exec translator pytest test_translator.py -v
-git push origin dev
-```
-
----
-
-## Step 7 — Open a PR to main
+**Never push directly to main.** Open a PR so CI runs and leaves a review trail.
 
 ```bash
 gh pr create \
   --repo echoares-lab/ai-gateway \
   --base main \
-  --head dev \
+  --head feat/<short-name> \
   --title "feat(scope): description (#NNN)" \
   --body "$(cat <<'EOF'
 ## Summary
@@ -180,7 +170,7 @@ gh pr create \
 - Fixes #NNN
 
 ## Test plan
-- [ ] Translator unit tests pass (39/39)
+- [ ] Translator unit tests pass (41/41)
 - [ ] Integration tests pass on dev slot
 - [ ] Health check passes
 - [ ] Claude E2E: ./cliproxy-setup.sh test claude-sonnet-4-6
@@ -203,10 +193,10 @@ EOF
 
 ---
 
-## Step 8 — Wait for CI and auto-merge if green
+## Step 7 — Wait for CI and merge
 
 ```bash
-PR_NUMBER=$(gh pr list --repo echoares-lab/ai-gateway --head dev --json number --jq '.[0].number')
+PR_NUMBER=$(gh pr list --repo echoares-lab/ai-gateway --head feat/<short-name> --json number --jq '.[0].number')
 
 # Enable auto-merge (merges automatically once all checks pass)
 gh pr merge $PR_NUMBER \
@@ -228,11 +218,11 @@ gh pr checks $PR_NUMBER --repo echoares-lab/ai-gateway --watch
 **Required CI checks that must pass:**
 - `lint` — ruff check + format on translator.py
 - `yaml-validate` — litellm-config.yaml syntax + no hardcoded keys
-- `test` — 39 translator unit tests
+- `test` — 41 translator unit tests
 
 ---
 
-## Step 9 — Post-merge E2E verification on main
+## Step 8 — Post-merge E2E verification on main
 
 ```bash
 git pull origin main
@@ -247,7 +237,7 @@ All three model tests must return a valid response.
 
 ---
 
-## Step 10 — Close the issue and clean up
+## Step 9 — Close the issue and clean up
 
 ```bash
 # Post completion summary on the issue
@@ -256,8 +246,8 @@ gh issue comment $ISSUE --repo echoares-lab/ai-gateway --body "$(cat <<'EOF'
 
 - PR: #<pr-number>
 - Merge commit: <sha>
-- Tests run: translator unit (39/39), integration, claude/gemini/gpt E2E
-- Verified on: dev + main
+- Tests run: translator unit (41/41), integration, claude/gemini/gpt E2E
+- Verified on: main
 - Follow-up issues: none / #NNN
 EOF
 )"
