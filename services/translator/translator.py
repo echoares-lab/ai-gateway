@@ -866,6 +866,23 @@ async def gemini_proxy(model_action: str, request: Request):
             try:
                 async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
                                           headers=headers, content=oai_bytes) as resp:
+                    if resp.status_code >= 400:
+                        err_content = await resp.aread()
+                        log.warning("Gemini upstream stream error %d: %s", resp.status_code, err_content[:300])
+                        try:
+                            err_json = json.loads(err_content)
+                            err_msg = err_json.get("error", {}).get("message", err_content.decode(errors="ignore"))
+                        except Exception:
+                            err_msg = err_content.decode(errors="ignore")
+                        gemini_err = {
+                            "error": {
+                                "code": resp.status_code,
+                                "message": err_msg,
+                                "status": "UNAUTHENTICATED" if resp.status_code == 401 else "INTERNAL"
+                            }
+                        }
+                        yield f"data: {json.dumps(gemini_err)}\n\n"
+                        return
                     async for chunk in _gemini_stream(_tee_lines(resp.aiter_lines(), buf)):
                         yield chunk
             except Exception as exc:
@@ -1289,6 +1306,15 @@ async def responses_proxy(request: Request):
             try:
                 async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
                                           headers=headers, content=oai_bytes) as resp:
+                    if resp.status_code >= 400:
+                        err_content = await resp.aread()
+                        log.warning("Responses upstream stream error %d: %s", resp.status_code, err_content[:300])
+                        try:
+                            err_json = json.loads(err_content)
+                            err_msg = err_json.get("error", {}).get("message", err_content.decode(errors="ignore"))
+                        except Exception:
+                            err_msg = err_content.decode(errors="ignore")
+                        raise ValueError(err_msg)
                     async for event in _oai_to_responses_stream(_tee_lines(resp.aiter_lines(), buf)):
                         yield event
             except httpx.TimeoutException as exc:
@@ -1632,6 +1658,18 @@ async def claude_proxy(request: Request):
             try:
                 async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
                                           headers=headers, content=oai_bytes) as resp:
+                    if resp.status_code >= 400:
+                        err_content = await resp.aread()
+                        log.warning("Claude upstream stream error %d: %s", resp.status_code, err_content[:300])
+                        try:
+                            err_json = json.loads(err_content)
+                            err_msg = err_json.get("error", {}).get("message", err_content.decode(errors="ignore"))
+                            err_type = err_json.get("error", {}).get("type", "api_error")
+                        except Exception:
+                            err_msg = err_content.decode(errors="ignore")
+                            err_type = "api_error"
+                        yield f"event: error\ndata: {json.dumps({'type': 'error', 'error': {'type': err_type, 'message': err_msg}})}\n\n"
+                        return
                     async for event in _oai_to_claude_stream(_tee_lines(resp.aiter_lines(), buf), model):
                         yield event
             except Exception as exc:
