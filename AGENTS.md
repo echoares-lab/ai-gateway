@@ -51,8 +51,8 @@ Every session follows this sequence. Do not skip steps.
 ### Step 1 — Create a feature worktree
 
 ```bash
-# Always branch off dev, not main
-git checkout dev
+# Always branch off main
+git checkout main
 git worktree add ../ai-gateway-<feature> -b feat/<feature>
 ln -s /home/dev/repos/ai-gateway/.env /home/dev/repos/ai-gateway-<feature>/.env
 cd /home/dev/repos/ai-gateway-<feature>
@@ -88,7 +88,7 @@ Run unit tests inside the dev translator container:
 docker exec aidev1-translator-1 pytest test_translator.py -v
 ```
 
-All 39 tests must pass before continuing. Fix failures before moving on.
+All 41 tests must pass before continuing. Fix failures before moving on.
 
 ### Step 5 — Commit checkpoints
 
@@ -116,29 +116,19 @@ When your feature is complete, run the full integration suite against the dev sl
 
 Resolve all failures before merging. Do not proceed with a broken dev stack.
 
-### Step 7 — Merge to dev
-
-```bash
-cd /home/dev/repos/ai-gateway
-git checkout dev
-git merge feat/<feature> --no-ff -m "feat(scope): description"
-docker compose exec translator pytest test_translator.py -v   # must still pass
-git push origin dev
-```
-
-### Step 8 — Open a PR to main (required)
+### Step 7 — Open a PR to main (required)
 
 **Never push directly to main.** Open a PR so CI runs and leaves a review trail.
 
 ```bash
-gh pr create --base main --head dev \
+gh pr create --base main --head feat/<feature> \
   --title "feat(scope): description" \
   --body "$(cat <<'EOF'
 ## Summary
 - What changed and why
 
 ## Test plan
-- [ ] Unit tests pass (39/39)
+- [ ] Unit tests pass (41/41)
 - [ ] Integration tests pass on dev slot
 - [ ] ./cliproxy-setup.sh test claude-sonnet-4-6
 - [ ] ./cliproxy-setup.sh test gemini-3-flash
@@ -153,10 +143,11 @@ Wait for CI to pass (GitHub Actions: lint + unit tests). Then merge:
 
 ```bash
 gh pr merge --merge   # or --squash for a single clean commit
+git checkout main
 git pull origin main
 ```
 
-### Step 9 — E2E test main after merge
+### Step 8 — E2E test main after merge
 
 ```bash
 ./cliproxy-setup.sh test claude-sonnet-4-6
@@ -168,7 +159,7 @@ git pull origin main
 All three model tests must return a valid response. If any fail, investigate and
 fix before the session ends.
 
-### Step 10 — Clean up
+### Step 9 — Clean up
 
 ```bash
 ./dev-env.sh stop 1
@@ -185,7 +176,7 @@ git branch -d feat/<feature>
 |-------|---------|------|
 | Unit tests | `docker exec aidev1-translator-1 pytest test_translator.py -v` | After each significant change |
 | Integration (dev slot) | `./dev-env.sh test 1` | End of session, before merging |
-| Single model E2E | `./cliproxy-setup.sh test <model>` | After merging to dev and after main |
+| Single model E2E | `./cliproxy-setup.sh test <model>` | After merging to main |
 | Health check | `./cliproxy-setup.sh health` | Any time; always after merging |
 | YAML validation | `python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"` | After editing litellm-config.yaml |
 
@@ -224,7 +215,7 @@ docs: update stale AGENTS/WORKTREES/RUNBOOK to reflect current state
 - ❌ **Do not skip unit tests** after changes to `translator.py`
 - ❌ **Do not hardcode API keys** in `litellm-config.yaml` — use `os.environ/CLIPROXY_API_KEY`
 - ❌ **Do not set `CACHE_ENABLED=true`** in production — LiteLLM's auth-aware cache is preferred
-- ❌ **Do not force-push** to `main` or `dev`
+- ❌ **Do not force-push** to `main`
 - ❌ **Do not merge with uncommitted changes** in the worktree
 - ❌ **Do not touch `~/.cli-proxy-api/` directly** — dev stacks seed their own isolated auth volume
 
@@ -243,8 +234,7 @@ python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"  # YAML
 Pre-commit hooks (install once: `pip install pre-commit && pre-commit install`)
 cover ruff, YAML validation, and hardcoded API key detection automatically.
 
-CI (GitHub Actions `.github/workflows/lint.yml`) runs ruff + unit tests on every
-push and PR. PRs to `main` must pass CI before merging.
+CI (GitHub Actions `.github/workflows/ci.yml`) runs lint/format checks, shell syntax verification, container-native unit tests, multi-repo isolation tests, and E2E integration tests against a live stack on every push and PR. PRs to `main` must pass CI before merging.
 
 ---
 
@@ -255,7 +245,9 @@ push and PR. PRs to `main` must pass CI before merging.
 | Broken YAML config | Pre-commit hook + CI `yaml-validate` job |
 | Hardcoded secrets committed | `.githooks/prevent-hardcoded-keys.sh` |
 | Lint regressions | `ruff` in CI on every push |
-| Translator logic broken | 39 unit tests in CI |
+| Translator logic broken | 41 unit tests in CI |
+| Multi-repo isolation broken | direnv + isolation test suite in CI |
+| Gateway E2E flow broken | E2E integration tests against live stack in CI |
 | Live models stop responding | E2E test 3 models before finishing (step 9) |
 | Stable stack taken down | Worktree isolation (step 1) |
 | Direct push bypasses review | Branch protection + PR requirement (step 8) |

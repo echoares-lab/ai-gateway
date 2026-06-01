@@ -27,8 +27,8 @@ services:
 
   cliproxy:
     build:
-      context: /home/dev/repos/CLIProxyAPI
-      dockerfile: Dockerfile
+      context: ${CLIPROXY_BUILD_CONTEXT:-/home/dev/repos/CLIProxyAPI}
+      dockerfile: ${CLIPROXY_DOCKERFILE:-Dockerfile}
     command: ["./CLIProxyAPI", "--config", "/config/config.yaml"]
     restart: unless-stopped
     volumes:
@@ -89,7 +89,7 @@ services:
     restart: unless-stopped
     depends_on:
       litellm:
-        condition: service_started
+        condition: service_healthy
     environment:
       LITELLM_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}

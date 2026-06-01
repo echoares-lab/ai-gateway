@@ -14,19 +14,21 @@ Auth normalisation:
   Codex CLI   Authorization: Bearer  → forwarded as-is
   Claude CLI  x-api-key: sk-...      → Authorization: Bearer sk-...
 """
+
 import asyncio
 import hashlib
 import json
 import logging
 import os
+import re
 import time
 import uuid
-import re
-from dataclasses import dataclass
-import httpx
-import websockets
-import redis.asyncio as aioredis
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
+
+import httpx
+import redis.asyncio as aioredis
+import websockets
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
@@ -35,6 +37,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("translator")
 
 UPSTREAM_TIMEOUT = float(os.environ.get("UPSTREAM_TIMEOUT", "30.0"))
+
 
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
@@ -101,10 +104,10 @@ IN_FLIGHT = Counter(
     "Total requests entering translator middleware",
 )
 
+
 @app.get("/metrics")
 async def metrics():
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
 
 
 _client: httpx.AsyncClient | None = None
@@ -123,9 +126,7 @@ def _cache_key(model: str, messages: list, tools: list | None = None) -> str | N
     key_data: dict = {"m": model, "msgs": messages}
     if tools:
         key_data["tools"] = tools
-    digest = hashlib.sha256(
-        json.dumps(key_data, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    digest = hashlib.sha256(json.dumps(key_data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return f"tx:{digest}"
 
 
@@ -166,10 +167,7 @@ async def _limit_request_size(request: Request, call_next):
             content_length = int(request.headers["content-length"])
             if content_length > max_bytes:
                 log.warning("Request too large: %d bytes (limit: %d)", content_length, max_bytes)
-                return JSONResponse(
-                    {"error": {"message": "request too large", "code": 413}},
-                    status_code=413
-                )
+                return JSONResponse({"error": {"message": "request too large", "code": 413}}, status_code=413)
         except (ValueError, TypeError):
             pass
     return await call_next(request)
@@ -228,6 +226,7 @@ async def _post_with_retry(url: str, headers: dict, content: bytes, retries: int
 
 # ── Shared content normalisation (Responses API / Cursor) ────────────────────
 
+
 def _normalize_content_item(c: dict) -> dict | None:
     ct = c.get("type", "")
     if ct in ("input_text", "output_text", "text", "refusal"):
@@ -247,9 +246,10 @@ def _normalize_content_item(c: dict) -> dict | None:
                 return {"type": "image_url", "image_url": {"url": src["url"], "detail": detail}}
             if src.get("type") == "base64":
                 media = src.get("media_type", "image/jpeg")
-                return {"type": "image_url", "image_url": {
-                    "url": f"data:{media};base64,{src['data']}", "detail": detail
-                }}
+                return {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{media};base64,{src['data']}", "detail": detail},
+                }
         return None
     if ct == "input_file":
         text = c.get("text") or c.get("filename") or "[file]"
@@ -286,11 +286,13 @@ def _responses_input_to_messages(inp) -> list:
 
     def flush_calls():
         if pending_calls:
-            messages.append({
-                "role": "assistant",
-                "content": None,
-                "tool_calls": list(pending_calls),
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": list(pending_calls),
+                }
+            )
             pending_calls.clear()
 
     for item in inp:
@@ -304,8 +306,7 @@ def _responses_input_to_messages(inp) -> list:
             content = item.get("content", "")
             if isinstance(content, list):
                 tool_blocks = [
-                    c for c in content
-                    if isinstance(c, dict) and c.get("type") in ("tool_use", "function_call")
+                    c for c in content if isinstance(c, dict) and c.get("type") in ("tool_use", "function_call")
                 ]
                 if tool_blocks:
                     tool_calls = []
@@ -315,42 +316,50 @@ def _responses_input_to_messages(inp) -> list:
                             continue
                         if c.get("type") in ("tool_use", "function_call"):
                             args = c.get("input", c.get("arguments", {}))
-                            tool_calls.append({
-                                "id": c.get("id", c.get("call_id", "")),
-                                "type": "function",
-                                "function": {
-                                    "name": c.get("name", ""),
-                                    "arguments": json.dumps(args) if isinstance(args, dict) else str(args),
-                                },
-                            })
+                            tool_calls.append(
+                                {
+                                    "id": c.get("id", c.get("call_id", "")),
+                                    "type": "function",
+                                    "function": {
+                                        "name": c.get("name", ""),
+                                        "arguments": json.dumps(args) if isinstance(args, dict) else str(args),
+                                    },
+                                }
+                            )
                         elif c.get("type") in ("text", "input_text", "output_text"):
                             text_parts.append(c.get("text", ""))
-                    messages.append({
-                        "role": "assistant",
-                        "content": "".join(text_parts) or None,
-                        "tool_calls": tool_calls,
-                    })
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": "".join(text_parts) or None,
+                            "tool_calls": tool_calls,
+                        }
+                    )
                     continue
             messages.append({"role": role, "content": _normalize_content(content)})
 
         elif t == "function_call":
             args = item.get("arguments", "{}")
-            pending_calls.append({
-                "id": item.get("id", item.get("call_id", "")),
-                "type": "function",
-                "function": {
-                    "name": item.get("name", ""),
-                    "arguments": args if isinstance(args, str) else json.dumps(args),
-                },
-            })
+            pending_calls.append(
+                {
+                    "id": item.get("id", item.get("call_id", "")),
+                    "type": "function",
+                    "function": {
+                        "name": item.get("name", ""),
+                        "arguments": args if isinstance(args, str) else json.dumps(args),
+                    },
+                }
+            )
 
         elif t == "function_call_output":
             flush_calls()
-            messages.append({
-                "role": "tool",
-                "tool_call_id": item.get("call_id", item.get("id", "")),
-                "content": str(item.get("output", "")),
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": item.get("call_id", item.get("id", "")),
+                    "content": str(item.get("output", "")),
+                }
+            )
 
     flush_calls()
     return messages
@@ -380,14 +389,16 @@ def _normalize_tools(tools: list) -> tuple[list, bool]:
             out.append(tool)
             continue
         if tool.get("type") == "function" and "function" not in tool and "name" in tool:
-            out.append({
-                "type": "function",
-                "function": {
-                    "name": tool.get("name", ""),
-                    "description": tool.get("description", ""),
-                    "parameters": tool.get("parameters", {}),
-                },
-            })
+            out.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.get("name", ""),
+                        "description": tool.get("description", ""),
+                        "parameters": tool.get("parameters", {}),
+                    },
+                }
+            )
             changed = True
         else:
             out.append(tool)
@@ -436,7 +447,9 @@ def _maybe_preview_fallback(model: str, wants_tools: bool) -> tuple[str, str, st
     return model, "unknown_preview_passthrough", "warn", "assumed"
 
 
-def _resolve_model(model: str, endpoint: str, wants_tools: bool = False, gemini_map: dict | None = None) -> _ResolvedModel:
+def _resolve_model(
+    model: str, endpoint: str, wants_tools: bool = False, gemini_map: dict | None = None
+) -> _ResolvedModel:
     requested = model or ""
     effective = requested
     reason = "passthrough"
@@ -444,7 +457,7 @@ def _resolve_model(model: str, endpoint: str, wants_tools: bool = False, gemini_
     assumption = "native"
 
     if effective.startswith(MODEL_PREFIX):
-        effective = effective[len(MODEL_PREFIX):]
+        effective = effective[len(MODEL_PREFIX) :]
         reason = "prefix_strip"
 
     if endpoint == "gemini":
@@ -482,7 +495,7 @@ def _strip_prefix(body: bytes) -> tuple[bytes, bool]:
         return body, False
     model = data.get("model", "")
     if isinstance(model, str) and model.startswith(MODEL_PREFIX):
-        data["model"] = model[len(MODEL_PREFIX):]
+        data["model"] = model[len(MODEL_PREFIX) :]
         return json.dumps(data).encode(), True
     return body, False
 
@@ -548,14 +561,14 @@ def _patch_body(path: str, body: bytes) -> tuple[bytes, bool]:
 # Legacy Google model names that need redirecting to current equivalents.
 # Managed by hand — these don't change once a generation is deprecated.
 _GEMINI_LEGACY_MAP = {
-    "gemini-pro":                     "gemini-3-1-pro-preview",
-    "gemini-1.0-pro":                 "gemini-3-1-pro-preview",
-    "gemini-1.5-pro":                 "gemini-3-1-pro-preview",
-    "gemini-1.5-pro-latest":          "gemini-3-1-pro-preview",
-    "gemini-1.5-flash":               "gemini-3-flash-preview",
-    "gemini-1.5-flash-latest":        "gemini-3-flash-preview",
-    "gemini-2.0-flash":               "gemini-3-flash-preview",
-    "gemini-2.0-flash-exp":           "gemini-3-flash-preview",
+    "gemini-pro": "gemini-3-1-pro-preview",
+    "gemini-1.0-pro": "gemini-3-1-pro-preview",
+    "gemini-1.5-pro": "gemini-3-1-pro-preview",
+    "gemini-1.5-pro-latest": "gemini-3-1-pro-preview",
+    "gemini-1.5-flash": "gemini-3-flash-preview",
+    "gemini-1.5-flash-latest": "gemini-3-flash-preview",
+    "gemini-2.0-flash": "gemini-3-flash-preview",
+    "gemini-2.0-flash-exp": "gemini-3-flash-preview",
 }
 
 # Current dotted→dashed mappings are kept in gemini-model-map.json and managed
@@ -577,6 +590,7 @@ def _get_gemini_map() -> dict:
     except Exception:
         pass
     return {**_GEMINI_LEGACY_MAP, **_gemini_map_dynamic}
+
 
 GEMINI_FINISH_MAP = {
     "stop": "STOP",
@@ -645,29 +659,35 @@ def _gemini_req_to_oai(model: str, body: dict) -> dict:
         if func_resps:
             for fr in func_resps:
                 tc_id = _find_tool_call_id_in_history(contents, fr["name"], content_idx)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc_id,
-                    "content": json.dumps(fr.get("response", {})),
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": json.dumps(fr.get("response", {})),
+                    }
+                )
         elif func_calls:
             tool_calls = []
             for fc in func_calls:
                 h = hashlib.md5(f"{fc['name']}_{content_idx}".encode()).hexdigest()[:20]
                 tc_id = f"call_{h}"
-                tool_calls.append({
-                    "id": tc_id,
-                    "type": "function",
-                    "function": {
-                        "name": fc["name"],
-                        "arguments": json.dumps(fc.get("args", {})),
-                    },
-                })
-            messages.append({
-                "role": "assistant",
-                "content": "".join(texts) or None,
-                "tool_calls": tool_calls,
-            })
+                tool_calls.append(
+                    {
+                        "id": tc_id,
+                        "type": "function",
+                        "function": {
+                            "name": fc["name"],
+                            "arguments": json.dumps(fc.get("args", {})),
+                        },
+                    }
+                )
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": "".join(texts) or None,
+                    "tool_calls": tool_calls,
+                }
+            )
         elif inline:
             content_list = []
             for p in parts:
@@ -675,16 +695,18 @@ def _gemini_req_to_oai(model: str, body: dict) -> dict:
                     content_list.append({"type": "text", "text": p["text"]})
                 elif "inlineData" in p:
                     d = p["inlineData"]
-                    content_list.append({"type": "image_url", "image_url": {
-                        "url": f"data:{d['mimeType']};base64,{d['data']}"
-                    }})
+                    content_list.append(
+                        {"type": "image_url", "image_url": {"url": f"data:{d['mimeType']};base64,{d['data']}"}}
+                    )
             messages.append({"role": role, "content": content_list})
         else:
             messages.append({"role": role, "content": "".join(texts)})
 
     # Google exposes variants like gemini-3.1-pro-preview-customtools for tool-aware routing;
     # our CLIProxy backend handles tools with the base model so we strip known suffixes.
-    resolved = _resolve_model(model, endpoint="gemini", wants_tools=bool(body.get("tools")), gemini_map=_get_gemini_map())
+    resolved = _resolve_model(
+        model, endpoint="gemini", wants_tools=bool(body.get("tools")), gemini_map=_get_gemini_map()
+    )
     oai = {"model": resolved.effective_model, "messages": messages}
 
     gc = body.get("generationConfig", {})
@@ -700,14 +722,16 @@ def _gemini_req_to_oai(model: str, body: dict) -> dict:
     tools_out = []
     for tool_obj in body.get("tools", []):
         for fd in tool_obj.get("functionDeclarations", []):
-            tools_out.append({
-                "type": "function",
-                "function": {
-                    "name": fd["name"],
-                    "description": fd.get("description", ""),
-                    "parameters": fd.get("parameters", {"type": "object", "properties": {}}),
-                },
-            })
+            tools_out.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": fd["name"],
+                        "description": fd.get("description", ""),
+                        "parameters": fd.get("parameters", {"type": "object", "properties": {}}),
+                    },
+                }
+            )
     if tools_out:
         oai["tools"] = tools_out
 
@@ -738,11 +762,13 @@ def _oai_to_gemini_resp(oai: dict, model: str) -> dict:
 
     usage = oai.get("usage", {})
     return {
-        "candidates": [{
-            "content": {"role": "model", "parts": parts},
-            "finishReason": GEMINI_FINISH_MAP.get(finish, "STOP"),
-            "index": 0,
-        }],
+        "candidates": [
+            {
+                "content": {"role": "model", "parts": parts},
+                "finishReason": GEMINI_FINISH_MAP.get(finish, "STOP"),
+                "index": 0,
+            }
+        ],
         "usageMetadata": {
             "promptTokenCount": usage.get("prompt_tokens", 0),
             "candidatesTokenCount": usage.get("completion_tokens", 0),
@@ -798,11 +824,13 @@ async def _gemini_stream(oai_lines):
 
             if parts or finish:
                 gemini_chunk = {
-                    "candidates": [{
-                        "content": {"role": "model", "parts": parts},
-                        "finishReason": GEMINI_FINISH_MAP.get(finish, "") if finish else None,
-                        "index": 0,
-                    }]
+                    "candidates": [
+                        {
+                            "content": {"role": "model", "parts": parts},
+                            "finishReason": GEMINI_FINISH_MAP.get(finish, "") if finish else None,
+                            "index": 0,
+                        }
+                    ]
                 }
                 yield f"data: {json.dumps(gemini_chunk)}\n\n"
     except httpx.HTTPError as exc:
@@ -813,14 +841,19 @@ async def _gemini_stream(oai_lines):
 async def gemini_proxy(model_action: str, request: Request):
     if request.method == "GET":
         # Pass through to LiteLLM (e.g. model info requests)
-        resp = await _client.get(f"{LITELLM}/v1beta/models/{model_action}",
-                                 params=dict(request.query_params), timeout=30)
-        return Response(content=resp.content, status_code=resp.status_code,
-                        headers={"content-type": "application/json"})
+        resp = await _client.get(
+            f"{LITELLM}/v1beta/models/{model_action}", params=dict(request.query_params), timeout=30
+        )
+        return Response(
+            content=resp.content, status_code=resp.status_code, headers={"content-type": "application/json"}
+        )
 
     if ":" not in model_action:
-        return Response(content=json.dumps({"error": {"message": "Invalid path", "code": 400}}),
-                        status_code=400, headers={"content-type": "application/json"})
+        return Response(
+            content=json.dumps({"error": {"message": "Invalid path", "code": 400}}),
+            status_code=400,
+            headers={"content-type": "application/json"},
+        )
 
     model, action = model_action.rsplit(":", 1)
     streaming = action == "streamGenerateContent"
@@ -832,9 +865,12 @@ async def gemini_proxy(model_action: str, request: Request):
         body = {}
 
     params = dict(request.query_params)
-    api_key = (params.pop("key", None)
-               or request.headers.get("x-goog-api-key")
-               or request.headers.get("authorization", "").removeprefix("Bearer ").strip() or None)
+    api_key = (
+        params.pop("key", None)
+        or request.headers.get("x-goog-api-key")
+        or request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+        or None
+    )
     auth = f"Bearer {api_key}" if api_key else ""
 
     oai_body = _gemini_req_to_oai(model, body)
@@ -848,32 +884,66 @@ async def gemini_proxy(model_action: str, request: Request):
         "content-length": str(len(oai_bytes)),
     }
 
-    ck = _cache_key(oai_body.get("model", ""), oai_body.get("messages", []),
-                    oai_body.get("tools"))
-    log.info("Gemini %s → model=%s tools=%d stream=%s",
-             action, oai_body["model"], len(oai_body.get("tools", [])), streaming)
+    ck = _cache_key(oai_body.get("model", ""), oai_body.get("messages", []), oai_body.get("tools"))
+    log.info(
+        "Gemini %s → model=%s tools=%d stream=%s", action, oai_body["model"], len(oai_body.get("tools", [])), streaming
+    )
 
     if streaming:
+        req = _client.build_request("POST", f"{LITELLM}/v1/chat/completions", headers=headers, content=oai_bytes)
+        try:
+            resp = await _client.send(req, stream=True)
+        except Exception as exc:
+            log.error("Gemini stream connection failed model=%s: %s", oai_body.get("model"), exc)
+            gemini_err = {"error": {"code": 502, "message": f"Connection failed: {exc}", "status": "INTERNAL"}}
+            return Response(
+                content=json.dumps(gemini_err), status_code=502, headers={"content-type": "application/json"}
+            )
+
+        if resp.status_code >= 400:
+            err_content = await resp.aread()
+            await resp.aclose()
+            log.warning("Gemini upstream stream error %d: %s", resp.status_code, err_content[:300])
+            try:
+                err_json = json.loads(err_content)
+                err_msg = err_json.get("error", {}).get("message", err_content.decode(errors="ignore"))
+            except Exception:
+                err_msg = err_content.decode(errors="ignore")
+            gemini_err = {
+                "error": {
+                    "code": resp.status_code,
+                    "message": err_msg,
+                    "status": "UNAUTHENTICATED" if resp.status_code == 401 else "INTERNAL",
+                }
+            }
+            return Response(
+                content=json.dumps(gemini_err),
+                status_code=resp.status_code,
+                headers={"content-type": "application/json"},
+            )
+
         async def generate():
             if ck:
                 cached = await _cache_get(ck)
                 if cached is not None:
                     log.info("cache hit (gemini stream) key=%s", ck[:16])
+                    await resp.aclose()
                     async for chunk in _gemini_stream(_aiter_list(cached)):
                         yield chunk
                     return
             buf: list[str] = []
             try:
-                async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
-                                          headers=headers, content=oai_bytes) as resp:
-                    async for chunk in _gemini_stream(_tee_lines(resp.aiter_lines(), buf)):
-                        yield chunk
+                async for chunk in _gemini_stream(_tee_lines(resp.aiter_lines(), buf)):
+                    yield chunk
             except Exception as exc:
-                log.error("Gemini stream upstream error model=%s: %s: %s",
-                          oai_body.get("model"), type(exc).__name__, exc)
-                return
-            if ck and buf:
-                await _cache_set(ck, buf)
+                log.error(
+                    "Gemini stream upstream error model=%s: %s: %s", oai_body.get("model"), type(exc).__name__, exc
+                )
+            finally:
+                await resp.aclose()
+                if ck and buf:
+                    await _cache_set(ck, buf)
+
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     if ck:
@@ -881,9 +951,11 @@ async def gemini_proxy(model_action: str, request: Request):
         if cached_json is not None:
             log.info("cache hit (gemini) key=%s", ck[:16])
             try:
-                return Response(content=json.dumps(
-                    _oai_to_gemini_resp(json.loads(cached_json[0]), model)
-                ).encode(), status_code=200, headers={"content-type": "application/json"})
+                return Response(
+                    content=json.dumps(_oai_to_gemini_resp(json.loads(cached_json[0]), model)).encode(),
+                    status_code=200,
+                    headers={"content-type": "application/json"},
+                )
             except Exception:
                 pass
 
@@ -891,22 +963,25 @@ async def gemini_proxy(model_action: str, request: Request):
 
     if resp.status_code >= 400:
         log.warning("Gemini upstream %d: %s", resp.status_code, resp.text[:300])
-        return Response(content=resp.content, status_code=resp.status_code,
-                        headers={"content-type": "application/json"})
+        return Response(
+            content=resp.content, status_code=resp.status_code, headers={"content-type": "application/json"}
+        )
 
     try:
         resp_json = resp.json()
         if ck:
             await _cache_set(ck + ":json", [json.dumps(resp_json)])
         gemini_resp = _oai_to_gemini_resp(resp_json, model)
-        return Response(content=json.dumps(gemini_resp).encode(), status_code=200,
-                        headers={"content-type": "application/json"})
+        return Response(
+            content=json.dumps(gemini_resp).encode(), status_code=200, headers={"content-type": "application/json"}
+        )
     except Exception as e:
         log.error("Gemini response conversion error: %s", e)
         return Response(content=resp.content, status_code=resp.status_code)
 
 
 # ── Codex / OpenAI Responses API converters ──────────────────────────────────
+
 
 def _responses_req_to_oai(body: dict) -> dict:
     messages = []
@@ -952,24 +1027,28 @@ def _oai_to_responses_resp(oai: dict) -> dict:
 
     for tc in msg.get("tool_calls", []):
         fn = tc["function"]
-        output.append({
-            "type": "function_call",
-            "id": tc.get("id", ""),
-            "call_id": tc.get("id", ""),
-            "name": fn.get("name", ""),
-            "arguments": fn.get("arguments", "{}"),
-            "status": "completed",
-        })
+        output.append(
+            {
+                "type": "function_call",
+                "id": tc.get("id", ""),
+                "call_id": tc.get("id", ""),
+                "name": fn.get("name", ""),
+                "arguments": fn.get("arguments", "{}"),
+                "status": "completed",
+            }
+        )
 
     content = msg.get("content") or ""
     if content or not output:
-        output.append({
-            "type": "message",
-            "id": f"msg_{oai_id}",
-            "role": "assistant",
-            "content": [{"type": "output_text", "text": content, "annotations": []}],
-            "status": "completed",
-        })
+        output.append(
+            {
+                "type": "message",
+                "id": f"msg_{oai_id}",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": content, "annotations": []}],
+                "status": "completed",
+            }
+        )
 
     return {
         "id": f"resp_{oai_id}",
@@ -998,14 +1077,20 @@ async def _oai_to_responses_stream(oai_lines):
     resp_id = f"resp_{uuid.uuid4().hex[:24]}"
     msg_id = f"msg_{uuid.uuid4().hex[:24]}"
 
-    yield _sse("response.created", {
-        "type": "response.created",
-        "response": {"id": resp_id, "object": "response", "status": "in_progress", "output": []},
-    })
-    yield _sse("response.in_progress", {
-        "type": "response.in_progress",
-        "response": {"id": resp_id, "object": "response", "status": "in_progress"},
-    })
+    yield _sse(
+        "response.created",
+        {
+            "type": "response.created",
+            "response": {"id": resp_id, "object": "response", "status": "in_progress", "output": []},
+        },
+    )
+    yield _sse(
+        "response.in_progress",
+        {
+            "type": "response.in_progress",
+            "response": {"id": resp_id, "object": "response", "status": "in_progress"},
+        },
+    )
 
     text_started = False
     text_buffer = ""
@@ -1030,23 +1115,41 @@ async def _oai_to_responses_stream(oai_lines):
             if text:
                 if not text_started:
                     text_started = True
-                    yield _sse("response.output_item.added", {
-                        "type": "response.output_item.added",
-                        "output_index": 0,
-                        "item": {"type": "message", "id": msg_id, "role": "assistant",
-                                 "content": [], "status": "in_progress"},
-                    })
-                    yield _sse("response.content_part.added", {
-                        "type": "response.content_part.added",
-                        "item_id": msg_id, "output_index": 0, "content_index": 0,
-                        "part": {"type": "output_text", "text": "", "annotations": []},
-                    })
+                    yield _sse(
+                        "response.output_item.added",
+                        {
+                            "type": "response.output_item.added",
+                            "output_index": 0,
+                            "item": {
+                                "type": "message",
+                                "id": msg_id,
+                                "role": "assistant",
+                                "content": [],
+                                "status": "in_progress",
+                            },
+                        },
+                    )
+                    yield _sse(
+                        "response.content_part.added",
+                        {
+                            "type": "response.content_part.added",
+                            "item_id": msg_id,
+                            "output_index": 0,
+                            "content_index": 0,
+                            "part": {"type": "output_text", "text": "", "annotations": []},
+                        },
+                    )
                 text_buffer += text
-                yield _sse("response.output_text.delta", {
-                    "type": "response.output_text.delta",
-                    "item_id": msg_id, "output_index": 0, "content_index": 0,
-                    "delta": text,
-                })
+                yield _sse(
+                    "response.output_text.delta",
+                    {
+                        "type": "response.output_text.delta",
+                        "item_id": msg_id,
+                        "output_index": 0,
+                        "content_index": 0,
+                        "delta": text,
+                    },
+                )
 
             for tc_delta in delta.get("tool_calls", []):
                 idx = tc_delta.get("index", 0)
@@ -1055,61 +1158,108 @@ async def _oai_to_responses_stream(oai_lines):
                     tc_id = tc_delta.get("id", f"call_{uuid.uuid4().hex[:24]}")
                     tc_name = fn.get("name", "")
                     tool_buffers[idx] = {"id": tc_id, "name": tc_name, "args": ""}
-                    yield _sse("response.output_item.added", {
-                        "type": "response.output_item.added",
-                        "output_index": idx,
-                        "item": {"type": "function_call", "id": tc_id, "call_id": tc_id,
-                                 "name": tc_name, "arguments": "", "status": "in_progress"},
-                    })
+                    yield _sse(
+                        "response.output_item.added",
+                        {
+                            "type": "response.output_item.added",
+                            "output_index": idx,
+                            "item": {
+                                "type": "function_call",
+                                "id": tc_id,
+                                "call_id": tc_id,
+                                "name": tc_name,
+                                "arguments": "",
+                                "status": "in_progress",
+                            },
+                        },
+                    )
                 if fn.get("name") and not tool_buffers[idx]["name"]:
                     tool_buffers[idx]["name"] = fn["name"]
                 if fn.get("arguments"):
                     tool_buffers[idx]["args"] += fn["arguments"]
-                    yield _sse("response.function_call_arguments.delta", {
-                        "type": "response.function_call_arguments.delta",
-                        "item_id": tool_buffers[idx]["id"],
-                        "output_index": idx,
-                        "delta": fn["arguments"],
-                    })
+                    yield _sse(
+                        "response.function_call_arguments.delta",
+                        {
+                            "type": "response.function_call_arguments.delta",
+                            "item_id": tool_buffers[idx]["id"],
+                            "output_index": idx,
+                            "delta": fn["arguments"],
+                        },
+                    )
     except httpx.HTTPError as exc:
         log.error("Responses stream connection error: %s", exc)
 
     # Close text
     if text_started:
-        yield _sse("response.output_text.done", {
-            "type": "response.output_text.done",
-            "item_id": msg_id, "output_index": 0, "content_index": 0, "text": text_buffer,
-        })
-        yield _sse("response.content_part.done", {
-            "type": "response.content_part.done",
-            "item_id": msg_id, "output_index": 0, "content_index": 0,
-            "part": {"type": "output_text", "text": text_buffer, "annotations": []},
-        })
-        yield _sse("response.output_item.done", {
-            "type": "response.output_item.done",
-            "output_index": 0,
-            "item": {"type": "message", "id": msg_id, "role": "assistant",
-                     "content": [{"type": "output_text", "text": text_buffer, "annotations": []}],
-                     "status": "completed"},
-        })
+        yield _sse(
+            "response.output_text.done",
+            {
+                "type": "response.output_text.done",
+                "item_id": msg_id,
+                "output_index": 0,
+                "content_index": 0,
+                "text": text_buffer,
+            },
+        )
+        yield _sse(
+            "response.content_part.done",
+            {
+                "type": "response.content_part.done",
+                "item_id": msg_id,
+                "output_index": 0,
+                "content_index": 0,
+                "part": {"type": "output_text", "text": text_buffer, "annotations": []},
+            },
+        )
+        yield _sse(
+            "response.output_item.done",
+            {
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": {
+                    "type": "message",
+                    "id": msg_id,
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": text_buffer, "annotations": []}],
+                    "status": "completed",
+                },
+            },
+        )
 
     # Close tool calls
     for idx, tc in sorted(tool_buffers.items()):
-        yield _sse("response.function_call_arguments.done", {
-            "type": "response.function_call_arguments.done",
-            "item_id": tc["id"], "output_index": idx, "arguments": tc["args"],
-        })
-        yield _sse("response.output_item.done", {
-            "type": "response.output_item.done",
-            "output_index": idx,
-            "item": {"type": "function_call", "id": tc["id"], "call_id": tc["id"],
-                     "name": tc["name"], "arguments": tc["args"], "status": "completed"},
-        })
+        yield _sse(
+            "response.function_call_arguments.done",
+            {
+                "type": "response.function_call_arguments.done",
+                "item_id": tc["id"],
+                "output_index": idx,
+                "arguments": tc["args"],
+            },
+        )
+        yield _sse(
+            "response.output_item.done",
+            {
+                "type": "response.output_item.done",
+                "output_index": idx,
+                "item": {
+                    "type": "function_call",
+                    "id": tc["id"],
+                    "call_id": tc["id"],
+                    "name": tc["name"],
+                    "arguments": tc["args"],
+                    "status": "completed",
+                },
+            },
+        )
 
-    yield _sse("response.completed", {
-        "type": "response.completed",
-        "response": {"id": resp_id, "object": "response", "status": "completed"},
-    })
+    yield _sse(
+        "response.completed",
+        {
+            "type": "response.completed",
+            "response": {"id": resp_id, "object": "response", "status": "completed"},
+        },
+    )
 
 
 @app.websocket("/v1/responses")
@@ -1129,7 +1279,7 @@ async def responses_websocket(ws: WebSocket):
 
     expected_master_key = os.environ.get("LITELLM_MASTER_KEY", "sk-a3698c2000395d1181397b256415e680")
     is_authorized = True
-    
+
     if client_auth:
         auth_token = client_auth
         if auth_token.startswith("Bearer "):
@@ -1165,7 +1315,7 @@ async def responses_websocket(ws: WebSocket):
             "sec-websocket-version",
             "sec-websocket-extensions",
             "sec-websocket-protocol",
-            "content-length"
+            "content-length",
         ):
             headers[k] = v
 
@@ -1178,6 +1328,7 @@ async def responses_websocket(ws: WebSocket):
     try:
         # Determine whether to use additional_headers or extra_headers
         import inspect
+
         connect_sig = inspect.signature(websockets.connect)
         connect_kwargs = {}
         if "additional_headers" in connect_sig.parameters:
@@ -1186,6 +1337,7 @@ async def responses_websocket(ws: WebSocket):
             connect_kwargs["extra_headers"] = headers
 
         async with websockets.connect(cliproxy_ws_url, **connect_kwargs) as upstream:
+
             async def client_to_upstream():
                 try:
                     while True:
@@ -1223,8 +1375,8 @@ async def responses_websocket(ws: WebSocket):
                                 "type": "error",
                                 "error": {
                                     "message": f"Upstream WebSocket connection timed out after {UPSTREAM_TIMEOUT}s.",
-                                    "type": "timeout_error"
-                                }
+                                    "type": "timeout_error",
+                                },
                             }
                             await ws.send_text(json.dumps(err_msg))
                             await ws.close(code=1011, reason="Upstream timeout")
@@ -1251,8 +1403,9 @@ async def responses_proxy(request: Request):
     try:
         body = json.loads(raw)
     except Exception:
-        return Response(content=json.dumps({"error": "Invalid JSON"}), status_code=400,
-                        headers={"content-type": "application/json"})
+        return Response(
+            content=json.dumps({"error": "Invalid JSON"}), status_code=400, headers={"content-type": "application/json"}
+        )
 
     streaming = body.get("stream", False)
     oai_body = _responses_req_to_oai(body)
@@ -1260,56 +1413,97 @@ async def responses_proxy(request: Request):
         oai_body["stream"] = True
 
     oai_bytes = json.dumps(oai_body).encode()
-    headers = {
-        k: v for k, v in request.headers.items()
-        if k.lower() not in ("host", "content-length", "content-type")
-    }
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "content-length", "content-type")}
     if "authorization" not in {k.lower() for k in headers}:
         master_key = os.environ.get("LITELLM_MASTER_KEY", "sk-a3698c2000395d1181397b256415e680")
         headers["authorization"] = f"Bearer {master_key}"
     headers["content-type"] = "application/json"
     headers["content-length"] = str(len(oai_bytes))
 
-    ck = _cache_key(oai_body.get("model", ""), oai_body.get("messages", []),
-                    oai_body.get("tools"))
+    ck = _cache_key(oai_body.get("model", ""), oai_body.get("messages", []), oai_body.get("tools"))
     log.info("Codex request headers: %s", {k: v for k, v in request.headers.items()})
-    log.info("Codex Responses API → model=%s tools=%d stream=%s",
-             oai_body.get("model"), len(oai_body.get("tools", [])), streaming)
+    log.info(
+        "Codex Responses API → model=%s tools=%d stream=%s",
+        oai_body.get("model"),
+        len(oai_body.get("tools", [])),
+        streaming,
+    )
 
     if streaming:
+        req = _client.build_request("POST", f"{LITELLM}/v1/chat/completions", headers=headers, content=oai_bytes)
+        try:
+            resp = await _client.send(req, stream=True)
+        except httpx.TimeoutException as exc:
+            log.error("Responses stream upstream timed out: %s", exc)
+            err_msg = f"Upstream request timed out after {UPSTREAM_TIMEOUT} seconds. Please check LiteLLM readiness."
+            return Response(
+                content=json.dumps({"error": {"message": err_msg, "type": "timeout_error"}}),
+                status_code=504,
+                headers={"content-type": "application/json"},
+            )
+        except Exception as exc:
+            log.error("Responses stream upstream error model=%s: %s", oai_body.get("model"), exc)
+            err_msg = f"Upstream connection failed: {exc}"
+            return Response(
+                content=json.dumps({"error": {"message": err_msg, "type": "connection_error"}}),
+                status_code=502,
+                headers={"content-type": "application/json"},
+            )
+
+        if resp.status_code >= 400:
+            err_content = await resp.aread()
+            await resp.aclose()
+            log.warning("Responses upstream stream error %d: %s", resp.status_code, err_content[:300])
+            return Response(
+                content=err_content, status_code=resp.status_code, headers={"content-type": "application/json"}
+            )
+
         async def generate():
             if ck:
                 cached = await _cache_get(ck)
                 if cached is not None:
                     log.info("cache hit (responses stream) key=%s", ck[:16])
+                    await resp.aclose()
                     async for event in _oai_to_responses_stream(_aiter_list(cached)):
                         yield event
                     return
             buf: list[str] = []
             try:
-                async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
-                                          headers=headers, content=oai_bytes) as resp:
-                    async for event in _oai_to_responses_stream(_tee_lines(resp.aiter_lines(), buf)):
-                        yield event
+                async for event in _oai_to_responses_stream(_tee_lines(resp.aiter_lines(), buf)):
+                    yield event
             except httpx.TimeoutException as exc:
                 log.error("Responses stream upstream timed out: %s", exc)
                 err_id = f"resp_{uuid.uuid4().hex[:24]}"
-                err_msg = f"Upstream request timed out after {UPSTREAM_TIMEOUT} seconds. Please check LiteLLM readiness."
+                err_msg = (
+                    f"Upstream request timed out after {UPSTREAM_TIMEOUT} seconds. Please check LiteLLM readiness."
+                )
                 yield _sse("error", {"type": "error", "error": {"message": err_msg, "type": "timeout_error"}})
-                yield _sse("response.completed", {"type": "response.completed", "response": {
-                    "id": err_id, "object": "response", "status": "failed"}})
-                return
+                yield _sse(
+                    "response.completed",
+                    {
+                        "type": "response.completed",
+                        "response": {"id": err_id, "object": "response", "status": "failed"},
+                    },
+                )
             except Exception as exc:
-                log.error("Responses stream upstream error model=%s: %s: %s",
-                          oai_body.get("model"), type(exc).__name__, exc)
+                log.error(
+                    "Responses stream upstream error model=%s: %s: %s", oai_body.get("model"), type(exc).__name__, exc
+                )
                 err_id = f"resp_{uuid.uuid4().hex[:24]}"
                 err_msg = f"Upstream connection failed: {exc}"
                 yield _sse("error", {"type": "error", "error": {"message": err_msg, "type": "connection_error"}})
-                yield _sse("response.completed", {"type": "response.completed", "response": {
-                    "id": err_id, "object": "response", "status": "failed"}})
-                return
-            if ck and buf:
-                await _cache_set(ck, buf)
+                yield _sse(
+                    "response.completed",
+                    {
+                        "type": "response.completed",
+                        "response": {"id": err_id, "object": "response", "status": "failed"},
+                    },
+                )
+            finally:
+                await resp.aclose()
+                if ck and buf:
+                    await _cache_set(ck, buf)
+
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     if ck:
@@ -1317,9 +1511,11 @@ async def responses_proxy(request: Request):
         if cached_json is not None:
             log.info("cache hit (responses) key=%s", ck[:16])
             try:
-                return Response(content=json.dumps(
-                    _oai_to_responses_resp(json.loads(cached_json[0]))
-                ).encode(), status_code=200, headers={"content-type": "application/json"})
+                return Response(
+                    content=json.dumps(_oai_to_responses_resp(json.loads(cached_json[0]))).encode(),
+                    status_code=200,
+                    headers={"content-type": "application/json"},
+                )
             except Exception:
                 pass
 
@@ -1328,32 +1524,41 @@ async def responses_proxy(request: Request):
     except httpx.TimeoutException as exc:
         log.error("Codex upstream request timed out: %s", exc)
         err_msg = f"Upstream request timed out after {UPSTREAM_TIMEOUT} seconds. Please check LiteLLM readiness."
-        return Response(content=json.dumps({"error": {"message": err_msg, "type": "timeout_error"}}).encode(),
-                        status_code=504, headers={"content-type": "application/json"})
+        return Response(
+            content=json.dumps({"error": {"message": err_msg, "type": "timeout_error"}}).encode(),
+            status_code=504,
+            headers={"content-type": "application/json"},
+        )
     except Exception as exc:
         log.error("Codex upstream request failed: %s", exc)
         err_msg = f"Upstream connection failed: {exc}"
-        return Response(content=json.dumps({"error": {"message": err_msg, "type": "connection_error"}}).encode(),
-                        status_code=502, headers={"content-type": "application/json"})
+        return Response(
+            content=json.dumps({"error": {"message": err_msg, "type": "connection_error"}}).encode(),
+            status_code=502,
+            headers={"content-type": "application/json"},
+        )
 
     if resp.status_code >= 400:
         log.warning("Codex upstream %d: %s", resp.status_code, resp.text[:300])
-        return Response(content=resp.content, status_code=resp.status_code,
-                        headers={"content-type": "application/json"})
+        return Response(
+            content=resp.content, status_code=resp.status_code, headers={"content-type": "application/json"}
+        )
 
     try:
         resp_json = resp.json()
         if ck:
             await _cache_set(ck + ":json", [json.dumps(resp_json)])
         responses_resp = _oai_to_responses_resp(resp_json)
-        return Response(content=json.dumps(responses_resp).encode(), status_code=200,
-                        headers={"content-type": "application/json"})
+        return Response(
+            content=json.dumps(responses_resp).encode(), status_code=200, headers={"content-type": "application/json"}
+        )
     except Exception as e:
         log.error("Codex response conversion error: %s", e)
         return Response(content=resp.content, status_code=resp.status_code)
 
 
 # ── Claude / Anthropic Messages API converters ───────────────────────────────
+
 
 def _claude_msg_to_oai(msg: dict) -> list[dict]:
     role = msg.get("role", "user")
@@ -1375,11 +1580,13 @@ def _claude_msg_to_oai(msg: dict) -> list[dict]:
             tr_content = tr.get("content", "")
             if isinstance(tr_content, list):
                 tr_content = " ".join(b.get("text", "") for b in tr_content if b.get("type") == "text")
-            out.append({
-                "role": "tool",
-                "tool_call_id": tr.get("tool_use_id", ""),
-                "content": str(tr_content),
-            })
+            out.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tr.get("tool_use_id", ""),
+                    "content": str(tr_content),
+                }
+            )
         return out
 
     if tool_uses:
@@ -1387,14 +1594,16 @@ def _claude_msg_to_oai(msg: dict) -> list[dict]:
         tool_calls = []
         for tu in tool_uses:
             inp = tu.get("input", {})
-            tool_calls.append({
-                "id": tu.get("id", ""),
-                "type": "function",
-                "function": {
-                    "name": tu.get("name", ""),
-                    "arguments": json.dumps(inp) if isinstance(inp, dict) else str(inp),
-                },
-            })
+            tool_calls.append(
+                {
+                    "id": tu.get("id", ""),
+                    "type": "function",
+                    "function": {
+                        "name": tu.get("name", ""),
+                        "arguments": json.dumps(inp) if isinstance(inp, dict) else str(inp),
+                    },
+                }
+            )
         return [{"role": "assistant", "content": text or None, "tool_calls": tool_calls}]
 
     if image_blocks:
@@ -1448,14 +1657,16 @@ def _claude_req_to_oai(body: dict) -> dict:
     if tools:
         oai["tools"] = []
         for t in tools:
-            oai["tools"].append({
-                "type": "function",
-                "function": {
-                    "name": t.get("name", ""),
-                    "description": t.get("description", ""),
-                    "parameters": t.get("input_schema", {"type": "object", "properties": {}}),
-                },
-            })
+            oai["tools"].append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.get("name", ""),
+                        "description": t.get("description", ""),
+                        "parameters": t.get("input_schema", {"type": "object", "properties": {}}),
+                    },
+                }
+            )
 
     tc = body.get("tool_choice", {})
     if isinstance(tc, dict) and tc:
@@ -1488,12 +1699,14 @@ def _oai_to_claude_resp(oai: dict) -> dict:
             inp = json.loads(fn.get("arguments", "{}"))
         except Exception:
             inp = {}
-        content.append({
-            "type": "tool_use",
-            "id": tc.get("id", ""),
-            "name": fn.get("name", ""),
-            "input": inp,
-        })
+        content.append(
+            {
+                "type": "tool_use",
+                "id": tc.get("id", ""),
+                "name": fn.get("name", ""),
+                "input": inp,
+            }
+        )
 
     if finish == "length":
         stop_reason = "max_tokens"
@@ -1596,16 +1809,20 @@ async def claude_proxy(request: Request):
     try:
         body = json.loads(raw)
     except Exception:
-        return Response(content=json.dumps({"error": {"type": "invalid_request_error", "message": "Invalid JSON"}}),
-                        status_code=400, headers={"content-type": "application/json"})
+        return Response(
+            content=json.dumps({"error": {"type": "invalid_request_error", "message": "Invalid JSON"}}),
+            status_code=400,
+            headers={"content-type": "application/json"},
+        )
 
     streaming = body.get("stream", False)
     oai_body = _claude_req_to_oai(body)
     if streaming:
         oai_body["stream"] = True
 
-    api_key = (request.headers.get("x-api-key")
-               or request.headers.get("authorization", "").removeprefix("Bearer ").strip())
+    api_key = (
+        request.headers.get("x-api-key") or request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    )
     oai_bytes = json.dumps(oai_body).encode()
     headers = {
         "content-type": "application/json",
@@ -1616,33 +1833,53 @@ async def claude_proxy(request: Request):
 
     model = oai_body.get("model", "")
     ck = _cache_key(model, oai_body.get("messages", []), oai_body.get("tools"))
-    log.info("Claude Messages API → model=%s tools=%d stream=%s",
-             model, len(oai_body.get("tools", [])), streaming)
+    log.info("Claude Messages API → model=%s tools=%d stream=%s", model, len(oai_body.get("tools", [])), streaming)
 
     if streaming:
+        req = _client.build_request("POST", f"{LITELLM}/v1/chat/completions", headers=headers, content=oai_bytes)
+        try:
+            resp = await _client.send(req, stream=True)
+        except Exception as exc:
+            log.error("Claude stream connection failed model=%s: %s", oai_body.get("model"), exc)
+            return Response(
+                content=json.dumps({"error": {"type": "api_error", "message": f"Connection failed: {exc}"}}),
+                status_code=502,
+                headers={"content-type": "application/json"},
+            )
+
+        if resp.status_code >= 400:
+            err_content = await resp.aread()
+            await resp.aclose()
+            log.warning("Claude upstream stream error %d: %s", resp.status_code, err_content[:300])
+            return Response(
+                content=err_content, status_code=resp.status_code, headers={"content-type": "application/json"}
+            )
+
         async def generate():
             if ck:
                 cached = await _cache_get(ck)
                 if cached is not None:
                     log.info("cache hit (claude stream) key=%s", ck[:16])
+                    await resp.aclose()
                     async for event in _oai_to_claude_stream(_aiter_list(cached), model):
                         yield event
                     return
             buf: list[str] = []
             try:
-                async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
-                                          headers=headers, content=oai_bytes) as resp:
-                    async for event in _oai_to_claude_stream(_tee_lines(resp.aiter_lines(), buf), model):
-                        yield event
+                async for event in _oai_to_claude_stream(_tee_lines(resp.aiter_lines(), buf), model):
+                    yield event
             except Exception as exc:
-                log.error("Claude stream upstream error model=%s: %s: %s",
-                          oai_body.get("model"), type(exc).__name__, exc)
+                log.error(
+                    "Claude stream upstream error model=%s: %s: %s", oai_body.get("model"), type(exc).__name__, exc
+                )
                 msg_id = f"msg_{uuid.uuid4().hex[:24]}"
                 yield f"event: message_start\ndata: {json.dumps({'type': 'message_start', 'message': {'id': msg_id, 'type': 'message', 'role': 'assistant', 'content': [], 'model': model, 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}})}\n\n"
                 yield f"event: message_stop\ndata: {json.dumps({'type': 'message_stop'})}\n\n"
-                return
-            if ck and buf:
-                await _cache_set(ck, buf)
+            finally:
+                await resp.aclose()
+                if ck and buf:
+                    await _cache_set(ck, buf)
+
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     if ck:
@@ -1650,9 +1887,11 @@ async def claude_proxy(request: Request):
         if cached_json is not None:
             log.info("cache hit (claude) key=%s", ck[:16])
             try:
-                return Response(content=json.dumps(
-                    _oai_to_claude_resp(json.loads(cached_json[0]))
-                ).encode(), status_code=200, headers={"content-type": "application/json"})
+                return Response(
+                    content=json.dumps(_oai_to_claude_resp(json.loads(cached_json[0]))).encode(),
+                    status_code=200,
+                    headers={"content-type": "application/json"},
+                )
             except Exception:
                 pass
 
@@ -1660,16 +1899,18 @@ async def claude_proxy(request: Request):
 
     if resp.status_code >= 400:
         log.warning("Claude upstream %d: %s", resp.status_code, resp.text[:300])
-        return Response(content=resp.content, status_code=resp.status_code,
-                        headers={"content-type": "application/json"})
+        return Response(
+            content=resp.content, status_code=resp.status_code, headers={"content-type": "application/json"}
+        )
 
     try:
         resp_json = resp.json()
         if ck:
             await _cache_set(ck + ":json", [json.dumps(resp_json)])
         claude_resp = _oai_to_claude_resp(resp_json)
-        return Response(content=json.dumps(claude_resp).encode(), status_code=200,
-                        headers={"content-type": "application/json"})
+        return Response(
+            content=json.dumps(claude_resp).encode(), status_code=200, headers={"content-type": "application/json"}
+        )
     except Exception as e:
         log.error("Claude response conversion error: %s", e)
         return Response(content=resp.content, status_code=resp.status_code)
@@ -1681,6 +1922,7 @@ async def health():
 
 
 # ── Catch-all proxy (Cursor / generic OpenAI-compatible clients) ─────────────
+
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 async def proxy(path: str, request: Request):
@@ -1696,7 +1938,9 @@ async def proxy(path: str, request: Request):
     if "authorization" not in {k.lower() for k in headers}:
         master_key = os.environ.get("LITELLM_MASTER_KEY", "sk-a3698c2000395d1181397b256415e680")
         headers["authorization"] = f"Bearer {master_key}"
-    log.info("Proxy request path: %s headers: %s", path, {k: v for k, v in headers.items() if k.lower() != "authorization"})
+    log.info(
+        "Proxy request path: %s headers: %s", path, {k: v for k, v in headers.items() if k.lower() != "authorization"}
+    )
     if changed:
         headers["content-length"] = str(len(body))
 
@@ -1720,6 +1964,7 @@ async def proxy(path: str, request: Request):
             pass
 
     if is_stream:
+
         async def generate():
             if ck:
                 cached = await _cache_get(ck)
@@ -1730,9 +1975,7 @@ async def proxy(path: str, request: Request):
                     return
             buf: list[str] = []
             try:
-                async with _client.stream(
-                    request.method, url, headers=headers, content=body, params=params
-                ) as resp:
+                async with _client.stream(request.method, url, headers=headers, content=body, params=params) as resp:
                     async for chunk in resp.aiter_bytes():
                         if ck:
                             buf.append(chunk.decode(errors="replace"))
@@ -1741,22 +1984,21 @@ async def proxy(path: str, request: Request):
                 log.error("Proxy stream upstream error: %s", exc)
             if ck and buf:
                 await _cache_set(ck, buf)
+
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     if ck:
         cached_json = await _cache_get(ck + ":json")
         if cached_json is not None:
             log.info("cache hit (proxy) key=%s", ck[:16])
-            return Response(content=cached_json[0].encode(), status_code=200,
-                            headers={"content-type": "application/json"})
+            return Response(
+                content=cached_json[0].encode(), status_code=200, headers={"content-type": "application/json"}
+            )
 
-    resp = await _client.request(
-        request.method, url, headers=headers, content=body, params=params
-    )
+    resp = await _client.request(request.method, url, headers=headers, content=body, params=params)
 
     if resp.status_code >= 400:
-        log.warning("Upstream %d for %s — raw: %s", resp.status_code, path,
-                    raw[:600].decode(errors="replace"))
+        log.warning("Upstream %d for %s — raw: %s", resp.status_code, path, raw[:600].decode(errors="replace"))
 
     if ck and resp.status_code == 200 and is_chat:
         await _cache_set(ck + ":json", [resp.text])

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Session Workflow (quick reference)
 
-Every session: **worktree → dev stack → code → unit test → commit → E2E test → merge dev → PR to main → E2E test main → cleanup**
+Every session: **worktree → dev stack → code → unit test → commit → E2E test → PR to main → E2E test main → cleanup**
 
 Full workflow details are in `AGENTS.md`. This file has the deep-dive on commands, architecture, and edge cases.
 

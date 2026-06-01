@@ -1,0 +1,11 @@
+port: 8317
+host: "0.0.0.0"
+auth-dir: "/home/dev/.cli-proxy-api"
+api-keys:
+  - "cliproxy-changeme"
+remote-management:
+  allow-remote: true
+  secret-key: "$2b$10$TfBXmdJZx483NWu96NYFE.5LnOV6WyFmsSsEqMxvE1LsH25xMPvM." # BCRYPT hash of 'dev-management-key'
+debug: false
+redis-usage-queue-retention-seconds: 60
+usage-statistics-enabled: false
