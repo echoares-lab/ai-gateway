@@ -88,7 +88,7 @@ Run unit tests inside the dev translator container:
 docker exec aidev1-translator-1 pytest test_translator.py -v
 ```
 
-All 39 tests must pass before continuing. Fix failures before moving on.
+All 41 tests must pass before continuing. Fix failures before moving on.
 
 ### Step 5 — Commit checkpoints
 
@@ -138,7 +138,7 @@ gh pr create --base main --head dev \
 - What changed and why
 
 ## Test plan
-- [ ] Unit tests pass (39/39)
+- [ ] Unit tests pass (41/41)
 - [ ] Integration tests pass on dev slot
 - [ ] ./cliproxy-setup.sh test claude-sonnet-4-6
 - [ ] ./cliproxy-setup.sh test gemini-3-flash
@@ -243,8 +243,7 @@ python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"  # YAML
 Pre-commit hooks (install once: `pip install pre-commit && pre-commit install`)
 cover ruff, YAML validation, and hardcoded API key detection automatically.
 
-CI (GitHub Actions `.github/workflows/lint.yml`) runs ruff + unit tests on every
-push and PR. PRs to `main` must pass CI before merging.
+CI (GitHub Actions `.github/workflows/ci.yml`) runs lint/format checks, shell syntax verification, container-native unit tests, multi-repo isolation tests, and E2E integration tests against a live stack on every push and PR. PRs to `main` must pass CI before merging.
 
 ---
 
@@ -255,7 +254,9 @@ push and PR. PRs to `main` must pass CI before merging.
 | Broken YAML config | Pre-commit hook + CI `yaml-validate` job |
 | Hardcoded secrets committed | `.githooks/prevent-hardcoded-keys.sh` |
 | Lint regressions | `ruff` in CI on every push |
-| Translator logic broken | 39 unit tests in CI |
+| Translator logic broken | 41 unit tests in CI |
+| Multi-repo isolation broken | direnv + isolation test suite in CI |
+| Gateway E2E flow broken | E2E integration tests against live stack in CI |
 | Live models stop responding | E2E test 3 models before finishing (step 9) |
 | Stable stack taken down | Worktree isolation (step 1) |
 | Direct push bypasses review | Branch protection + PR requirement (step 8) |
