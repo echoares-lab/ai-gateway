@@ -1,0 +1,130 @@
+name: CI Suite
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  lint-and-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          pip install ruff pyyaml
+      - name: Lint with ruff
+        run: ruff check services/translator/translator.py
+      - name: Format check with ruff
+        run: ruff format --check services/translator/translator.py
+      - name: Shell syntax check
+        run: |
+          bash -n cliproxy-setup.sh
+          bash -n dev-env.sh
+          bash -n tests/test-multi-repo-isolation.sh
+          bash -n tests/test-gateway-e2e.sh
+      - name: Validate litellm-config.yaml
+        run: python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"
+      - name: Check for hardcoded API keys
+        run: |
+          if grep -E 'api_key:\s+[a-zA-Z0-9-]{20,}' litellm-config.yaml | grep -v 'os.environ'; then
+            echo "❌ Hardcoded API key detected in litellm-config.yaml"
+            exit 1
+          fi
+          echo "✓ No hardcoded API keys found"
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build translator image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/translator
+          load: true
+          tags: ai-translator-test:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Run unit tests inside container
+        run: |
+          docker run --rm ai-translator-test:latest pytest test_translator.py -v
+
+  multi-repo-isolation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install direnv
+        run: sudo apt-get update && sudo apt-get install -y direnv
+      - name: Setup mock organizational structure
+        run: |
+          # Set up mock repos in temp folder
+          mkdir -p /tmp/mock-repos
+          for repo in ai-gateway homelab-gitops amazon_returns cloudflare_access_automation gmail-generator amazon-returns-cdp cursor labels; do
+              mkdir -p "/tmp/mock-repos/$repo"
+              echo 'dotenv' > "/tmp/mock-repos/$repo/.envrc"
+              echo "export CODEX_HOME=\"\$HOME/.codex-repos/$repo\"" >> "/tmp/mock-repos/$repo/.envrc"
+              direnv allow "/tmp/mock-repos/$repo"
+              
+              # Create config.toml for the ones that need it
+              if [[ "$repo" == "ai-gateway" || "$repo" == "homelab-gitops" ]]; then
+                  mkdir -p "$HOME/.codex-repos/$repo"
+                  echo 'openai_base_url = "http://localhost:4000"' > "$HOME/.codex-repos/$repo/config.toml"
+                  echo 'approval_policy = "always"' >> "$HOME/.codex-repos/$repo/config.toml"
+              fi
+          done
+
+          # Write mock .env files for dotenv-based repos
+          for repo in ai-gateway homelab-gitops amazon_returns cloudflare_access_automation; do
+              echo "OPENAI_API_KEY=mock-key-openai" > "/tmp/mock-repos/$repo/.env"
+              echo "ANTHROPIC_API_KEY=mock-key-anthropic" >> "/tmp/mock-repos/$repo/.env"
+              echo "GEMINI_API_KEY=mock-key-gemini" >> "/tmp/mock-repos/$repo/.env"
+          done
+      - name: Run isolation tests
+        run: |
+          # Load direnv hook in the shell session
+          eval "$(direnv hook bash)"
+          REPOS_BASE=/tmp/mock-repos bash tests/test-multi-repo-isolation.sh
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install pytest dependencies
+        run: pip install pytest pytest-asyncio httpx python-dotenv
+      - name: Setup environment file
+        run: cp .env.example .env
+      - name: Build and Start Gateway Stack
+        run: |
+          # Use slot 1 for isolated testing
+          export CLIPROXY_DEV_CONFIG=tests/cliproxy-config-ci.yaml
+          ./dev-env.sh start 1
+      - name: Wait for services to be ready
+        run: |
+          # Poll translator health check
+          for i in {1..30}; do
+            if curl -sf http://localhost:4010/health >/dev/null; then
+              echo "✓ Translator is ready"
+              break
+            fi
+            echo "Waiting for translator (retry $i/30)..."
+            sleep 3
+          done
+      - name: Run E2E Integration tests
+        run: |
+          ./dev-env.sh test 1
+      - name: Stop services
+        if: always()
+        run: |
+          ./dev-env.sh stop 1

@@ -7,7 +7,7 @@ set -euo pipefail
 
 PASS=0
 FAIL=0
-REPOS_BASE="/home/dev/repos"
+REPOS_BASE="${REPOS_BASE:-/home/dev/repos}"
 
 pass() { echo "  ✓ $1"; ((PASS++)) || true; }
 fail() { echo "  ✗ $1"; ((FAIL++)) || true; }
