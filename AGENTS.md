@@ -5,6 +5,12 @@ These instructions apply to **any AI coding agent** working in this repo
 on architecture and commands, see `CLAUDE.md`. For operational procedures,
 see `RUNBOOK.md`.
 
+Repo improvement and PR processing are governed by:
+- `REPO_IMPROVEMENT_WORKFLOW.md` — process rules (discovery, approval, claim, PR, merge, closeout).
+- `REPO_IMPROVEMENT_APPENDIX.md` — this repo's branch policy, environment slots, and test commands.
+- `AGENT_DISPATCH.md` — the copy-paste prompt agents run to claim an issue and ship it.
+- `packages/repo-improvement-kit/` — portable source for the above; see its `README.md` for deployment.
+
 ---
 
 ## Stack at a glance

@@ -1,5 +1,12 @@
 # Agent Dispatch Prompt — AI Gateway
 
+> Generic, portable version of this prompt lives at
+> `packages/repo-improvement-kit/AGENT_DISPATCH.template.md`. This file is the
+> AI Gateway-specific instantiation: repo slug, local path, dev-slot model, test
+> commands, and current issue priorities. Process rules are defined in
+> `REPO_IMPROVEMENT_WORKFLOW.md`; environment/test commands are defined in
+> `REPO_IMPROVEMENT_APPENDIX.md`.
+
 Copy and paste this prompt to any AI agent (Claude Code, Cursor Agent, Codex, Amp, etc.)
 to have it pick up and work an open issue from this repo without conflicting with other agents.
 

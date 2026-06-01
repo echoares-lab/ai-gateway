@@ -8,6 +8,12 @@ Every session: **worktree → dev stack → code → unit test → commit → E2
 
 Full workflow details are in `AGENTS.md`. This file has the deep-dive on commands, architecture, and edge cases.
 
+Process and PR-handling references:
+- `REPO_IMPROVEMENT_WORKFLOW.md` — process rules.
+- `REPO_IMPROVEMENT_APPENDIX.md` — repo-specific branch, env, and test commands.
+- `AGENT_DISPATCH.md` — agent dispatch prompt for claim → implement → PR → auto-merge → closeout.
+- `packages/repo-improvement-kit/` — portable kit source and deployment guide.
+
 ## Development Workflow (REQUIRED)
 
 **Always work in a git worktree + dev stack — never edit the stable stack on port 4000 directly.**
