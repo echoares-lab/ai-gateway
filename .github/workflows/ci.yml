@@ -130,4 +130,5 @@ jobs:
       - name: Stop services
         if: always()
         run: |
+          docker compose -f docker-compose.dev.yml -p aidev1 logs || true
           ./dev-env.sh stop 1
