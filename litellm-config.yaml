@@ -737,5 +737,17 @@ litellm_settings:
       args: ["-y", "@tavily/mcp-server"]
       env:
         TAVILY_API_KEY: "os.environ/TAVILY_API_KEY"
+    mcp-github:
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-github"]
+      env:
+        GITHUB_PERSONAL_ACCESS_TOKEN: "os.environ/GITHUB_PERSONAL_ACCESS_TOKEN"
+    mcp-memory:
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-memory"]
+    mcp-sequential-thinking:
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+
 
 
