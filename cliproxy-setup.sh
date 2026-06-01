@@ -376,6 +376,70 @@ print('changed' if changed else 'no_change')
 PYEOF
 }
 
+# Dynamically generate and write appropriate litellm fallbacks to litellm-config.yaml
+apply_fallbacks() {
+  python3 - "$LITELLM_CONFIG" <<'PYEOF'
+import sys, re
+
+path = sys.argv[1]
+with open(path) as f:
+    txt = f.read()
+
+# Let's find all model names defined in the model_list section.
+models = []
+for line in txt.splitlines():
+    m = re.match(r'^  - model_name:\s*(\S+)', line)
+    if m:
+        models.append(m.group(1))
+
+# Generate fallback targets based on prefix rules
+fallbacks_list = []
+for model in sorted(models):
+    # Rule matching
+    if 'claude-opus' in model:
+        # e.g., claude-opus-4-8 falls back to gpt-5-5, gemini-3-1-pro
+        fallbacks_list.append({model: ["gpt-5-5", "gemini-3-1-pro"]})
+    elif 'claude-sonnet' in model:
+        fallbacks_list.append({model: ["gpt-5-4", "gemini-3-flash"]})
+    elif 'claude-haiku' in model:
+        fallbacks_list.append({model: ["gpt-5-4-mini", "gemini-3-flash"]})
+    elif 'gpt-5-4-mini' in model:
+        fallbacks_list.append({model: ["claude-haiku-4-5", "gemini-3-flash"]})
+    elif 'gpt-5-4' in model:
+        fallbacks_list.append({model: ["claude-sonnet-4-6", "gemini-3-flash"]})
+    elif 'gpt-5-5' in model:
+        fallbacks_list.append({model: ["claude-opus-4-7", "gemini-3-1-pro"]})
+    elif 'gemini-3-1-pro' in model or 'gemini-3-pro' in model or 'gemini-2-5-pro' in model:
+        fallbacks_list.append({model: ["claude-sonnet-4-6", "gpt-5-4"]})
+    elif 'gemini-2-5-flash' in model or 'gemini-3-flash' in model:
+        fallbacks_list.append({model: ["claude-haiku-4-5", "gpt-5-4-mini"]})
+
+# Format fallbacks as a list of YAML maps
+formatted_lines = ["  fallbacks:\n"]
+for f in fallbacks_list:
+    model, targets = list(f.items())[0]
+    targets_str = ", ".join(f'"{t}"' for t in targets)
+    formatted_lines.append(f'    - {model}: [{targets_str}]\n')
+
+# Now replace the fallbacks: block inside the litellm_settings block of litellm-config.yaml
+# Safe regex to replace fallbacks block up to cache or other litellm_settings keys
+fallbacks_block_pattern = re.compile(r'  fallbacks:\n(    - \S+:\s*\[[^\]]*\]\n\s*)*', re.MULTILINE)
+new_fallbacks_block = "".join(formatted_lines)
+
+if fallbacks_block_pattern.search(txt):
+    new_txt = fallbacks_block_pattern.sub(new_fallbacks_block, txt)
+    if new_txt != txt:
+        with open(path, 'w') as f:
+            f.write(new_txt)
+        print("fallbacks_updated")
+    else:
+        print("no_change")
+else:
+    print("fallbacks_section_not_found")
+PYEOF
+}
+
+
 # ──────────────────────────────────────────────
 # Commands
 # ──────────────────────────────────────────────
@@ -549,6 +613,20 @@ PYEOF
     changed=true
   else
     echo "  Cost/feature metadata already current."
+  fi
+
+  # Dynamic Fallbacks generation & synchronization
+  echo ""
+  echo "Syncing LiteLLM fallbacks..."
+  local fb_result
+  fb_result=$(apply_fallbacks)
+  if [ "$fb_result" = "fallbacks_updated" ]; then
+    echo "  Fallback rules successfully updated."
+    changed=true
+  elif [ "$fb_result" = "no_change" ]; then
+    echo "  Fallback rules already current."
+  else
+    echo "  Warning: could not apply fallbacks ($fb_result)."
   fi
 
   if [ "$changed" = true ]; then
