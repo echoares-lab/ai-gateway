@@ -110,6 +110,8 @@ jobs:
           # Use slot 1 for isolated testing
           mkdir -p "$HOME/.cli-proxy-api"
           export CLIPROXY_DEV_CONFIG="$PWD/tests/cliproxy-config-ci.yaml"
+          export CLIPROXY_BUILD_CONTEXT="$PWD"
+          export CLIPROXY_DOCKERFILE="Dockerfile.cliproxy"
           ./dev-env.sh start 1
       - name: Wait for services to be ready
         run: |

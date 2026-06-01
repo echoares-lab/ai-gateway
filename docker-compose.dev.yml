@@ -27,8 +27,8 @@ services:
 
   cliproxy:
     build:
-      context: /home/dev/repos/CLIProxyAPI
-      dockerfile: Dockerfile
+      context: ${CLIPROXY_BUILD_CONTEXT:-/home/dev/repos/CLIProxyAPI}
+      dockerfile: ${CLIPROXY_DOCKERFILE:-Dockerfile}
     command: ["./CLIProxyAPI", "--config", "/config/config.yaml"]
     restart: unless-stopped
     volumes:
