@@ -251,16 +251,35 @@ Use statuses for lifecycle. Use labels for type, priority, area, and risk.
 
 This is the key to safe parallel work.
 
-### A claim is valid only if all 3 happen
+### A claim is valid only if all 4 happen
 
 1. The issue is assigned.
 2. A “start work” comment is posted.
-3. The status changes to `claimed` or `in-progress`.
+3. The start-work comment includes a unique `Claim-ID` tag.
+4. The status changes to `claimed` or `in-progress`.
+
+### Claim identity rule
+
+The `Claim-ID` must uniquely identify the agent session, not just the GitHub
+account. This matters when multiple agents share the same GitHub user. Use a
+stable, human-readable format:
+
+```text
+Claim-ID: <agent>-<host-or-run-id>-<utc-timestamp>
+```
+
+Examples:
+- `Claim-ID: codex-ai-gateway-20260601T213000Z`
+- `Claim-ID: claude-run-78241-20260601T213000Z`
+
+When a claim is transferred, stale, or reclaimed, reference the previous
+`Claim-ID` explicitly in the issue thread.
 
 ### Required start-work comment format
 
 Every claim comment must include:
 - agent name / owner
+- unique `Claim-ID`
 - branch name
 - worktree name/path (if applicable)
 - environment slot (if applicable)
@@ -271,6 +290,7 @@ Every claim comment must include:
 
 ```text
 Starting work on #123.
+Claim-ID: codex-ai-gateway-20260601T213000Z
 Claiming: #123, #124
 Branch: feat/cache-auth-key
 Worktree: ../repo-cache-auth-key

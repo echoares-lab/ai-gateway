@@ -38,7 +38,7 @@ The kit separates portable process from repo-specific operating details.
 
 1. An approved issue exists with `status:ready`.
 2. The agent reads `REPO_IMPROVEMENT_WORKFLOW.md` and `REPO_IMPROVEMENT_APPENDIX.md`, then runs the prompt in `AGENT_DISPATCH.md`.
-3. The agent claims the issue (assignee + claim comment + `status:claimed`).
+3. The agent claims the issue (assignee + unique `Claim-ID` comment + `status:claimed`).
 4. The agent works in a feature worktree/branch from `main` and runs required tests from the appendix.
 5. The agent opens a PR, enables auto-merge, and waits for CI.
 6. Post-merge: run smoke/health checks from the appendix, post a closeout comment, clean up.
