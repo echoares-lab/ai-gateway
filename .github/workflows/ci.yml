@@ -5,6 +5,14 @@ on:
     branches: [ main, dev ]
   pull_request:
     branches: [ main, dev ]
+    # 'labeled' lets adding the run-e2e label trigger the gated E2E job
+    # without needing a new commit.
+    types: [ opened, synchronize, reopened, labeled ]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-syntax:
@@ -19,9 +27,9 @@ jobs:
         run: |
           pip install ruff pyyaml
       - name: Lint with ruff
-        run: ruff check services/translator/translator.py
+        run: ruff check services/translator/translator.py tests/mock-upstream/app.py
       - name: Format check with ruff
-        run: ruff format --check services/translator/translator.py
+        run: ruff format --check services/translator/translator.py tests/mock-upstream/app.py
       - name: Shell syntax check
         run: |
           bash -n cliproxy-setup.sh
@@ -92,7 +100,58 @@ jobs:
           eval "$(direnv hook bash)"
           REPOS_BASE=/tmp/mock-repos bash tests/test-multi-repo-isolation.sh
 
-  integration-tests:
+  # Fast tier: real translator + litellm + a canned mock upstream (no OAuth, no
+  # real LLM). The wire-format/translation assertions that skip in the gated job
+  # actually execute here — ALLOW_MODEL_SKIP=0 makes an unexpected 4xx fail.
+  mock-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install pytest dependencies
+        run: pip install pytest pytest-asyncio httpx python-dotenv
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Setup environment file
+        run: |
+          cp .env.example .env
+          echo "LITELLM_MASTER_KEY=sk-ci-mock" >> .env
+          echo "CLIPROXY_API_KEY=mock-key" >> .env
+      - name: Start mock stack (translator + litellm + postgres + MOCK cliproxy)
+        run: |
+          export CLIPROXY_DEV_CONFIG="$PWD/tests/cliproxy-config-ci.yaml"
+          docker compose \
+            -f docker-compose.dev.yml -f docker-compose.mock.yml \
+            -p aidevmock \
+            up -d --build postgres cliproxy litellm translator
+      - name: Wait for translator health
+        run: |
+          for i in {1..30}; do
+            curl -sf http://localhost:4010/health >/dev/null && { echo "ready"; exit 0; }
+            echo "waiting for translator ($i/30)..."
+            sleep 2
+          done
+          echo "translator never became healthy"; exit 1
+      - name: Run mock-tier tests
+        run: |
+          GATEWAY_URL=http://localhost:4010 LITELLM_MASTER_KEY=sk-ci-mock ALLOW_MODEL_SKIP=0 \
+            python3 -m pytest tests/integration/ -m mock -v
+      - name: Dump logs and tear down
+        if: always()
+        run: |
+          docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs || true
+          docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock down -v
+
+  # Gated full E2E: builds the CLIProxy fork and hits REAL providers. Runs only
+  # on manual dispatch or when a PR carries the `run-e2e` label. Seeds real OAuth
+  # so the smoke subset asserts instead of skipping. Not a required check.
+  real-provider-e2e:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'run-e2e')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -105,17 +164,23 @@ jobs:
         run: pip install pytest pytest-asyncio httpx python-dotenv
       - name: Setup environment file
         run: cp .env.example .env
+      - name: Seed real OAuth creds
+        run: |
+          mkdir -p "$HOME/.cli-proxy-api"
+          if [ -n "${{ secrets.CLIPROXY_AUTH_TAR_B64 }}" ]; then
+            echo "${{ secrets.CLIPROXY_AUTH_TAR_B64 }}" | base64 -d | tar -xz -C "$HOME/.cli-proxy-api"
+            echo "✓ seeded OAuth creds"
+          else
+            echo "::warning::No CLIPROXY_AUTH_TAR_B64 secret; real-provider tests will skip."
+          fi
       - name: Build and Start Gateway Stack
         run: |
-          # Use slot 1 for isolated testing
-          mkdir -p "$HOME/.cli-proxy-api"
           export CLIPROXY_DEV_CONFIG="$PWD/tests/cliproxy-config-ci.yaml"
           export CLIPROXY_BUILD_CONTEXT="$PWD"
           export CLIPROXY_DOCKERFILE="Dockerfile.cliproxy"
           ./dev-env.sh start 1
       - name: Wait for services to be ready
         run: |
-          # Poll translator health check
           for i in {1..30}; do
             if curl -sf http://localhost:4010/health >/dev/null; then
               echo "✓ Translator is ready"
@@ -124,9 +189,9 @@ jobs:
             echo "Waiting for translator (retry $i/30)..."
             sleep 3
           done
-      - name: Run E2E Integration tests
+      - name: Run real-provider smoke E2E
         run: |
-          ./dev-env.sh test 1
+          ./dev-env.sh test 1 -- -m "integration and smoke"
       - name: Stop services
         if: always()
         run: |

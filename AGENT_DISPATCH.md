@@ -127,7 +127,14 @@ During implementation:
   ```bash
   docker exec aidev<slot>-translator-1 pytest test_translator.py -v
   ```
-- All 39 tests must pass before continuing
+- For gateway/wire-format changes, also run the fast mock integration tier:
+  ```bash
+  ./dev-env.sh start-mock 9
+  ./dev-env.sh test-mock 9
+  ./dev-env.sh stop-mock 9
+  ```
+  The mock tier runs translator + LiteLLM + a canned CLIProxy upstream, requires no OAuth, and must have **0 skips**.
+- All translator unit tests must pass before continuing
 - Commit often with conventional messages:
   ```bash
   git add -p
@@ -143,7 +150,13 @@ During implementation:
 When implementation is complete:
 
 ```bash
-# Integration tests against your dev slot
+# Fast mock integration tier (required for translator/wire-format/config routing changes)
+./dev-env.sh start-mock 9
+./dev-env.sh test-mock 9
+./dev-env.sh stop-mock 9
+
+# Real-provider integration against your dev slot (run when the change touches provider auth,
+# CLIProxy behavior, model availability, or before labeling the PR `run-e2e`)
 ./dev-env.sh test <slot>
 
 # Health check
@@ -178,12 +191,13 @@ gh pr create \
 
 ## Test plan
 - [ ] Translator unit tests pass (41/41)
-- [ ] Integration tests pass on dev slot
+- [ ] Mock integration tier passes with 0 skips (`./dev-env.sh test-mock 9` or `make test-mock`)
+- [ ] Real-provider integration / `run-e2e` label used only when needed
 - [ ] Health check passes
-- [ ] Claude E2E: ./cliproxy-setup.sh test claude-sonnet-4-6
-- [ ] Gemini E2E: ./cliproxy-setup.sh test gemini-3-flash
-- [ ] GPT E2E: ./cliproxy-setup.sh test gpt-5-4
-- [ ] CI checks passed
+- [ ] Claude E2E: ./cliproxy-setup.sh test claude-sonnet-4-6 (if real E2E needed)
+- [ ] Gemini E2E: ./cliproxy-setup.sh test gemini-3-flash (if real E2E needed)
+- [ ] GPT E2E: ./cliproxy-setup.sh test gpt-5-4 (if real E2E needed)
+- [ ] CI fast-tier checks passed
 
 ## Risk / rollback
 - Risk level: low / medium / high
@@ -205,11 +219,16 @@ EOF
 ```bash
 PR_NUMBER=$(gh pr list --repo echoares-lab/ai-gateway --head feat/<short-name> --json number --jq '.[0].number')
 
-# Enable auto-merge (merges automatically once all checks pass)
+# Enable auto-merge (merges automatically once required fast-tier checks pass)
 gh pr merge $PR_NUMBER \
   --repo echoares-lab/ai-gateway \
   --merge \
   --auto
+
+# Optional: trigger full real-provider E2E when the change touches provider auth,
+# CLIProxy behavior, model availability, or other upstream-dependent behavior.
+# This job is intentionally not a required check.
+# gh pr edit $PR_NUMBER --repo echoares-lab/ai-gateway --add-label run-e2e
 
 # Watch CI status
 gh pr checks $PR_NUMBER --repo echoares-lab/ai-gateway --watch
@@ -218,14 +237,18 @@ gh pr checks $PR_NUMBER --repo echoares-lab/ai-gateway --watch
 **If CI fails:**
 1. Read the failure output
 2. Fix the issue in your worktree
-3. Push the fix to the `dev` branch
+3. Push the fix to your PR branch
 4. CI will re-run automatically
-5. The auto-merge will proceed once all checks are green
+5. The auto-merge will proceed once all required fast-tier checks are green
 
-**Required CI checks that must pass:**
-- `lint` — ruff check + format on translator.py
-- `yaml-validate` — litellm-config.yaml syntax + no hardcoded keys
-- `test` — 41 translator unit tests
+**Required fast-tier CI checks that must pass:**
+- `lint-and-syntax` — ruff check + format, shell syntax, YAML syntax, no hardcoded keys
+- `unit-tests` — translator unit tests
+- `multi-repo-isolation` — environment isolation checks
+- `mock-integration` — translator + LiteLLM + mock upstream integration tests (0 skips)
+
+**Gated CI check:**
+- `real-provider-e2e` — runs only on `workflow_dispatch` or PR label `run-e2e`; not required by default
 
 ---
 
@@ -253,7 +276,7 @@ gh issue comment $ISSUE --repo echoares-lab/ai-gateway --body "$(cat <<'EOF'
 
 - PR: #<pr-number>
 - Merge commit: <sha>
-- Tests run: translator unit (41/41), integration, claude/gemini/gpt E2E
+- Tests run: translator unit (41/41), mock integration (0 skips), real-provider E2E if needed
 - Verified on: main
 - Follow-up issues: none / #NNN
 EOF
@@ -276,7 +299,10 @@ git branch -d feat/<short-name>
 | Command | When |
 |---------|------|
 | `docker exec aidev<slot>-translator-1 pytest test_translator.py -v` | After every significant change |
-| `./dev-env.sh test <slot>` | End of implementation |
+| `./dev-env.sh start-mock 9 && ./dev-env.sh test-mock 9 && ./dev-env.sh stop-mock 9` | Fast integration for translator/wire-format/config-routing changes (no OAuth, 0 skips) |
+| `make test-fast` | Local equivalent of the required CI fast tier |
+| `./dev-env.sh test <slot>` | Real-provider integration only when the change needs upstream coverage |
+| `gh pr edit <pr> --add-label run-e2e` | Trigger gated full real-provider E2E in CI |
 | `./cliproxy-setup.sh health` | Before and after merge |
 | `./cliproxy-setup.sh test <model>` | After merge to main |
 
