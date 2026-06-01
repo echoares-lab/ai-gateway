@@ -56,13 +56,22 @@ check_envrc() {
 check_codex_config() {
     local repo="$1"
     local config_path="$HOME/.codex-repos/$repo/config.toml"
+    local auth_path="$HOME/.codex-repos/$repo/auth.json"
     echo ""
     echo "── CODEX_HOME config: $repo ──"
     if [[ -f "$config_path" ]]; then
         pass "config.toml exists"
         grep -q "openai_base_url" "$config_path" && pass "openai_base_url set" || fail "openai_base_url missing"
         grep -q "approval_policy" "$config_path" && pass "approval_policy set" || fail "approval_policy missing"
-        [[ ! -f "$HOME/.codex-repos/$repo/auth.json" ]] && pass "No auth.json (API-key mode)" || fail "auth.json present (remove it)"
+        if [[ ! -f "$auth_path" ]]; then
+            pass "No auth.json (API-key mode)"
+        else
+            if grep -q '"auth_mode": "apikey"' "$auth_path" 2>/dev/null; then
+                pass "auth.json present but in API-key mode"
+            else
+                fail "auth.json present and not in API-key mode (remove it)"
+            fi
+        fi
     else
         fail "config.toml missing — run: setup-repo-env $REPOS_BASE/$repo"
     fi

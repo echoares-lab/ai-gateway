@@ -177,20 +177,19 @@ def _write_codex_toml(config_path, global_kvs, project_settings):
     with open(config_path, "w") as f:
         f.writelines(lines)
 
-def _setup_codex_gateway_home(repo_dir: str, gateway_url: str, api_key: str):
+def _setup_codex_repo_home(codex_home: str, repo_dir: str, gateway_url: str, api_key: str):
     """
-    Create/update ~/.codex-gateway/config.toml with:
+    Create/update codex_home/config.toml with:
       - openai_base_url pointing at our gateway
       - approval_policy = "never"  (yolo / full-auto mode)
       - [projects."<repo_dir>"] trust_level = "trusted", api_key = "<api_key>"
 
     No auth.json is written — the absence of stored ChatGPT tokens causes
     Codex to fall back to api_key mode.
-    User's default ~/.codex (ChatGPT OAuth) is untouched.
     """
-    os.makedirs(CODEX_GATEWAY_HOME, exist_ok=True)
-    config_path = os.path.join(CODEX_GATEWAY_HOME, "config.toml")
-    auth_path = os.path.join(CODEX_GATEWAY_HOME, "auth.json")
+    os.makedirs(codex_home, exist_ok=True)
+    config_path = os.path.join(codex_home, "config.toml")
+    auth_path = os.path.join(codex_home, "auth.json")
     if os.path.exists(auth_path):
         os.remove(auth_path)
         log(f"  codex: removed active {auth_path} to enforce per-repo API key fallback")
@@ -231,21 +230,24 @@ _BASHRC_WRAPPER = """\
 # >>> ai-gateway wrappers start <<<
 # Managed by setup_litellm_teams.py — do not edit manually.
 
-# Codex: per-repo key from .env, CODEX_HOME → gateway config, yolo mode
-export CODEX_HOME=~/.codex-gateway
+# Codex: per-repo key from .env, CODEX_HOME → isolated repo config, yolo mode
 codex() {
     local key base dir="$PWD"
     while [[ "$dir" != "/" ]]; do
         if [[ -f "$dir/.env" ]]; then
             key=$(grep '^OPENAI_API_KEY=' "$dir/.env" | cut -d= -f2 | head -1)
-            base=$(grep '^CODEX_BASE_URL=' "$dir/.env" | cut -d= -f2 | head -1)
             [[ -n "$key" ]] && break
         fi
         dir=$(dirname "$dir")
     done
-    [[ -z "$key" ]] && echo "[codex-gateway] no OPENAI_API_KEY in .env above $PWD" >&2
-    # Codex CLI config.toml handles the base URL; wrapper just supplies key
-    CODEX_HOME=~/.codex-gateway OPENAI_API_KEY="$key" command codex -c "api_key=\\"$key\\"" "$@"
+    if [[ -z "$key" ]]; then
+        echo "[codex-gateway] no OPENAI_API_KEY in .env above $PWD" >&2
+        command codex "$@"
+    else
+        local repo_name=$(basename "$dir")
+        local codex_home="$HOME/.codex-repos/$repo_name"
+        CODEX_HOME="$codex_home" OPENAI_API_KEY="$key" command codex -c "api_key=\\"$key\\"" "$@"
+    fi
 }
 
 # Claude: per-repo key from .env, routes via gateway, yolo mode
@@ -452,7 +454,11 @@ def main():
                 warn(f"  Failed to create key for {client}: {e}")
                 continue
 
-            base_value = cfg.get("base_value", f"{gateway_url}{cfg['base_path']}")
+            if client == "codex":
+                # Use repo-specific isolated home directory
+                base_value = os.path.expanduser(f"~/.codex-repos/{repo}")
+            else:
+                base_value = cfg.get("base_value", f"{gateway_url}{cfg['base_path']}")
             env_vars.append((cfg["base_var"], base_value))
             env_vars.append((cfg["key_var"], api_key))
 
@@ -461,7 +467,7 @@ def main():
                 env_vars.append((k, v))
 
             if client == "codex":
-                _setup_codex_gateway_home(repo_dir, gateway_url, api_key)
+                _setup_codex_repo_home(base_value, repo_dir, gateway_url, api_key)
                 # OPENAI_BASE_URL was the old codex routing var; CODEX_HOME replaces it.
                 stale_vars.append("OPENAI_BASE_URL")
             elif client == "gemini":
