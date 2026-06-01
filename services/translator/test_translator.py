@@ -407,15 +407,7 @@ def test_responses_proxy_timeout_stream():
     client = TestClient(t.app)
 
     mock_client = MagicMock()
-    class MockContextManager:
-        def __init__(self, *args, **kwargs):
-            pass
-        async def __aenter__(self):
-            raise httpx.TimeoutException("Simulated stream timeout")
-        async def __aexit__(self, exc_type, exc_val, exc_tb):
-            pass
-
-    mock_client.stream = MockContextManager
+    mock_client.send = AsyncMock(side_effect=httpx.TimeoutException("Simulated stream timeout"))
 
     with patch.object(t, "_client", mock_client), \
          patch.dict(os.environ, {"LITELLM_MASTER_KEY": "test-key"}):
@@ -424,13 +416,10 @@ def test_responses_proxy_timeout_stream():
             json={"model": "gpt-5.4", "stream": True, "messages": [{"role": "user", "content": "hello"}]}
         )
 
-    assert response.status_code == 200
-    lines = [
-        line.decode("utf-8") if isinstance(line, bytes) else line
-        for line in response.iter_lines()
-        if line
-    ]
-    assert any("timeout_error" in line for line in lines)
-    assert any("response.completed" in line for line in lines)
+    assert response.status_code == 504
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["type"] == "timeout_error"
+    assert "Upstream request timed out" in data["error"]["message"]
 
 

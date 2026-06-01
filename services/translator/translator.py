@@ -854,43 +854,52 @@ async def gemini_proxy(model_action: str, request: Request):
              action, oai_body["model"], len(oai_body.get("tools", [])), streaming)
 
     if streaming:
+        req = _client.build_request("POST", f"{LITELLM}/v1/chat/completions", headers=headers, content=oai_bytes)
+        try:
+            resp = await _client.send(req, stream=True)
+        except Exception as exc:
+            log.error("Gemini stream connection failed model=%s: %s", oai_body.get("model"), exc)
+            gemini_err = {"error": {"code": 502, "message": f"Connection failed: {exc}", "status": "INTERNAL"}}
+            return Response(content=json.dumps(gemini_err), status_code=502, headers={"content-type": "application/json"})
+
+        if resp.status_code >= 400:
+            err_content = await resp.aread()
+            await resp.aclose()
+            log.warning("Gemini upstream stream error %d: %s", resp.status_code, err_content[:300])
+            try:
+                err_json = json.loads(err_content)
+                err_msg = err_json.get("error", {}).get("message", err_content.decode(errors="ignore"))
+            except Exception:
+                err_msg = err_content.decode(errors="ignore")
+            gemini_err = {
+                "error": {
+                    "code": resp.status_code,
+                    "message": err_msg,
+                    "status": "UNAUTHENTICATED" if resp.status_code == 401 else "INTERNAL"
+                }
+            }
+            return Response(content=json.dumps(gemini_err), status_code=resp.status_code, headers={"content-type": "application/json"})
+
         async def generate():
             if ck:
                 cached = await _cache_get(ck)
                 if cached is not None:
                     log.info("cache hit (gemini stream) key=%s", ck[:16])
+                    await resp.aclose()
                     async for chunk in _gemini_stream(_aiter_list(cached)):
                         yield chunk
                     return
             buf: list[str] = []
             try:
-                async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
-                                          headers=headers, content=oai_bytes) as resp:
-                    if resp.status_code >= 400:
-                        err_content = await resp.aread()
-                        log.warning("Gemini upstream stream error %d: %s", resp.status_code, err_content[:300])
-                        try:
-                            err_json = json.loads(err_content)
-                            err_msg = err_json.get("error", {}).get("message", err_content.decode(errors="ignore"))
-                        except Exception:
-                            err_msg = err_content.decode(errors="ignore")
-                        gemini_err = {
-                            "error": {
-                                "code": resp.status_code,
-                                "message": err_msg,
-                                "status": "UNAUTHENTICATED" if resp.status_code == 401 else "INTERNAL"
-                            }
-                        }
-                        yield f"data: {json.dumps(gemini_err)}\n\n"
-                        return
-                    async for chunk in _gemini_stream(_tee_lines(resp.aiter_lines(), buf)):
-                        yield chunk
+                async for chunk in _gemini_stream(_tee_lines(resp.aiter_lines(), buf)):
+                    yield chunk
             except Exception as exc:
                 log.error("Gemini stream upstream error model=%s: %s: %s",
                           oai_body.get("model"), type(exc).__name__, exc)
-                return
-            if ck and buf:
-                await _cache_set(ck, buf)
+            finally:
+                await resp.aclose()
+                if ck and buf:
+                    await _cache_set(ck, buf)
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     if ck:
@@ -1294,29 +1303,39 @@ async def responses_proxy(request: Request):
              oai_body.get("model"), len(oai_body.get("tools", [])), streaming)
 
     if streaming:
+        req = _client.build_request("POST", f"{LITELLM}/v1/chat/completions", headers=headers, content=oai_bytes)
+        try:
+            resp = await _client.send(req, stream=True)
+        except httpx.TimeoutException as exc:
+            log.error("Responses stream upstream timed out: %s", exc)
+            err_msg = f"Upstream request timed out after {UPSTREAM_TIMEOUT} seconds. Please check LiteLLM readiness."
+            return Response(content=json.dumps({"error": {"message": err_msg, "type": "timeout_error"}}),
+                            status_code=504, headers={"content-type": "application/json"})
+        except Exception as exc:
+            log.error("Responses stream upstream error model=%s: %s", oai_body.get("model"), exc)
+            err_msg = f"Upstream connection failed: {exc}"
+            return Response(content=json.dumps({"error": {"message": err_msg, "type": "connection_error"}}),
+                            status_code=502, headers={"content-type": "application/json"})
+
+        if resp.status_code >= 400:
+            err_content = await resp.aread()
+            await resp.aclose()
+            log.warning("Responses upstream stream error %d: %s", resp.status_code, err_content[:300])
+            return Response(content=err_content, status_code=resp.status_code, headers={"content-type": "application/json"})
+
         async def generate():
             if ck:
                 cached = await _cache_get(ck)
                 if cached is not None:
                     log.info("cache hit (responses stream) key=%s", ck[:16])
+                    await resp.aclose()
                     async for event in _oai_to_responses_stream(_aiter_list(cached)):
                         yield event
                     return
             buf: list[str] = []
             try:
-                async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
-                                          headers=headers, content=oai_bytes) as resp:
-                    if resp.status_code >= 400:
-                        err_content = await resp.aread()
-                        log.warning("Responses upstream stream error %d: %s", resp.status_code, err_content[:300])
-                        try:
-                            err_json = json.loads(err_content)
-                            err_msg = err_json.get("error", {}).get("message", err_content.decode(errors="ignore"))
-                        except Exception:
-                            err_msg = err_content.decode(errors="ignore")
-                        raise ValueError(err_msg)
-                    async for event in _oai_to_responses_stream(_tee_lines(resp.aiter_lines(), buf)):
-                        yield event
+                async for event in _oai_to_responses_stream(_tee_lines(resp.aiter_lines(), buf)):
+                    yield event
             except httpx.TimeoutException as exc:
                 log.error("Responses stream upstream timed out: %s", exc)
                 err_id = f"resp_{uuid.uuid4().hex[:24]}"
@@ -1324,7 +1343,6 @@ async def responses_proxy(request: Request):
                 yield _sse("error", {"type": "error", "error": {"message": err_msg, "type": "timeout_error"}})
                 yield _sse("response.completed", {"type": "response.completed", "response": {
                     "id": err_id, "object": "response", "status": "failed"}})
-                return
             except Exception as exc:
                 log.error("Responses stream upstream error model=%s: %s: %s",
                           oai_body.get("model"), type(exc).__name__, exc)
@@ -1333,9 +1351,10 @@ async def responses_proxy(request: Request):
                 yield _sse("error", {"type": "error", "error": {"message": err_msg, "type": "connection_error"}})
                 yield _sse("response.completed", {"type": "response.completed", "response": {
                     "id": err_id, "object": "response", "status": "failed"}})
-                return
-            if ck and buf:
-                await _cache_set(ck, buf)
+            finally:
+                await resp.aclose()
+                if ck and buf:
+                    await _cache_set(ck, buf)
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     if ck:
@@ -1646,41 +1665,43 @@ async def claude_proxy(request: Request):
              model, len(oai_body.get("tools", [])), streaming)
 
     if streaming:
+        req = _client.build_request("POST", f"{LITELLM}/v1/chat/completions", headers=headers, content=oai_bytes)
+        try:
+            resp = await _client.send(req, stream=True)
+        except Exception as exc:
+            log.error("Claude stream connection failed model=%s: %s", oai_body.get("model"), exc)
+            return Response(content=json.dumps({"error": {"type": "api_error", "message": f"Connection failed: {exc}"}}),
+                            status_code=502, headers={"content-type": "application/json"})
+
+        if resp.status_code >= 400:
+            err_content = await resp.aread()
+            await resp.aclose()
+            log.warning("Claude upstream stream error %d: %s", resp.status_code, err_content[:300])
+            return Response(content=err_content, status_code=resp.status_code, headers={"content-type": "application/json"})
+
         async def generate():
             if ck:
                 cached = await _cache_get(ck)
                 if cached is not None:
                     log.info("cache hit (claude stream) key=%s", ck[:16])
+                    await resp.aclose()
                     async for event in _oai_to_claude_stream(_aiter_list(cached), model):
                         yield event
                     return
             buf: list[str] = []
             try:
-                async with _client.stream("POST", f"{LITELLM}/v1/chat/completions",
-                                          headers=headers, content=oai_bytes) as resp:
-                    if resp.status_code >= 400:
-                        err_content = await resp.aread()
-                        log.warning("Claude upstream stream error %d: %s", resp.status_code, err_content[:300])
-                        try:
-                            err_json = json.loads(err_content)
-                            err_msg = err_json.get("error", {}).get("message", err_content.decode(errors="ignore"))
-                            err_type = err_json.get("error", {}).get("type", "api_error")
-                        except Exception:
-                            err_msg = err_content.decode(errors="ignore")
-                            err_type = "api_error"
-                        yield f"event: error\ndata: {json.dumps({'type': 'error', 'error': {'type': err_type, 'message': err_msg}})}\n\n"
-                        return
-                    async for event in _oai_to_claude_stream(_tee_lines(resp.aiter_lines(), buf), model):
-                        yield event
+                async for event in _oai_to_claude_stream(_tee_lines(resp.aiter_lines(), buf), model):
+                    yield event
             except Exception as exc:
                 log.error("Claude stream upstream error model=%s: %s: %s",
                           oai_body.get("model"), type(exc).__name__, exc)
                 msg_id = f"msg_{uuid.uuid4().hex[:24]}"
                 yield f"event: message_start\ndata: {json.dumps({'type': 'message_start', 'message': {'id': msg_id, 'type': 'message', 'role': 'assistant', 'content': [], 'model': model, 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}})}\n\n"
                 yield f"event: message_stop\ndata: {json.dumps({'type': 'message_stop'})}\n\n"
-                return
-            if ck and buf:
-                await _cache_set(ck, buf)
+            finally:
+                await resp.aclose()
+                if ck and buf:
+                    await _cache_set(ck, buf)
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     if ck:
