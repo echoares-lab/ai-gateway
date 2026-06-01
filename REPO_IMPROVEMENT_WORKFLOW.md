@@ -655,7 +655,7 @@ Every repo using this document should append:
 ### Branch strategy
 
 ```text
-feat/* -> dev -> PR -> main
+feat/* -> PR -> main
 ```
 
 ### Environment strategy
@@ -663,7 +663,7 @@ feat/* -> dev -> PR -> main
 - stable stack: port 4000
 - isolated dev stacks: `./dev-env.sh start <slot>`
 - slot 0 reserved for stable stack
-- all feature work must happen in a worktree off `dev`
+- all feature work must happen in a worktree off `main`
 
 ### Current machine-enforced checks
 
