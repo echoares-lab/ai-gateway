@@ -83,6 +83,33 @@ curl -s http://localhost:4000/v1/models \
 ./cliproxy-setup.sh test gpt-5-4
 ```
 
+### Managing MCP (Model Context Protocol) Servers
+
+MCP servers are configured globally under the `litellm_settings.mcp_servers` section of `litellm-config.yaml`. The AI Gateway supports standard `stdio` subprocess executions and remote `HTTP/SSE` endpoints.
+
+#### Adding an MCP Server
+To register a new `stdio` or `HTTP/SSE` MCP server:
+1. Open `litellm-config.yaml` and locate the `mcp_servers:` block.
+2. Add your new server entry under the block:
+   ```yaml
+   mcp_servers:
+     my-custom-mcp-server:
+       command: "npx" # Or "uvx" / "python3"
+       args: ["-y", "@user/my-mcp-server-package", "--arg1", "val1"]
+   ```
+3. Restart LiteLLM to load the new server tools:
+   ```bash
+   docker compose restart litellm
+   ```
+
+#### Removing an MCP Server
+To delete an MCP server:
+1. Open `litellm-config.yaml` and delete the corresponding server block from under `mcp_servers:`.
+2. Restart LiteLLM:
+   ```bash
+   docker compose restart litellm
+   ```
+
 ### View logs
 ```bash
 docker compose logs cliproxy -f      # CLIProxyAPI logs

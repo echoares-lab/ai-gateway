@@ -717,3 +717,14 @@ litellm_settings:
     supported_call_types:
       - acompletion
       - completion
+  mcp_servers:
+    mcp-filesystem:
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/dev/workspace", "/tmp"]
+    mcp-git:
+      command: "uvx"
+      args: ["mcp-server-git", "--repository", "/home/dev/repos/ai-gateway"]
+    mcp-fetch:
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-fetch"]
+
