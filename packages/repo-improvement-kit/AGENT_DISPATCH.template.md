@@ -53,11 +53,13 @@ Rules for choosing an issue:
 ISSUE=<issue-number>
 SHORT_NAME=<short-name>
 SLOT=<slot-or-na>
+CLAIM_ID="<agent>-$SHORT_NAME-$(date -u +%Y%m%dT%H%M%SZ)"
 
 gh issue edit "$ISSUE" --repo <OWNER>/<REPO> --add-assignee "@me"
 
 gh issue comment "$ISSUE" --repo <OWNER>/<REPO> --body "$(cat <<EOF2
 Starting work on this issue.
+Claim-ID: $CLAIM_ID
 Claiming: #$ISSUE
 Branch: feat/$SHORT_NAME
 Worktree: ../<repo>-$SHORT_NAME
@@ -73,6 +75,9 @@ gh issue edit "$ISSUE" --repo <OWNER>/<REPO> \
 
 If another agent claims the issue between discovery and claim, move to the next
 available issue.
+If you see an existing claim comment, compare its `Claim-ID`, branch, worktree,
+and last update before continuing. Do not continue someone else's claim just
+because it uses the same GitHub account.
 
 ---
 
@@ -169,6 +174,7 @@ gh pr create \
 ## Workflow checklist
 - [x] Issue was approved before implementation
 - [x] Issue was claimed with a start-work comment
+- [x] Claim comment includes unique Claim-ID: `$CLAIM_ID`
 - [x] Dependencies were handled explicitly
 - [x] Required manual verification is recorded here
 EOF2

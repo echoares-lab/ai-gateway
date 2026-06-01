@@ -69,17 +69,23 @@ gh issue list --repo echoares-lab/ai-gateway \
 ```bash
 # Replace NNN with the issue number you chose
 ISSUE=NNN
+SHORT_NAME=<short-name>
+SLOT=<slot-number>
+
+# Unique per agent session. Required because multiple agents may share one GitHub account.
+CLAIM_ID="codex-${SHORT_NAME}-$(date -u +%Y%m%dT%H%M%SZ)"
 
 # Assign yourself
 gh issue edit $ISSUE --repo echoares-lab/ai-gateway --add-assignee "@me"
 
 # Post a claim comment with your branch/slot info
-gh issue comment $ISSUE --repo echoares-lab/ai-gateway --body "$(cat <<'EOF'
+gh issue comment "$ISSUE" --repo echoares-lab/ai-gateway --body "$(cat <<EOF
 Starting work on this issue.
-Claiming: #NNN
-Branch: feat/<short-name>
-Worktree: ../ai-gateway-<short-name>
-Slot: <slot-number>
+Claim-ID: $CLAIM_ID
+Claiming: #$ISSUE
+Branch: feat/$SHORT_NAME
+Worktree: ../ai-gateway-$SHORT_NAME
+Slot: $SLOT
 Scope: <one-line description of what you will change>
 EOF
 )"
@@ -91,6 +97,9 @@ gh issue edit $ISSUE --repo echoares-lab/ai-gateway \
 ```
 
 **If another agent claims the issue between steps 1 and 2, move to the next available issue.**
+If you see an existing claim comment, compare its `Claim-ID`, branch, worktree,
+and last update before continuing. Do not continue someone else's claim just
+because it uses the same GitHub account.
 
 ---
 
@@ -206,6 +215,7 @@ gh pr create \
 ## Workflow checklist
 - [x] Issue was approved before implementation
 - [x] Issue was claimed with a start-work comment
+- [x] Claim comment includes unique Claim-ID: `<claim-id>`
 - [x] Dependencies were handled
 - [x] Manual verification recorded above
 EOF
