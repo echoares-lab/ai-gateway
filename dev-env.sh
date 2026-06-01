@@ -21,6 +21,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.dev.yml"
+MOCK_OVERLAY="${SCRIPT_DIR}/docker-compose.mock.yml"
 ENV_FILE="${SCRIPT_DIR}/.env"
 
 # ---------------------------------------------------------------------------
@@ -190,6 +191,43 @@ cmd_test() {
         $op_run_prefix python3 -m pytest "${SCRIPT_DIR}/tests/integration/" -m integration -v "$@"
 }
 
+# --- Mock tier: real translator + litellm + canned upstream, no OAuth ---------
+
+cmd_start_mock() {
+    local slot
+    slot="$(require_slot "${1:-9}")"
+    slot_ports "$slot"
+    echo "starting MOCK slot ${slot}: translator=:${TRANSLATOR_PORT} (no OAuth, canned upstream)"
+    # No seed_auth_volume — the mock upstream needs no credentials.
+    run_compose "$slot" -f "$MOCK_OVERLAY" up -d --build postgres cliproxy litellm translator
+    echo ""
+    echo "mock slot ${slot} is up: translator http://localhost:${TRANSLATOR_PORT}/health"
+}
+
+cmd_test_mock() {
+    local slot
+    slot="$(require_slot "${1:-9}")"
+    shift 1 2>/dev/null || true
+    slot_ports "$slot"
+    local gateway_url="http://localhost:${TRANSLATOR_PORT}"
+    local master_key="sk-ci-mock"
+    if [[ -f "$ENV_FILE" ]]; then
+        master_key="$(grep -E '^LITELLM_MASTER_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' || echo sk-ci-mock)"
+    fi
+    echo "running MOCK-tier tests against ${gateway_url} (ALLOW_MODEL_SKIP=0) ..."
+    # shellcheck disable=SC2086
+    GATEWAY_URL="$gateway_url" LITELLM_MASTER_KEY="$master_key" ALLOW_MODEL_SKIP=0 \
+        python3 -m pytest "${SCRIPT_DIR}/tests/integration/" -m mock -v "$@"
+}
+
+cmd_stop_mock() {
+    local slot
+    slot="$(require_slot "${1:-9}")"
+    echo "stopping MOCK slot ${slot} ..."
+    run_compose "$slot" -f "$MOCK_OVERLAY" down -v
+    echo "mock slot ${slot} stopped"
+}
+
 cmd_list() {
     docker ps --filter "name=aidev" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 }
@@ -209,9 +247,12 @@ case "$CMD" in
     logs)              cmd_logs "$@" ;;
     sync-db)           cmd_sync_db "$@" ;;
     test)              cmd_test "$@" ;;
+    start-mock)        cmd_start_mock "$@" ;;
+    test-mock)         cmd_test_mock "$@" ;;
+    stop-mock)         cmd_stop_mock "$@" ;;
     list)              cmd_list ;;
     *)
-        echo "Usage: $0 {start|stop|rebuild|rebuild-cliproxy|logs|sync-db|test|list} [slot]"
+        echo "Usage: $0 {start|stop|rebuild|rebuild-cliproxy|logs|sync-db|test|start-mock|test-mock|stop-mock|list} [slot]"
         echo ""
         echo "Slot 0 is reserved (stable stack). Default slot: 1"
         echo ""

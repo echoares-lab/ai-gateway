@@ -3,17 +3,35 @@
 Set GATEWAY_URL (default: http://localhost:4010) and LITELLM_MASTER_KEY before running:
     pytest tests/integration/ -m integration
 """
+import os
 import json
 import pytest
 import httpx
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration]
 
 _SKIP_CODES = {400, 404, 503}
 
+# Against the mock upstream nothing should be unavailable, so the mock tier sets
+# ALLOW_MODEL_SKIP=0 to turn an unexpected skip-code into a hard failure (a real
+# regression). The real-provider tier leaves it at the default "1" so missing
+# models/credentials skip instead of failing.
+_ALLOW_SKIP = os.environ.get("ALLOW_MODEL_SKIP", "1") == "1"
+
+
+def _should_skip(resp: httpx.Response) -> bool:
+    """True if the test should skip; raise if a skip-code is unexpected (mock tier)."""
+    if resp.status_code in _SKIP_CODES:
+        if _ALLOW_SKIP:
+            return True
+        raise AssertionError(
+            f"unexpected {resp.status_code} against mock: {resp.text[:200]}"
+        )
+    return False
+
 
 def _skip_if_model_unavailable(resp: httpx.Response):
-    if resp.status_code in _SKIP_CODES:
+    if _should_skip(resp):
         pytest.skip(f"model unavailable ({resp.status_code}): {resp.text[:200]}")
 
 
@@ -21,11 +39,15 @@ def _skip_if_model_unavailable(resp: httpx.Response):
 # Infrastructure
 # ---------------------------------------------------------------------------
 
+@pytest.mark.mock
+@pytest.mark.smoke
 def test_health(client):
     resp = client.get("/health")
     assert resp.status_code == 200
 
 
+@pytest.mark.mock
+@pytest.mark.smoke
 def test_models_have_prefix(client):
     resp = client.get("/v1/models")
     assert resp.status_code == 200
@@ -39,6 +61,7 @@ def test_models_have_prefix(client):
 # Chat completions
 # ---------------------------------------------------------------------------
 
+@pytest.mark.mock
 def test_prefix_stripped_on_completion(client, first_model):
     """Sending AI-Gateway:-prefixed model name should route correctly (not 404)."""
     resp = client.post("/v1/chat/completions", json={
@@ -50,6 +73,8 @@ def test_prefix_stripped_on_completion(client, first_model):
     assert resp.status_code == 200
 
 
+@pytest.mark.mock
+@pytest.mark.smoke
 def test_simple_completion(client, first_model):
     resp = client.post("/v1/chat/completions", json={
         "model": first_model,
@@ -62,6 +87,8 @@ def test_simple_completion(client, first_model):
     assert body["choices"][0]["message"]["content"]
 
 
+@pytest.mark.mock
+@pytest.mark.smoke
 def test_streaming_completion(client, first_model):
     with client.stream("POST", "/v1/chat/completions", json={
         "model": first_model,
@@ -69,7 +96,7 @@ def test_streaming_completion(client, first_model):
         "max_tokens": 5,
         "stream": True,
     }) as resp:
-        if resp.status_code in _SKIP_CODES:
+        if _should_skip(resp):
             pytest.skip(f"model unavailable ({resp.status_code})")
         assert resp.status_code == 200
         lines = [line for line in resp.iter_lines() if line.startswith("data:")]
@@ -80,6 +107,7 @@ def test_streaming_completion(client, first_model):
 # Responses API translation
 # ---------------------------------------------------------------------------
 
+@pytest.mark.mock
 def test_responses_api_input_field(client, first_model):
     """Body with `input` (Responses API style) should be translated and succeed."""
     resp = client.post("/v1/chat/completions", json={
@@ -91,6 +119,8 @@ def test_responses_api_input_field(client, first_model):
     assert resp.status_code == 200
 
 
+@pytest.mark.mock
+@pytest.mark.smoke
 def test_tool_normalization(client, first_model):
     """Responses API tool format {type, name, parameters} should not cause 422."""
     resp = client.post("/v1/chat/completions", json={
@@ -114,6 +144,8 @@ _GEMINI_BODY = {
 
 
 class TestGeminiCliFormat:
+    @pytest.mark.mock
+    @pytest.mark.smoke
     def test_generate_content(self, client):
         resp = client.post(f"/v1beta/models/{_GEMINI_MODEL}:generateContent", json=_GEMINI_BODY)
         _skip_if_model_unavailable(resp)
@@ -122,15 +154,19 @@ class TestGeminiCliFormat:
         assert "candidates" in body, f"missing candidates: {body}"
         assert body["candidates"][0]["content"]["parts"][0].get("text"), "empty response text"
 
+    @pytest.mark.mock
+    @pytest.mark.smoke
     def test_stream_generate_content(self, client):
         with client.stream("POST", f"/v1beta/models/{_GEMINI_MODEL}:streamGenerateContent",
                            json=_GEMINI_BODY) as resp:
-            if resp.status_code in _SKIP_CODES:
+            if _should_skip(resp):
                 pytest.skip(f"model unavailable ({resp.status_code})")
             assert resp.status_code == 200
             chunks = [line for line in resp.iter_lines() if line.startswith("data:")]
         assert chunks, "no SSE chunks received from streamGenerateContent"
 
+    @pytest.mark.mock
+    @pytest.mark.smoke
     def test_tool_use(self, client):
         body = {
             "contents": [{"role": "user", "parts": [{"text": "What is the weather?"}]}],
@@ -146,18 +182,22 @@ class TestGeminiCliFormat:
         _skip_if_model_unavailable(resp)
         assert resp.status_code == 200
 
+    @pytest.mark.mock
+    @pytest.mark.smoke
     def test_dotted_model_name_routes(self, client):
         """gemini-2.5-flash (dotted) must route — not fall through to a 404/500."""
         resp = client.post("/v1beta/models/gemini-2.5-flash:generateContent", json=_GEMINI_BODY)
         _skip_if_model_unavailable(resp)
         assert resp.status_code == 200
 
+    @pytest.mark.mock
     def test_unknown_model_returns_4xx_not_5xx(self, client):
         """A completely unknown model should return a client error, not a 500."""
         resp = client.post("/v1beta/models/gemini-totally-fake-model:generateContent",
                            json=_GEMINI_BODY)
         assert resp.status_code < 500, f"unknown model caused server error: {resp.text[:300]}"
 
+    @pytest.mark.mock
     def test_system_instruction(self, client):
         body = {
             "systemInstruction": {"parts": [{"text": "You are a helpful assistant."}]},
@@ -176,6 +216,8 @@ _CLAUDE_MODEL = "claude-sonnet-4-6"
 
 
 class TestClaudeCliFormat:
+    @pytest.mark.mock
+    @pytest.mark.smoke
     def test_messages_basic(self, client):
         resp = client.post("/v1/messages", json={
             "model": _CLAUDE_MODEL,
@@ -188,6 +230,8 @@ class TestClaudeCliFormat:
         assert body.get("type") == "message", f"unexpected response type: {body}"
         assert body["content"][0]["type"] == "text"
 
+    @pytest.mark.mock
+    @pytest.mark.smoke
     def test_messages_stream(self, client):
         with client.stream("POST", "/v1/messages", json={
             "model": _CLAUDE_MODEL,
@@ -195,12 +239,14 @@ class TestClaudeCliFormat:
             "max_tokens": 10,
             "stream": True,
         }, headers={"x-api-key": client.headers.get("authorization", "").removeprefix("Bearer ")}) as resp:
-            if resp.status_code in _SKIP_CODES:
+            if _should_skip(resp):
                 pytest.skip(f"model unavailable ({resp.status_code})")
             assert resp.status_code == 200
             events = [line for line in resp.iter_lines() if line.startswith("event:")]
         assert any("message_start" in e for e in events), f"missing message_start: {events[:5]}"
 
+    @pytest.mark.mock
+    @pytest.mark.smoke
     def test_tool_use(self, client):
         resp = client.post("/v1/messages", json={
             "model": _CLAUDE_MODEL,
@@ -219,6 +265,7 @@ class TestClaudeCliFormat:
         _skip_if_model_unavailable(resp)
         assert resp.status_code == 200, f"tool_use failed: {resp.text[:300]}"
 
+    @pytest.mark.mock
     def test_tool_result_multiturn(self, client):
         """Multi-turn with tool_result content block should not cause a parsing error."""
         resp = client.post("/v1/messages", json={
@@ -244,6 +291,7 @@ class TestClaudeCliFormat:
         _skip_if_model_unavailable(resp)
         assert resp.status_code == 200, f"tool_result multiturn failed: {resp.text[:300]}"
 
+    @pytest.mark.mock
     def test_system_prompt_string(self, client):
         resp = client.post("/v1/messages", json={
             "model": _CLAUDE_MODEL,
@@ -254,6 +302,7 @@ class TestClaudeCliFormat:
         _skip_if_model_unavailable(resp)
         assert resp.status_code == 200
 
+    @pytest.mark.mock
     def test_system_prompt_list(self, client):
         """System as list of text blocks (Claude SDK format)."""
         resp = client.post("/v1/messages", json={
@@ -275,6 +324,8 @@ _CODEX_MODEL_DASHED = "gpt-5-3-codex"   # as LiteLLM knows it
 
 
 class TestCodexCliFormat:
+    @pytest.mark.mock
+    @pytest.mark.smoke
     def test_dotted_model_normalised_in_chat_completions(self, client):
         """gpt-5.3-codex (dotted) must be normalised to gpt-5-3-codex and not 404."""
         resp = client.post("/v1/chat/completions", json={
@@ -285,6 +336,7 @@ class TestCodexCliFormat:
         _skip_if_model_unavailable(resp)
         assert resp.status_code == 200, f"dotted model name caused error: {resp.text[:300]}"
 
+    @pytest.mark.mock
     def test_dashed_model_works(self, client):
         """Dashed model name should work directly."""
         resp = client.post("/v1/chat/completions", json={
@@ -295,6 +347,8 @@ class TestCodexCliFormat:
         _skip_if_model_unavailable(resp)
         assert resp.status_code == 200
 
+    @pytest.mark.mock
+    @pytest.mark.smoke
     def test_responses_api_string_input(self, client):
         """POST /v1/responses with string `input` (Codex CLI default)."""
         resp = client.post("/v1/responses", json={
@@ -307,6 +361,8 @@ class TestCodexCliFormat:
         body = resp.json()
         assert body.get("output"), f"no output in response: {body}"
 
+    @pytest.mark.mock
+    @pytest.mark.smoke
     def test_responses_api_stream(self, client):
         with client.stream("POST", "/v1/responses", json={
             "model": _CODEX_MODEL_DOTTED,
@@ -314,12 +370,14 @@ class TestCodexCliFormat:
             "stream": True,
             "max_output_tokens": 10,
         }) as resp:
-            if resp.status_code in _SKIP_CODES:
+            if _should_skip(resp):
                 pytest.skip(f"model unavailable ({resp.status_code})")
             assert resp.status_code == 200
             events = [line for line in resp.iter_lines() if line.startswith("data:")]
         assert events, "no SSE events from /v1/responses stream"
 
+    @pytest.mark.mock
+    @pytest.mark.smoke
     def test_responses_api_tool_call(self, client):
         """Responses API with tools — translator must normalise tool format."""
         resp = client.post("/v1/responses", json={
@@ -339,6 +397,7 @@ class TestCodexCliFormat:
         _skip_if_model_unavailable(resp)
         assert resp.status_code == 200, f"tool call failed: {resp.text[:300]}"
 
+    @pytest.mark.mock
     def test_responses_api_list_input(self, client):
         """Responses API with list `input` containing message items."""
         resp = client.post("/v1/responses", json={

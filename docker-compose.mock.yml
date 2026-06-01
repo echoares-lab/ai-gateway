@@ -1,0 +1,21 @@
+# docker-compose.mock.yml — overrides the cliproxy service with a canned
+# OpenAI-compatible mock so the mock test tier runs translator + litellm +
+# config-driven routing for real, with NO OAuth and NO real LLM calls.
+#
+# Use together with the dev stack:
+#   docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml up -d \
+#       postgres cliproxy litellm translator
+#
+# Compose merges by service key: re-declaring `cliproxy` replaces its build/
+# command and resets volumes/environment to empty, dropping the dev_auth volume
+# and the real config mount. The internal port stays 8317 so litellm-config.yaml
+# (api_base: http://cliproxy:8317/v1) needs no change.
+services:
+  cliproxy:
+    build:
+      context: ./tests/mock-upstream
+      dockerfile: Dockerfile
+    image: ai-mock-upstream:latest
+    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8317"]
+    volumes: []
+    environment: {}
