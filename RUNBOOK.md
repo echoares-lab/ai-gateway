@@ -110,6 +110,24 @@ To delete an MCP server:
    docker compose restart litellm
    ```
 
+#### Rotating Search MCP API Keys & Health Check
+Search MCP servers (such as `mcp-brave` and `mcp-tavily`) dynamically consume upstream API credentials configured in the shared `.env` file (`BRAVE_API_KEY`, `TAVILY_API_KEY`).
+
+To rotate keys safely:
+1. Edit the secret variables inside your gitignored `.env` file:
+   ```bash
+   BRAVE_API_KEY="new-brave-key"
+   TAVILY_API_KEY="new-tavily-key"
+   ```
+2. Restart the LiteLLM container to pick up the updated environment variables:
+   ```bash
+   docker compose up -d litellm
+   ```
+3. To check tool availability and search health, query tool execution downstream via a model that has access to these tools, or inspect LiteLLM container logs:
+   ```bash
+   docker compose logs litellm | grep -i "mcp"
+   ```
+
 ### View logs
 ```bash
 docker compose logs cliproxy -f      # CLIProxyAPI logs

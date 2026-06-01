@@ -727,4 +727,15 @@ litellm_settings:
     mcp-fetch:
       command: "npx"
       args: ["-y", "@modelcontextprotocol/server-fetch"]
+    mcp-brave:
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-brave"]
+      env:
+        BRAVE_API_KEY: "os.environ/BRAVE_API_KEY"
+    mcp-tavily:
+      command: "npx"
+      args: ["-y", "@tavily/mcp-server"]
+      env:
+        TAVILY_API_KEY: "os.environ/TAVILY_API_KEY"
+
 
