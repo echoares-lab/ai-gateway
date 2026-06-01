@@ -748,6 +748,10 @@ litellm_settings:
     mcp-sequential-thinking:
       command: "npx"
       args: ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    mcp-postgres:
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-postgres", "postgresql://mcp_readonly:mcp_readonly_secret@postgres:5432/postgres"]
+
 
 
 

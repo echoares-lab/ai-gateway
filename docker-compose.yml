@@ -269,6 +269,22 @@ services:
       - langfuse_postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
 
+  mcp-postgres:
+    build:
+      context: ./services/mcp-postgres
+      dockerfile: Dockerfile
+    restart: always
+    tty: true
+    stdin_open: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://mcp_readonly:mcp_readonly_secret@postgres:5432/postgres
+    ports:
+      - "8000:8000"
+
+
 volumes:
   cpa_manager_data:
     driver: local
