@@ -407,7 +407,8 @@ docker compose up -d
 | `services/translator/translator.py` | FastAPI proxy — Responses API translation + model prefix |
 | `services/translator/Dockerfile` | Builds the translator container |
 | `services/translator/gemini-model-map.json` | Dotted→dashed Gemini model alias map (auto-managed by sync-models) |
-| `Dockerfile.cliproxy` | CLIProxyAPI container image |
+| `Dockerfile.cliproxy` | Builds the CLIProxyAPI container image |
+| `docs/ARCHITECTURE.md` | Architecture Decision Record (ADR) — MCP Control Plane Hosting |
 | `litellm-config.yaml` | Model routing (auto-managed by sync-models) |
 | `.env` | Secrets (keys, passwords) — never commit |
 | `cliproxy-setup.sh` | Setup, auth, sync, health CLI |
