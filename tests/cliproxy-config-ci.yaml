@@ -8,4 +8,4 @@ remote-management:
   secret-key: "$2b$10$TfBXmdJZx483NWu96NYFE.5LnOV6WyFmsSsEqMxvE1LsH25xMPvM." # BCRYPT hash of 'dev-management-key'
 debug: false
 redis-usage-queue-retention-seconds: 60
-usage-statistics-enabled: true
+usage-statistics-enabled: false
