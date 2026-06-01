@@ -7,6 +7,7 @@ Use this checklist when copying the Repo Improvement Kit into another repository
 Copy these files/folders into the target repo:
 - `REPO_IMPROVEMENT_WORKFLOW.md`
 - `REPO_IMPROVEMENT_APPENDIX.template.md` as `REPO_IMPROVEMENT_APPENDIX.md`
+- `AGENT_DISPATCH.template.md` as `AGENT_DISPATCH.md`
 - `.github/ISSUE_TEMPLATE/repo-improvement.yml`
 - `.github/ISSUE_TEMPLATE/config.yml`
 - `.github/pull_request_template.md`
@@ -22,6 +23,15 @@ In `REPO_IMPROVEMENT_APPENDIX.md`, update:
 - manual verification commands
 - useful local commands
 - issue body conventions already in use
+
+## 2a. Customize the agent dispatch prompt
+
+In `AGENT_DISPATCH.md`, replace the placeholders from `AGENT_DISPATCH.template.md`:
+- `<OWNER>/<REPO>` and `<LOCAL_REPO_PATH>`
+- environment/slot commands (or remove if not applicable)
+- unit, integration, smoke, and health-check commands
+- post-merge verification commands
+- priority order specific to the repo (epics vs sub-issues, etc.)
 
 ## 3. Update owners
 
