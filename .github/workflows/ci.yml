@@ -108,6 +108,7 @@ jobs:
       - name: Build and Start Gateway Stack
         run: |
           # Use slot 1 for isolated testing
+          mkdir -p "$HOME/.cli-proxy-api"
           export CLIPROXY_DEV_CONFIG=tests/cliproxy-config-ci.yaml
           ./dev-env.sh start 1
       - name: Wait for services to be ready
