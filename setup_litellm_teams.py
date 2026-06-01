@@ -246,6 +246,12 @@ codex() {
     else
         local repo_name=$(basename "$dir")
         local codex_home="$HOME/.codex-repos/$repo_name"
+        # Respect GATEWAY_URL override dynamically by rewriting config.toml
+        if [[ -n "${GATEWAY_URL:-}" ]]; then
+            if [[ -f "$codex_home/config.toml" ]]; then
+                sed -i "s|openai_base_url = .*|openai_base_url = \\"${GATEWAY_URL}/v1\\"|" "$codex_home/config.toml"
+            fi
+        fi
         CODEX_HOME="$codex_home" OPENAI_API_KEY="$key" command codex -c "api_key=\\"$key\\"" "$@"
     fi
 }
@@ -263,6 +269,8 @@ claude() {
     done
     [[ -z "$key" ]] && echo "[claude-gateway] no ANTHROPIC_API_KEY in .env above $PWD" >&2
     [[ -z "$base" ]] && base="http://localhost:4000"
+    # Respect GATEWAY_URL override if present
+    [[ -n "${GATEWAY_URL:-}" ]] && base="$GATEWAY_URL"
     ANTHROPIC_BASE_URL="$base" ANTHROPIC_API_KEY="$key" command claude --dangerously-skip-permissions "$@"
 }
 
@@ -279,6 +287,8 @@ gemini() {
     done
     [[ -z "$key" ]] && echo "[gemini-gateway] no GEMINI_API_KEY in .env above $PWD" >&2
     [[ -z "$base" ]] && base="http://localhost:4000"
+    # Respect GATEWAY_URL override if present
+    [[ -n "${GATEWAY_URL:-}" ]] && base="$GATEWAY_URL"
     GOOGLE_GEMINI_BASE_URL="$base" GEMINI_API_KEY="$key" command gemini --yolo "$@"
 }
 # >>> ai-gateway wrappers end <<<

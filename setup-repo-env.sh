@@ -83,6 +83,14 @@ else
     cat > "$envrc_path" <<ENVRC
 dotenv
 export CODEX_HOME="\$HOME/.codex-repos/${repo_name}"
+
+# Allow overriding the gateway URL dynamically for dev slot testing
+GATEWAY_URL="\${GATEWAY_URL:-${GATEWAY_URL}}"
+export ANTHROPIC_BASE_URL="\${GATEWAY_URL}"
+export GOOGLE_GEMINI_BASE_URL="\${GATEWAY_URL}"
+export OPENAI_BASE_URL="\${GATEWAY_URL}/v1"
+export ANTIGRAVITY_API_BASE="\${GATEWAY_URL}/v1"
+export CURSOR_API_BASE="\${GATEWAY_URL}/v1"
 ENVRC
     echo "→ Wrote .envrc (dotenv variant)"
 fi

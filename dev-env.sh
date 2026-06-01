@@ -142,6 +142,28 @@ cmd_logs() {
     run_compose "$slot" logs -f
 }
 
+cmd_sync_db() {
+    local slot
+    slot="$(require_slot "${1:-1}")"
+    local stable_pg="ai-postgres-1"
+    local dev_pg="aidev${slot}-postgres-1"
+
+    # Verify stable postgres is running
+    docker ps -q -f name="^/${stable_pg}$" >/dev/null || die "Stable database ${stable_pg} is not running."
+    # Verify dev postgres is running
+    docker ps -q -f name="^/${dev_pg}$" >/dev/null || die "Dev database ${dev_pg} is not running. Start the slot first."
+
+    echo "Syncing stable LiteLLM database to Slot ${slot} ..."
+    # Dump from stable postgres and restore to dev postgres
+    docker exec "$stable_pg" pg_dump -U postgres -d litellm --clean --no-owner --no-privileges \
+        | docker exec -i "$dev_pg" psql -U postgres -d litellm >/dev/null
+
+    echo "✓ Database synced successfully to Slot ${slot}."
+    echo "Restarting services to reload configurations ..."
+    run_compose "$slot" restart litellm translator
+    echo "✓ Slot ${slot} ready."
+}
+
 cmd_test() {
     local slot
     slot="$(require_slot "${1:-1}")"
@@ -185,10 +207,11 @@ case "$CMD" in
     rebuild)           cmd_rebuild "$@" ;;
     rebuild-cliproxy)  cmd_rebuild_cliproxy "$@" ;;
     logs)              cmd_logs "$@" ;;
+    sync-db)           cmd_sync_db "$@" ;;
     test)              cmd_test "$@" ;;
     list)              cmd_list ;;
     *)
-        echo "Usage: $0 {start|stop|rebuild|rebuild-cliproxy|logs|test|list} [slot]"
+        echo "Usage: $0 {start|stop|rebuild|rebuild-cliproxy|logs|sync-db|test|list} [slot]"
         echo ""
         echo "Slot 0 is reserved (stable stack). Default slot: 1"
         echo ""
