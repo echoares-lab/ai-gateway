@@ -20,7 +20,7 @@ Recommended:
 - Do not allow force pushes
 - Do not allow deletions
 
-## `dev`
+## Optional integration branch
 
 Recommended:
 - Require status checks to pass before merging
@@ -36,3 +36,5 @@ Recommended:
 
 These settings are not stored in git; they must be configured in GitHub repo settings.
 Use this file as the source of truth when re-creating repo settings in another repository.
+If the repo does not use a separate integration branch, create feature worktrees or branches from
+`main`, test there, and merge back to `main` through protected PRs.
