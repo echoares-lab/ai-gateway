@@ -29,8 +29,8 @@ It separates **discovery**, **approval**, **execution**, and **promotion** so pr
 4. **Machine checks and human checks are different.**
    CI can prove some things; end-to-end and operational verification still need explicit signoff.
 
-5. **Promotion must be staged.**
-   Changes should move through feature → integration → production, not jump straight to stable.
+5. **Production must be protected.**
+   Changes should move through a feature worktree or branch, pass required checks, and merge through a protected PR.
 
 6. **Evidence must live in repo artifacts.**
    Test results, claim status, risk notes, and closeout notes belong in issues and PRs, not only in chat.
@@ -233,8 +233,8 @@ GitHub open/closed is not enough. Use lifecycle states explicitly.
 - `changes-requested`
 - `ci-failed`
 - `ready-to-merge`
-- `merged-to-integration`
-- `verified-on-integration`
+- `merged-to-staging`
+- `verified-on-staging`
 - `merged-to-production`
 - `verified-on-production`
 - `done`
@@ -322,25 +322,27 @@ Do not let two agents work the same hotspot without declaring it.
 General pattern:
 
 ```text
-feature branch/worktree
-  → integration branch/environment
-  → production branch/environment
+main
+  → feature branch/worktree
+  → pull request
+  → main
 ```
 
 ### Recommended execution flow
 
-1. Create feature branch from integration branch
+1. Create feature branch or worktree from `main`
 2. Create isolated worktree if supported
 3. Start isolated dev/test environment if needed
 4. Implement in small increments
 5. Run fast tests continuously
-6. Open PR to integration branch (or directly to production if repo policy allows)
+6. Open PR back to `main`
 7. Run CI + required manual checks
-8. Promote to production only after integration verification
+8. Merge only after required approval and verification
 
 ### Rule
 
-Never develop directly on the stable/production worktree if the repo has a live local stack.
+Never develop directly in a live or stable worktree if the repo has a production-like local stack.
+Repos that use a separate integration branch should document that repo-specific policy in the appendix.
 
 ---
 
@@ -468,11 +470,11 @@ An issue should close only when the target outcome is actually achieved.
 - summary of shipped change
 - tests run
 - any follow-up issues created
-- whether the change is verified on integration only or on production too
+- whether the change is verified on staging only or on production too
 
 ### Rule
 
-`merged-to-integration` is not the same as `done`.
+`merged-to-staging` is not the same as `done`.
 If the issue target is production behavior, close after production verification.
 
 ---
@@ -484,7 +486,7 @@ Versioning and staged promotion are key to avoiding regressions.
 ### Recommended release channels
 
 - feature / worktree
-- integration branch/environment
+- staging / integration branch/environment if the repo uses one
 - staging / pre-prod (if available)
 - production
 
@@ -500,7 +502,7 @@ Versioning and staged promotion are key to avoiding regressions.
 - `release:patch`
 - `release:minor`
 - `release:risky`
-- `channel:integration`
+- `channel:staging`
 - `channel:production`
 
 ### Rule
@@ -559,7 +561,7 @@ Recommended repository settings:
 - stale review dismissal on new commits
 - auto-merge allowed only with checks
 
-### For integration branch
+### For optional integration branch
 - no force pushes
 - required checks
 - lighter review rules if desired
@@ -581,7 +583,7 @@ Do **not** allow:
 - two agents editing the same hotspot without declared dependency
 - claim by branch existence only
 - stale claims with no expiry
-- closing issues on PR creation or integration merge alone
+- closing issues on PR creation or staging merge alone
 - CI pass used as a substitute for required manual checks
 - unrelated work bundled just to reduce admin overhead
 - verification evidence living only in chat
@@ -602,8 +604,8 @@ Do **not** allow:
 - `status:blocked`
 - `status:in-review`
 - `status:ready-to-merge`
-- `status:merged-to-integration`
-- `status:verified-on-integration`
+- `status:merged-to-staging`
+- `status:verified-on-staging`
 - `status:merged-to-production`
 - `status:verified-on-production`
 - `status:done`
@@ -634,9 +636,13 @@ Do **not** allow:
 
 ---
 
-## 20. Repo-specific appendix template
+## 20. Repo-specific appendix
 
-Every repo using this document should append:
+This repo keeps repository-specific details in `REPO_IMPROVEMENT_APPENDIX.md`
+next to this document. Do not embed repo-specific commands, branch names,
+owners, or provider details in the reusable workflow.
+
+The appendix should define:
 
 - branch strategy
 - worktree policy
@@ -647,61 +653,3 @@ Every repo using this document should append:
 - PR template requirements
 - branch protection settings
 - critical hotspot files / subsystems
-
----
-
-## Repo-specific appendix: AI Gateway
-
-### Branch strategy
-
-```text
-feat/* -> PR -> main
-```
-
-### Environment strategy
-
-- stable stack: port 4000
-- isolated dev stacks: `./dev-env.sh start <slot>`
-- slot 0 reserved for stable stack
-- all feature work must happen in a worktree off `main`
-
-### Current machine-enforced checks
-
-- ruff lint / format for translator
-- YAML validation for `litellm-config.yaml`
-- hardcoded API key detection
-- translator unit tests
-
-### Current manual verification
-
-- `./dev-env.sh test <slot>`
-- `./cliproxy-setup.sh health`
-- representative E2E checks:
-  - Claude
-  - Gemini
-  - GPT
-
-### Current useful commands
-
-- `./dev-env.sh start <slot>`
-- `./dev-env.sh stop <slot>`
-- `./dev-env.sh test <slot>`
-- `./dev-env.sh list`
-- `./cliproxy-setup.sh health`
-- `./cliproxy-setup.sh test <model>`
-- `./cliproxy-setup.sh quota-summary`
-- `./cliproxy-setup.sh sync-models`
-
-### Current issue body pattern worth preserving
-
-- Problem
-- Actions
-- Files
-
-### Recommended additions for this repo
-
-- issue templates
-- PR template
-- CODEOWNERS
-- branch protection for `main`
-- explicit status labels for claims and verification stages

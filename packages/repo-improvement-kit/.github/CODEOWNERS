@@ -1,18 +1,14 @@
 # Default owner for all files
-* @TheNorthWestPassage
+* @OWNER_OR_TEAM
 
 # Critical runtime paths
-/services/translator/ @TheNorthWestPassage
-/litellm-config.yaml @TheNorthWestPassage
-/docker-compose.yml @TheNorthWestPassage
-/docker-compose.dev.yml @TheNorthWestPassage
-/Dockerfile.cliproxy @TheNorthWestPassage
-/cliproxy-setup.sh @TheNorthWestPassage
-/dev-env.sh @TheNorthWestPassage
+/src/ @OWNER_OR_TEAM
+/config/ @OWNER_OR_TEAM
+/scripts/ @OWNER_OR_TEAM
+/docker-compose.yml @OWNER_OR_TEAM
+/Dockerfile @OWNER_OR_TEAM
 
 # Process / governance docs
-/AGENTS.md @TheNorthWestPassage
-/CLAUDE.md @TheNorthWestPassage
-/WORKTREES.md @TheNorthWestPassage
-/REPO_IMPROVEMENT_WORKFLOW.md @TheNorthWestPassage
-/.github/ @TheNorthWestPassage
+/AGENTS.md @OWNER_OR_TEAM
+/REPO_IMPROVEMENT_WORKFLOW.md @OWNER_OR_TEAM
+/.github/ @OWNER_OR_TEAM

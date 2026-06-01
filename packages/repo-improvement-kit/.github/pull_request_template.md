@@ -20,12 +20,10 @@
 
 ## Test plan
 
-- [ ] Translator unit tests pass (`docker compose exec translator pytest test_translator.py -v`)
-- [ ] Integration tests pass on dev slot (`./dev-env.sh test <slot>`)
-- [ ] Health check passes (`./cliproxy-setup.sh health`)
-- [ ] Claude E2E passes (`./cliproxy-setup.sh test claude-sonnet-4-6`)
-- [ ] Gemini E2E passes (`./cliproxy-setup.sh test gemini-3-flash`)
-- [ ] GPT E2E passes (`./cliproxy-setup.sh test gpt-5-4`)
+- [ ] Unit tests pass (`<unit-test-command>`)
+- [ ] Integration tests pass in an isolated worktree/environment (`<integration-test-command>`)
+- [ ] Smoke or E2E checks pass (`<smoke-test-command>`)
+- [ ] Config/schema validation passes (`<validation-command>`)
 - [ ] CI checks passed
 
 ## Risk / rollback
