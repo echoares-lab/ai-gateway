@@ -104,6 +104,25 @@ IN_FLIGHT = Counter(
     "Total requests entering translator middleware",
 )
 
+# ── Per-provider / per-model routing signals (issue #59) ──────────────────────
+# Passive, in-traffic signals for adaptive routing (see docs/ADAPTIVE_ROUTING.md).
+# Captured on every upstream LiteLLM call; never via active background probing.
+PROVIDER_LATENCY = Histogram(
+    "translator_provider_request_duration_seconds",
+    "Upstream LiteLLM request latency by provider and model",
+    ["provider", "model"],
+)
+PROVIDER_REQUESTS = Counter(
+    "translator_provider_requests_total",
+    "Upstream LiteLLM requests by provider, model, and outcome",
+    ["provider", "model", "outcome"],
+)
+PROVIDER_RATE_LIMITS = Counter(
+    "translator_provider_rate_limits_total",
+    "Upstream 429 rate-limit responses by provider and model",
+    ["provider", "model"],
+)
+
 
 @app.get("/metrics")
 async def metrics():
@@ -212,10 +231,75 @@ def _record_format(path: str) -> None:
         FORMAT_REQUESTS.labels("proxy").inc()
 
 
+# Map a (already-resolved) model name to its upstream provider family. Routing
+# signals are aggregated per provider so a degraded provider can be deprioritized
+# across all its models (see docs/ADAPTIVE_ROUTING.md §2).
+_PROVIDER_PREFIXES = (
+    ("claude", "anthropic"),
+    ("gpt", "openai"),
+    ("o1", "openai"),
+    ("o3", "openai"),
+    ("gemini", "google"),
+    ("grok", "xai"),
+    ("kimi", "moonshot"),
+    ("moonshot", "moonshot"),
+)
+
+
+def _provider_of(model: str) -> str:
+    """Derive the provider family from a model name. Returns 'unknown' if unmatched."""
+    if not model:
+        return "unknown"
+    m = model.lower()
+    if m.startswith(MODEL_PREFIX.lower()):
+        m = m[len(MODEL_PREFIX) :]
+    for prefix, provider in _PROVIDER_PREFIXES:
+        if m.startswith(prefix):
+            return provider
+    return "unknown"
+
+
+def _model_from_content(content: bytes) -> str:
+    """Best-effort extract the model name from a JSON request body for signal labels."""
+    try:
+        return json.loads(content).get("model", "-") or "-"
+    except Exception:
+        return "-"
+
+
+def _outcome_for_status(status: int) -> str:
+    """Classify an upstream status code into a routing outcome label."""
+    if status == 429:
+        return "rate_limited"
+    if status >= 500:
+        return "server_error"
+    if status >= 400:
+        return "client_error"
+    return "success"
+
+
+def _record_provider_signal(model: str, status: int, elapsed: float) -> None:
+    """Emit passive per-provider/model routing signals for one upstream call."""
+    provider = _provider_of(model)
+    label_model = model or "-"
+    PROVIDER_LATENCY.labels(provider, label_model).observe(elapsed)
+    outcome = _outcome_for_status(status)
+    PROVIDER_REQUESTS.labels(provider, label_model, outcome).inc()
+    if status == 429:
+        PROVIDER_RATE_LIMITS.labels(provider, label_model).inc()
+
+
 async def _post_with_retry(url: str, headers: dict, content: bytes, retries: int = 2) -> httpx.Response:
-    """POST to LiteLLM with retry on transient 502/503."""
+    """POST to LiteLLM with retry on transient 502/503.
+
+    Records passive per-provider/model routing signals (latency, outcome,
+    rate-limit) for every attempt — see docs/ADAPTIVE_ROUTING.md (issue #59).
+    """
+    model = _model_from_content(content)
     for attempt in range(retries + 1):
+        start = time.monotonic()
         resp = await _client.post(url, headers=headers, content=content)
+        _record_provider_signal(model, resp.status_code, time.monotonic() - start)
         if resp.status_code in (502, 503) and attempt < retries:
             log.warning("LiteLLM %d on attempt %d, retrying…", resp.status_code, attempt + 1)
             await asyncio.sleep(1)
@@ -892,7 +976,9 @@ async def gemini_proxy(model_action: str, request: Request):
     if streaming:
         req = _client.build_request("POST", f"{LITELLM}/v1/chat/completions", headers=headers, content=oai_bytes)
         try:
+            _sig_start = time.monotonic()
             resp = await _client.send(req, stream=True)
+            _record_provider_signal(oai_body.get("model", "-"), resp.status_code, time.monotonic() - _sig_start)
         except Exception as exc:
             log.error("Gemini stream connection failed model=%s: %s", oai_body.get("model"), exc)
             gemini_err = {"error": {"code": 502, "message": f"Connection failed: {exc}", "status": "INTERNAL"}}
@@ -1432,7 +1518,9 @@ async def responses_proxy(request: Request):
     if streaming:
         req = _client.build_request("POST", f"{LITELLM}/v1/chat/completions", headers=headers, content=oai_bytes)
         try:
+            _sig_start = time.monotonic()
             resp = await _client.send(req, stream=True)
+            _record_provider_signal(oai_body.get("model", "-"), resp.status_code, time.monotonic() - _sig_start)
         except httpx.TimeoutException as exc:
             log.error("Responses stream upstream timed out: %s", exc)
             err_msg = f"Upstream request timed out after {UPSTREAM_TIMEOUT} seconds. Please check LiteLLM readiness."
@@ -1838,7 +1926,9 @@ async def claude_proxy(request: Request):
     if streaming:
         req = _client.build_request("POST", f"{LITELLM}/v1/chat/completions", headers=headers, content=oai_bytes)
         try:
+            _sig_start = time.monotonic()
             resp = await _client.send(req, stream=True)
+            _record_provider_signal(oai_body.get("model", "-"), resp.status_code, time.monotonic() - _sig_start)
         except Exception as exc:
             log.error("Claude stream connection failed model=%s: %s", oai_body.get("model"), exc)
             return Response(
@@ -1963,6 +2053,8 @@ async def proxy(path: str, request: Request):
         except Exception:
             pass
 
+    signal_model = _model_from_content(body) if is_chat else ""
+
     if is_stream:
 
         async def generate():
@@ -1974,8 +2066,11 @@ async def proxy(path: str, request: Request):
                         yield (line + "\n").encode()
                     return
             buf: list[str] = []
+            start = time.monotonic()
             try:
                 async with _client.stream(request.method, url, headers=headers, content=body, params=params) as resp:
+                    if is_chat:
+                        _record_provider_signal(signal_model, resp.status_code, time.monotonic() - start)
                     async for chunk in resp.aiter_bytes():
                         if ck:
                             buf.append(chunk.decode(errors="replace"))
@@ -1995,7 +2090,10 @@ async def proxy(path: str, request: Request):
                 content=cached_json[0].encode(), status_code=200, headers={"content-type": "application/json"}
             )
 
+    _proxy_start = time.monotonic()
     resp = await _client.request(request.method, url, headers=headers, content=body, params=params)
+    if is_chat:
+        _record_provider_signal(signal_model, resp.status_code, time.monotonic() - _proxy_start)
 
     if resp.status_code >= 400:
         log.warning("Upstream %d for %s — raw: %s", resp.status_code, path, raw[:600].decode(errors="replace"))
