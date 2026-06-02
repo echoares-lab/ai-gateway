@@ -225,6 +225,7 @@ read-only.
 - [`RUNBOOK.md`](../RUNBOOK.md) — health, model tests, auth, MCP operations.
 - [`CLAUDE.md`](../CLAUDE.md) — stack architecture, ports, CPA-Manager notes.
 - [`docs/ADAPTIVE_ROUTING.md`](./ADAPTIVE_ROUTING.md) — routing signals and fallback strategy.
+- [`docs/ADMIN_CONSOLE_DATA_CONTRACT.md`](./ADMIN_CONSOLE_DATA_CONTRACT.md) — read-only panel schema for the first admin console aggregator/UI.
 - [`litellm-config.yaml`](../litellm-config.yaml) — model aliases, fallbacks, router settings, MCP servers.
 - [`cliproxy-setup.sh`](../cliproxy-setup.sh) — health, model sync, quota summary, E2E commands.
 - Parent epic: [#32](https://github.com/echoares-lab/ai-gateway/issues/32).
