@@ -2032,7 +2032,9 @@ async def proxy(path: str, request: Request):
             model = bd.get("model", "")
             # Map non-OpenAI models (Claude, Gemini, etc.) to gpt-5-5 for native /responses/compact support
             if model and not model.startswith("gpt-") and not model.startswith("o1-") and not model.startswith("o3-"):
-                log.info("Responses/compact interception: mapping model %s to gpt-5-5 for CLIProxy compatibility", model)
+                log.info(
+                    "Responses/compact interception: mapping model %s to gpt-5-5 for CLIProxy compatibility", model
+                )
                 bd["model"] = "gpt-5-5"
                 body = json.dumps(bd).encode()
                 changed = True
