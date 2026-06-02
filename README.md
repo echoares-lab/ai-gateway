@@ -91,6 +91,7 @@ To use this gateway in Cursor, follow these steps:
 
 ## Documentation Index
 *   [docs/TENANCY.md](./docs/TENANCY.md): Foundational tenancy and workspace domain model design.
+*   [docs/CLIENT_COMPATIBILITY.md](./docs/CLIENT_COMPATIBILITY.md): Supported client compatibility matrix and integration profiles.
 *   [MODELS.md](./MODELS.md): Detailed reference for available models, rate limits, and authentication.
 *   [RUNBOOK.md](./RUNBOOK.md): Commands for setup, maintenance, and troubleshooting.
 *   [docs/ROADMAP.md](./docs/ROADMAP.md): Active roadmap focus and explicitly deferred platform-control areas.
