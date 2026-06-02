@@ -740,6 +740,10 @@ litellm_settings:
     - gemini-3-pro-high: ["claude-sonnet-4-6", "gpt-5-4"]
     - gemini-3-pro-low: ["claude-sonnet-4-6", "gpt-5-4"]
     - gemini-3-pro-preview: ["claude-sonnet-4-6", "gpt-5-4"]
+    # Codex model group uses the dashed LiteLLM alias; without this, adaptive
+    # cooldown can correctly remove 429'd Codex deployments but has no healthy
+    # cross-provider fallback target to route to.
+    - gpt-5-3-codex: ["claude-sonnet-4-6", "gemini-3-flash"]
     - gpt-5-4: ["claude-sonnet-4-6", "gemini-3-flash"]
     - gpt-5-4-mini: ["claude-haiku-4-5", "gemini-3-flash"]
     - gpt-5-5: ["claude-opus-4-7", "gemini-3-1-pro"]
