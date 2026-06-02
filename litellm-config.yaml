@@ -672,7 +672,43 @@ general_settings:
   # health_check_concurrency: 5       # max parallel probes (default: all at once)
 
 router_settings:
+  # --- Adaptive provider routing (issue #60; design: docs/ADAPTIVE_ROUTING.md) ---
+  # Moves routing from purely-static fallback lists toward health/error-aware
+  # ordering using LiteLLM-native router controls. Routing logic stays in LiteLLM
+  # (not translator.py) per docs/ARCHITECTURE.md §2.2.
+
+  # Capability fit (context-window / basic capability) pre-filtering. Kept on so
+  # a request is never routed to a deployment that cannot serve it.
   enable_pre_call_checks: true
+
+  # Order eligible deployments by observed latency rather than fixed list order,
+  # so a slow/degraded provider is deprioritized using passive latency signals
+  # (the same signals captured in issue #59).
+  routing_strategy: latency-based-routing
+  routing_strategy_args:
+    # Treat deployments within this latency band as equivalent (seconds), then
+    # prefer the lower-latency one. Dampens flapping between similar providers.
+    lowest_latency_buffer: 0.5
+    ttl: 300  # seconds of latency history considered
+
+  # Cooldown: after a deployment exceeds allowed_fails failures within a minute,
+  # remove it from rotation for cooldown_time seconds. Degraded / rate-limited
+  # providers are thus deprioritized within their cooldown window and traffic
+  # routes to healthy fallback targets automatically (AC: §60).
+  allowed_fails: 3
+  cooldown_time: 60  # seconds
+
+  # React faster to rate-limit (429) signals than to generic failures: a single
+  # 429 burst should cool a provider quickly, while transient content/other
+  # errors are more tolerant before cooldown.
+  allowed_fails_policy:
+    RateLimitErrorAllowedFails: 2
+    InternalServerErrorAllowedFails: 3
+    TimeoutErrorAllowedFails: 3
+
+  # Bounded automatic retries (with backoff) before falling back to the next
+  # capability-correct provider in the fallbacks list.
+  num_retries: 2
 
 litellm_settings:
   callbacks: ["langfuse"]
