@@ -528,3 +528,141 @@ def test_responses_proxy_timeout_stream():
     assert "Upstream request timed out" in data["error"]["message"]
 
 
+
+
+# ===========================================================================
+# Admin status aggregator (issue #69)
+# ===========================================================================
+
+class TestAdminRedact(unittest.TestCase):
+    def test_redacts_bearer(self):
+        out, red = t._admin_redact("Authorization: Bearer abcdef1234567890abcd")
+        assert "[redacted]" in out
+        assert red is True
+
+    def test_redacts_sk_key(self):
+        out, red = t._admin_redact("key sk-abcdef1234567890abcd here")
+        assert "sk-abcdef1234567890abcd" not in out
+        assert red is True
+
+    def test_plain_text_untouched(self):
+        out, red = t._admin_redact("translator /metrics timed out")
+        assert out == "translator /metrics timed out"
+        assert red is False
+
+    def test_truncates_long(self):
+        out, _ = t._admin_redact("x" * (t.ADMIN_ERROR_MAXLEN + 50))
+        assert len(out) <= t.ADMIN_ERROR_MAXLEN + 1
+
+
+class TestAdminError(unittest.TestCase):
+    def test_shape_and_redaction(self):
+        e = t._admin_error("code1", "token=abcdefgh12345678", "src")
+        assert e["code"] == "code1"
+        assert e["source"] == "src"
+        assert e["redacted"] is True
+        assert "[redacted]" in e["message"]
+
+
+class TestAdminParseProviderMetrics(unittest.TestCase):
+    def test_parses_requests_and_rate_limits(self):
+        text = (
+            'translator_provider_requests_total{model="gpt-5-4",outcome="success",provider="openai"} 3.0\n'
+            'translator_provider_rate_limits_total{model="claude-sonnet-4-6",provider="anthropic"} 1.0\n'
+            'some_other_metric{x="y"} 9\n'
+        )
+        signals = t._admin_parse_provider_metrics(text)
+        kinds = {s["kind"] for s in signals}
+        assert "requests" in kinds
+        assert "rate_limited" in kinds
+        req = next(s for s in signals if s["kind"] == "requests")
+        assert req["provider"] == "openai"
+        assert req["model"] == "gpt-5-4"
+        assert req["outcome"] == "success"
+        assert req["value"] == 3.0
+
+    def test_empty(self):
+        assert t._admin_parse_provider_metrics("") == []
+
+
+class TestAdminModelsPanel(unittest.TestCase):
+    def _config(self):
+        return {"model_list": [
+            {"model_name": "claude-sonnet-4-6"},
+            {"model_name": "gpt-5-4"},
+        ]}
+
+    def test_ok_when_all_visible(self):
+        panel = t._admin_models_panel(self._config(), ["claude-sonnet-4-6", "gpt-5-4"], [])
+        assert panel["status"] == "ok"
+        assert panel["data"]["configured_count"] == 2
+        assert panel["data"]["drift"] == []
+
+    def test_drift_when_configured_not_visible(self):
+        panel = t._admin_models_panel(self._config(), ["claude-sonnet-4-6"], [])
+        assert panel["status"] == "warning"
+        assert any(d["model"] == "gpt-5-4" for d in panel["data"]["drift"])
+
+    def test_warning_when_visible_unknown(self):
+        panel = t._admin_models_panel(self._config(), None, [])
+        assert panel["status"] == "warning"
+
+
+class TestAdminRoutingPanel(unittest.TestCase):
+    def test_extracts_router_settings_and_fallbacks(self):
+        config = {
+            "router_settings": {"routing_strategy": "latency-based-routing", "cooldown_time": 60},
+            "litellm_settings": {"fallbacks": [{"gpt-5-4": ["claude-sonnet-4-6"]}]},
+        }
+        metrics = 'translator_provider_requests_total{model="gpt-5-4",outcome="success",provider="openai"} 2.0\n'
+        panel = t._admin_routing_panel(config, metrics, [])
+        assert panel["status"] == "ok"
+        assert panel["data"]["router_settings"]["cooldown_time"] == 60
+        assert panel["data"]["fallbacks"][0]["model"] == "gpt-5-4"
+        assert panel["data"]["provider_signals"]
+        assert panel["data"]["cooldown_events"] == []
+
+    def test_warning_when_metrics_missing(self):
+        panel = t._admin_routing_panel({}, None, [])
+        assert panel["status"] == "warning"
+
+
+class TestAdminConfigDriftPanel(unittest.TestCase):
+    def test_error_when_config_none(self):
+        panel = t._admin_config_drift_panel(None, [t._admin_error("x", "y", "z")])
+        assert panel["status"] == "error"
+        assert any(c["name"] == "litellm_yaml_parse" and c["status"] == "error" for c in panel["data"]["checks"])
+
+
+class TestAdminRunReadonlyCommand(unittest.TestCase):
+    def test_missing_command(self):
+        out, errors = t._admin_run_readonly_command(["/nonexistent/cmd-xyz", "health"], timeout=1.0)
+        assert out == ""
+        assert errors and errors[0]["code"] == "command_not_found"
+
+
+@pytest.mark.asyncio
+async def test_admin_status_endpoint_shape():
+    from fastapi.testclient import TestClient
+
+    async def fake_visible():
+        return ["claude-sonnet-4-6"], []
+
+    async def fake_metrics():
+        return 'translator_provider_requests_total{model="claude-sonnet-4-6",outcome="success",provider="anthropic"} 1.0\n', []
+
+    with patch.object(t, "_admin_load_litellm_config", return_value=({"model_list": [{"model_name": "claude-sonnet-4-6"}]}, [])), \
+         patch.object(t, "_admin_fetch_visible_models", fake_visible), \
+         patch.object(t, "_admin_fetch_metrics_text", fake_metrics), \
+         patch.object(t, "_admin_run_readonly_command", lambda *a, **k: ("", [])):
+        client = TestClient(t.app)
+        resp = client.get("/admin/status")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["schema_version"] == "admin-console.v1"
+    assert set(body["panels"].keys()) == {"health", "models", "providers", "routing", "config_drift"}
+    assert body["panels"]["health"]["status"] == "ok"
+    # No obvious secret leakage in the serialized response.
+    raw = json.dumps(body)
+    assert "Bearer " not in raw

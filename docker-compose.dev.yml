@@ -95,7 +95,11 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       CLIPROXY_API_KEY: ${CLIPROXY_API_KEY}
       UPSTREAM_TIMEOUT: ${UPSTREAM_TIMEOUT:-30.0}
+      LITELLM_CONFIG_PATH: /config/litellm-config.yaml
+      DEV_SLOT: ${DEV_SLOT:-1}
     ports:
       - "${DEV_TRANSLATOR_PORT:-4010}:4000"
     volumes:
       - ./services/translator:/app
+      # Read-only mount so /admin/status can read configured models/router/fallbacks.
+      - ./litellm-config.yaml:/config/litellm-config.yaml:ro

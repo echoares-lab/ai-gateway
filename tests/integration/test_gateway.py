@@ -57,6 +57,24 @@ def test_models_have_prefix(client):
         assert m["id"].startswith("AI-Gateway:"), f"model missing prefix: {m['id']}"
 
 
+@pytest.mark.mock
+@pytest.mark.smoke
+def test_admin_status(client):
+    """Read-only admin status aggregator returns the admin-console.v1 contract."""
+    resp = client.get("/admin/status")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["schema_version"] == "admin-console.v1"
+    assert "generated_at" in body
+    for panel in ("health", "models", "providers", "routing", "config_drift"):
+        assert panel in body["panels"], f"missing panel: {panel}"
+        assert "status" in body["panels"][panel]
+    # No obvious secret leakage in the serialized response.
+    raw = resp.text
+    assert "Bearer " not in raw
+    assert "sk-" not in raw or "[redacted]" in raw
+
+
 # ---------------------------------------------------------------------------
 # Chat completions
 # ---------------------------------------------------------------------------
