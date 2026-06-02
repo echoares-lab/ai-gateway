@@ -294,7 +294,7 @@ def _extract_and_apply_tenancy(token: str | None, body: dict) -> dict:
                 "workspace_id": parts[2],
                 "team_id": parts[3],
                 "repo_name": parts[4],
-                "environment": "-".join(parts[5:])
+                "environment": "-".join(parts[5:]),
             }
             if "metadata" not in body or not isinstance(body["metadata"], dict):
                 body["metadata"] = {}
