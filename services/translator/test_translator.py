@@ -246,6 +246,111 @@ async def test_post_with_retry_success_on_first_attempt():
     assert mock_client.post.call_count == 1
 
 
+# ===========================================================================
+# Per-provider routing signals (issue #59)
+# ===========================================================================
+
+class TestProviderOf(unittest.TestCase):
+    """_provider_of model → provider-family mapping."""
+
+    def test_anthropic(self):
+        assert t._provider_of("claude-sonnet-4-6") == "anthropic"
+
+    def test_openai(self):
+        assert t._provider_of("gpt-5-4") == "openai"
+        assert t._provider_of("o3-mini") == "openai"
+
+    def test_google(self):
+        assert t._provider_of("gemini-3-flash") == "google"
+
+    def test_xai(self):
+        assert t._provider_of("grok-4") == "xai"
+
+    def test_moonshot(self):
+        assert t._provider_of("kimi-k2") == "moonshot"
+
+    def test_prefix_is_stripped(self):
+        assert t._provider_of("AI-Gateway:claude-opus-4-7") == "anthropic"
+
+    def test_unknown(self):
+        assert t._provider_of("totally-made-up") == "unknown"
+
+    def test_empty(self):
+        assert t._provider_of("") == "unknown"
+
+
+class TestOutcomeForStatus(unittest.TestCase):
+    """_outcome_for_status classification."""
+
+    def test_success(self):
+        assert t._outcome_for_status(200) == "success"
+
+    def test_rate_limited(self):
+        assert t._outcome_for_status(429) == "rate_limited"
+
+    def test_server_error(self):
+        assert t._outcome_for_status(503) == "server_error"
+
+    def test_client_error(self):
+        assert t._outcome_for_status(400) == "client_error"
+        # 429 is classified as rate_limited, not generic client_error
+        assert t._outcome_for_status(429) != "client_error"
+
+
+class TestModelFromContent(unittest.TestCase):
+    """_model_from_content best-effort extraction."""
+
+    def test_extracts_model(self):
+        assert t._model_from_content(b'{"model": "gpt-5-4"}') == "gpt-5-4"
+
+    def test_missing_model(self):
+        assert t._model_from_content(b'{"messages": []}') == "-"
+
+    def test_invalid_json(self):
+        assert t._model_from_content(b"not json") == "-"
+
+
+def _counter_value(counter, **labels):
+    """Read a prometheus Counter/Histogram child's running total for given labels."""
+    child = counter.labels(**labels)
+    # Counter exposes ._value.get(); Histogram count is ._count.get()
+    if hasattr(child, "_value"):
+        return child._value.get()
+    return child._count.get()
+
+
+@pytest.mark.asyncio
+async def test_post_with_retry_records_provider_signals():
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_resp)
+
+    before = _counter_value(t.PROVIDER_REQUESTS, provider="openai", model="gpt-5-4", outcome="success")
+    with patch.object(t, "_client", mock_client):
+        await t._post_with_retry("http://litellm:4000/v1/chat/completions", {}, b'{"model": "gpt-5-4"}')
+    after = _counter_value(t.PROVIDER_REQUESTS, provider="openai", model="gpt-5-4", outcome="success")
+    assert after == before + 1
+
+
+@pytest.mark.asyncio
+async def test_post_with_retry_records_rate_limit_signal():
+    mock_resp = MagicMock()
+    mock_resp.status_code = 429
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_resp)
+
+    rl_before = _counter_value(t.PROVIDER_RATE_LIMITS, provider="anthropic", model="claude-sonnet-4-6")
+    req_before = _counter_value(t.PROVIDER_REQUESTS, provider="anthropic", model="claude-sonnet-4-6", outcome="rate_limited")
+    with patch.object(t, "_client", mock_client):
+        # 429 is not retried by _post_with_retry, so exactly one signal is emitted
+        await t._post_with_retry("http://litellm:4000/v1/chat/completions", {}, b'{"model": "claude-sonnet-4-6"}')
+    rl_after = _counter_value(t.PROVIDER_RATE_LIMITS, provider="anthropic", model="claude-sonnet-4-6")
+    req_after = _counter_value(t.PROVIDER_REQUESTS, provider="anthropic", model="claude-sonnet-4-6", outcome="rate_limited")
+    assert rl_after == rl_before + 1
+    assert req_after == req_before + 1
+
+
 class TestGeminiReqToOai(unittest.TestCase):
     """_gemini_req_to_oai model name normalisation."""
 
