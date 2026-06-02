@@ -225,6 +225,45 @@ class TestGeminiCliFormat:
         _skip_if_model_unavailable(resp)
         assert resp.status_code == 200
 
+    @pytest.mark.mock
+    def test_tool_use_response_shape(self, client):
+        body = {
+            "contents": [{"role": "user", "parts": [{"text": "What is the weather in NYC?"}]}],
+            "tools": [{"functionDeclarations": [{
+                "name": "get_weather",
+                "description": "Get weather for a city",
+                "parameters": {"type": "OBJECT", "properties": {
+                    "location": {"type": "STRING", "description": "City name"}
+                }, "required": ["location"]},
+            }]}],
+        }
+        resp = client.post(f"/v1beta/models/{_GEMINI_MODEL}:generateContent", json=body)
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200
+        data = resp.json()
+        candidate = data["candidates"][0]
+        parts = candidate["content"]["parts"]
+        assert any("functionCall" in part for part in parts), f"missing functionCall part: {parts}"
+        assert parts[0]["functionCall"]["name"] == "get_weather"
+
+    @pytest.mark.mock
+    def test_function_response_multiturn(self, client):
+        body = {
+            "contents": [
+                {"role": "user", "parts": [{"text": "What is the weather?"}]},
+                {"role": "model", "parts": [{"functionCall": {"name": "get_weather", "args": {"location": "NYC"}}}]},
+                {"role": "user", "parts": [{"functionResponse": {"name": "get_weather", "response": {"weather": "Sunny, 72F"}}}]}
+            ],
+            "tools": [{"functionDeclarations": [{
+                "name": "get_weather",
+                "description": "Get weather",
+                "parameters": {"type": "OBJECT", "properties": {"location": {"type": "STRING"}}},
+            }]}],
+        }
+        resp = client.post(f"/v1beta/models/{_GEMINI_MODEL}:generateContent", json=body)
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200
+
 
 # ---------------------------------------------------------------------------
 # Claude CLI wire format  (POST /v1/messages)
@@ -332,6 +371,29 @@ class TestClaudeCliFormat:
         _skip_if_model_unavailable(resp)
         assert resp.status_code == 200
 
+    @pytest.mark.mock
+    def test_messages_stream_tool_use(self, client):
+        with client.stream("POST", "/v1/messages", json={
+            "model": _CLAUDE_MODEL,
+            "messages": [{"role": "user", "content": "What is the weather?"}],
+            "max_tokens": 50,
+            "stream": True,
+            "tools": [{
+                "name": "get_weather",
+                "description": "Get weather",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"location": {"type": "string"}},
+                    "required": ["location"],
+                },
+            }],
+        }, headers={"x-api-key": client.headers.get("authorization", "").removeprefix("Bearer ")}) as resp:
+            if _should_skip(resp):
+                pytest.skip(f"model unavailable ({resp.status_code})")
+            assert resp.status_code == 200
+            events = [line for line in resp.iter_lines() if line.startswith("event:")]
+        assert any("content_block_start" in e for e in events), f"missing content_block_start: {events}"
+
 
 # ---------------------------------------------------------------------------
 # Codex CLI wire format  (/v1/responses and /v1/chat/completions)
@@ -426,5 +488,62 @@ class TestCodexCliFormat:
         })
         _skip_if_model_unavailable(resp)
         assert resp.status_code == 200
+
+    @pytest.mark.mock
+    def test_responses_api_compaction_interception(self, client):
+        """Test responses/compact endpoint models interception mapping."""
+        resp = client.post("/v1/responses/compact", json={
+            "model": "claude-sonnet-4-6",
+            "input": "This is long history content.",
+        })
+        _skip_if_model_unavailable(resp)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body.get("object") == "response.compaction"
+
+    @pytest.mark.mock
+    def test_websocket_multiturn(self, client):
+        """Test multi-turn responses over websocket protocol."""
+        import asyncio
+        import websockets
+        import inspect
+        from conftest import GATEWAY_URL, MASTER_KEY
+        
+        ws_url = GATEWAY_URL.replace("http://", "ws://").replace("https://", "wss://") + "/v1/responses"
+        headers = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
+
+        async def run_ws():
+            connect_kwargs = {}
+            connect_sig = inspect.signature(websockets.connect)
+            if "additional_headers" in connect_sig.parameters:
+                connect_kwargs["additional_headers"] = headers
+            else:
+                connect_kwargs["extra_headers"] = headers
+
+            async with websockets.connect(ws_url, **connect_kwargs) as ws:
+                # Send Codex-format message
+                await ws.send(json.dumps({
+                    "model": "gpt-5.3-codex",
+                    "input": "Hello WebSocket",
+                    "max_output_tokens": 10
+                }))
+                
+                # Receive events
+                created = await ws.recv()
+                assert "response.created" in created
+                
+                delta = await ws.recv()
+                assert "response.output_text.delta" in delta
+                
+                completed = await ws.recv()
+                assert "response.completed" in completed
+
+        try:
+            asyncio.run(run_ws())
+        except Exception as exc:
+            if "unavailable" in str(exc).lower() or "auth" in str(exc).lower():
+                pytest.skip(f"WebSocket model/auth unavailable: {exc}")
+            raise
+
 
 
