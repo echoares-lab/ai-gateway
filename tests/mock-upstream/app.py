@@ -15,7 +15,7 @@ import json
 import time
 import uuid
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 
 app = FastAPI()
@@ -204,3 +204,48 @@ def _responses_sse(model: str, with_tool: bool):
         yield "data: " + json.dumps({"type": "response.output_text.delta", "delta": "OK"}) + "\n\n"
     yield "event: response.completed\n"
     yield "data: " + json.dumps({"type": "response.completed", "response": payload}) + "\n\n"
+
+
+@app.post("/v1/responses/compact")
+async def responses_compact(request: Request):
+    # Simulate Responses compaction endpoint
+    body = await request.json()
+    model = body.get("model", "mock")
+    return JSONResponse({
+        "id": "resp_compact_mock",
+        "object": "response.compaction",
+        "created_at": int(time.time()),
+        "model": model,
+        "output": []
+    })
+
+
+@app.websocket("/v1/responses")
+async def responses_websocket(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            try:
+                msg = json.loads(data)
+                # Simulate Responses API events
+                await websocket.send_text(json.dumps({
+                    "type": "response.created", 
+                    "response": {"id": "resp_ws_mock", "status": "in_progress"}
+                }))
+                await websocket.send_text(json.dumps({
+                    "type": "response.output_text.delta", 
+                    "delta": "Hello from WS!"
+                }))
+                payload = _responses_payload("gpt-5.3-codex", False)
+                await websocket.send_text(json.dumps({
+                    "type": "response.completed", 
+                    "response": payload
+                }))
+            except Exception:
+                await websocket.send_text(json.dumps({
+                    "type": "response.output_text.delta", 
+                    "delta": f"echo: {data}"
+                }))
+    except WebSocketDisconnect:
+        pass
