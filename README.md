@@ -90,6 +90,7 @@ To use this gateway in Cursor, follow these steps:
 *   Bundle specialized agents, custom slash commands, and MCP servers into shareable units for team-wide AI workflows.
 
 ## Documentation Index
+*   [docs/TENANCY.md](./docs/TENANCY.md): Foundational tenancy and workspace domain model design.
 *   [MODELS.md](./MODELS.md): Detailed reference for available models, rate limits, and authentication.
 *   [RUNBOOK.md](./RUNBOOK.md): Commands for setup, maintenance, and troubleshooting.
 *   [docs/ROADMAP.md](./docs/ROADMAP.md): Active roadmap focus and explicitly deferred platform-control areas.
