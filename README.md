@@ -96,6 +96,7 @@ To use this gateway in Cursor, follow these steps:
 *   [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md): MCP control-plane architecture decision record.
 *   [docs/ADAPTIVE_ROUTING.md](./docs/ADAPTIVE_ROUTING.md): Adaptive provider routing design, telemetry plan, and implementation roadmap.
 *   [docs/ADMIN_CONSOLE.md](./docs/ADMIN_CONSOLE.md): Unified admin console use cases, data sources, approach, and child-issue plan.
+*   [docs/ADMIN_CONSOLE_DATA_CONTRACT.md](./docs/ADMIN_CONSOLE_DATA_CONTRACT.md): Read-only admin console panel payload contract and fixtures.
 
 ---
 
