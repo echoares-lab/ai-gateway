@@ -92,6 +92,7 @@ To use this gateway in Cursor, follow these steps:
 ## Documentation Index
 *   [MODELS.md](./MODELS.md): Detailed reference for available models, rate limits, and authentication.
 *   [RUNBOOK.md](./RUNBOOK.md): Commands for setup, maintenance, and troubleshooting.
+*   [docs/ROADMAP.md](./docs/ROADMAP.md): Active roadmap focus and explicitly deferred platform-control areas.
 *   [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md): MCP control-plane architecture decision record.
 *   [docs/ADAPTIVE_ROUTING.md](./docs/ADAPTIVE_ROUTING.md): Adaptive provider routing design, telemetry plan, and implementation roadmap.
 
