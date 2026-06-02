@@ -2024,6 +2024,21 @@ async def proxy(path: str, request: Request):
         body = raw
     changed = prefix_stripped or fmt_changed
 
+    # Intercept /responses/compact for non-OpenAI models: map to gpt-5-5 for CLIProxy compatibility
+    is_responses_compact = path.rstrip("/") in ("v1/responses/compact", "responses/compact")
+    if is_responses_compact and request.method == "POST":
+        try:
+            bd = json.loads(body)
+            model = bd.get("model", "")
+            # Map non-OpenAI models (Claude, Gemini, etc.) to gpt-5-5 for native /responses/compact support
+            if model and not model.startswith("gpt-") and not model.startswith("o1-") and not model.startswith("o3-"):
+                log.info("Responses/compact interception: mapping model %s to gpt-5-5 for CLIProxy compatibility", model)
+                bd["model"] = "gpt-5-5"
+                body = json.dumps(bd).encode()
+                changed = True
+        except Exception as e:
+            log.debug("Failed to intercept /responses/compact: %s", e)
+
     headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
     if "authorization" not in {k.lower() for k in headers}:
         master_key = os.environ.get("LITELLM_MASTER_KEY", "sk-a3698c2000395d1181397b256415e680")
