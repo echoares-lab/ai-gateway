@@ -341,6 +341,20 @@ Then run login commands from that forwarded session:
 
 ## Connecting Clients
 
+### Generate config snippets
+
+Print ready-to-paste connection settings for any supported client profile
+(no secrets are read or written — the key is always a placeholder you substitute):
+
+```bash
+./gen-client-config.sh all                              # every profile
+./gen-client-config.sh cursor --base-url http://localhost:4000
+./gen-client-config.sh gemini --key-var MY_KEY
+```
+
+Clients: `cursor`, `claude-code`, `codex`, `gemini`, `openai-sdk`, `all`.
+Profiles are sourced from [docs/CLIENT_COMPATIBILITY.md](./docs/CLIENT_COMPATIBILITY.md) §2.
+
 ### Cursor
 Settings → Models → Custom:
 - **Base URL**: `http://your-server:4000`

@@ -34,6 +34,7 @@ jobs:
         run: |
           bash -n cliproxy-setup.sh
           bash -n dev-env.sh
+          bash -n gen-client-config.sh
           bash -n tests/test-multi-repo-isolation.sh
           bash -n tests/test-gateway-e2e.sh
       - name: Validate litellm-config.yaml
