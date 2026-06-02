@@ -280,6 +280,28 @@ def _outcome_for_status(status: int) -> str:
     return "success"
 
 
+def _extract_and_apply_tenancy(token: str | None, body: dict) -> dict:
+    """Extract tenant, workspace, team, repo, and environment from ak- API key and inject into metadata."""
+    if not token or not isinstance(token, str):
+        return body
+    token = token.removeprefix("Bearer ").strip()
+    if token.startswith("ak-"):
+        parts = token.split("-")
+        # ak-{org}-{workspace}-{team}-{repo}-{environment}
+        if len(parts) >= 6:
+            tenant_info = {
+                "tenant_id": parts[1],
+                "workspace_id": parts[2],
+                "team_id": parts[3],
+                "repo_name": parts[4],
+                "environment": "-".join(parts[5:])
+            }
+            if "metadata" not in body or not isinstance(body["metadata"], dict):
+                body["metadata"] = {}
+            body["metadata"].update(tenant_info)
+    return body
+
+
 def _record_provider_signal(model: str, status: int, elapsed: float) -> None:
     """Emit passive per-provider/model routing signals for one upstream call."""
     provider = _provider_of(model)
@@ -963,6 +985,9 @@ async def gemini_proxy(model_action: str, request: Request):
     if streaming:
         oai_body["stream"] = True
 
+    # Extract and apply tenancy metadata
+    oai_body = _extract_and_apply_tenancy(auth, oai_body)
+
     oai_bytes = json.dumps(oai_body).encode()
     headers = {
         "content-type": "application/json",
@@ -1500,6 +1525,9 @@ async def responses_proxy(request: Request):
     if streaming:
         oai_body["stream"] = True
 
+    # Extract and apply tenancy metadata
+    oai_body = _extract_and_apply_tenancy(request.headers.get("authorization"), oai_body)
+
     oai_bytes = json.dumps(oai_body).encode()
     headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "content-length", "content-type")}
     if "authorization" not in {k.lower() for k in headers}:
@@ -1913,6 +1941,9 @@ async def claude_proxy(request: Request):
     api_key = (
         request.headers.get("x-api-key") or request.headers.get("authorization", "").removeprefix("Bearer ").strip()
     )
+    # Extract and apply tenancy metadata
+    oai_body = _extract_and_apply_tenancy(api_key, oai_body)
+
     oai_bytes = json.dumps(oai_body).encode()
     headers = {
         "content-type": "application/json",
@@ -2362,6 +2393,17 @@ async def proxy(path: str, request: Request):
                 changed = True
         except Exception as e:
             log.debug("Failed to intercept /responses/compact: %s", e)
+
+    # Extract and apply tenancy metadata for all POST requests
+    if request.method == "POST":
+        try:
+            bd = json.loads(body)
+            auth_token = request.headers.get("authorization", "")
+            bd = _extract_and_apply_tenancy(auth_token, bd)
+            body = json.dumps(bd).encode()
+            changed = True
+        except Exception:
+            pass
 
     headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
     if "authorization" not in {k.lower() for k in headers}:
