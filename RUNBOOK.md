@@ -65,6 +65,17 @@ Probes every model and adds working ones to `litellm-config.yaml`:
 ```
 Shows: CLIProxyAPI reachability, per-provider token status, Docker container state.
 
+### Unified admin status (read-only)
+```bash
+source .env && curl -s http://localhost:4000/admin/status \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" | jq .
+```
+Returns the `admin-console.v1` JSON contract (see `docs/ADMIN_CONSOLE_DATA_CONTRACT.md`)
+with health, models, providers, routing, and config-drift panels aggregated from the
+translator, `litellm-config.yaml`, `/metrics`, and (best-effort) `cliproxy-setup.sh health`.
+Read-only and operator-local: it never mutates state and redacts secrets. Degraded sources
+report `warning`/`unknown` rather than failing the response.
+
 ### List available models
 ```bash
 ./cliproxy-setup.sh models       # from CLIProxyAPI

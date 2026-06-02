@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -29,6 +30,7 @@ from dataclasses import dataclass
 import httpx
 import redis.asyncio as aioredis
 import websockets
+import yaml
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
@@ -2009,6 +2011,326 @@ async def claude_proxy(request: Request):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# ── Read-only admin status aggregator (issue #69) ─────────────────────────────
+# Emits the admin-console.v1 contract (see docs/ADMIN_CONSOLE_DATA_CONTRACT.md).
+# Read-only and operator-local by design: it never mutates state, bounds every
+# external/subprocess source, and redacts secrets. A failed source degrades its
+# panel to warning/unknown rather than failing the whole response.
+
+ADMIN_SCHEMA_VERSION = "admin-console.v1"
+LITELLM_CONFIG_PATH = os.environ.get("LITELLM_CONFIG_PATH", "/config/litellm-config.yaml")
+ADMIN_ERROR_MAXLEN = 400
+
+_SECRET_PATTERNS = [
+    re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]{12,}"),
+    re.compile(r"sk-[A-Za-z0-9._\-]{12,}"),
+    re.compile(
+        r"(?i)(api[_-]?key|x-management-key|authorization|token|secret|password)"
+        r"\s*[:=]\s*[\"']?[A-Za-z0-9._\-]{8,}"
+    ),
+    re.compile(r"[A-Za-z0-9._\-]{32,}"),
+]
+
+
+def _admin_now_iso() -> str:
+    """UTC ISO-8601 timestamp. time.gmtime avoids the banned argless datetime."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _admin_redact(text: str) -> tuple[str, bool]:
+    """Redact secret-looking substrings and bound length. Returns (text, redacted)."""
+    if not text:
+        return "", False
+    redacted = False
+    out = text
+    for pat in _SECRET_PATTERNS:
+        new = pat.sub("[redacted]", out)
+        if new != out:
+            redacted = True
+            out = new
+    if len(out) > ADMIN_ERROR_MAXLEN:
+        out = out[:ADMIN_ERROR_MAXLEN] + "…"
+    return out, redacted
+
+
+def _admin_error(code: str, message: str, source: str) -> dict:
+    msg, redacted = _admin_redact(message)
+    return {"code": code, "message": msg, "source": source, "redacted": redacted}
+
+
+def _admin_panel(status: str, source: str, freshness_seconds, errors: list, data: dict) -> dict:
+    return {
+        "status": status,
+        "source": source,
+        "freshness_seconds": freshness_seconds,
+        "errors": errors,
+        "data": data,
+    }
+
+
+def _admin_load_litellm_config() -> tuple[dict | None, list[dict]]:
+    """Load litellm-config.yaml. Returns (config_or_None, errors)."""
+    try:
+        with open(LITELLM_CONFIG_PATH) as fh:
+            return yaml.safe_load(fh) or {}, []
+    except FileNotFoundError:
+        return None, [_admin_error("config_not_found", f"{LITELLM_CONFIG_PATH} not found", "repo:litellm-config.yaml")]
+    except Exception as exc:
+        return None, [_admin_error("config_parse_error", f"{type(exc).__name__}: {exc}", "repo:litellm-config.yaml")]
+
+
+def _admin_parse_provider_metrics(text: str) -> list[dict]:
+    """Parse the provider signal series from Prometheus exposition text.
+
+    Returns a list of {provider, model, outcome?, kind, value} for the
+    translator_provider_requests_total and translator_provider_rate_limits_total series.
+    """
+    signals: list[dict] = []
+    if not text:
+        return signals
+    line_re = re.compile(
+        r"^(translator_provider_requests_total|translator_provider_rate_limits_total)\{([^}]*)\}\s+([0-9.eE+]+)"
+    )
+    label_re = re.compile(r'(\w+)="([^"]*)"')
+    for line in text.splitlines():
+        m = line_re.match(line)
+        if not m:
+            continue
+        metric, labelstr, value = m.group(1), m.group(2), m.group(3)
+        labels = dict(label_re.findall(labelstr))
+        entry = {
+            "kind": "rate_limited" if metric.endswith("rate_limits_total") else "requests",
+            "provider": labels.get("provider", "unknown"),
+            "model": labels.get("model", "-"),
+            "value": float(value),
+        }
+        if "outcome" in labels:
+            entry["outcome"] = labels["outcome"]
+        signals.append(entry)
+    return signals
+
+
+def _admin_run_readonly_command(args: list[str], timeout: float = 3.0) -> tuple[str, list[dict]]:
+    """Run a bounded read-only command, returning (stdout, errors). Never raises."""
+    try:
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+        if proc.returncode != 0:
+            return proc.stdout or "", [
+                _admin_error(
+                    "command_nonzero_exit", f"{' '.join(args)} exited {proc.returncode}: {proc.stderr}", "subprocess"
+                )
+            ]
+        return proc.stdout or "", []
+    except FileNotFoundError:
+        return "", [_admin_error("command_not_found", f"{args[0]} not found", "subprocess")]
+    except subprocess.TimeoutExpired:
+        return "", [_admin_error("command_timeout", f"{' '.join(args)} timed out after {timeout}s", "subprocess")]
+    except Exception as exc:
+        return "", [_admin_error("command_error", f"{type(exc).__name__}: {exc}", "subprocess")]
+
+
+def _admin_environment() -> dict:
+    stack = os.environ.get("DEV_SLOT") and "dev" or "stable"
+    return {
+        "stack": stack,
+        "translator_base_url": os.environ.get("TRANSLATOR_BASE_URL", "http://localhost:4000"),
+        "litellm_ui_url": os.environ.get("LITELLM_UI_URL", "http://localhost:4001"),
+        "cliproxy_management_url": os.environ.get("CLIPROXY_MANAGEMENT_URL", "http://localhost:8317/management.html"),
+        "cpa_manager_url": os.environ.get("CPA_MANAGER_URL", "http://localhost:18317/management.html"),
+    }
+
+
+def _admin_health_panel() -> dict:
+    # Translator is serving by definition; other services are linked but not
+    # actively probed in v1 (avoids unbounded calls). They are marked unknown.
+    env = _admin_environment()
+    services = [
+        {"name": "translator", "status": "ok", "endpoint": env["translator_base_url"]},
+        {"name": "litellm", "status": "unknown", "endpoint": env["litellm_ui_url"]},
+        {"name": "cliproxy", "status": "unknown", "endpoint": env["cliproxy_management_url"]},
+        {"name": "cpa-manager", "status": "unknown", "endpoint": env["cpa_manager_url"]},
+    ]
+    return _admin_panel("ok", "translator:self", 0, [], {"services": services})
+
+
+def _admin_models_panel(config: dict | None, visible_ids: list[str] | None, errors: list[dict]) -> dict:
+    configured = []
+    if config:
+        for entry in config.get("model_list", []) or []:
+            name = entry.get("model_name") if isinstance(entry, dict) else None
+            if name:
+                configured.append(name)
+    visible = visible_ids or []
+    visible_aliases = {v[len(MODEL_PREFIX) :] if v.startswith(MODEL_PREFIX) else v for v in visible}
+    models = []
+    drift = []
+    for alias in sorted(set(configured)):
+        is_visible = alias in visible_aliases
+        models.append(
+            {
+                "id": f"{MODEL_PREFIX}{alias}",
+                "config_alias": alias,
+                "provider_family": _provider_of(alias),
+                "visible": is_visible,
+                "configured": True,
+                "notes": [],
+            }
+        )
+        if not is_visible and visible_ids is not None:
+            drift.append({"model": alias, "kind": "configured_not_visible", "severity": "warning"})
+    status = "ok"
+    if errors or visible_ids is None:
+        status = "warning"
+    if drift:
+        status = "warning"
+    return _admin_panel(
+        status,
+        "translator:/v1/models + repo:litellm-config.yaml",
+        0,
+        errors,
+        {
+            "visible_count": len(visible),
+            "configured_count": len(configured),
+            "prefix": MODEL_PREFIX,
+            "models": models,
+            "drift": drift,
+        },
+    )
+
+
+def _admin_routing_panel(config: dict | None, metrics_text: str | None, errors: list[dict]) -> dict:
+    router_settings = {}
+    fallbacks = []
+    if config:
+        router_settings = config.get("router_settings", {}) or {}
+        raw_fallbacks = (config.get("litellm_settings", {}) or {}).get("fallbacks", []) or []
+        for item in raw_fallbacks:
+            if isinstance(item, dict):
+                for model, targets in item.items():
+                    fallbacks.append({"model": model, "targets": targets})
+    provider_signals = _admin_parse_provider_metrics(metrics_text or "")
+    status = "ok"
+    if errors or metrics_text is None:
+        status = "warning"
+    return _admin_panel(
+        status,
+        "repo:litellm-config.yaml + translator:/metrics",
+        15,
+        errors,
+        {
+            "router_settings": router_settings,
+            "fallbacks": fallbacks,
+            "provider_signals": provider_signals,
+            "cooldown_events": [],
+        },
+    )
+
+
+def _admin_providers_panel() -> dict:
+    # Best-effort enrichment from the read-only health command. Parsed minimally;
+    # any failure degrades the panel rather than failing the endpoint.
+    script = os.environ.get("CLIPROXY_SETUP_PATH", "./cliproxy-setup.sh")
+    stdout, errors = _admin_run_readonly_command([script, "health"], timeout=3.0)
+    providers = []
+    if stdout:
+        # Lines look like: "  [claude] user@example.com  active  last_refresh=..."
+        for line in stdout.splitlines():
+            m = re.match(r"\s*\[(\w+)\]\s+(\S+)\s+(\w+)", line)
+            if m:
+                providers.append(
+                    {
+                        "name": m.group(1),
+                        "account_label": _admin_redact(m.group(2))[0],
+                        "auth_status": m.group(3),
+                    }
+                )
+    status = "ok" if providers and not errors else ("warning" if providers else "unknown")
+    return _admin_panel(status, "cliproxy-setup:health", 5, errors, {"providers": providers})
+
+
+def _admin_config_drift_panel(config: dict | None, config_errors: list[dict]) -> dict:
+    checks = []
+    errors = list(config_errors)
+    checks.append({"name": "litellm_yaml_parse", "status": "ok" if config is not None else "error"})
+    # hardcoded API key scan mirrors CI: api_key: <literal> not using os.environ
+    hardcoded = "unknown"
+    try:
+        with open(LITELLM_CONFIG_PATH) as fh:
+            raw = fh.read()
+        bad = re.findall(r"api_key:\s+[A-Za-z0-9\-]{20,}", raw)
+        bad = [b for b in bad if "os.environ" not in b]
+        hardcoded = "ok" if not bad else "error"
+    except Exception:
+        hardcoded = "unknown"
+    checks.append({"name": "hardcoded_api_keys", "status": hardcoded})
+    status = "ok"
+    if any(c["status"] == "error" for c in checks):
+        status = "error"
+    elif any(c["status"] == "unknown" for c in checks) or errors:
+        status = "warning"
+    return _admin_panel(
+        status,
+        "repo:config",
+        0,
+        errors,
+        {
+            "checks": checks,
+            "runtime_overrides": [],
+            "missing_env_vars": [],
+        },
+    )
+
+
+async def _admin_fetch_visible_models() -> tuple[list[str] | None, list[dict]]:
+    """Fetch client-visible model ids from LiteLLM, server-side. Bounded; never raises."""
+    if _client is None:
+        return None, [_admin_error("client_unavailable", "http client not initialized", "translator:/v1/models")]
+    master_key = os.environ.get("LITELLM_MASTER_KEY", "")
+    headers = {"authorization": f"Bearer {master_key}"} if master_key else {}
+    try:
+        resp = await _client.get(f"{LITELLM}/v1/models", headers=headers, timeout=2.0)
+        if resp.status_code != 200:
+            return None, [
+                _admin_error("models_http_error", f"/v1/models returned {resp.status_code}", "litellm:/v1/models")
+            ]
+        data = resp.json().get("data", [])
+        ids = [m.get("id") for m in data if isinstance(m, dict) and m.get("id")]
+        # The aggregator reads LiteLLM directly (no prefix); compare on bare aliases.
+        return ids, []
+    except Exception as exc:
+        return None, [_admin_error("models_fetch_error", f"{type(exc).__name__}: {exc}", "litellm:/v1/models")]
+
+
+async def _admin_fetch_metrics_text() -> tuple[str | None, list[dict]]:
+    """Read the local Prometheus exposition for provider signal parsing."""
+    try:
+        return generate_latest().decode("utf-8", errors="replace"), []
+    except Exception as exc:
+        return None, [_admin_error("metrics_error", f"{type(exc).__name__}: {exc}", "translator:/metrics")]
+
+
+@app.get("/admin/status")
+async def admin_status():
+    """Read-only operator status aggregator (admin-console.v1)."""
+    config, config_errors = _admin_load_litellm_config()
+    visible_ids, model_errors = await _admin_fetch_visible_models()
+    metrics_text, metrics_errors = await _admin_fetch_metrics_text()
+
+    panels = {
+        "health": _admin_health_panel(),
+        "models": _admin_models_panel(config, visible_ids, model_errors),
+        "providers": _admin_providers_panel(),
+        "routing": _admin_routing_panel(config, metrics_text, metrics_errors),
+        "config_drift": _admin_config_drift_panel(config, config_errors),
+    }
+    return {
+        "schema_version": ADMIN_SCHEMA_VERSION,
+        "generated_at": _admin_now_iso(),
+        "environment": _admin_environment(),
+        "panels": panels,
+    }
 
 
 # ── Catch-all proxy (Cursor / generic OpenAI-compatible clients) ─────────────
