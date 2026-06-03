@@ -40,7 +40,7 @@ services:
       - "${DEV_CLIPROXY_PORT:-8327}:8317"
 
   litellm:
-    image: ghcr.io/berriai/litellm:main-latest
+    image: ghcr.io/berriai/litellm@sha256:7c311546c25e7bb6e8cafede9fcd3d0d622ac636b5c9418befaa32e85dfb0186
     restart: unless-stopped
     depends_on:
       postgres:
