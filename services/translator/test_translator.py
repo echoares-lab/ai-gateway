@@ -614,12 +614,24 @@ class TestAdminRoutingPanel(unittest.TestCase):
             "router_settings": {"routing_strategy": "latency-based-routing", "cooldown_time": 60},
             "litellm_settings": {"fallbacks": [{"gpt-5-4": ["claude-sonnet-4-6"]}]},
         }
-        metrics = 'translator_provider_requests_total{model="gpt-5-4",outcome="success",provider="openai"} 2.0\n'
+        metrics = (
+            'translator_provider_requests_total{model="gpt-5-4",outcome="success",provider="openai"} 2.0\n'
+            'translator_provider_rate_limits_total{model="claude-sonnet-4-6",provider="anthropic"} 1.0\n'
+        )
         panel = t._admin_routing_panel(config, metrics, [])
         assert panel["status"] == "ok"
         assert panel["data"]["router_settings"]["cooldown_time"] == 60
         assert panel["data"]["fallbacks"][0]["model"] == "gpt-5-4"
         assert panel["data"]["provider_signals"]
+        assert len(panel["data"]["provider_signals"]) == 2
+        sig1 = next(s for s in panel["data"]["provider_signals"] if s["provider"] == "openai")
+        assert sig1["model"] == "gpt-5-4"
+        assert sig1["outcome"] == "success"
+        assert sig1["requests"] == 2
+        sig2 = next(s for s in panel["data"]["provider_signals"] if s["provider"] == "anthropic")
+        assert sig2["model"] == "claude-sonnet-4-6"
+        assert sig2["outcome"] == "rate_limited"
+        assert sig2["requests"] == 1
         assert panel["data"]["cooldown_events"] == []
 
     def test_warning_when_metrics_missing(self):

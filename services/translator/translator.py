@@ -2241,7 +2241,22 @@ def _admin_routing_panel(config: dict | None, metrics_text: str | None, errors: 
             if isinstance(item, dict):
                 for model, targets in item.items():
                     fallbacks.append({"model": model, "targets": targets})
-    provider_signals = _admin_parse_provider_metrics(metrics_text or "")
+    raw_signals = _admin_parse_provider_metrics(metrics_text or "")
+    provider_signals = []
+    for sig in raw_signals:
+        outcome = sig.get("outcome")
+        if sig["kind"] == "rate_limited":
+            outcome = "rate_limited"
+        elif not outcome:
+            outcome = "unknown"
+        provider_signals.append(
+            {
+                "provider": sig["provider"],
+                "model": sig["model"],
+                "outcome": outcome,
+                "requests": int(sig["value"]),
+            }
+        )
     status = "ok"
     if errors or metrics_text is None:
         status = "warning"
