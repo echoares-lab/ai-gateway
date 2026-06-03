@@ -192,40 +192,6 @@ model_list:
       supports_vision: true
       supports_function_calling: true
 
-  - model_name: gpt-5-3-codex
-    litellm_params:
-      model: openai/gpt-5.3-codex
-      api_base: http://cliproxy:8317/v1
-      api_key: os.environ/CLIPROXY_API_KEY
-      max_tokens: 128000
-    model_info:
-      base_model: gpt-5.3-codex
-      input_cost_per_token: 1.75e-06
-      output_cost_per_token: 1.40e-05
-      cache_read_input_token_cost: 1.75e-07
-      max_input_tokens: 272000
-      max_output_tokens: 128000
-      supports_prompt_caching: true
-      supports_vision: true
-      supports_function_calling: true
-
-  - model_name: gpt-5-2
-    litellm_params:
-      model: openai/gpt-5.2
-      api_base: http://cliproxy:8317/v1
-      api_key: os.environ/CLIPROXY_API_KEY
-      max_tokens: 128000
-    model_info:
-      base_model: gpt-5.2
-      input_cost_per_token: 1.75e-06
-      output_cost_per_token: 1.40e-05
-      cache_read_input_token_cost: 1.75e-07
-      max_input_tokens: 272000
-      max_output_tokens: 128000
-      supports_prompt_caching: true
-      supports_vision: true
-      supports_function_calling: true
-
   - model_name: codex-auto-review
     litellm_params:
       model: openai/codex-auto-review
@@ -740,13 +706,10 @@ litellm_settings:
     - gemini-3-pro-high: ["claude-sonnet-4-6", "gpt-5-4"]
     - gemini-3-pro-low: ["claude-sonnet-4-6", "gpt-5-4"]
     - gemini-3-pro-preview: ["claude-sonnet-4-6", "gpt-5-4"]
-    # Codex model group uses the dashed LiteLLM alias; without this, adaptive
-    # cooldown can correctly remove 429'd Codex deployments but has no healthy
-    # cross-provider fallback target to route to.
-    - gpt-5-3-codex: ["claude-sonnet-4-6", "gemini-3-flash"]
     - gpt-5-4: ["claude-sonnet-4-6", "gemini-3-flash"]
     - gpt-5-4-mini: ["claude-haiku-4-5", "gemini-3-flash"]
     - gpt-5-5: ["claude-opus-4-7", "gemini-3-1-pro"]
+
   cache: true
   cache_params:
     type: redis
