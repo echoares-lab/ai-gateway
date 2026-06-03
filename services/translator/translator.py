@@ -32,7 +32,7 @@ import redis.asyncio as aioredis
 import websockets
 import yaml
 from fastapi import FastAPI, Request, WebSocket
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -2377,6 +2377,79 @@ async def admin_status():
         "environment": _admin_environment(),
         "panels": panels,
     }
+
+
+# Self-contained operator dashboard (issue #70). Read-only: the page fetches
+# /admin/status client-side and renders it. The server embeds no secrets — only
+# static HTML/CSS/JS. Operator-local by convention (no public exposure added).
+_ADMIN_DASHBOARD_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Gateway — Admin Console</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 1.5rem; background: #0f1115; color: #e6e6e6; }
+  h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
+  .meta { color: #9aa0a6; font-size: .85rem; margin-bottom: 1rem; }
+  .links a { color: #8ab4f8; margin-right: 1rem; font-size: .85rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; margin-top: 1rem; }
+  .panel { background: #1b1e24; border: 1px solid #2a2e36; border-radius: 8px; padding: 1rem; }
+  .panel h2 { font-size: 1rem; margin: 0 0 .5rem; text-transform: capitalize; }
+  .badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+  .ok { background: #1e3a2b; color: #7ee2a8; }
+  .warning { background: #3a341e; color: #e7d27e; }
+  .error { background: #3a1e1e; color: #e78a8a; }
+  .unknown { background: #2a2e36; color: #b0b6bf; }
+  pre { white-space: pre-wrap; word-break: break-word; font-size: .8rem; color: #c8cdd4; margin: .5rem 0 0; max-height: 16rem; overflow: auto; }
+  .err { color: #e78a8a; font-size: .8rem; }
+  button { background: #2a2e36; color: #e6e6e6; border: 1px solid #3a3f49; border-radius: 6px; padding: .3rem .7rem; cursor: pointer; }
+</style>
+</head>
+<body>
+  <h1>AI Gateway — Admin Console <span id="schema" class="meta"></span></h1>
+  <div class="meta">Read-only. Generated: <span id="generated">…</span>
+    <button onclick="load()">Refresh</button></div>
+  <div class="links" id="links"></div>
+  <div id="grid" class="grid"><div class="meta">Loading…</div></div>
+<script>
+function badge(s){ const c=['ok','warning','error','unknown'].includes(s)?s:'unknown';
+  return '<span class="badge '+c+'">'+(s||'unknown')+'</span>'; }
+function esc(v){ return JSON.stringify(v,null,2)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+async function load(){
+  const grid=document.getElementById('grid');
+  try {
+    const r=await fetch('/admin/status',{headers:{'accept':'application/json'}});
+    const d=await r.json();
+    document.getElementById('schema').textContent=d.schema_version||'';
+    document.getElementById('generated').textContent=d.generated_at||'';
+    const env=d.environment||{};
+    document.getElementById('links').innerHTML=[
+      ['LiteLLM UI',env.litellm_ui_url],
+      ['CLIProxy',env.cliproxy_management_url],
+      ['CPA-Manager',env.cpa_manager_url],
+    ].filter(x=>x[1]).map(x=>'<a href="'+x[1]+'" target="_blank" rel="noopener">'+x[0]+'</a>').join('');
+    const panels=d.panels||{};
+    grid.innerHTML=Object.keys(panels).map(function(name){
+      const p=panels[name]||{};
+      const errs=(p.errors||[]).map(e=>'<div class="err">'+(e.code||'')+': '+(e.message||'')+'</div>').join('');
+      return '<div class="panel"><h2>'+name+' '+badge(p.status)+'</h2>'+errs+
+        '<pre>'+esc(p.data||{})+'</pre></div>';
+    }).join('');
+  } catch(e){ grid.innerHTML='<div class="err">Failed to load /admin/status: '+e+'</div>'; }
+}
+load();
+</script>
+</body>
+</html>"""
+
+
+@app.get("/admin/dashboard")
+async def admin_dashboard():
+    """Read-only operator dashboard page; renders /admin/status client-side."""
+    return HTMLResponse(content=_ADMIN_DASHBOARD_HTML)
 
 
 # ── Catch-all proxy (Cursor / generic OpenAI-compatible clients) ─────────────
