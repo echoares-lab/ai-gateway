@@ -33,6 +33,7 @@ jobs:
       - name: Shell syntax check
         run: |
           bash -n cliproxy-setup.sh
+          bash -n db/apply-migrations.sh
           bash -n dev-env.sh
           bash -n gen-client-config.sh
           bash -n tests/test-multi-repo-isolation.sh
