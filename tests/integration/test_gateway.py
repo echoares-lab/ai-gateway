@@ -76,6 +76,20 @@ def test_admin_status(client):
     assert "sk-" not in raw or "[redacted]" in raw
 
 
+@pytest.mark.mock
+@pytest.mark.smoke
+def test_admin_dashboard(client):
+    """Read-only admin dashboard page renders and references /admin/status."""
+    resp = client.get("/admin/dashboard")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    html = resp.text
+    assert "/admin/status" in html
+    assert "AI Gateway" in html
+    assert "Bearer " not in html
+    assert "sk-" not in html
+
+
 # ---------------------------------------------------------------------------
 # Chat completions
 # ---------------------------------------------------------------------------
