@@ -207,6 +207,7 @@ probe_model() {
     -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":3}" 2>/dev/null)
 
   http_code=$(echo "$result" | tail -1)
+  PROBE_HTTP_CODE="$http_code"
   local body=$(echo "$result" | head -n -1)
 
   # Check if HTTP code was successful
@@ -218,8 +219,14 @@ probe_model() {
       return 1  # Invalid response
     fi
   else
-    # Return the HTTP code for caller to interpret
-    return "$http_code"
+    # Return mapped values so they fit in 0-255 range and don't exit script under set -e
+    if [ "$http_code" = "429" ]; then
+      return 42
+    elif [ "$http_code" = "503" ]; then
+      return 53
+    else
+      return 99
+    fi
   fi
 }
 
@@ -423,7 +430,7 @@ for f in fallbacks_list:
 
 # Now replace the fallbacks: block inside the litellm_settings block of litellm-config.yaml
 # Safe regex to replace fallbacks block up to cache or other litellm_settings keys
-fallbacks_block_pattern = re.compile(r'  fallbacks:\n(    - \S+:\s*\[[^\]]*\]\n\s*)*', re.MULTILINE)
+fallbacks_block_pattern = re.compile(r'  fallbacks:\n.*?(?=\n  \S+:)', re.DOTALL)
 new_fallbacks_block = "".join(formatted_lines)
 
 if fallbacks_block_pattern.search(txt):
@@ -530,19 +537,19 @@ print(m.group(1) if m else '')
 " 2>/dev/null)
     [ -z "$upstream" ] && continue
 
-    probe_model "$upstream"
-    local status=$?
+    local status=0
+    probe_model "$upstream" || status=$?
 
     if [ "$status" = "0" ]; then
       echo "  OK   $alias"
-    elif [ "$status" = "429" ] || [ "$status" = "503" ]; then
+    elif [ "$status" = "42" ] || [ "$status" = "53" ]; then
       # Transient error (rate limit or unavailable) — don't remove, just warn
-      echo "  WARN $alias — rate limited / temporarily unavailable (HTTP $status) — skipping removal"
-      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) SKIPPED $alias (probe $status - transient, will retry next sync)" >> "$AUDIT_LOG"
+      echo "  WARN $alias — rate limited / temporarily unavailable (HTTP $PROBE_HTTP_CODE) — skipping removal"
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) SKIPPED $alias (probe $PROBE_HTTP_CODE - transient, will retry next sync)" >> "$AUDIT_LOG"
     else
       # 404 or other error — model likely doesn't exist, mark for removal
-      echo "  DEAD $alias (HTTP $status) — removing"
-      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) REMOVED $alias (probe $status - model not found)" >> "$AUDIT_LOG"
+      echo "  DEAD $alias (HTTP $PROBE_HTTP_CODE) — removing"
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) REMOVED $alias (probe $PROBE_HTTP_CODE - model not found)" >> "$AUDIT_LOG"
       # Use Python to safely remove the model block from YAML
       python3 - "$LITELLM_CONFIG" "$alias" <<'PYEOF'
 import sys, re
@@ -568,8 +575,8 @@ PYEOF
       continue
     fi
     echo -n "  NEW  $model_id → testing... "
-    probe_model "$model_id"
-    local status=$?
+    local status=0
+    probe_model "$model_id" || status=$?
 
     if [ "$status" = "0" ]; then
       echo "OK — adding as $alias"
@@ -592,12 +599,12 @@ with open(path, 'w') as f: f.write(txt)
 PYEOF
       gemini_map_add "$model_id" "$alias"
       changed=true
-    elif [ "$status" = "429" ] || [ "$status" = "503" ]; then
+    elif [ "$status" = "42" ] || [ "$status" = "53" ]; then
       # Transient error — skip this run, will retry on next sync
-      echo "rate limited / unavailable (HTTP $status) — skipping"
+      echo "rate limited / unavailable (HTTP $PROBE_HTTP_CODE) — skipping"
     else
       # 404 or other error — model not available
-      echo "not available (HTTP $status) — skipping"
+      echo "not available (HTTP $PROBE_HTTP_CODE) — skipping"
     fi
   done <<< "$raw_models"
 
