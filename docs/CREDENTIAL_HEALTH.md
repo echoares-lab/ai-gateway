@@ -17,7 +17,7 @@ To track and manage the provider accounts used by the gateway, we define a struc
 | `provider` | Enum | Downstream provider (`openai`, `anthropic`, `gemini`, `xai`). |
 | `label` | String | Operator-friendly description of the account lease owner. |
 | `key_fingerprint` | String | SHA-256 hash prefix of the credentials (secrets are NEVER stored in plain text in logs or inventory lists). |
-| `status` | Enum | The current health state: `HEALTHY`, `DEGRADED`, `EXPIRED`, `SUSPENDED`. |
+| `status` | Enum | The current health state: `HEALTHY`, `DEGRADED`, `CRITICAL`, `EXPIRED`, `SUSPENDED`. |
 | `cool_down_until` | Timestamp | Timestamp indicating when the credential is ready to receive traffic again after a rate limit (429) cooldown. |
 | `consecutive_failures`| Integer | Counter of sequential connection/upstream errors. |
 | `metadata` | JSON | Provider-specific info (e.g., token usage, tier limits, billing alert settings). |
@@ -94,11 +94,11 @@ We identify how credentials and their states are currently stored across the rep
 
 We propose splitting the execution of Epic #33 into the following sequenced child issues:
 
-1. **#84 - feat(credentials): implement read-only credentials status database table**
-   Add a PostgreSQL schema migration to store the credential inventory list and their active health states.
-2. **#85 - feat(credentials): add background health-check probing service**
+1. **feat(credentials-schema): implement read-only credentials status database table**
+   Add a PostgreSQL schema migration and migration runner to store the credential inventory list and their active health states.
+2. **feat(credentials): add background health-check probing service**
    Implement a lightweight, isolated cron-like background worker that performs periodic health checks against downstream provider endpoints (using `/v1/models` or simple completions).
-3. **#86 - feat(credentials): implement Slack alerting webhook on state change**
+3. **feat(credentials): implement Slack alerting webhook on state change**
    Add an alerting callback function that fires webhook notifications whenever a credential shifts to `CRITICAL` or `DEGRADED`.
 
 ---

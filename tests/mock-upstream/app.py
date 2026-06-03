@@ -33,7 +33,7 @@ def models():
         "object": "list",
         "data": [
             {"id": "claude-sonnet-4-6", "object": "model"},
-            {"id": "gpt-5.3-codex", "object": "model"},
+            {"id": "gpt-5.5", "object": "model"},
             {"id": "gemini-2.5-flash", "object": "model"},
         ],
     }
@@ -211,13 +211,15 @@ async def responses_compact(request: Request):
     # Simulate Responses compaction endpoint
     body = await request.json()
     model = body.get("model", "mock")
-    return JSONResponse({
-        "id": "resp_compact_mock",
-        "object": "response.compaction",
-        "created_at": int(time.time()),
-        "model": model,
-        "output": []
-    })
+    return JSONResponse(
+        {
+            "id": "resp_compact_mock",
+            "object": "response.compaction",
+            "created_at": int(time.time()),
+            "model": model,
+            "output": [],
+        }
+    )
 
 
 @app.websocket("/v1/responses")
@@ -227,25 +229,17 @@ async def responses_websocket(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             try:
-                msg = json.loads(data)
+                json.loads(data)
                 # Simulate Responses API events
-                await websocket.send_text(json.dumps({
-                    "type": "response.created", 
-                    "response": {"id": "resp_ws_mock", "status": "in_progress"}
-                }))
-                await websocket.send_text(json.dumps({
-                    "type": "response.output_text.delta", 
-                    "delta": "Hello from WS!"
-                }))
-                payload = _responses_payload("gpt-5.3-codex", False)
-                await websocket.send_text(json.dumps({
-                    "type": "response.completed", 
-                    "response": payload
-                }))
+                await websocket.send_text(
+                    json.dumps(
+                        {"type": "response.created", "response": {"id": "resp_ws_mock", "status": "in_progress"}}
+                    )
+                )
+                await websocket.send_text(json.dumps({"type": "response.output_text.delta", "delta": "Hello from WS!"}))
+                payload = _responses_payload("gpt-5.5", False)
+                await websocket.send_text(json.dumps({"type": "response.completed", "response": payload}))
             except Exception:
-                await websocket.send_text(json.dumps({
-                    "type": "response.output_text.delta", 
-                    "delta": f"echo: {data}"
-                }))
+                await websocket.send_text(json.dumps({"type": "response.output_text.delta", "delta": f"echo: {data}"}))
     except WebSocketDisconnect:
         pass

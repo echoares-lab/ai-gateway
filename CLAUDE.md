@@ -210,4 +210,11 @@ LiteLLM stores virtual keys, team settings, and tool configs in Postgres. Change
 docker exec -it ai-postgres-1 psql -U postgres -d litellm
 ```
 
+Apply repo-managed LiteLLM schema migrations to an existing stack:
+
+```bash
+./db/apply-migrations.sh ai-postgres-1       # stable stack
+./db/apply-migrations.sh aidev1-postgres-1   # dev slot 1
+```
+
 Notable: `search_tools` and MCP tool configs live in `LiteLLM_ToolTable` / `LiteLLM_SearchToolsTable`. These have caused issues before (intercepting tool-bearing requests). If Cursor Agent mode starts 500-ing, check these tables.
