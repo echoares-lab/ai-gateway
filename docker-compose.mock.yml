@@ -19,3 +19,17 @@ services:
     command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8317"]
     volumes: []
     environment: {}
+
+  cpa-manager:
+    image: seakee/cpa-manager:1.5.5
+    restart: unless-stopped
+    depends_on:
+      - cliproxy
+    ports:
+      - "${DEV_CPA_MANAGER_PORT:-18327}:18317"
+    environment:
+      HTTP_ADDR: "0.0.0.0:18317"
+      USAGE_DB_PATH: "/data/usage.sqlite"
+      USAGE_COLLECTOR_MODE: "auto"
+    volumes:
+      - dev_cpa_data:/data

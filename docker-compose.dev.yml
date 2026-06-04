@@ -8,6 +8,7 @@ networks:
 volumes:
   dev_auth:    # seeded from ~/.cli-proxy-api at dev-env start; writes stay isolated
   dev_pgdata:  # postgres data for litellm
+  dev_cpa_data: # persistent usage analytics for cpa-manager
 
 services:
   postgres:
@@ -41,7 +42,7 @@ services:
       - "${DEV_CLIPROXY_PORT:-8327}:8317"
 
   litellm:
-    image: ghcr.io/berriai/litellm@sha256:7c311546c25e7bb6e8cafede9fcd3d0d622ac636b5c9418befaa32e85dfb0186
+    image: ghcr.io/berriai/litellm:v1.87.1@sha256:9de33287d844a164f873479a04eebe065610e131d7e3aaf010f520fb5b4cfd7b
     restart: unless-stopped
     depends_on:
       postgres:
@@ -120,3 +121,17 @@ services:
       - ./services/translator:/app
       # Read-only mount so /admin/status can read configured models/router/fallbacks.
       - ./litellm-config.yaml:/config/litellm-config.yaml:ro
+
+  cpa-manager:
+    image: seakee/cpa-manager:1.5.5
+    restart: unless-stopped
+    depends_on:
+      - cliproxy
+    ports:
+      - "${DEV_CPA_MANAGER_PORT:-18327}:18317"
+    environment:
+      HTTP_ADDR: "0.0.0.0:18317"
+      USAGE_DB_PATH: "/data/usage.sqlite"
+      USAGE_COLLECTOR_MODE: "auto"
+    volumes:
+      - dev_cpa_data:/data

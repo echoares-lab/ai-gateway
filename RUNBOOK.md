@@ -287,6 +287,64 @@ Or run steps individually:
 
 ---
 
+## Upgrading CLIProxyAPI and CPA-Manager
+
+Maintainers should periodically check for new releases and pin them in the repo to ensure stability.
+
+### 1. Check for new releases
+- **CLIProxyAPI**: [GitHub Releases](https://github.com/router-for-me/CLIProxyAPI/releases)
+- **CPA-Manager**: [Docker Hub](https://hub.docker.com/r/seakee/cpa-manager/tags) or [GitHub Releases](https://github.com/seakee/cpa-manager/releases)
+
+### 2. Update version pins
+- **CLIProxyAPI**: Update `ARG CLIPROXY_VERSION` in `Dockerfile.cliproxy`.
+- **CPA-Manager**: Update the `image: seakee/cpa-manager:<version>` tag in `docker-compose.yml`, `docker-compose.dev.yml`, and `docker-compose.mock.yml`.
+
+### 3. Build and Validate
+```bash
+# Rebuild images with new versions
+docker compose build cliproxy cpa-manager
+
+# Start the stack
+docker compose up -d
+
+# Run health checks
+./cliproxy-setup.sh health
+
+# Test model routing
+./cliproxy-setup.sh test gemini-3-flash
+```
+
+---
+
+## Upgrading LiteLLM
+
+LiteLLM should be kept up to date to support new models (OpenAI o1, Gemini 3.x) and performance features (Granian engine).
+
+### 1. Find the latest stable version
+Visit the [LiteLLM Releases page](https://github.com/BerriAI/litellm/releases) and identify the latest stable tag (e.g., `v1.87.1`). Avoid `-rc` or `-alpha` versions.
+
+### 2. Get the SHA256 digest
+To ensure deployment reproducibility and security, always pin the image by its SHA256 digest. You can find this on the [GitHub Container Registry](https://github.com/BerriAI/litellm/pkgs/container/litellm/versions) or by pulling the image locally:
+```bash
+docker pull ghcr.io/berriai/litellm:v1.87.1
+docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/berriai/litellm:v1.87.1
+```
+
+### 3. Update version pins
+Update the `image:` tag in `docker-compose.yml` and `docker-compose.dev.yml`:
+```yaml
+image: ghcr.io/berriai/litellm:v1.87.1@sha256:9de3328...
+```
+
+### 4. Build and Validate
+```bash
+docker compose up -d litellm
+./cliproxy-setup.sh health
+./cliproxy-setup.sh test claude-sonnet-4-6
+```
+
+---
+
 ## Re-Authentication
 
 OAuth tokens auto-refresh while the container is running. If you see 401s or a provider shows stale `last_refresh` in `health`, re-authenticate:
