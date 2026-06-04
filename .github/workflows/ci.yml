@@ -39,7 +39,41 @@ jobs:
           bash -n tests/test-multi-repo-isolation.sh
           bash -n tests/test-gateway-e2e.sh
       - name: Validate litellm-config.yaml
-        run: python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"
+        run: |
+          python3 - <<'PY'
+          import sys, yaml
+
+          with open("litellm-config.yaml") as f:
+              try:
+                  data = yaml.safe_load(f)
+              except yaml.YAMLError as e:
+                  print(f"YAML syntax error: {e}", file=sys.stderr)
+                  sys.exit(1)
+
+          if not isinstance(data, dict):
+              print("Config root must be a YAML mapping", file=sys.stderr)
+              sys.exit(1)
+
+          errors = []
+          for idx, entry in enumerate(data.get("model_list") or []):
+              if not isinstance(entry, dict):
+                  errors.append(f"model_list[{idx}] must be a dict")
+                  continue
+              if "model_name" not in entry:
+                  errors.append(f"model_list[{idx}] missing 'model_name'")
+              if "litellm_params" not in entry:
+                  name = entry.get("model_name", "?")
+                  errors.append(f"model_list[{idx}] ({name!r}) missing 'litellm_params'")
+
+          if errors:
+              print(f"Schema validation failed — {len(errors)} error(s):", file=sys.stderr)
+              for e in errors:
+                  print(f"  • {e}", file=sys.stderr)
+              sys.exit(1)
+
+          print(f"✓ litellm-config.yaml: YAML syntax OK, {len(data.get('model_list') or [])} models validated")
+          PY
+
       - name: Check for hardcoded API keys
         run: |
           if grep -E 'api_key:\s+[a-zA-Z0-9-]{20,}' litellm-config.yaml | grep -v 'os.environ'; then
