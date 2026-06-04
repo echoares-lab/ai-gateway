@@ -2544,8 +2544,19 @@ async def proxy(path: str, request: Request):
                         if ck:
                             buf.append(chunk.decode(errors="replace"))
                         yield chunk
+            except httpx.TimeoutException as exc:
+                log.error("Proxy stream upstream timed out for %s: %s", path, exc)
+                err = {
+                    "error": {
+                        "message": f"Upstream request timed out after {UPSTREAM_TIMEOUT} seconds",
+                        "type": "timeout_error",
+                    }
+                }
+                yield ("data: " + json.dumps(err) + "\n\n").encode()
             except Exception as exc:
-                log.error("Proxy stream upstream error: %s", exc)
+                log.error("Proxy stream upstream error for %s: %s", path, exc)
+                err = {"error": {"message": f"Upstream connection failed: {exc}", "type": "connection_error"}}
+                yield ("data: " + json.dumps(err) + "\n\n").encode()
             if ck and buf:
                 await _cache_set(ck, buf)
 
@@ -2560,7 +2571,31 @@ async def proxy(path: str, request: Request):
             )
 
     _proxy_start = time.monotonic()
-    resp = await _client.request(request.method, url, headers=headers, content=body, params=params)
+    try:
+        resp = await _client.request(request.method, url, headers=headers, content=body, params=params)
+    except httpx.TimeoutException as exc:
+        log.error("Proxy upstream timed out for %s: %s", path, exc)
+        return Response(
+            content=json.dumps(
+                {
+                    "error": {
+                        "message": f"Upstream request timed out after {UPSTREAM_TIMEOUT} seconds",
+                        "type": "timeout_error",
+                    }
+                }
+            ).encode(),
+            status_code=504,
+            headers={"content-type": "application/json"},
+        )
+    except Exception as exc:
+        log.error("Proxy upstream connection failed for %s: %s", path, exc)
+        return Response(
+            content=json.dumps(
+                {"error": {"message": f"Upstream connection failed: {exc}", "type": "connection_error"}}
+            ).encode(),
+            status_code=502,
+            headers={"content-type": "application/json"},
+        )
     if is_chat:
         _record_provider_signal(signal_model, resp.status_code, time.monotonic() - _proxy_start)
 
