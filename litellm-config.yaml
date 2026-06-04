@@ -530,6 +530,147 @@ model_list:
       supports_vision: true
       supports_function_calling: true
 
+  # ---------------------------------------------------------------------------
+  # Gemini via gemini-cli (Tier 2 — used only after antigravity accounts exhaust)
+  # Model names use -via-gcli suffix; cliproxy oauth-model-alias routes these
+  # exclusively to gemini-cli OAuth credentials, bypassing antigravity entirely.
+  # ---------------------------------------------------------------------------
+
+  # Flash tier via gemini-cli
+  - model_name: gemini-3-flash-via-gcli
+    litellm_params:
+      model: gemini-3-flash-via-gcli
+      custom_llm_provider: openai
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+      max_tokens: 65535
+    model_info:
+      base_model: gemini-3-flash-preview
+      input_cost_per_token: 5.00e-07
+      output_cost_per_token: 3.00e-06
+      cache_read_input_token_cost: 5.00e-08
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
+
+  # Pro tier via gemini-cli
+  - model_name: gemini-3-1-pro-via-gcli
+    litellm_params:
+      model: gemini-3-1-pro-via-gcli
+      custom_llm_provider: openai
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+      max_tokens: 65536
+    model_info:
+      base_model: gemini-3.1-pro-preview
+      input_cost_per_token: 2.00e-06
+      output_cost_per_token: 1.20e-05
+      cache_read_input_token_cost: 2.00e-07
+      max_input_tokens: 1048576
+      max_output_tokens: 65536
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
+      disable_background_health_check: true
+
+  # Flash-lite tier via gemini-cli
+  - model_name: gemini-3-1-flash-lite-via-gcli
+    litellm_params:
+      model: gemini-3-1-flash-lite-via-gcli
+      custom_llm_provider: openai
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+      max_tokens: 65536
+    model_info:
+      base_model: gemini-3.1-flash-lite-preview
+      input_cost_per_token: 2.50e-07
+      output_cost_per_token: 1.50e-06
+      cache_read_input_token_cost: 2.50e-08
+      max_input_tokens: 1048576
+      max_output_tokens: 65536
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
+
+  # Gemini 2.5 Flash via gemini-cli
+  - model_name: gemini-2-5-flash-via-gcli
+    litellm_params:
+      model: gemini-2-5-flash-via-gcli
+      custom_llm_provider: openai
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+      max_tokens: 65535
+    model_info:
+      base_model: gemini-2.5-flash
+      input_cost_per_token: 5.00e-07
+      output_cost_per_token: 3.00e-06
+      cache_read_input_token_cost: 5.00e-08
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
+
+  # Gemini 2.5 Flash-lite via gemini-cli
+  - model_name: gemini-2-5-flash-lite-via-gcli
+    litellm_params:
+      model: gemini-2-5-flash-lite-via-gcli
+      custom_llm_provider: openai
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+      max_tokens: 65535
+    model_info:
+      base_model: gemini-2.5-flash-lite
+      input_cost_per_token: 1.00e-07
+      output_cost_per_token: 4.00e-07
+      cache_read_input_token_cost: 1.00e-08
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
+
+  # Pro-high tier via gemini-cli
+  - model_name: gemini-3-pro-high-via-gcli
+    litellm_params:
+      model: gemini-3-pro-high-via-gcli
+      custom_llm_provider: openai
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+      max_tokens: 65535
+    model_info:
+      base_model: gemini/gemini-3-pro
+      input_cost_per_token: 1.25e-06
+      output_cost_per_token: 1.00e-05
+      max_input_tokens: 1000000
+      max_output_tokens: 65536
+      supports_vision: true
+      supports_function_calling: true
+      supports_reasoning: true
+      disable_background_health_check: true
+
+  # Gemini 2.5 Pro via gemini-cli
+  - model_name: gemini-2-5-pro-via-gcli
+    litellm_params:
+      model: gemini-2-5-pro-via-gcli
+      custom_llm_provider: openai
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+      max_tokens: 65535
+    model_info:
+      base_model: gemini-2.5-pro
+      input_cost_per_token: 1.25e-06
+      output_cost_per_token: 1.00e-05
+      cache_read_input_token_cost: 1.25e-07
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
+      disable_background_health_check: true
+
   - model_name: claude-sonnet-4-5-20250929
     litellm_params:
       model: openai/claude-sonnet-4-5-20250929
@@ -680,35 +821,105 @@ litellm_settings:
   callbacks: ["langfuse"]
   success_callback: ["langfuse"]
   failure_callback: ["langfuse"]
+  # ---------------------------------------------------------------------------
+  # Fallback chains — two-tier Gemini routing
+  #
+  # Gemini model requests:
+  #   Tier 1 (antigravity accounts, via cliproxy default routing)
+  #     → Tier 2 (gemini-cli accounts, via cliproxy -via-gcli alias routing)
+  #       → Claude capability-equivalent
+  #         → GPT capability-equivalent
+  #
+  # Claude / GPT model requests:
+  #   Primary provider
+  #     → Gemini Tier 1 (antigravity)
+  #       → Gemini Tier 2 (gemini-cli)
+  #         → other provider equivalent
+  #
+  # This ensures all Gemini OAuth accounts (both antigravity and gemini-cli)
+  # are exhausted before the request is handed to Claude or Codex.
+  # ---------------------------------------------------------------------------
   fallbacks:
-    - claude-haiku-4-5: ["gpt-5-4-mini", "gemini-3-flash"]
-    - claude-haiku-4-5-20251001: ["gpt-5-4-mini", "gemini-3-flash"]
-    - claude-opus-4-1: ["gpt-5-5", "gemini-3-1-pro"]
-    - claude-opus-4-1-20250805: ["gpt-5-5", "gemini-3-1-pro"]
-    - claude-opus-4-5: ["gpt-5-5", "gemini-3-1-pro"]
-    - claude-opus-4-5-20251101: ["gpt-5-5", "gemini-3-1-pro"]
-    - claude-opus-4-6: ["gpt-5-5", "gemini-3-1-pro"]
-    - claude-opus-4-7: ["gpt-5-5", "gemini-3-1-pro"]
-    - claude-opus-4-8: ["gpt-5-5", "gemini-3-1-pro"]
-    - claude-sonnet-4-5: ["gpt-5-4", "gemini-3-flash"]
-    - claude-sonnet-4-5-20250929: ["gpt-5-4", "gemini-3-flash"]
-    - claude-sonnet-4-6: ["gpt-5-4", "gemini-3-flash"]
-    - gemini-2-5-flash: ["claude-haiku-4-5", "gpt-5-4-mini"]
-    - gemini-2-5-flash-lite: ["claude-haiku-4-5", "gpt-5-4-mini"]
-    - gemini-2-5-pro: ["claude-sonnet-4-6", "gpt-5-4"]
-    - gemini-3-1-pro: ["claude-sonnet-4-6", "gpt-5-4"]
-    - gemini-3-1-pro-low: ["claude-sonnet-4-6", "gpt-5-4"]
-    - gemini-3-1-pro-preview: ["claude-sonnet-4-6", "gpt-5-4"]
-    - gemini-3-flash: ["claude-haiku-4-5", "gpt-5-4-mini"]
-    - gemini-3-flash-agent: ["claude-haiku-4-5", "gpt-5-4-mini"]
-    - gemini-3-flash-preview: ["claude-haiku-4-5", "gpt-5-4-mini"]
-    - gemini-3-pro: ["claude-sonnet-4-6", "gpt-5-4"]
-    - gemini-3-pro-high: ["claude-sonnet-4-6", "gpt-5-4"]
-    - gemini-3-pro-low: ["claude-sonnet-4-6", "gpt-5-4"]
-    - gemini-3-pro-preview: ["claude-sonnet-4-6", "gpt-5-4"]
-    - gpt-5-4: ["claude-sonnet-4-6", "gemini-3-flash"]
-    - gpt-5-4-mini: ["claude-haiku-4-5", "gemini-3-flash"]
-    - gpt-5-5: ["claude-opus-4-7", "gemini-3-1-pro"]
+    # --- Claude → Gemini (both tiers) → GPT ---
+    - claude-haiku-4-5:
+        ["gemini-3-flash", "gemini-3-flash-via-gcli", "gpt-5-4-mini"]
+    - claude-haiku-4-5-20251001:
+        ["gemini-3-flash", "gemini-3-flash-via-gcli", "gpt-5-4-mini"]
+    - claude-sonnet-4-5:
+        ["gemini-3-flash", "gemini-3-flash-via-gcli", "gpt-5-4"]
+    - claude-sonnet-4-5-20250929:
+        ["gemini-3-flash", "gemini-3-flash-via-gcli", "gpt-5-4"]
+    - claude-sonnet-4-6:
+        ["gemini-3-flash", "gemini-3-flash-via-gcli", "gpt-5-4"]
+    - claude-opus-4-1:
+        ["gemini-3-1-pro", "gemini-3-1-pro-via-gcli", "gpt-5-5"]
+    - claude-opus-4-1-20250805:
+        ["gemini-3-1-pro", "gemini-3-1-pro-via-gcli", "gpt-5-5"]
+    - claude-opus-4-5:
+        ["gemini-3-1-pro", "gemini-3-1-pro-via-gcli", "gpt-5-5"]
+    - claude-opus-4-5-20251101:
+        ["gemini-3-1-pro", "gemini-3-1-pro-via-gcli", "gpt-5-5"]
+    - claude-opus-4-6:
+        ["gemini-3-1-pro", "gemini-3-1-pro-via-gcli", "gpt-5-5"]
+    - claude-opus-4-7:
+        ["gemini-3-1-pro", "gemini-3-1-pro-via-gcli", "gpt-5-5"]
+    - claude-opus-4-8:
+        ["gemini-3-1-pro", "gemini-3-1-pro-via-gcli", "gpt-5-5"]
+
+    # --- GPT → Gemini (both tiers) → Claude ---
+    - gpt-5-4-mini:
+        ["gemini-3-flash", "gemini-3-flash-via-gcli", "claude-haiku-4-5"]
+    - gpt-5-4:
+        ["gemini-3-flash", "gemini-3-flash-via-gcli", "claude-sonnet-4-6"]
+    - gpt-5-5:
+        ["gemini-3-1-pro", "gemini-3-1-pro-via-gcli", "claude-opus-4-7"]
+
+    # --- Gemini Flash tier ---
+    # Tier 1 (antigravity) → Tier 2 (gemini-cli) → Claude Haiku → GPT Mini
+    - gemini-3-flash:
+        ["gemini-3-flash-via-gcli", "claude-haiku-4-5", "gpt-5-4-mini"]
+    - gemini-3-flash-preview:
+        ["gemini-3-flash-via-gcli", "claude-haiku-4-5", "gpt-5-4-mini"]
+    - gemini-3-flash-agent:
+        ["gemini-3-flash-via-gcli", "claude-haiku-4-5", "gpt-5-4-mini"]
+    - gemini-2-5-flash:
+        ["gemini-2-5-flash-via-gcli", "gemini-3-flash-via-gcli", "claude-haiku-4-5", "gpt-5-4-mini"]
+    - gemini-2-5-flash-lite:
+        ["gemini-2-5-flash-lite-via-gcli", "gemini-3-flash-via-gcli", "claude-haiku-4-5", "gpt-5-4-mini"]
+    - gemini-3-1-flash-lite:
+        ["gemini-3-1-flash-lite-via-gcli", "gemini-3-flash-via-gcli", "claude-haiku-4-5", "gpt-5-4-mini"]
+    - gemini-3-1-flash-lite-preview:
+        ["gemini-3-1-flash-lite-via-gcli", "gemini-3-flash-via-gcli", "claude-haiku-4-5", "gpt-5-4-mini"]
+
+    # Tier 2 (gemini-cli) fallback → Claude → GPT
+    - gemini-3-flash-via-gcli:    ["claude-haiku-4-5", "gpt-5-4-mini"]
+    - gemini-2-5-flash-via-gcli:  ["claude-haiku-4-5", "gpt-5-4-mini"]
+    - gemini-2-5-flash-lite-via-gcli: ["claude-haiku-4-5", "gpt-5-4-mini"]
+    - gemini-3-1-flash-lite-via-gcli: ["claude-haiku-4-5", "gpt-5-4-mini"]
+
+    # --- Gemini Pro tier ---
+    # Tier 1 (antigravity) → Tier 2 (gemini-cli) → Claude Sonnet → GPT
+    - gemini-3-1-pro:
+        ["gemini-3-1-pro-via-gcli", "claude-sonnet-4-6", "gpt-5-4"]
+    - gemini-3-1-pro-preview:
+        ["gemini-3-1-pro-via-gcli", "claude-sonnet-4-6", "gpt-5-4"]
+    - gemini-3-1-pro-low:
+        ["gemini-3-1-pro-via-gcli", "claude-sonnet-4-6", "gpt-5-4"]
+    - gemini-3-pro:
+        ["gemini-3-1-pro-via-gcli", "claude-sonnet-4-6", "gpt-5-4"]
+    - gemini-3-pro-preview:
+        ["gemini-3-1-pro-via-gcli", "claude-sonnet-4-6", "gpt-5-4"]
+    - gemini-3-pro-low:
+        ["gemini-3-1-pro-via-gcli", "claude-sonnet-4-6", "gpt-5-4"]
+    - gemini-3-pro-high:
+        ["gemini-3-pro-high-via-gcli", "gemini-3-1-pro-via-gcli", "claude-sonnet-4-6", "gpt-5-4"]
+    - gemini-2-5-pro:
+        ["gemini-2-5-pro-via-gcli", "gemini-3-1-pro-via-gcli", "claude-sonnet-4-6", "gpt-5-4"]
+
+    # Tier 2 (gemini-cli) fallback → Claude → GPT
+    - gemini-3-1-pro-via-gcli:   ["claude-sonnet-4-6", "gpt-5-4"]
+    - gemini-3-pro-high-via-gcli: ["claude-sonnet-4-6", "gpt-5-4"]
+    - gemini-2-5-pro-via-gcli:   ["claude-sonnet-4-6", "gpt-5-4"]
 
   cache: true
   cache_params:
