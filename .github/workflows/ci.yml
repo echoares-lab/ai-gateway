@@ -56,6 +56,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          update-environment: false
           cache: 'pip'
       - name: Install dependencies
         run: |
@@ -190,6 +191,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          update-environment: false
           cache: 'pip'
       - name: Install pytest dependencies
         run: pip install -r tests/integration/requirements.txt
@@ -213,10 +215,8 @@ jobs:
           TRANSLATOR_IMAGE: ai-translator-test:latest
           CLIPROXY_DEV_CONFIG: ${{ github.workspace }}/tests/cliproxy-config-ci.yaml
           DEV_TRANSLATOR_PORT: "4010"
-          LITELLM_MIGRATION_DIR: "/tmp/litellm_migrations"
+          LITELLM_MIGRATIONS: "None"
         run: |
-          # Create a writable directory for LiteLLM migrations to avoid DB baseline errors
-          mkdir -p /tmp/litellm_migrations
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
