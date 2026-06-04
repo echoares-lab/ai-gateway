@@ -199,7 +199,7 @@ cmd_start_mock() {
     slot_ports "$slot"
     echo "starting MOCK slot ${slot}: translator=:${TRANSLATOR_PORT} (no OAuth, canned upstream)"
     # No seed_auth_volume — the mock upstream needs no credentials.
-    run_compose "$slot" -f "$MOCK_OVERLAY" up -d --build postgres cliproxy litellm translator
+    run_compose "$slot" -f "$MOCK_OVERLAY" up -d --build postgres cliproxy litellm translator credential-prober
     echo ""
     echo "mock slot ${slot} is up: translator http://localhost:${TRANSLATOR_PORT}/health"
 }

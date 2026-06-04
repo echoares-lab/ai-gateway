@@ -222,6 +222,25 @@ async def responses_compact(request: Request):
     )
 
 
+@app.get("/v0/management/auth-files")
+async def management_auth_files(request: Request):
+    # Simulate CLIProxy inventory list
+    return JSONResponse({
+        "files": [
+            {
+                "id": "antigravity-mock.json",
+                "provider": "antigravity",
+                "label": "mock@example.com",
+                "auth_index": "mock_fingerprint",
+                "status": "active",
+                "failed": 0,
+                "recent_requests": [],
+                "status_message": ""
+            }
+        ]
+    })
+
+
 @app.websocket("/v1/responses")
 async def responses_websocket(websocket: WebSocket):
     await websocket.accept()

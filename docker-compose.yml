@@ -194,6 +194,7 @@ services:
     restart: always
     environment:
       - LITELLM_CONTAINER=ai-litellm-1
+      - LITELLM_HEALTH_URL=http://litellm:4000/health/readiness
     volumes:
       - ./litellm-config.yaml:/config/litellm-config.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -291,6 +292,21 @@ services:
       - DATABASE_URL=postgresql://mcp_readonly:mcp_readonly_secret@postgres:5432/postgres
     ports:
       - "8000:8000"
+
+  credential-prober:
+    build:
+      context: ./services/credential-prober
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      - CLIPROXY_URL=http://cliproxy:8317
+      - CLIPROXY_MANAGEMENT_KEY=${CLIPROXY_MANAGEMENT_KEY:-cliproxy-mgmt-H6VXKpUCzmeDuHcGmH8Oqg}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cliproxy:
+        condition: service_started
 
 
 volumes:
