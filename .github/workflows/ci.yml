@@ -2,9 +2,9 @@ name: CI Suite
 
 on:
   push:
-    branches: [ main, dev ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, dev ]
+    branches: [ main ]
     # 'labeled' lets adding the run-e2e label trigger the gated E2E job
     # without needing a new commit.
     types: [ opened, synchronize, reopened, labeled ]
@@ -15,6 +15,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      runtime: ${{ steps.filter.outputs.runtime }}
+      isolation: ${{ steps.filter.outputs.isolation }}
+      credential_prober: ${{ steps.filter.outputs.credential_prober }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            runtime:
+              - 'services/**'
+              - 'tests/**'
+              - 'docker-compose*.yml'
+              - 'litellm-config.yaml'
+              - 'Dockerfile*'
+              - '*.sh'
+              - 'Makefile'
+              - 'db/**'
+              - '.github/workflows/**'
+            isolation:
+              - 'tests/test-multi-repo-isolation.sh'
+              - 'dev-env.sh'
+              - 'cliproxy-setup.sh'
+              - 'gen-client-config.sh'
+            credential_prober:
+              - 'services/credential-prober/**'
+
   lint-and-syntax:
     runs-on: ubuntu-latest
     steps:
@@ -98,9 +128,28 @@ jobs:
           cache-to: type=gha,mode=max
       - name: Run unit tests inside container
         run: |
-          docker run --rm ai-translator-test:latest pytest test_translator.py -v
+          docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -v'
+
+  credential-prober:
+    needs: changes
+    if: >
+      needs.changes.outputs.credential_prober == 'true' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run credential-prober unit tests
+        run: |
+          python3 -m unittest discover -s services/credential-prober -p 'test_*.py' -v
 
   multi-repo-isolation:
+    needs: changes
+    if: >
+      needs.changes.outputs.isolation == 'true' ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -108,15 +157,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y direnv
       - name: Setup mock organizational structure
         run: |
-          # Set up mock repos in temp folder
           mkdir -p /tmp/mock-repos
           for repo in ai-gateway homelab-gitops amazon_returns cloudflare_access_automation gmail-generator amazon-returns-cdp cursor labels; do
               mkdir -p "/tmp/mock-repos/$repo"
               echo 'dotenv' > "/tmp/mock-repos/$repo/.envrc"
               echo "export CODEX_HOME=\"\$HOME/.codex-repos/$repo\"" >> "/tmp/mock-repos/$repo/.envrc"
               direnv allow "/tmp/mock-repos/$repo"
-              
-              # Create config.toml for the ones that need it
+
               if [[ "$repo" == "ai-gateway" || "$repo" == "homelab-gitops" ]]; then
                   mkdir -p "$HOME/.codex-repos/$repo"
                   echo 'openai_base_url = "http://localhost:4000"' > "$HOME/.codex-repos/$repo/config.toml"
@@ -124,7 +171,6 @@ jobs:
               fi
           done
 
-          # Write mock .env files for dotenv-based repos
           for repo in ai-gateway homelab-gitops amazon_returns cloudflare_access_automation; do
               echo "OPENAI_API_KEY=mock-key-openai" > "/tmp/mock-repos/$repo/.env"
               echo "ANTHROPIC_API_KEY=mock-key-anthropic" >> "/tmp/mock-repos/$repo/.env"
@@ -132,14 +178,15 @@ jobs:
           done
       - name: Run isolation tests
         run: |
-          # Load direnv hook in the shell session
           eval "$(direnv hook bash)"
           REPOS_BASE=/tmp/mock-repos bash tests/test-multi-repo-isolation.sh
 
-  # Fast tier: real translator + litellm + a canned mock upstream (no OAuth, no
-  # real LLM). The wire-format/translation assertions that skip in the gated job
-  # actually execute here — ALLOW_MODEL_SKIP=0 makes an unexpected 4xx fail.
+  # Gate B: real translator + litellm + canned mock upstream (no OAuth, no real LLM).
   mock-integration:
+    needs: changes
+    if: >
+      needs.changes.outputs.runtime == 'true' ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -151,18 +198,37 @@ jobs:
         run: pip install -r tests/integration/requirements.txt
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+      - name: Build translator image (reuse in compose, skip rebuild)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/translator
+          load: true
+          tags: ai-translator-test:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Setup environment file
         run: |
           cp .env.example .env
           echo "LITELLM_MASTER_KEY=sk-ci-mock" >> .env
           echo "CLIPROXY_API_KEY=mock-key" >> .env
       - name: Start mock stack (translator + litellm + postgres + MOCK cliproxy)
+        env:
+          TRANSLATOR_IMAGE: ai-translator-test:latest
+          CLIPROXY_DEV_CONFIG: ${{ github.workspace }}/tests/cliproxy-config-ci.yaml
+          DEV_TRANSLATOR_PORT: "4010"
         run: |
-          export CLIPROXY_DEV_CONFIG="$PWD/tests/cliproxy-config-ci.yaml"
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
-            up -d --build postgres cliproxy litellm translator
+            build postgres cliproxy litellm
+          docker compose \
+            -f docker-compose.dev.yml -f docker-compose.mock.yml \
+            -p aidevmock \
+            up -d postgres cliproxy litellm
+          docker compose \
+            -f docker-compose.dev.yml -f docker-compose.mock.yml \
+            -p aidevmock \
+            up -d --no-build translator
       - name: Wait for translator health
         run: |
           for i in {1..30}; do
@@ -171,19 +237,20 @@ jobs:
             sleep 2
           done
           echo "translator never became healthy"; exit 1
-      - name: Run mock-tier tests
+      - name: Run mock-tier pytest
         run: |
           GATEWAY_URL=http://localhost:4010 LITELLM_MASTER_KEY=sk-ci-mock ALLOW_MODEL_SKIP=0 \
             python3 -m pytest tests/integration/ -m mock -v
+      - name: Run shell E2E smoke (CI mock mode)
+        run: |
+          GATEWAY_E2E_CI=1 GATEWAY_URL=http://localhost:4010 bash tests/test-gateway-e2e.sh
       - name: Dump logs and tear down
         if: always()
         run: |
           docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs || true
           docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock down -v
 
-  # Gated full E2E: builds the CLIProxy fork and hits REAL providers. Runs only
-  # on manual dispatch or when a PR carries the `run-e2e` label. Seeds real OAuth
-  # so the smoke subset asserts instead of skipping. Not a required check.
+  # Gate C: builds the CLIProxy fork and hits REAL providers. Not a required check.
   real-provider-e2e:
     if: >
       github.event_name == 'workflow_dispatch' ||

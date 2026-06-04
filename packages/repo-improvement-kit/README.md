@@ -13,6 +13,7 @@ The kit separates portable process from repo-specific operating details.
 
 - Portable (lives in this package, copied as-is):
   - `REPO_IMPROVEMENT_WORKFLOW.md` — the process rules.
+  - `TESTING_AND_PROMOTION_POLICY.md` — gate definitions and risk tiers.
   - `REPO_IMPROVEMENT_APPENDIX.template.md` — placeholders for branch/env/test details.
   - `AGENT_DISPATCH.template.md` — placeholders for the agent prompt that drives PR processing.
   - `.github/*` — issue templates, PR template, CODEOWNERS, branch protection policy.
@@ -55,6 +56,7 @@ The kit separates portable process from repo-specific operating details.
 ## What this kit contains
 
 - `REPO_IMPROVEMENT_WORKFLOW.md` — reusable process for discovery, approval, issue creation, claiming, execution, merge, and promotion
+- `TESTING_AND_PROMOTION_POLICY.md` — portable gate definitions (A/B/C/D), risk tiers, and parallel-agent isolation rules
 - `REPO_IMPROVEMENT_APPENDIX.template.md` — repo-specific appendix template for branch, environment, and verification details
 - `AGENT_DISPATCH.template.md` — portable agent prompt template for claim → implement → PR → auto-merge → closeout
 - `.github/ISSUE_TEMPLATE/repo-improvement.yml` — standardized improvement issue template

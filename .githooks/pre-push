@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Optional pre-push hook — Gate A fast checks (~1–2 min).
+# Install: git config core.hooksPath .githooks
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+make lint
+make test-unit

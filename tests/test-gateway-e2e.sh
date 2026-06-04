@@ -2,6 +2,9 @@
 # tests/test-gateway-e2e.sh
 # End-to-end smoke test: hit every CLI endpoint + spot-check models from each repo.
 # Uses the API key loaded by direnv for each repo.
+#
+# CI mock mode (health + WebSocket only, no direnv/repos required):
+#   GATEWAY_E2E_CI=1 GATEWAY_URL=http://localhost:4010 bash tests/test-gateway-e2e.sh
 
 set -euo pipefail
 
@@ -149,6 +152,14 @@ echo "Health: $health"
 [[ "$health" == "ok" ]] || { echo "Gateway unreachable — aborting"; exit 1; }
 
 test_websocket
+
+if [[ "${GATEWAY_E2E_CI:-}" == "1" ]]; then
+    echo ""
+    echo "CI mock mode — skipping per-repo provider tests"
+    echo "══════════════════════════════════════════"
+    echo "Results: $PASS passed, $FAIL failed, $SKIP skipped"
+    [[ $FAIL -eq 0 ]] && echo "All checks passed" || exit 1
+fi
 
 # Test key repos
 for repo in ai-gateway homelab-gitops amazon_returns cloudflare_access_automation; do

@@ -19,10 +19,12 @@ Process and PR-handling references:
 **Always work in a git worktree + dev stack — never edit the stable stack on port 4000 directly.**
 
 ```bash
-# 1. Create a feature worktree (pick any free slot; slot 0 is the stable stack)
-git worktree add ../ai-gateway-<feature> -b feat/<feature>
-ln -s /home/dev/repos/ai-gateway/.env /home/dev/repos/ai-gateway-<feature>/.env
-cd /home/dev/repos/ai-gateway-<feature>
+# 1. Create a feature worktree under /home/dev/worktrees/ (not beside or inside the repo)
+mkdir -p /home/dev/worktrees
+cd /home/dev/repos/ai-gateway && git checkout main
+git worktree add /home/dev/worktrees/ai-gateway-<feature> -b feat/<feature>
+ln -s /home/dev/repos/ai-gateway/.env /home/dev/worktrees/ai-gateway-<feature>/.env
+cd /home/dev/worktrees/ai-gateway-<feature>
 
 # 2. Start an isolated dev stack in a free slot (use `./dev-env.sh list` to find one)
 ./dev-env.sh start 1          # or slot 2, 3, …
@@ -44,7 +46,7 @@ git add -p && git commit -m "..."
 
 # 7. Tear down and remove worktree
 ./dev-env.sh stop 1
-cd /home/dev/repos/ai-gateway && git worktree remove ../ai-gateway-<feature>
+cd /home/dev/repos/ai-gateway && git worktree remove /home/dev/worktrees/ai-gateway-<feature>
 ```
 
 ## Common Commands
@@ -138,12 +140,14 @@ External client (Cursor, curl, SDK)
 
 ## Working in Worktrees
 
-Feature work goes in git worktrees to avoid branch-switching in the main dir:
+Feature work goes in git worktrees under `/home/dev/worktrees/` — not as siblings of the stable repo and not inside hidden repo paths (see `WORKTREES.md`):
 
 ```bash
-git worktree add ../ai-gateway-<feature> -b feat/<feature>
-# Symlink .env so secrets are available
-ln -s /home/dev/repos/ai-gateway/.env /home/dev/repos/ai-gateway-<feature>/.env
+mkdir -p /home/dev/worktrees
+cd /home/dev/repos/ai-gateway && git checkout main
+git worktree add /home/dev/worktrees/ai-gateway-<feature> -b feat/<feature>
+ln -s /home/dev/repos/ai-gateway/.env /home/dev/worktrees/ai-gateway-<feature>/.env
+cd /home/dev/worktrees/ai-gateway-<feature>
 ```
 
 Run `docker compose` from within the worktree directory when testing changes there. The compose project name is `ai` (set in `docker-compose.yml`) — running from two worktrees simultaneously will conflict on container names.
@@ -160,9 +164,11 @@ Each **slot N** maps to dedicated ports (slot 0 = stable, reserved):
 | cliproxy | :8317 | :8327 | :8337 |
 
 ```bash
-# One-time: create a feature worktree
-git worktree add ../ai-gateway-feat-X -b feat/X
-ln -s /home/dev/repos/ai-gateway/.env /home/dev/repos/ai-gateway-feat-X/.env
+# One-time: create a feature worktree (see WORKTREES.md for location rules)
+mkdir -p /home/dev/worktrees
+git worktree add /home/dev/worktrees/ai-gateway-feat-X -b feat/X
+ln -s /home/dev/repos/ai-gateway/.env /home/dev/worktrees/ai-gateway-feat-X/.env
+cd /home/dev/worktrees/ai-gateway-feat-X
 
 # From inside the worktree (or repo root for slot testing):
 ./dev-env.sh start 1          # build & start — translator:4010, litellm:4011, cliproxy:8327
@@ -186,7 +192,7 @@ cd /home/dev/repos/CLIProxyAPI && git pull
 # Tear down (removes auth volume):
 ./dev-env.sh stop 1
 
-git worktree remove ../ai-gateway-feat-X
+git worktree remove /home/dev/worktrees/ai-gateway-feat-X
 ```
 
 **Dev stack details:**

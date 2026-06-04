@@ -6,6 +6,7 @@ Use this checklist when copying the Repo Improvement Kit into another repository
 
 Copy these files/folders into the target repo:
 - `REPO_IMPROVEMENT_WORKFLOW.md`
+- `TESTING_AND_PROMOTION_POLICY.md`
 - `REPO_IMPROVEMENT_APPENDIX.template.md` as `REPO_IMPROVEMENT_APPENDIX.md`
 - `AGENT_DISPATCH.template.md` as `AGENT_DISPATCH.md`
 - `.github/ISSUE_TEMPLATE/repo-improvement.yml`
@@ -18,6 +19,7 @@ Copy these files/folders into the target repo:
 
 In `REPO_IMPROVEMENT_APPENDIX.md`, update:
 - branch strategy, defaulting to `main -> feature worktree/branch -> PR -> main`
+- **test gates** (A/B/C/D commands and CI job names per `TESTING_AND_PROMOTION_POLICY.md`)
 - environment/staging flow
 - CI-enforced checks
 - manual verification commands
@@ -56,9 +58,8 @@ Edit `.github/ISSUE_TEMPLATE/repo-improvement.yml` if needed:
 ## 6. Update PR checklist
 
 Edit `.github/pull_request_template.md` to match the repo’s real test gates:
-- unit test command
-- integration command
-- E2E/smoke checks
+- Gate A/B/C/D commands (see `TESTING_AND_PROMOTION_POLICY.md`)
+- risk-tier checklist (low / medium / high)
 - rollout/rollback expectations
 
 ## 7. Configure branch protection manually in GitHub
@@ -72,6 +73,8 @@ Create these labels in the target repo:
 - `type:*`
 - `area:*`
 - `priority:*`
+- `gate:*` (optional: `gate:a-failed`, `gate:b-failed`, etc.)
+- `channel:*` (optional: `channel:staging`, `channel:production`)
 
 ## 9. Optional enhancements
 

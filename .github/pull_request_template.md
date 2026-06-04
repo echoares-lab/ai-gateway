@@ -18,15 +18,36 @@
 - Hard dependencies merged? Yes / No
 - Any bundled issues included? List them
 
-## Test plan
+## Test plan (gates)
 
-- [ ] Translator unit tests pass (`docker compose exec translator pytest test_translator.py -v`)
-- [ ] Integration tests pass on dev slot (`./dev-env.sh test <slot>`)
-- [ ] Health check passes (`./cliproxy-setup.sh health`)
-- [ ] Claude E2E passes (`./cliproxy-setup.sh test claude-sonnet-4-6`)
-- [ ] Gemini E2E passes (`./cliproxy-setup.sh test gemini-3-flash`)
-- [ ] GPT E2E passes (`./cliproxy-setup.sh test gpt-5-4`)
-- [ ] CI checks passed
+Risk level: **low / medium / high** (see `TESTING_AND_PROMOTION_POLICY.md`)
+
+### Gate A — lint, schema, unit (required for all PRs)
+
+- [ ] `make lint` pass
+- [ ] `make test-unit` pass (`pytest test_translator*.py`)
+- [ ] YAML validation pass (if `litellm-config.yaml` changed)
+
+### Gate B — mock integration (required for medium/high; optional for low)
+
+- [ ] `make test-mock` pass (0 skips; `ALLOW_MODEL_SKIP=0`)
+
+### Gate C — real providers (high-risk only)
+
+- [ ] `make test-e2e` pass **or** PR label `run-e2e` (CI `real-provider-e2e`)
+
+Required for changes touching: `translator.py`, `litellm-config.yaml`, compose files, cliproxy.
+
+### Gate D — post-merge stable (record in closeout, not pre-merge)
+
+- [ ] `./cliproxy-setup.sh health` on port 4000
+- [ ] `./cliproxy-setup.sh test claude-sonnet-4-6`
+- [ ] `./cliproxy-setup.sh test gemini-3-flash`
+- [ ] `./cliproxy-setup.sh test gpt-5-4`
+
+### CI
+
+- [ ] `lint-and-syntax`, `unit-tests`, `multi-repo-isolation`, `mock-integration` passed
 
 ## Risk / rollback
 
@@ -41,7 +62,7 @@
 ## Workflow checklist
 
 - [ ] Issue was approved before implementation
-- [ ] Issue was claimed with a start-work comment
+- [ ] Issue was claimed with a start-work comment (Claim-ID, branch, worktree, slot)
 - [ ] Dependencies were handled explicitly
 - [ ] Required manual verification is recorded here
 - [ ] This PR is ready to merge to the target branch

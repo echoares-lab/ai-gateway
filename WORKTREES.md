@@ -1,5 +1,7 @@
 # Git Worktrees — AI Gateway
 
+See also: `TESTING_AND_PROMOTION_POLICY.md`, `REPO_IMPROVEMENT_APPENDIX.md`.
+
 ## Why worktrees?
 
 The stable gateway stack runs on **port 4000** and serves live traffic. If you
@@ -9,22 +11,47 @@ gateway. Worktrees solve this:
 
 - Each worktree is an independent checkout of the repo in a separate directory
 - The stable stack always reads from `/home/dev/repos/ai-gateway` (never changes)
-- Feature work happens in `/home/dev/repos/ai-gateway-<feature>` (isolated)
+- Feature work happens under `/home/dev/worktrees/ai-gateway-<feature>` (isolated)
 - Dev stacks started with `./dev-env.sh start <slot>` use different ports, so
   the stable stack is never touched
+
+---
+
+## Worktree location (required)
+
+| Path | Purpose |
+|------|---------|
+| `/home/dev/repos/ai-gateway` | **Stable checkout only** — `main`, serves port 4000 |
+| `/home/dev/worktrees/ai-gateway-<feature>` | **Feature worktrees** — all agent development |
+
+**Do not** create feature worktrees:
+
+- As siblings of the stable repo (`/home/dev/repos/ai-gateway-*`) — clutters the repos folder and confuses tooling
+- Inside the repo tree — including `.claude/worktrees/`, `.cursor/`, or any hidden subdirectory
+- In IDE-managed paths unless the appendix explicitly says otherwise
+
+Create the worktrees root once per machine:
+
+```bash
+mkdir -p /home/dev/worktrees
+```
+
+Claim comments must record the **full absolute path** (e.g. `/home/dev/worktrees/ai-gateway-issue-89`).
 
 ---
 
 ## Creating a feature worktree
 
 ```bash
-# Always branch off main
+# Always branch off main; worktrees live outside the repos/ folder
+mkdir -p /home/dev/worktrees
 cd /home/dev/repos/ai-gateway
 git checkout main
-git worktree add ../ai-gateway-<feature> -b feat/<feature>
+git worktree add /home/dev/worktrees/ai-gateway-<feature> -b feat/<feature>
 
 # Symlink .env so secrets are available without duplicating the file
-ln -s /home/dev/repos/ai-gateway/.env /home/dev/repos/ai-gateway-<feature>/.env
+ln -s /home/dev/repos/ai-gateway/.env /home/dev/worktrees/ai-gateway-<feature>/.env
+cd /home/dev/worktrees/ai-gateway-<feature>
 
 # Start an isolated dev stack (see dev-env.sh list for free slots)
 ./dev-env.sh start 1
@@ -48,9 +75,35 @@ Run `git worktree list` for the live state.
 feat/<name>  →  (PR)  →  main
 ```
 
-- All feature work branches off `main`
-- `feat/<name>` → `main` via PR (CI must pass; never direct push)
+- All feature work branches off `main` (no long-lived `dev` branch)
+- `feat/<name>` → `main` via PR (Gate A + B CI must pass; never direct push)
 - `main` is the production branch — only tested, reviewed code lands here
+
+---
+
+## Slot registry
+
+One active claim = one worktree + one branch + one slot.
+
+| Slot | Purpose |
+|------|---------|
+| 0 | Stable stack (:4000) — **never use for feature work** |
+| 1–8 | Real OAuth dev stacks (Gate C) |
+| 9 | Mock stack (Gate B) — `make test-mock` default |
+
+Before starting a stack: `./dev-env.sh list`. Declare your slot in the issue claim comment.
+Do not share slots between concurrent claims without an explicit handoff.
+
+---
+
+## Testing quick reference
+
+| When | Command |
+|------|---------|
+| During development (Gate A) | `make test-unit` |
+| Before PR (Gate A + B) | `make test-fast` |
+| High-risk pre-merge (Gate C) | `make test-e2e` or PR label `run-e2e` |
+| After merge (Gate D) | `./cliproxy-setup.sh health` + 3 model smokes on :4000 |
 
 ---
 
@@ -62,7 +115,7 @@ feat/<name>  →  (PR)  →  main
 
 # Remove the worktree
 cd /home/dev/repos/ai-gateway
-git worktree remove ../ai-gateway-<feature>
+git worktree remove /home/dev/worktrees/ai-gateway-<feature>
 git branch -d feat/<feature>
 ```
 

@@ -8,7 +8,7 @@ lint:
 # Unit tests: build the translator image and run the fully-mocked suite.
 test-unit:
 	docker build -t ai-translator-test:latest services/translator
-	docker run --rm ai-translator-test:latest pytest test_translator.py -v
+	docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -v'
 
 # Mock tier: translator + litellm + canned upstream (slot 9 -> :4090), no OAuth.
 # Tears the stack down afterward even if tests fail.
