@@ -1,0 +1,59 @@
+name: Nightly Integration
+
+# Gate C — scheduled real-provider smoke + full integration matrix (report-only).
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 06:00 UTC daily
+  workflow_dispatch: {}
+
+concurrency:
+  group: nightly-integration
+  cancel-in-progress: false
+
+jobs:
+  real-provider-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install pytest dependencies
+        run: pip install -r tests/integration/requirements.txt
+      - name: Setup environment file
+        run: cp .env.example .env
+      - name: Seed real OAuth creds
+        run: |
+          mkdir -p "$HOME/.cli-proxy-api"
+          if [ -n "${{ secrets.CLIPROXY_AUTH_TAR_B64 }}" ]; then
+            echo "${{ secrets.CLIPROXY_AUTH_TAR_B64 }}" | base64 -d | tar -xz -C "$HOME/.cli-proxy-api"
+            echo "✓ seeded OAuth creds"
+          else
+            echo "::warning::No CLIPROXY_AUTH_TAR_B64 secret; tests will skip."
+          fi
+      - name: Build and start gateway stack
+        run: |
+          export CLIPROXY_DEV_CONFIG="$PWD/tests/cliproxy-config-ci.yaml"
+          export CLIPROXY_BUILD_CONTEXT="$PWD"
+          export CLIPROXY_DOCKERFILE="Dockerfile.cliproxy"
+          ./dev-env.sh start 1
+      - name: Wait for translator
+        run: |
+          for i in {1..30}; do
+            curl -sf http://localhost:4010/health >/dev/null && exit 0
+            sleep 3
+          done
+          exit 1
+      - name: Run smoke subset (Gate C)
+        run: |
+          ./dev-env.sh test 1 -- -m "integration and smoke"
+      - name: Run full integration matrix
+        continue-on-error: true
+        run: |
+          ./dev-env.sh test 1 -- -m integration
+      - name: Stop services
+        if: always()
+        run: |
+          docker compose -f docker-compose.dev.yml -p aidev1 logs || true
+          ./dev-env.sh stop 1

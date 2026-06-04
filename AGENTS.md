@@ -7,6 +7,7 @@ see `RUNBOOK.md`.
 
 Repo improvement and PR processing are governed by:
 - `REPO_IMPROVEMENT_WORKFLOW.md` — process rules (discovery, approval, claim, PR, merge, closeout).
+- `TESTING_AND_PROMOTION_POLICY.md` — gate definitions (A/B/C/D), risk tiers, parallel-agent isolation.
 - `REPO_IMPROVEMENT_APPENDIX.md` — this repo's branch policy, environment slots, and test commands.
 - `AGENT_DISPATCH.md` — the copy-paste prompt agents run to claim an issue and ship it.
 - `packages/repo-improvement-kit/` — portable source for the above; see its `README.md` for deployment.
@@ -86,15 +87,23 @@ Dev slots map to ports:
 - `litellm-config.yaml` edits → litellm-reloader detects and restarts in ~10 seconds
 - `Dockerfile` or pip dependency changes → `./dev-env.sh rebuild <slot>`
 
-### Step 4 — Test after each significant change
+### Step 4 — Test after each significant change (Gate A)
 
-Run unit tests inside the dev translator container:
+Run unit tests inside the dev translator container or via Make:
 
 ```bash
-docker exec aidev1-translator-1 pytest test_translator.py -v
+docker exec aidev1-translator-1 pytest test_translator*.py -v
+# or locally without a running stack:
+make test-unit
 ```
 
-All 41 tests must pass before continuing. Fix failures before moving on.
+All unit tests must pass before continuing. Fix failures before moving on.
+
+For mock integration during development (Gate B):
+
+```bash
+make test-mock    # mock stack on slot 9, 0 skips enforced
+```
 
 ### Step 5 — Commit checkpoints
 
@@ -108,16 +117,19 @@ git commit -m "feat(scope): short imperative description"
 
 See [Commit message format](#commit-message-format) below.
 
-### Step 6 — End-of-session integration tests
+### Step 6 — Pre-PR verification (Gates A + B)
 
-When your feature is complete, run the full integration suite against the dev slot:
+Before opening a PR, run the fast local tier (mirrors required CI):
 
 ```bash
-# Integration tests (requires live dev stack)
-./dev-env.sh test 1
+make test-fast    # lint + unit + mock integration
+```
 
-# Provider auth and service health
-./cliproxy-setup.sh health
+For **high-risk** changes (auth, `litellm-config.yaml`, compose, cliproxy), also run Gate C:
+
+```bash
+make test-e2e     # real OAuth stack + smoke subset
+# or: gh pr edit <num> --add-label run-e2e   # triggers CI real-provider-e2e
 ```
 
 Resolve all failures before merging. Do not proceed with a broken dev stack.
@@ -134,18 +146,26 @@ gh pr create --base main --head feat/<feature> \
 - What changed and why
 
 ## Test plan
-- [ ] Unit tests pass (41/41)
-- [ ] Integration tests pass on dev slot
-- [ ] ./cliproxy-setup.sh test claude-sonnet-4-6
-- [ ] ./cliproxy-setup.sh test gemini-3-flash
-- [ ] ./cliproxy-setup.sh test gpt-5-4
+Risk level: medium
+
+### Gate A + B (required)
+- [ ] `make test-fast` pass (lint, unit, mock integration)
+
+### Gate C (high-risk only)
+- [ ] `make test-e2e` or PR label `run-e2e`
+
+### Gate D (post-merge — not pre-merge)
+- [ ] Record in closeout after merge to main
 
 🤖 Generated with Claude Code
 EOF
 )"
 ```
 
-Wait for CI to pass (GitHub Actions: lint + unit tests). Then merge:
+Wait for required CI checks to pass:
+- `lint-and-syntax`, `unit-tests`, `multi-repo-isolation`, `mock-integration`
+
+Then merge:
 
 ```bash
 gh pr merge --merge   # or --squash for a single clean commit
@@ -153,17 +173,20 @@ git checkout main
 git pull origin main
 ```
 
-### Step 8 — E2E test main after merge
+### Step 8 — Gate D: verify stable stack after merge
+
+From the **stable worktree** (`/home/dev/repos/ai-gateway` on `main`):
 
 ```bash
+git pull origin main
+./cliproxy-setup.sh health
 ./cliproxy-setup.sh test claude-sonnet-4-6
 ./cliproxy-setup.sh test gemini-3-flash
 ./cliproxy-setup.sh test gpt-5-4
-./cliproxy-setup.sh health
 ```
 
-All three model tests must return a valid response. If any fail, investigate and
-fix before the session ends.
+All three model tests must return a valid response. Record results in the issue closeout.
+If any fail, investigate and fix before the session ends.
 
 ### Step 9 — Clean up
 
@@ -178,13 +201,17 @@ git branch -d feat/<feature>
 
 ## Test commands reference
 
-| Scope | Command | When |
-|-------|---------|------|
-| Unit tests | `docker exec aidev1-translator-1 pytest test_translator.py -v` | After each significant change |
-| Integration (dev slot) | `./dev-env.sh test 1` | End of session, before merging |
-| Single model E2E | `./cliproxy-setup.sh test <model>` | After merging to main |
-| Health check | `./cliproxy-setup.sh health` | Any time; always after merging |
+| Gate | Command | When |
+|------|---------|------|
+| A — unit | `make test-unit` or `docker exec aidev1-translator-1 pytest test_translator*.py -v` | After each significant change |
+| A — lint | `make lint` | Before commit / push |
+| B — mock integration | `make test-mock` or `make test-fast` | Before PR; required CI parity |
+| C — real providers | `make test-e2e` or label `run-e2e` | High-risk changes only |
+| D — stable smoke | `./cliproxy-setup.sh test <model>` + `health` | After merge to main |
+| Full integration | `./dev-env.sh test <slot>` | When Gate C needs broader coverage |
 | YAML validation | `python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"` | After editing litellm-config.yaml |
+
+Optional pre-push hook: `make lint && make test-unit` (see `.githooks/pre-push`).
 
 ---
 
@@ -240,7 +267,14 @@ python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"  # YAML
 Pre-commit hooks (install once: `pip install pre-commit && pre-commit install`)
 cover ruff, YAML validation, and hardcoded API key detection automatically.
 
-CI (GitHub Actions `.github/workflows/ci.yml`) runs lint/format checks, shell syntax verification, container-native unit tests, multi-repo isolation tests, and E2E integration tests against a live stack on every push and PR. PRs to `main` must pass CI before merging.
+Optional pre-push hook (Gate A fast checks): `git config core.hooksPath .githooks`
+runs `make lint && make test-unit` before each push.
+
+CI (GitHub Actions `.github/workflows/ci.yml`) runs Gate A + B on every push and PR to `main`:
+`lint-and-syntax`, `unit-tests`, `multi-repo-isolation`, `mock-integration`.
+Gate C (`real-provider-e2e`) runs on label `run-e2e`, manual dispatch, or nightly schedule — not required to merge.
+
+See `TESTING_AND_PROMOTION_POLICY.md` and `REPO_IMPROVEMENT_APPENDIX.md` for full gate mapping.
 
 ---
 
@@ -248,17 +282,19 @@ CI (GitHub Actions `.github/workflows/ci.yml`) runs lint/format checks, shell sy
 
 | Risk | Guard |
 |------|-------|
-| Broken YAML config | Pre-commit hook + CI `yaml-validate` job |
+| Broken YAML config | Pre-commit hook + CI `lint-and-syntax` |
 | Hardcoded secrets committed | `.githooks/prevent-hardcoded-keys.sh` |
 | Lint regressions | `ruff` in CI on every push |
-| Translator logic broken | 41 unit tests in CI |
-| Multi-repo isolation broken | direnv + isolation test suite in CI |
-| Gateway E2E flow broken | E2E integration tests against live stack in CI |
-| Live models stop responding | E2E test 3 models before finishing (step 9) |
+| Translator logic broken | Unit tests (`test_translator*.py`) in CI |
+| Multi-repo isolation broken | `multi-repo-isolation` job in CI |
+| Wire-format / routing broken | `mock-integration` job (0 skips) |
+| Real provider regressions | Gate C: `run-e2e` label + nightly schedule |
+| Live models stop responding | Gate D: 3 model smokes on stable after merge |
 | Stable stack taken down | Worktree isolation (step 1) |
-| Direct push bypasses review | Branch protection + PR requirement (step 8) |
+| Direct push bypasses review | Branch protection + PR requirement |
 | Image version drift | Pinned in docker-compose files; upgrade via PR + test |
 | Cross-user cache hits | `CACHE_ENABLED=false` default in translator.py |
+| Two agents on same slot | Slot registry in claim comments; `./dev-env.sh list` |
 
 ---
 

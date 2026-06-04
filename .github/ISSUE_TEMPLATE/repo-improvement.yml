@@ -74,11 +74,12 @@ body:
     id: tests
     attributes:
       label: Required tests
-      description: Unit, integration, E2E, or operational checks required
+      description: Which gates apply? See TESTING_AND_PROMOTION_POLICY.md (A/B/C/D)
       placeholder: |
-        - translator unit tests
-        - ./dev-env.sh test <slot>
-        - ./cliproxy-setup.sh test <model>
+        Gate A: make test-unit
+        Gate B: make test-mock (required for runtime changes)
+        Gate C: run-e2e label (high-risk only)
+        Gate D: cliproxy-setup.sh test on stable (post-merge)
     validations:
       required: true
 

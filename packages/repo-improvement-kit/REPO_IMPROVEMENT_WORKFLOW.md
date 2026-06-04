@@ -364,6 +364,8 @@ main
 Never develop directly in a live or stable worktree if the repo has a production-like local stack.
 Repos that use a separate integration branch should document that repo-specific policy in the appendix.
 
+Parallel-agent isolation (worktree + branch + slot): see `TESTING_AND_PROMOTION_POLICY.md` section 3.
+
 ---
 
 ## 11. Validation gates

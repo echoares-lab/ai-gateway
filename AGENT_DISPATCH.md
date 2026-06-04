@@ -262,18 +262,22 @@ gh pr checks $PR_NUMBER --repo echoares-lab/ai-gateway --watch
 
 ---
 
-## Step 8 — Post-merge E2E verification on main
+## Step 8 — Gate D: post-merge verification on stable (main)
+
+After the PR merges, from the **stable worktree** on `main`:
 
 ```bash
+cd /home/dev/repos/ai-gateway
 git pull origin main
 
+# Gate D — production-like stack on port 4000
+./cliproxy-setup.sh health
 ./cliproxy-setup.sh test claude-sonnet-4-6
 ./cliproxy-setup.sh test gemini-3-flash
 ./cliproxy-setup.sh test gpt-5-4
-./cliproxy-setup.sh health
 ```
 
-All three model tests must return a valid response.
+All three model tests must return a valid response. Record results in the closeout comment.
 
 ---
 
@@ -286,8 +290,12 @@ gh issue comment $ISSUE --repo echoares-lab/ai-gateway --body "$(cat <<'EOF'
 
 - PR: #<pr-number>
 - Merge commit: <sha>
-- Tests run: translator unit (41/41), mock integration (0 skips), real-provider E2E if needed
-- Verified on: main
+- Gates run:
+  - Gate A: lint-and-syntax, unit-tests (test_translator*.py)
+  - Gate B: mock-integration (0 skips)
+  - Gate C: real-provider-e2e (if high-risk / run-e2e label)
+  - Gate D: cliproxy-setup health + 3 model smokes on stable (:4000)
+- Verified on: main (production)
 - Follow-up issues: none / #NNN
 EOF
 )"
@@ -308,13 +316,13 @@ git branch -d feat/<short-name>
 
 | Command | When |
 |---------|------|
-| `docker exec aidev<slot>-translator-1 pytest test_translator.py -v` | After every significant change |
-| `./dev-env.sh start-mock 9 && ./dev-env.sh test-mock 9 && ./dev-env.sh stop-mock 9` | Fast integration for translator/wire-format/config-routing changes (no OAuth, 0 skips) |
-| `make test-fast` | Local equivalent of the required CI fast tier |
-| `./dev-env.sh test <slot>` | Real-provider integration only when the change needs upstream coverage |
-| `gh pr edit <pr> --add-label run-e2e` | Trigger gated full real-provider E2E in CI |
-| `./cliproxy-setup.sh health` | Before and after merge |
-| `./cliproxy-setup.sh test <model>` | After merge to main |
+| `docker exec aidev<slot>-translator-1 pytest test_translator*.py -v` | Gate A — after every significant change |
+| `make test-fast` | Gate A + B — local equivalent of required CI fast tier |
+| `make test-mock` | Gate B only — mock stack, 0 skips |
+| `./dev-env.sh test <slot>` | Gate C — real-provider integration when broader coverage needed |
+| `gh pr edit <pr> --add-label run-e2e` | Trigger Gate C in CI (`real-provider-e2e`) |
+| `./cliproxy-setup.sh health` | Gate D — before and after merge on stable |
+| `./cliproxy-setup.sh test <model>` | Gate D — post-merge model smoke on stable |
 
 ---
 

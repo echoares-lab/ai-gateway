@@ -1,5 +1,7 @@
 # Git Worktrees — AI Gateway
 
+See also: `TESTING_AND_PROMOTION_POLICY.md`, `REPO_IMPROVEMENT_APPENDIX.md`.
+
 ## Why worktrees?
 
 The stable gateway stack runs on **port 4000** and serves live traffic. If you
@@ -48,9 +50,35 @@ Run `git worktree list` for the live state.
 feat/<name>  →  (PR)  →  main
 ```
 
-- All feature work branches off `main`
-- `feat/<name>` → `main` via PR (CI must pass; never direct push)
+- All feature work branches off `main` (no long-lived `dev` branch)
+- `feat/<name>` → `main` via PR (Gate A + B CI must pass; never direct push)
 - `main` is the production branch — only tested, reviewed code lands here
+
+---
+
+## Slot registry
+
+One active claim = one worktree + one branch + one slot.
+
+| Slot | Purpose |
+|------|---------|
+| 0 | Stable stack (:4000) — **never use for feature work** |
+| 1–8 | Real OAuth dev stacks (Gate C) |
+| 9 | Mock stack (Gate B) — `make test-mock` default |
+
+Before starting a stack: `./dev-env.sh list`. Declare your slot in the issue claim comment.
+Do not share slots between concurrent claims without an explicit handoff.
+
+---
+
+## Testing quick reference
+
+| When | Command |
+|------|---------|
+| During development (Gate A) | `make test-unit` |
+| Before PR (Gate A + B) | `make test-fast` |
+| High-risk pre-merge (Gate C) | `make test-e2e` or PR label `run-e2e` |
+| After merge (Gate D) | `./cliproxy-setup.sh health` + 3 model smokes on :4000 |
 
 ---
 

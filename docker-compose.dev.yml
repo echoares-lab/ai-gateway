@@ -82,6 +82,7 @@ services:
       - litellm
 
   translator:
+    image: ${TRANSLATOR_IMAGE:-aidev-translator-local}
     build:
       context: ./services/translator
       dockerfile: Dockerfile
