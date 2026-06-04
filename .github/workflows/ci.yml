@@ -53,10 +53,11 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        if: runner.name != 'self-hosted'
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          update-environment: false
           cache: 'pip'
       - name: Install dependencies
         run: |
@@ -188,10 +189,11 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        if: runner.name != 'self-hosted'
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          update-environment: false
           cache: 'pip'
       - name: Install pytest dependencies
         run: pip install -r tests/integration/requirements.txt
