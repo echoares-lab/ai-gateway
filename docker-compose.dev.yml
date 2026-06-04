@@ -14,11 +14,12 @@ services:
     image: postgres:17
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: litellm
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-litellm}
     volumes:
       - dev_pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -49,7 +50,7 @@ services:
         condition: service_started
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/litellm
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
       CLIPROXY_API_KEY: ${CLIPROXY_API_KEY}
       DISABLE_CACHE: "true"
     volumes:
@@ -80,6 +81,21 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       - litellm
+
+  credential-prober:
+    build:
+      context: ./services/credential-prober
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - CLIPROXY_URL=http://cliproxy:8317
+      - CLIPROXY_MANAGEMENT_KEY=${CLIPROXY_MANAGEMENT_KEY:-cliproxy-mgmt-H6VXKpUCzmeDuHcGmH8Oqg}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cliproxy:
+        condition: service_started
 
   translator:
     image: ${TRANSLATOR_IMAGE:-aidev-translator-local}

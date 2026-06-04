@@ -1,5 +1,6 @@
-CREATE DATABASE langfuse;
-CREATE DATABASE litellm;
+-- Create databases conditionally using psql's \gexec
+SELECT 'CREATE DATABASE langfuse' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'langfuse')\gexec
+SELECT 'CREATE DATABASE litellm' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'litellm')\gexec
 
 \c postgres;
 
@@ -23,9 +24,9 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO mcp_readonly
 -- Create credential inventory table in the LiteLLM database.
 CREATE TABLE IF NOT EXISTS credential_inventory (
     credential_id text PRIMARY KEY,
-    provider text NOT NULL CHECK (provider IN ('openai', 'anthropic', 'gemini', 'xai', 'moonshot')),
+    provider text NOT NULL CHECK (provider IN ('openai', 'anthropic', 'gemini', 'xai', 'moonshot', 'antigravity', 'gemini-cli', 'codex', 'claude')),
     label text NOT NULL,
-    key_fingerprint text NOT NULL UNIQUE,
+    key_fingerprint text NOT NULL,
     status text NOT NULL DEFAULT 'HEALTHY' CHECK (status IN ('HEALTHY', 'DEGRADED', 'CRITICAL', 'EXPIRED', 'SUSPENDED')),
     cool_down_until timestamptz,
     consecutive_failures integer NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
