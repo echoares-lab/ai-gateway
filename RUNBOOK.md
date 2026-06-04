@@ -76,6 +76,10 @@ translator, `litellm-config.yaml`, `/metrics`, and (best-effort) `cliproxy-setup
 Read-only and operator-local: it never mutates state and redacts secrets. Degraded sources
 report `warning`/`unknown` rather than failing the response.
 
+For a rendered view, open the read-only dashboard page in a browser:
+`http://localhost:4000/admin/dashboard` (operator-local; it fetches `/admin/status` and renders
+the panels plus links to the LiteLLM UI, CLIProxy management, and CPA-Manager).
+
 ### Credential Health Alert Webhook
 The gateway supports real-time Slack alerting webhooks for credential state changes (e.g., shifts to `CRITICAL`, `DEGRADED`, or recovery to `HEALTHY`).
 

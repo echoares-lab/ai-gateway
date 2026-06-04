@@ -76,6 +76,20 @@ def test_admin_status(client):
     assert "sk-" not in raw or "[redacted]" in raw
 
 
+@pytest.mark.mock
+@pytest.mark.smoke
+def test_admin_dashboard(client):
+    """Read-only admin dashboard page renders and references /admin/status."""
+    resp = client.get("/admin/dashboard")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    html = resp.text
+    assert "/admin/status" in html
+    assert "AI Gateway" in html
+    assert "Bearer " not in html
+    assert "sk-" not in html
+
+
 # ---------------------------------------------------------------------------
 # Chat completions
 # ---------------------------------------------------------------------------
@@ -479,15 +493,15 @@ class TestClaudeCliFormat:
 # Codex CLI wire format  (/v1/responses and /v1/chat/completions)
 # ---------------------------------------------------------------------------
 
-_CODEX_MODEL_DOTTED = "gpt-5.3-codex"  # as Codex CLI sends it
-_CODEX_MODEL_DASHED = "gpt-5-3-codex"  # as LiteLLM knows it
+_CODEX_MODEL_DOTTED = "gpt-5.5"  # as Codex CLI sends it
+_CODEX_MODEL_DASHED = "gpt-5-5"  # as LiteLLM knows it
 
 
 class TestCodexCliFormat:
     @pytest.mark.mock
     @pytest.mark.smoke
     def test_dotted_model_normalised_in_chat_completions(self, client):
-        """gpt-5.3-codex (dotted) must be normalised to gpt-5-3-codex and not 404."""
+        """gpt-5.5 (dotted) must be normalised to gpt-5-5 and not 404."""
         resp = client.post(
             "/v1/chat/completions",
             json={
@@ -632,7 +646,7 @@ class TestCodexCliFormat:
             async with websockets.connect(ws_url, **connect_kwargs) as ws:
                 # Send Codex-format message
                 await ws.send(
-                    json.dumps({"model": "gpt-5.3-codex", "input": "Hello WebSocket", "max_output_tokens": 10})
+                    json.dumps({"model": _CODEX_MODEL_DOTTED, "input": "Hello WebSocket", "max_output_tokens": 10})
                 )
 
                 # Receive events

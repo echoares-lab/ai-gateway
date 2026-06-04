@@ -678,3 +678,20 @@ async def test_admin_status_endpoint_shape():
     # No obvious secret leakage in the serialized response.
     raw = json.dumps(body)
     assert "Bearer " not in raw
+
+
+@pytest.mark.asyncio
+async def test_admin_dashboard_page():
+    from fastapi.testclient import TestClient
+
+    client = TestClient(t.app)
+    resp = client.get("/admin/dashboard")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    html = resp.text
+    # Page is self-contained and fetches the status endpoint client-side.
+    assert "/admin/status" in html
+    assert "AI Gateway" in html
+    # The server-rendered HTML must not embed secrets.
+    assert "Bearer " not in html
+    assert "sk-" not in html

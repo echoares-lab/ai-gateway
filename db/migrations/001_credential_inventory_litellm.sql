@@ -1,9 +1,5 @@
-CREATE DATABASE langfuse;
-CREATE DATABASE litellm;
+\connect litellm
 
-\c postgres;
-
--- Create read-only role for MCP Postgres server
 DO
 $do$
 BEGIN
@@ -13,14 +9,6 @@ BEGIN
 END
 $do$;
 
--- Grant basic connect/usage
-GRANT CONNECT ON DATABASE postgres TO mcp_readonly;
-GRANT USAGE ON SCHEMA public TO mcp_readonly;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO mcp_readonly;
-
-\c litellm;
-
--- Create credential inventory table in the LiteLLM database.
 CREATE TABLE IF NOT EXISTS credential_inventory (
     credential_id text PRIMARY KEY,
     provider text NOT NULL CHECK (provider IN ('openai', 'anthropic', 'gemini', 'xai', 'moonshot')),
@@ -57,7 +45,6 @@ CREATE INDEX IF NOT EXISTS credential_inventory_cool_down_until_idx
     ON credential_inventory (cool_down_until)
     WHERE cool_down_until IS NOT NULL;
 
--- Ensure mcp_readonly can inspect credential health without write privileges.
 GRANT CONNECT ON DATABASE litellm TO mcp_readonly;
 GRANT USAGE ON SCHEMA public TO mcp_readonly;
 GRANT SELECT ON TABLE credential_inventory TO mcp_readonly;
