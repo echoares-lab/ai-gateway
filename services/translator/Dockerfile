@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 RUN pip install --no-cache-dir fastapi==0.115.12 "uvicorn[standard]==0.34.3" httpx==0.28.1 \
-    "redis[asyncio]==5.3.0" pytest==8.3.5 pytest-asyncio==0.24.0 prometheus-client==0.21.1 \
+    "redis[asyncio]==5.3.0" pytest==8.3.5 pytest-asyncio==0.24.0 pytest-xdist==3.6.1 prometheus-client==0.21.1 \
     PyYAML==6.0.2
 WORKDIR /app
 COPY translator.py test_translator*.py ./
