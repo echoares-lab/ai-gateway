@@ -76,6 +76,17 @@ translator, `litellm-config.yaml`, `/metrics`, and (best-effort) `cliproxy-setup
 Read-only and operator-local: it never mutates state and redacts secrets. Degraded sources
 report `warning`/`unknown` rather than failing the response.
 
+### Credential Health Alert Webhook
+The gateway supports real-time Slack alerting webhooks for credential state changes (e.g., shifts to `CRITICAL`, `DEGRADED`, or recovery to `HEALTHY`).
+
+To configure the alerting webhook:
+1. Obtain a Slack incoming webhook URL.
+2. Add it to your `.env` file:
+   ```bash
+   SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
+   ```
+3. Restart the background services or prober to pick up the configuration.
+
 ### List available models
 ```bash
 ./cliproxy-setup.sh models       # from CLIProxyAPI
