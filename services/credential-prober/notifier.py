@@ -6,44 +6,31 @@ from datetime import datetime, timezone
 
 log = logging.getLogger("credential-prober.notifier")
 
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 
-def send_slack_alert(event: str, credential_id: str, provider: str, reason: str, timestamp: str = None) -> bool:
-    """Send a structured JSON alert webhook to the configured SLACK_WEBHOOK_URL.
 
-    If SLACK_WEBHOOK_URL is not configured, logs a warning instead of raising an error.
-    """
-    webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
-    if not webhook_url:
-        log.warning(
-            "SLACK_WEBHOOK_URL is not set. Alert not sent. Event: %s, Credential: %s, Reason: %s",
-            event,
-            credential_id,
-            reason,
-        )
-        return False
-
-    if not timestamp:
-        timestamp = datetime.now(timezone.utc).isoformat()
+def send_slack_alert(event: str, credential_id: str, provider: str, reason: str):
+    if not SLACK_WEBHOOK_URL:
+        log.debug("Skipping alert for %s (SLACK_WEBHOOK_URL not configured)", credential_id)
+        return
 
     payload = {
         "event": event,
         "credential_id": credential_id,
         "provider": provider,
         "reason": reason,
-        "timestamp": timestamp,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(webhook_url, data=data, headers={"Content-Type": "application/json"})
-
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            # urllib.request.urlopen response has .status in python 3
-            status = getattr(resp, "status", 200)
-            log.info(
-                "Sent webhook alert to Slack. HTTP status: %d. Event: %s, Credential: %s", status, event, credential_id
-            )
-            return True
+        req = urllib.request.Request(
+            SLACK_WEBHOOK_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status >= 400:
+                log.warning("Alert webhook returned %s", response.status)
     except Exception as e:
-        log.error("Failed to send webhook alert to Slack: %s", e)
-        return False
+        log.error("Failed to send webhook alert: %s", e)
