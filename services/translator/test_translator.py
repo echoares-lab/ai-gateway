@@ -695,3 +695,72 @@ async def test_admin_dashboard_page():
     # The server-rendered HTML must not embed secrets.
     assert "Bearer " not in html
     assert "sk-" not in html
+
+
+import httpx  # noqa: E402  (used by the catch-all timeout tests below)
+
+
+class _TimeoutClient:
+    async def request(self, *args, **kwargs):
+        raise httpx.TimeoutException("timeout")
+
+
+class _ConnectionErrorClient:
+    async def request(self, *args, **kwargs):
+        raise httpx.ConnectError("connect failed")
+
+
+class _StreamTimeoutContext:
+    async def __aenter__(self):
+        raise httpx.TimeoutException("timeout")
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _StreamTimeoutClient:
+    def stream(self, *args, **kwargs):
+        return _StreamTimeoutContext()
+
+
+def test_proxy_non_stream_timeout_returns_structured_504():
+    from fastapi.testclient import TestClient
+
+    client = TestClient(t.app)
+    with patch.object(t, "_client", _TimeoutClient()):
+        resp = client.post(
+            "/v1/chat/completions",
+            json={"model": "claude-sonnet-4-6", "messages": [{"role": "user", "content": "hello"}]},
+        )
+    assert resp.status_code == 504
+    data = resp.json()
+    assert data["error"]["type"] == "timeout_error"
+    assert "Upstream request timed out" in data["error"]["message"]
+
+
+def test_proxy_non_stream_connection_failure_returns_structured_502():
+    from fastapi.testclient import TestClient
+
+    client = TestClient(t.app)
+    with patch.object(t, "_client", _ConnectionErrorClient()):
+        resp = client.post(
+            "/v1/chat/completions",
+            json={"model": "claude-sonnet-4-6", "messages": [{"role": "user", "content": "hello"}]},
+        )
+    assert resp.status_code == 502
+    data = resp.json()
+    assert data["error"]["type"] == "connection_error"
+
+
+def test_proxy_stream_timeout_yields_error_event():
+    from fastapi.testclient import TestClient
+
+    client = TestClient(t.app)
+    with patch.object(t, "_client", _StreamTimeoutClient()):
+        resp = client.post(
+            "/v1/chat/completions",
+            json={"model": "claude-sonnet-4-6", "stream": True, "messages": [{"role": "user", "content": "hello"}]},
+        )
+    assert resp.status_code == 200
+    assert "timeout_error" in resp.text
+    assert "Upstream request timed out" in resp.text
