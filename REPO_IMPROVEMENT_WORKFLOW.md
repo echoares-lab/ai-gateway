@@ -293,7 +293,7 @@ Starting work on #123.
 Claim-ID: codex-ai-gateway-20260601T213000Z
 Claiming: #123, #124
 Branch: feat/cache-auth-key
-Worktree: ../repo-cache-auth-key
+Worktree: /home/dev/worktrees/ai-gateway-cache-auth-key
 Slot: 2
 Scope: translator cache key + tests
 ```
@@ -351,7 +351,7 @@ main
 ### Recommended execution flow
 
 1. Create feature branch or worktree from `main`
-2. Create isolated worktree if supported
+2. Place the worktree in the repo appendix's **worktrees root** (outside the stable checkout — not a sibling folder, not inside the repo tree)
 3. Start isolated dev/test environment if needed
 4. Implement in small increments
 5. Run fast tests continuously

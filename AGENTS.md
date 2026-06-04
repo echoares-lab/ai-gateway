@@ -59,10 +59,11 @@ Every session follows this sequence. Do not skip steps.
 
 ```bash
 # Always branch off main
+mkdir -p /home/dev/worktrees
 git checkout main
-git worktree add ../ai-gateway-<feature> -b feat/<feature>
-ln -s /home/dev/repos/ai-gateway/.env /home/dev/repos/ai-gateway-<feature>/.env
-cd /home/dev/repos/ai-gateway-<feature>
+git worktree add /home/dev/worktrees/ai-gateway-<feature> -b feat/<feature>
+ln -s /home/dev/repos/ai-gateway/.env /home/dev/worktrees/ai-gateway-<feature>/.env
+cd /home/dev/worktrees/ai-gateway-<feature>
 ```
 
 ### Step 2 — Start an isolated dev stack
@@ -193,7 +194,7 @@ If any fail, investigate and fix before the session ends.
 ```bash
 ./dev-env.sh stop 1
 cd /home/dev/repos/ai-gateway
-git worktree remove ../ai-gateway-<feature>
+git worktree remove /home/dev/worktrees/ai-gateway-<feature>
 git branch -d feat/<feature>
 ```
 
@@ -245,6 +246,7 @@ docs: update stale AGENTS/WORKTREES/RUNBOOK to reflect current state
 
 - ❌ **Do not push directly to `main`** — always via PR with CI passing
 - ❌ **Do not edit files in the stable worktree** (`/home/dev/repos/ai-gateway`) during development
+- ❌ **Do not create feature worktrees under `/home/dev/repos/` or inside the repo** (use `/home/dev/worktrees/ai-gateway-<feature>` — see `WORKTREES.md`)
 - ❌ **Do not skip unit tests** after changes to `translator.py`
 - ❌ **Do not hardcode API keys** in `litellm-config.yaml` — use `os.environ/CLIPROXY_API_KEY`
 - ❌ **Do not set `CACHE_ENABLED=true`** in production — LiteLLM's auth-aware cache is preferred

@@ -62,7 +62,7 @@ Starting work on this issue.
 Claim-ID: $CLAIM_ID
 Claiming: #$ISSUE
 Branch: feat/$SHORT_NAME
-Worktree: ../<repo>-$SHORT_NAME
+Worktree: <worktrees-root>/<repo>-$SHORT_NAME
 Slot: $SLOT
 Scope: <one-line description>
 EOF2
@@ -90,16 +90,19 @@ cd <LOCAL_REPO_PATH>
 <list-environments-command>
 
 git checkout main
-git worktree add ../<repo>-$SHORT_NAME -b feat/$SHORT_NAME
-cd ../<repo>-$SHORT_NAME
+mkdir -p <worktrees-root>
+git worktree add <worktrees-root>/<repo>-$SHORT_NAME -b feat/$SHORT_NAME
+cd <worktrees-root>/<repo>-$SHORT_NAME
 
 # Optional: link local env files and start an isolated test environment.
 <link-env-command>
 <start-test-environment-command>
 ```
 
-Do not edit live or stable worktrees for feature work. If the repo uses a
-separate integration branch, follow `REPO_IMPROVEMENT_APPENDIX.md`.
+Do not edit live or stable worktrees for feature work. Do not create worktrees as
+siblings of the stable checkout or inside the repo tree (hidden tool paths).
+Use `<worktrees-root>` from `REPO_IMPROVEMENT_APPENDIX.md`. If the repo uses a
+separate integration branch, follow the appendix.
 
 ---
 
@@ -240,7 +243,7 @@ gh issue close "$ISSUE" --repo <OWNER>/<REPO>
 
 <stop-test-environment-command>
 cd <LOCAL_REPO_PATH>
-git worktree remove ../<repo>-$SHORT_NAME
+git worktree remove <worktrees-root>/<repo>-$SHORT_NAME
 git branch -d feat/$SHORT_NAME
 ```
 

@@ -84,7 +84,7 @@ Starting work on this issue.
 Claim-ID: $CLAIM_ID
 Claiming: #$ISSUE
 Branch: feat/$SHORT_NAME
-Worktree: ../ai-gateway-$SHORT_NAME
+Worktree: /home/dev/worktrees/ai-gateway-$SHORT_NAME
 Slot: $SLOT
 Scope: <one-line description of what you will change>
 EOF
@@ -111,11 +111,12 @@ cd /home/dev/repos/ai-gateway
 # Check which dev slots are free
 ./dev-env.sh list
 
-# Create a worktree branching off main
+# Create a worktree branching off main (outside repos/ — see WORKTREES.md)
+mkdir -p /home/dev/worktrees
 git checkout main
-git worktree add ../ai-gateway-<short-name> -b feat/<short-name>
-ln -s /home/dev/repos/ai-gateway/.env /home/dev/repos/ai-gateway-<short-name>/.env
-cd /home/dev/repos/ai-gateway-<short-name>
+git worktree add /home/dev/worktrees/ai-gateway-<short-name> -b feat/<short-name>
+ln -s /home/dev/repos/ai-gateway/.env /home/dev/worktrees/ai-gateway-<short-name>/.env
+cd /home/dev/worktrees/ai-gateway-<short-name>
 
 # Start an isolated dev stack on a free slot (e.g. slot 1)
 ./dev-env.sh start <slot>
@@ -306,7 +307,7 @@ gh issue close $ISSUE --repo echoares-lab/ai-gateway
 # Clean up dev stack and worktree
 ./dev-env.sh stop <slot>
 cd /home/dev/repos/ai-gateway
-git worktree remove ../ai-gateway-<short-name>
+git worktree remove /home/dev/worktrees/ai-gateway-<short-name>
 git branch -d feat/<short-name>
 ```
 
@@ -330,6 +331,7 @@ git branch -d feat/<short-name>
 
 - ❌ Do NOT push directly to `main`
 - ❌ Do NOT edit files in the main `/home/dev/repos/ai-gateway` worktree during development
+- ❌ Do NOT create worktrees under `/home/dev/repos/` or inside the repo (`.claude/`, `.cursor/`, etc.) — use `/home/dev/worktrees/ai-gateway-<name>`
 - ❌ Do NOT claim an issue that already has an assignee
 - ❌ Do NOT skip unit tests
 - ❌ Do NOT hardcode API keys anywhere

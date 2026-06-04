@@ -44,6 +44,7 @@ Each active claim must own a unique **isolation triple**:
 | Resource | Rule |
 |----------|------|
 | **Git directory** | One feature worktree per claim; never edit the stable checkout for feature work |
+| **Worktree path** | Use a dedicated worktrees root **outside** the stable repo folder (documented in appendix). Never sibling paths under the same parent as stable, and never inside the repo tree (including dot-directories like `.claude/` or `.cursor/`) |
 | **Git branch** | `feat/<issue>-<slug>` from trunk; rebase before merge; delete branch and worktree after closeout |
 | **Runtime slot** | One dev/test slot per claim; slot 0 (or equivalent stable slot) reserved for production-like traffic |
 

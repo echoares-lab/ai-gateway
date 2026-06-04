@@ -10,6 +10,8 @@ main -> feat/* worktree/branch -> PR -> main
 ```
 
 - Create feature worktrees from `main` only (no long-lived `dev` branch).
+- **Worktree location:** `/home/dev/worktrees/ai-gateway-<feature>` — see `WORKTREES.md`.
+- Do **not** put worktrees under `/home/dev/repos/` (siblings of stable) or inside the repo (`.claude/`, `.cursor/`, etc.).
 - Do not edit the stable worktree at `/home/dev/repos/ai-gateway` for feature work.
 - Keep slot 0 reserved for the stable stack.
 - Use a separate dev stack slot for work that needs live-service validation.

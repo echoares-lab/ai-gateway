@@ -10,7 +10,14 @@ main -> feat/* worktree/branch -> PR -> main
 
 - Create feature worktrees or branches from `main`.
 - Do not edit live or stable worktrees for feature work.
-- Document any optional integration or staging branch here.
+- **Worktree location:** `<worktrees-root>/<repo>-<feature>` (outside stable — see below).
+- Do **not** use sibling paths next to the stable checkout or hidden paths inside the repo (`.claude/`, `.cursor/`, etc.).
+
+### Worktrees root
+
+- Stable checkout: `<stable-repo-path>`
+- Feature worktrees: `<worktrees-root>/<repo>-<feature>` (e.g. `/home/dev/worktrees/ai-gateway-<feature>`)
+- Create once: `mkdir -p <worktrees-root>`
 
 ## Environment strategy
 

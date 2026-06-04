@@ -11,22 +11,47 @@ gateway. Worktrees solve this:
 
 - Each worktree is an independent checkout of the repo in a separate directory
 - The stable stack always reads from `/home/dev/repos/ai-gateway` (never changes)
-- Feature work happens in `/home/dev/repos/ai-gateway-<feature>` (isolated)
+- Feature work happens under `/home/dev/worktrees/ai-gateway-<feature>` (isolated)
 - Dev stacks started with `./dev-env.sh start <slot>` use different ports, so
   the stable stack is never touched
+
+---
+
+## Worktree location (required)
+
+| Path | Purpose |
+|------|---------|
+| `/home/dev/repos/ai-gateway` | **Stable checkout only** — `main`, serves port 4000 |
+| `/home/dev/worktrees/ai-gateway-<feature>` | **Feature worktrees** — all agent development |
+
+**Do not** create feature worktrees:
+
+- As siblings of the stable repo (`/home/dev/repos/ai-gateway-*`) — clutters the repos folder and confuses tooling
+- Inside the repo tree — including `.claude/worktrees/`, `.cursor/`, or any hidden subdirectory
+- In IDE-managed paths unless the appendix explicitly says otherwise
+
+Create the worktrees root once per machine:
+
+```bash
+mkdir -p /home/dev/worktrees
+```
+
+Claim comments must record the **full absolute path** (e.g. `/home/dev/worktrees/ai-gateway-issue-89`).
 
 ---
 
 ## Creating a feature worktree
 
 ```bash
-# Always branch off main
+# Always branch off main; worktrees live outside the repos/ folder
+mkdir -p /home/dev/worktrees
 cd /home/dev/repos/ai-gateway
 git checkout main
-git worktree add ../ai-gateway-<feature> -b feat/<feature>
+git worktree add /home/dev/worktrees/ai-gateway-<feature> -b feat/<feature>
 
 # Symlink .env so secrets are available without duplicating the file
-ln -s /home/dev/repos/ai-gateway/.env /home/dev/repos/ai-gateway-<feature>/.env
+ln -s /home/dev/repos/ai-gateway/.env /home/dev/worktrees/ai-gateway-<feature>/.env
+cd /home/dev/worktrees/ai-gateway-<feature>
 
 # Start an isolated dev stack (see dev-env.sh list for free slots)
 ./dev-env.sh start 1
@@ -90,7 +115,7 @@ Do not share slots between concurrent claims without an explicit handoff.
 
 # Remove the worktree
 cd /home/dev/repos/ai-gateway
-git worktree remove ../ai-gateway-<feature>
+git worktree remove /home/dev/worktrees/ai-gateway-<feature>
 git branch -d feat/<feature>
 ```
 
