@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       runtime: ${{ steps.filter.outputs.runtime }}
       isolation: ${{ steps.filter.outputs.isolation }}
@@ -50,7 +50,7 @@ jobs:
               - 'services/credential-prober/**'
 
   lint-and-syntax:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -117,7 +117,7 @@ jobs:
           echo "✓ No hardcoded API keys found"
 
   unit-tests:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
@@ -139,7 +139,7 @@ jobs:
     if: >
       needs.changes.outputs.credential_prober == 'true' ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -154,7 +154,7 @@ jobs:
     if: >
       needs.changes.outputs.isolation == 'true' ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - name: Install direnv
@@ -191,7 +191,7 @@ jobs:
     if: >
       needs.changes.outputs.runtime == 'true' ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -259,7 +259,7 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'run-e2e')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - name: Set up python
