@@ -8,24 +8,33 @@
 # configuration; it never reads secrets, never writes files, and never calls the
 # gateway. The API key is always a placeholder the operator substitutes.
 #
+# Tenant keys use: ak-{org}-{workspace}-{team}-{repo}-{environment} (docs/TENANCY.md).
+#
 # Usage:
 #   ./gen-client-config.sh [client] [--base-url URL] [--key-var NAME]
+#       [--org ORG] [--workspace WS] [--team TEAM] [--repo REPO] [--env ENV]
 #
 #   client      one of: cursor | claude-code | codex | gemini | openai-sdk | all
 #               (default: all)
 #   --base-url  gateway base URL (default: https://ai.plexplease.com)
 #   --key-var   env var name to reference for the key (default: AI_GATEWAY_KEY)
+#   --org/--workspace/--team/--repo/--env  build example ak-… key label in header
 #
 # Examples:
 #   ./gen-client-config.sh cursor
 #   ./gen-client-config.sh all --base-url http://localhost:4000
-#   ./gen-client-config.sh gemini --key-var MY_KEY
+#   ./gen-client-config.sh gemini --org echoares --workspace core --team eng --repo my-app
 
 set -euo pipefail
 
 BASE_URL="https://ai.plexplease.com"
 KEY_VAR="AI_GATEWAY_KEY"
 CLIENT="all"
+TENANT_ORG="echoares"
+TENANT_WORKSPACE="core"
+TENANT_TEAM="eng"
+TENANT_REPO="my-repo"
+TENANT_ENV="dev"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -37,8 +46,28 @@ while [ $# -gt 0 ]; do
       KEY_VAR="${2:?--key-var requires a value}"
       shift 2
       ;;
+    --org)
+      TENANT_ORG="${2:?--org requires a value}"
+      shift 2
+      ;;
+    --workspace)
+      TENANT_WORKSPACE="${2:?--workspace requires a value}"
+      shift 2
+      ;;
+    --team)
+      TENANT_TEAM="${2:?--team requires a value}"
+      shift 2
+      ;;
+    --repo)
+      TENANT_REPO="${2:?--repo requires a value}"
+      shift 2
+      ;;
+    --env)
+      TENANT_ENV="${2:?--env requires a value}"
+      shift 2
+      ;;
     -h | --help)
-      sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     cursor | claude-code | codex | gemini | openai-sdk | all)
@@ -56,6 +85,7 @@ done
 BASE_URL="${BASE_URL%/}"
 BASE_ROOT="${BASE_URL%/v1}"
 KEY_REF="\${${KEY_VAR}}"
+TENANT_KEY_EXAMPLE="ak-${TENANT_ORG}-${TENANT_WORKSPACE}-${TENANT_TEAM}-${TENANT_REPO}-${TENANT_ENV}"
 
 _hr() { printf '─%.0s' $(seq 1 70); echo; }
 
@@ -65,12 +95,13 @@ gen_cursor() {
   _hr
   cat <<EOF
 Base URL:    ${BASE_ROOT}/v1
-API Key:     ${KEY_REF}        # set in your shell/secret store, not committed
+API Key:     ${KEY_REF}        # LiteLLM key; label should match ${TENANT_KEY_EXAMPLE}
 Model name:  AI-Gateway:claude-sonnet-4-6   # the AI-Gateway: prefix is required
 
 Notes:
   - Cursor sees models from GET ${BASE_ROOT}/v1/models (prefixed with "AI-Gateway:").
   - The translator strips the prefix before forwarding to LiteLLM.
+  - Tenant metadata is extracted when the Bearer token starts with ak- (see docs/TENANCY.md).
 EOF
   echo
 }
@@ -81,7 +112,7 @@ gen_claude_code() {
   _hr
   cat <<EOF
 export ANTHROPIC_BASE_URL="${BASE_ROOT}/v1"
-export ANTHROPIC_API_KEY="${KEY_REF}"   # sent as x-api-key; mapped to Bearer by the gateway
+export ANTHROPIC_API_KEY="${KEY_REF}"   # Bearer ${TENANT_KEY_EXAMPLE} or mapped team key
 # Then use a gateway model alias, e.g.:
 #   claude --model claude-sonnet-4-6
 EOF
@@ -94,7 +125,7 @@ gen_codex() {
   _hr
   cat <<EOF
 openai_base_url = "${BASE_ROOT}/v1"
-# Auth: Authorization: Bearer ${KEY_REF}  (export the key in your environment)
+# Auth: Authorization: Bearer ${KEY_REF}  (tenant label: ${TENANT_KEY_EXAMPLE})
 # Codex uses the Responses API endpoint: ${BASE_ROOT}/v1/responses
 # Non-OpenAI models on /v1/responses/compact are rewritten to gpt-5-5 automatically.
 EOF
@@ -107,7 +138,7 @@ gen_gemini() {
   _hr
   cat <<EOF
 export GEMINI_BASE_URL="${BASE_ROOT}/v1beta"
-export GEMINI_API_KEY="${KEY_REF}"   # sent as ?key= / x-goog-api-key; normalized to Bearer
+export GEMINI_API_KEY="${KEY_REF}"   # Bearer ${TENANT_KEY_EXAMPLE} when using gateway keys
 # Endpoint shape: ${BASE_ROOT}/v1beta/models/<model>:generateContent
 EOF
   echo
@@ -122,7 +153,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="${BASE_ROOT}/v1",
-    api_key="${KEY_REF}",   # read from env; do not hardcode
+    api_key="${KEY_REF}",   # LiteLLM virtual key (${TENANT_KEY_EXAMPLE})
 )
 resp = client.chat.completions.create(
     model="claude-sonnet-4-6",
@@ -134,6 +165,7 @@ EOF
 }
 
 echo "# AI Gateway client config — base: ${BASE_ROOT}  key var: ${KEY_VAR}"
+echo "# Example tenant key label: ${TENANT_KEY_EXAMPLE}  (docs/TENANCY.md, setup-repo-env.sh)"
 echo "# (placeholders only; substitute your own key. See docs/CLIENT_COMPATIBILITY.md)"
 echo
 
