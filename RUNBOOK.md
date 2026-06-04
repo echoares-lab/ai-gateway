@@ -80,6 +80,17 @@ For a rendered view, open the read-only dashboard page in a browser:
 `http://localhost:4000/admin/dashboard` (operator-local; it fetches `/admin/status` and renders
 the panels plus links to the LiteLLM UI, CLIProxy management, and CPA-Manager).
 
+### Credential Health Alert Webhook
+The gateway supports real-time Slack alerting webhooks for credential state changes (e.g., shifts to `CRITICAL`, `DEGRADED`, or recovery to `HEALTHY`).
+
+To configure the alerting webhook:
+1. Obtain a Slack incoming webhook URL.
+2. Add it to your `.env` file:
+   ```bash
+   SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
+   ```
+3. Restart the background services or prober to pick up the configuration.
+
 ### List available models
 ```bash
 ./cliproxy-setup.sh models       # from CLIProxyAPI
