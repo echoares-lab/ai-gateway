@@ -46,6 +46,71 @@ patterns, and capability fit.
 
 ---
 
+## 1a. Two-tier Gemini failover (antigravity → gemini-cli)
+
+Gemini models are served by **two independent OAuth credential pools** inside
+CLIProxy, exposed under **different model ids**:
+
+| Tier | CLIProxy provider | OAuth files | Example model ids it serves |
+|---|---|---|---|
+| 1 (primary) | `antigravity` | `antigravity-<email>.json` | `gemini-3-flash`, `gemini-3.1-pro-low`, `gemini-3-pro-high` |
+| 2 (failover) | `gemini-cli` | `gemini-<email>-<project>.json` | `gemini-3-flash-preview`, `gemini-3.1-pro-preview`, `gemini-3-pro-preview` |
+
+Because the two providers register **different model ids**, a request for an
+antigravity id (`gemini-3-flash`) will **never** fall over to gemini-cli inside
+CLIProxy on its own — when all antigravity credentials cool down, CLIProxy
+returns `429 model_cooldown` with no alternative. The failover is therefore
+wired explicitly at the **LiteLLM layer** (this is **failover, not
+round-robin** — Tier 2 is only reached after Tier 1 errors):
+
+1. **CLIProxy** `oauth-model-alias.gemini-cli` exposes each gemini-cli base
+   model under a client-visible `-via-gcli` alias that routes **exclusively** to
+   gemini-cli credentials.
+2. **LiteLLM** defines a matching `*-via-gcli` model entry and inserts it as the
+   first fallback for the corresponding antigravity model
+   (e.g. `gemini-3-flash → [gemini-3-flash-via-gcli, claude-haiku-4-5, …]`).
+
+### Required `~/.cliproxy/config.yaml` block
+
+> ⚠️ **This file is not tracked in the repo** (it is bind-mounted live). Keep it
+> in sync with this reference. The `name:` of each alias **must be a model the
+> gemini-cli provider actually serves** — i.e. the `-preview` variant, **not**
+> the antigravity model id. Using an antigravity id here silently produces no
+> model (the alias never appears in `/v1/models`), which is the failure mode that
+> originally broke the gemini-3 tier-2 routes.
+
+```yaml
+oauth-model-alias:
+  gemini-cli:
+  - name: gemini-3-flash-preview        # NOT gemini-3-flash (antigravity-only)
+    alias: gemini-3-flash-via-gcli
+  - name: gemini-3.1-pro-preview        # NOT gemini-3.1-pro-low
+    alias: gemini-3-1-pro-via-gcli
+  - name: gemini-3.1-flash-lite-preview # NOT gemini-3.1-flash-lite
+    alias: gemini-3-1-flash-lite-via-gcli
+  - name: gemini-2.5-flash
+    alias: gemini-2-5-flash-via-gcli
+  - name: gemini-2.5-flash-lite
+    alias: gemini-2-5-flash-lite-via-gcli
+  - name: gemini-3-pro-preview          # NOT gemini-3-pro-high
+    alias: gemini-3-pro-high-via-gcli
+  - name: gemini-2.5-pro
+    alias: gemini-2-5-pro-via-gcli
+```
+
+After editing this file, **restart CLIProxy** (`docker compose restart cliproxy`)
+— the auth-dir/config watcher does not reliably pick up in-place edits to the
+single bind-mounted config file. Verify with:
+
+```bash
+source .env
+curl -s http://localhost:8317/v1/models -H "Authorization: Bearer $CLIPROXY_API_KEY" \
+  | python3 -c "import sys,json;[print(m['id']) for m in json.load(sys.stdin)['data'] if 'gcli' in m['id']]"
+# Expect all 7 -via-gcli ids, including gemini-3-flash-via-gcli and gemini-3-1-pro-via-gcli.
+```
+
+---
+
 ## 2. Routing inputs
 
 Adaptive routing decisions are driven by the following inputs. Each is defined
