@@ -95,7 +95,7 @@ services:
       - "8317:8317"
 
   cpa-manager:
-    image: seakee/cpa-manager:latest
+    image: seakee/cpa-manager:1.5.5
     restart: always
     depends_on:
       - cliproxy
@@ -148,7 +148,7 @@ services:
       - ./litellm-config.yaml:/config/litellm-config.yaml:ro
 
   litellm:
-    image: ghcr.io/berriai/litellm@sha256:7c311546c25e7bb6e8cafede9fcd3d0d622ac636b5c9418befaa32e85dfb0186
+    image: ghcr.io/berriai/litellm:v1.87.1@sha256:9de33287d844a164f873479a04eebe065610e131d7e3aaf010f520fb5b4cfd7b
     restart: always
     depends_on:
       postgres:
