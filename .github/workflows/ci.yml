@@ -30,6 +30,10 @@ jobs:
       isolation: ${{ steps.filter.outputs.isolation }}
       credential_prober: ${{ steps.filter.outputs.credential_prober }}
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
@@ -62,6 +66,10 @@ jobs:
   lint-and-syntax:
     runs-on: self-hosted
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - name: Ensure Python venv (PEP 668 / self-hosted)
         run: |
@@ -136,6 +144,10 @@ jobs:
   unit-tests:
     runs-on: self-hosted
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - name: Build translator image locally
         run: |
@@ -157,6 +169,10 @@ jobs:
       github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - name: Run credential-prober unit tests
         run: |
@@ -175,6 +191,10 @@ jobs:
       github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - name: Install direnv
         run: sudo apt-get update && sudo apt-get install -y direnv
@@ -218,6 +238,10 @@ jobs:
       github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - name: Ensure Python venv (PEP 668 / self-hosted)
         run: |
@@ -309,6 +333,10 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'run-e2e')
     runs-on: self-hosted
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - name: Ensure Python venv (PEP 668 / self-hosted)
         run: |
