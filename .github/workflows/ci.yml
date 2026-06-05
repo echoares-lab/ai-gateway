@@ -275,9 +275,10 @@ jobs:
           DEV_POLICY_ENGINE_PORT: "8080"
           LITELLM_MIGRATIONS: "None"
         run: |
+          # Reuse aidevmock Postgres volume on self-hosted runners (avoid ~7m Prisma migrations each job).
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
-            -p aidevmock down -v || true
+            -p aidevmock down || true
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
@@ -292,6 +293,17 @@ jobs:
             if curl -sf http://localhost:4011/health/readiness >/dev/null; then
               echo "LiteLLM ready"
               break
+            fi
+            LITELLM_CID="$(docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock ps -q litellm || true)"
+            if [ -n "$LITELLM_CID" ] && [ "$(docker inspect -f '{{.State.Status}}' "$LITELLM_CID" 2>/dev/null || true)" = "exited" ]; then
+              echo "LiteLLM container exited early (cid=$LITELLM_CID). Dumping recent logs:"
+              docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs --no-color --tail 200 litellm || true
+              exit 1
+            fi
+            if docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs --no-color --tail 200 litellm 2>/dev/null | grep -Eq 'P3005|Prisma.*(panic|fatal|error)|database schema is not empty'; then
+              echo "Detected Prisma/LiteLLM fatal error during startup. Dumping recent logs:"
+              docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs --no-color --tail 200 litellm || true
+              exit 1
             fi
             if [ "$i" -eq 180 ]; then
               echo "LiteLLM never became ready"
@@ -325,7 +337,7 @@ jobs:
         if: always()
         run: |
           docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs || true
-          docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock down -v
+          docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock down
 
       - name: Fix workspace permissions (self-hosted)
         if: always()

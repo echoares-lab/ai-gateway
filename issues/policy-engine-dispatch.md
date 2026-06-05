@@ -34,6 +34,17 @@ github_issue: #141
 **Phase 0 gate:** [policy-engine-phase0-prerequisites.md](./policy-engine-phase0-prerequisites.md)  
 **Design:** [docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md](../docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md)
 
+## Epic status (2026-06-05)
+
+**Phase 1–4 implementation:** Complete on `main` (translator wire, mock Gate B stack, audit log, runbook, admin trace).
+
+**Merged (policy epic):** [#142](https://github.com/echoares-lab/ai-gateway/pull/142) budget · [#143](https://github.com/echoares-lab/ai-gateway/pull/143) prober · [#144](https://github.com/echoares-lab/ai-gateway/pull/144) fallback · [#145](https://github.com/echoares-lab/ai-gateway/pull/145) audit · [#146](https://github.com/echoares-lab/ai-gateway/pull/146) cliproxy sync · [#147–#150](https://github.com/echoares-lab/ai-gateway/pull/147) Phase 5 design stubs · [#151](https://github.com/echoares-lab/ai-gateway/pull/151) runbook · [#155](https://github.com/echoares-lab/ai-gateway/pull/155) compose · [#156](https://github.com/echoares-lab/ai-gateway/pull/156) translator + admin trace + websocket · [#158](https://github.com/echoares-lab/ai-gateway/pull/158) Gate B failover integration (#136).
+
+**Open (CI only, not epic scope):** [#159](https://github.com/echoares-lab/ai-gateway/pull/159), [#160](https://github.com/echoares-lab/ai-gateway/pull/160) — superseded by combined mock-integration fix on `fix/mock-integration-ci`.
+
+**Remaining optional work:** Hardening / expansion of 38-17 matrix; no unblocked Phase 1–4 implementation issues.
+
+
 ## Claiming rules
 
 1. Pick the **lowest-phase, unblocked** issue with `claim_status: unassigned`.
@@ -112,7 +123,7 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-01 schemas | **done** | Quota-aware schemas shipped |
 | 38-02 scaffold | **done** | Stub evaluator + tests |
 | 38-03 redis | **done** | Cooldown registry, agent affinity, profile/decision cache keys |
-| 38-04 translator | **in-review** | PR #156 — `POLICY_ENGINE_ENABLED` hook + unit tests; agent `142a1b91` lane superseded |
+| 38-04 translator | **done** | PR #156 merged — `POLICY_ENGINE_ENABLED` evaluate hook + unit tests |
 | 38-05 repo affinity | **done** | Postgres read + repo affinity + Redis profile cache |
 | 38-06 agent affinity | **done** | Agent affinity evaluator wired |
 | 38-07 rate-limit | **done** | Aggregator wired; inventory + Redis + translator merge |
@@ -121,27 +132,22 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-10 pool schema | **done** | Migration 002 in repo |
 | 38-11 pool aliases | **done** | Tier alias docs + claude-sonnet-4-6-at-native |
 | 38-12 prober events | **done** | POST /v1/events/credential + prober notifier |
-| 38-13 cliproxy sync | **in-review** | PR #146 — optional CLIProxy pool priority sync (#132); 38-11 done |
+| 38-13 cliproxy sync | **done** | PR #146 merged — optional CLIProxy pool priority sync (#132) |
 | 38-14 websocket | **done** | PR #156 — Option B bypass + design doc §9; closes #133 |
-| 38-15 admin trace | **in-review** | PR #156 — `policy_engine` panel in `/admin/status`; closes #134 on merge |
+| 38-15 admin trace | **done** | PR #156 merged — `policy_engine` panel in `/admin/status`; closes #134 |
 | 38-16 audit log | **done** | PR #145 |
-| 38-17 integration tests | unassigned | Blocked: 38-14 — unblocks when PR #156 merges |
-| 38-18 runbook | **done** | PR #151; design-only (38-15 pending) |
-| 38-19 eval routing | **in-review** | PR #147 (#138) |
-| 38-20 mcp visibility | **in-review** | PR #148 (#139) |
-| 38-21 chargeback | **in-review** | Design stub PR #150 ([#140](https://github.com/echoares-lab/ai-gateway/issues/140)) |
+| 38-17 integration tests | **done** | PR #158 — Gate B policy failover integration scaffold (#136) |
+| 38-18 runbook | **done** | PR #151 merged |
+| 38-19 eval routing | **done** | PR #147 merged — design stub (#138) |
+| 38-20 mcp visibility | **done** | PR #148 merged — design stub (#139) |
+| 38-21 chargeback | **done** | PR #150 merged — design stub ([#140](https://github.com/echoares-lab/ai-gateway/issues/140)) |
 
 ## Next agent action
 
-**In review:** [38-19 eval routing](./policy-engine-38-19-eval-routing.md) — design stub (#138).
+**Epic #38:** All tracked issues 38-01 … 38-21 are **done** on `main` (implementation + design stubs). Optional follow-ups: expand 38-17 integration matrix, enable real policy-engine in production routing.
 
-**In review:** [PR #156](https://github.com/echoares-lab/ai-gateway/pull/156) (`feat/translator-policy`) bundles 38-04, 38-14 (done), and 38-15. Duplicate [PR #157](https://github.com/echoares-lab/ai-gateway/pull/157) closed — identical branch.
+**CI:** Merge [#160](https://github.com/echoares-lab/ai-gateway/pull/160) (persist mock Postgres volume + LiteLLM fail-fast) after green checks. Close [#159](https://github.com/echoares-lab/ai-gateway/pull/159) as superseded.
 
-**In review:** [PR #146](https://github.com/echoares-lab/ai-gateway/pull/146) — 38-13 optional CLIProxy pool priority sync (#132).
-
-**Claim after #156 merges:** [policy-engine-38-17-integration-tests.md](./policy-engine-38-17-integration-tests.md) (#136) or optional [policy-engine-38-13-cliproxy-priority-sync.md](./policy-engine-38-13-cliproxy-priority-sync.md).
-
-**Done:** [policy-engine-38-16-audit-log.md](./policy-engine-38-16-audit-log.md) — PR #145; [policy-engine-38-14-websocket-parity.md](./policy-engine-38-14-websocket-parity.md) — PR #156.
 
 ## Live claim_status summary
 
@@ -155,16 +161,17 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-07 rate-limit | done | #126 |
 | 38-08 fallback | done | #127 |
 | 38-16 audit log | done | #135, PR #145 |
-| 38-19 eval routing | in-review | #138, PR #147 |
-| 38-21 chargeback | in-review | #140, PR #150 |
+| 38-17 integration tests | done | #136, PR #158 |
+| 38-19 eval routing | done | #138, PR #147 |
+| 38-21 chargeback | done | #140, PR #150 |
 | 38-14 websocket | **done** | PR #156 — Option B bypass + design doc §9; closes #133 |
-| 38-04 translator | **in-review** | PR #156 — `POLICY_ENGINE_ENABLED` hook + unit tests; agent `142a1b91` lane superseded |
-| 38-15 admin trace | **in-review** | PR #156 — `policy_engine` panel in `/admin/status`; closes #134 on merge |
+| 38-04 translator | **done** | PR #156 merged — `POLICY_ENGINE_ENABLED` evaluate hook + unit tests |
+| 38-15 admin trace | **done** | PR #156 merged — `policy_engine` panel in `/admin/status`; closes #134 |
 | 38-06 agent affinity | done | #125 |
 | 38-10 pool schema | done | #129 |
 | 38-12 prober events | done | #131 |
-| 38-13 cliproxy sync | in-review | #132, PR #146 |
+| 38-13 cliproxy sync | done | #132, PR #146 |
 | Phase 0 prerequisites | tracking (not claimable) | #119 |
 | Epic coordination | not-claimable | #38 |
 
-**Next unblocked for implementation:** 38-17 integration tests (#136) after PR #156 merges. Do not re-claim 38-04 — see agent `142a1b91` supersession note above.
+**Next unblocked for implementation:** None — epic complete; optional 38-17 expansion or production rollout only.
