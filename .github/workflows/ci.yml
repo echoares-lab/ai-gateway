@@ -229,6 +229,17 @@ jobs:
               echo "LiteLLM ready"
               break
             fi
+            LITELLM_CID="$(docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock ps -q litellm || true)"
+            if [ -n "$LITELLM_CID" ] && [ "$(docker inspect -f '{{.State.Status}}' "$LITELLM_CID" 2>/dev/null || true)" = "exited" ]; then
+              echo "LiteLLM container exited early (cid=$LITELLM_CID). Dumping recent logs:"
+              docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs --no-color --tail 200 litellm || true
+              exit 1
+            fi
+            if docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs --no-color --tail 200 litellm 2>/dev/null | grep -Eq 'P3005|Prisma.*(panic|fatal|error)|database schema is not empty'; then
+              echo "Detected Prisma/LiteLLM fatal error during startup. Dumping recent logs:"
+              docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs --no-color --tail 200 litellm || true
+              exit 1
+            fi
             if [ "$i" -eq 90 ]; then
               echo "LiteLLM never became ready"
               docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs litellm || true
