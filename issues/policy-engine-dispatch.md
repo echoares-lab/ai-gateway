@@ -122,7 +122,7 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-13 cliproxy sync | unassigned | Optional; blocked: 38-11 |
 | 38-14 websocket | unassigned | Blocked: 38-04 |
 | 38-15 admin trace | unassigned | Blocked: 38-04 |
-| 38-16 audit log | **claimed-by-cursor-agent-575k** | In progress |
+| 38-16 audit log | **done** | PR #145 |
 | 38-17 integration tests | unassigned | Blocked: 38-14 |
 | 38-18 runbook | unassigned | Blocked: 38-15 |
 | 38-19 eval routing | unassigned | Optional Phase 5 |
@@ -133,7 +133,7 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 
 **Claim:** [policy-engine-38-13-cliproxy-priority-sync.md](./policy-engine-38-13-cliproxy-priority-sync.md) (optional) or [policy-engine-38-04-translator.md](./policy-engine-38-04-translator.md) (blocked on P0-1..P0-3).
 
-**In progress:** [policy-engine-38-16-audit-log.md](./policy-engine-38-16-audit-log.md) — claimed by cursor-agent-575k.
+**Done:** [policy-engine-38-16-audit-log.md](./policy-engine-38-16-audit-log.md) — PR #145.
 
 ## Live claim_status summary
 
@@ -146,6 +146,7 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-06 agent affinity | done | — |
 | 38-07 rate-limit | done | #126 |
 | 38-08 fallback | done | #127 |
+| 38-16 audit log | done | #135, PR #145 |
 | 38-04 translator | unassigned | #123 |
 | 38-06 agent affinity | done | #125 |
 | 38-10 pool schema | done | #129 |

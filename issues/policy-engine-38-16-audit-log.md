@@ -25,7 +25,7 @@ dependencies:
 files:
   - services/policy-engine/audit.py
   - db/migrations/002_policy_profiles_pools.sql
-claim_status: claimed-by-cursor-agent-575k
+claim_status: done
 blocks: []
 blocked_by:
   - policy-engine-38-08-fallback-evaluator.md
@@ -35,3 +35,5 @@ github_issue: #135
 ---
 
 # 38-16 — Routing Decision Audit Log
+
+**PR:** https://github.com/echoares-lab/ai-gateway/pull/145
