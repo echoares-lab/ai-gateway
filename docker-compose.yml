@@ -323,8 +323,8 @@ services:
 
   docs-server:
     build:
-      context: ./services/docs-server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/docs-server/Dockerfile
     restart: always
     ports:
       - "8002:8000"
