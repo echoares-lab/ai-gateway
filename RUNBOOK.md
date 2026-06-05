@@ -553,18 +553,199 @@ docker compose up -d
 
 ---
 
-## Policy routing audit log
+## Policy Engine (operator)
+
+Central routing evaluator for repo/agent affinity, budget gates, rate-limit state, and
+fallback ordering. Design: [POLICY_ENGINE_AND_ROUTING_REFACTOR.md](./docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md).
+OpenAPI: [docs/openapi/policy-engine.yaml](./docs/openapi/policy-engine.yaml).
+
+> **Rollout status:** Evaluators and audit log (38-16) are implemented in
+> `services/policy-engine/`. Translator wire-up (`POLICY_ENGINE_ENABLED`, 38-04) and
+> admin policy trace (38-15) are not production-default yet. Procedures below describe
+> **target operator behavior**; enable per dev slot first.
+
+### Dependencies (Redis + Postgres)
+
+| Store | Used for | Env var | Degraded behavior |
+|-------|----------|---------|-------------------|
+| **Redis** | Agent affinity (`affinity:agent:*`), cooldown registry (`rate_limit:*`), profile cache, last-known-good decisions | `REDIS_URL` | Hot state disabled; evaluator continues with Postgres + request context only |
+| **Postgres** | `policy_profiles`, `credential_pools`, `credential_pool_members`, `credential_inventory`, `routing_decisions_log` | `DATABASE_URL` (policy-engine service) | Profiles/inventory reads fail-open to baseline; audit writer disabled |
+
+**Health checks:**
+
+```bash
+# Policy engine liveness (when service is in compose)
+curl -s http://localhost:8080/v1/health | jq .
+
+# Redis (stable stack)
+source .env && redis-cli -u "$REDIS_URL" ping
+
+# Postgres policy tables (after migration 002)
+docker exec -it ai-postgres-1 psql -U postgres -d litellm -c \
+  "SELECT count(*) FROM policy_profiles; SELECT count(*) FROM credential_pools;"
+```
+
+Apply migration 002 on existing stacks:
+
+```bash
+./db/apply-migrations.sh ai-postgres-1
+```
+
+**Redis key reference** (see design doc §7.2):
+
+| Key pattern | TTL | Purpose |
+|-------------|-----|---------|
+| `affinity:agent:{agent_id}` | 1h (`POLICY_AFFINITY_TTL_SECONDS`) | Sticky credential / model family |
+| `rate_limit:{provider}:{credential_id}` | `cooldown_until` | Rolling 429 count, pre-emptive deprioritize |
+| `policy:cache:profile:{scope}:{id}` | 5m | Cached `policy_profiles` row |
+| `decision:lkn:{team_id}:{repo_name}` | 10m | Last-known-good `RoutingDecision` (fail-open cache) |
+
+### Pool tier promotion
+
+Logical pools group credentials into tiers (`native`, `antigravity`, `emergency`).
+Policy selects a tier; LiteLLM calls a tier-specific model alias; CLIProxy
+`oauth-model-alias` routes to that tier's credentials only.
+
+**Tier alias naming** (issue 38-11):
+
+| Layer | Pattern | Example |
+|-------|---------|---------|
+| LiteLLM `model_name` | `{base-model}-at-{tier}` | `claude-sonnet-4-6-at-native` |
+| CLIProxy model | `{provider-model}@{tier}` | `openai/claude-sonnet-4-6@native` |
+| Default (all pool members) | `{base-model}` | `claude-sonnet-4-6` |
+
+**Promote a repo/team to a higher tier** (e.g. interactive → `native`):
+
+1. **Postgres — set tier binding** in `policy_profiles` or `credential_pools.bindings`:
+
+```sql
+-- Per-repo profile (preferred for repo affinity)
+UPDATE policy_profiles
+SET credential_tier_preference = 'native',
+    updated_at = now()
+WHERE scope = 'repo' AND scope_id = 'my-repo';
+
+-- Or pool-wide binding JSON: {"team_id": "org-ws-team": "native"}
+UPDATE credential_pools
+SET bindings = bindings || '{"my-team": "native"}'::jsonb
+WHERE pool_id = 'anthropic-primary';
+```
+
+2. **Verify pool membership** — credential must be in the target tier:
+
+```sql
+SELECT m.credential_id, m.tier, m.priority
+FROM credential_pool_members m
+JOIN credential_pools p ON p.pool_id = m.pool_id
+WHERE p.provider = 'anthropic' AND m.tier = 'native' AND m.enabled;
+```
+
+3. **Git — ensure tier deployment exists** in `litellm-config.yaml` (one entry per
+   `(base model, tier)` pair policy may select). Fallback chains should reference
+   tier-specific `model_name` values when policy dictates tier order.
+
+4. **CLIProxy** — confirm `@{tier}` aliases exist in `~/.cliproxy/config.yaml`
+   (optional priority sync: issue 38-13).
+
+5. **Validate in dev slot** — enable policy engine, send a request with tenancy metadata
+   for the repo; confirm `ordered_deployments` includes `*-at-native` in audit JSON.
+
+**Emergency demotion** (native tier exhausted): update `credential_tier_preference` to
+`antigravity` or `emergency`, or let fallback evaluator shift when all native-tier
+credentials are in cooldown / deprioritized. Follow staged promotion per
+[CONFIG_PROMOTION.md](./docs/CONFIG_PROMOTION.md) — test in dev slot before production.
+
+### Quota-aware mode
+
+**Default:** pools use `affinity_mode = fill-first` (maximizes prompt-cache locality;
+CLIProxy drains highest-priority credential until 429, then fails over).
+
+**Quota-aware:** when `credential_pools.affinity_mode = 'quota-aware'`, the evaluator sets
+`RoutingDecision.quota_aware_mode = true` and populates `deprioritized_credentials[]`
+from rolling 429 counts and `QuotaHeadroom` soft thresholds — CLIProxy switches
+credentials *before* hard 429 ([ROUTING_AND_FAILOVER_STRATEGY.md](./docs/ROUTING_AND_FAILOVER_STRATEGY.md) §3).
+
+**Enable for a pool:**
+
+```sql
+UPDATE credential_pools
+SET affinity_mode = 'quota-aware'
+WHERE pool_id = 'anthropic-primary';
+```
+
+**Tune pre-emptive deprioritization:**
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `POLICY_PREEMPTIVE_429_THRESHOLD` | `3` | Rolling 5m 429 count before pre-emptive skip |
+| `BUDGET_SOFT_GATE_THRESHOLD_PCT` | `15` | Quota headroom % below which credential is deprioritized |
+
+**When to use:** latency-sensitive interactive traffic where a single visible 429 is costly.
+**Trade-off:** more credential switching → colder prompt caches → higher input token cost.
+
+**Verify:** inspect audit `decision_json` for `quota_aware_mode: true`,
+`rules_applied` containing `pool:quota_aware_mode` or `rate_limit:preemptive_deprioritize`.
+
+### Fail-open procedure
+
+Policy engine and stores are **fail-open** — routing must not block when evaluation fails.
+Static `litellm-config.yaml` fallbacks remain the safety net.
+
+| Failure | System behavior | Operator action |
+|---------|-----------------|-----------------|
+| Policy-engine down / timeout | Translator skips evaluate; forwards without `routing_decision` | Fix service; check compose health; requests continue on YAML fallbacks |
+| Redis unavailable | Hot affinity/cooldown state disabled; logs warn once | Restore Redis; affinity rebinds on next request |
+| Postgres unavailable | Profile/inventory reads skipped; audit writer disabled | Restore Postgres; apply migration 002 if tables missing |
+| Misconfigured tier alias | LiteLLM 503 / CLIProxy miss | Roll back `credential_tier_preference`; verify `litellm-config.yaml` tier entry |
+| Budget hard gate disabled | `budget:hard_deny_skipped_fail_open` in rules; traffic allowed | Expected until P0-4; enable `BUDGET_HARD_GATE_ENABLED=true` when ready |
+
+**Incident checklist:**
+
+1. Confirm traffic still flows: `./cliproxy-setup.sh test claude-sonnet-4-6`
+2. Disable enforcement (fastest): set `POLICY_ENGINE_ENABLED=false` on translator and restart dev slot
+3. Check policy-engine logs: `docker compose logs policy-engine --tail=50` (when deployed)
+4. Inspect last audit denies: `SELECT gate, decision_json FROM routing_decisions_log ORDER BY evaluated_at DESC LIMIT 10;`
+5. If bad profile promoted: `UPDATE policy_profiles SET enabled = false WHERE profile_id = '...';`
+6. Re-enable after fix; watch deny/throttle rate in audit log
+
+**Budget / gate env vars:**
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `BUDGET_HARD_GATE_ENABLED` | `false` | Hard deny on exhausted team budget (fail-open until P0-4) |
+| `BUDGET_HARD_GATE_RETRY_AFTER` | `60` | `Retry-After` seconds on hard deny |
+| `BUDGET_COST_TIER_THRESHOLD_PCT` | `80` | Prefer cheaper tier when team spend above this % |
+
+### Audit sampling and retention
 
 The policy engine writes sampled routing decisions to Postgres
-``routing_decisions_log`` (migration ``002_policy_profiles_pools.sql``).
+`routing_decisions_log` (migration `002_policy_profiles_pools.sql`, issue 38-16).
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
 | `POLICY_AUDIT_SAMPLE_RATE` | `0.01` | Fraction of **allow** decisions logged (1%) |
 | `POLICY_AUDIT_QUEUE_MAX` | `1000` | Async write queue depth before drop |
 
-**Sampling:** `deny` and `throttle` gates are always logged. `allow` decisions are
-sampled at ``POLICY_AUDIT_SAMPLE_RATE``. Dry-run evaluations never write.
+**Sampling rules:**
+
+- `deny` and `throttle` gates are **always** logged.
+- `allow` decisions are sampled at `POLICY_AUDIT_SAMPLE_RATE`.
+- Dry-run evaluations (`RoutingContext.dry_run=true`) never write.
+- Audit writer is fail-silent: Postgres errors or full queue drop records with a warning only.
+
+**Stored JSON** includes `quota_aware_mode`, `deprioritized_credentials`, `rules_applied`,
+and `context_hash` for incident correlation.
+
+**Query recent decisions:**
+
+```sql
+SELECT evaluated_at, repo_name, requested_model, gate,
+       decision_json->>'quota_aware_mode' AS quota_aware,
+       decision_json->'rules_applied' AS rules
+FROM routing_decisions_log
+ORDER BY evaluated_at DESC
+LIMIT 20;
+```
 
 **Retention:** keep audit rows for **30 days**, then prune:
 
@@ -574,7 +755,10 @@ WHERE evaluated_at < now() - interval '30 days';
 ```
 
 Schedule via cron or a Postgres maintenance job. Read access is granted to
-``mcp_readonly`` for admin/MCP tooling.
+`mcp_readonly` for admin/MCP tooling.
+
+**Raise sampling during an incident** (more allow rows): set `POLICY_AUDIT_SAMPLE_RATE=0.25`
+on the policy-engine container and restart. Revert to `0.01` after resolution.
 
 ---
 
@@ -591,6 +775,8 @@ Schedule via cron or a Postgres maintenance job. Read access is granted to
 | `litellm-config.yaml` | Model routing (auto-managed by sync-models) |
 | `.env` | Secrets (keys, passwords) — never commit |
 | `cliproxy-setup.sh` | Setup, auth, sync, health CLI |
+| `services/policy-engine/` | Policy evaluator service (Epic #38) |
+| `db/migrations/002_policy_profiles_pools.sql` | Policy profiles, pools, audit log schema |
 | `~/.cliproxy/config.yaml` | CLIProxyAPI config (port, API key, management key) |
 | `~/.cli-proxy-api/*.json` | OAuth token files (Claude, Codex, Gemini) |
 
