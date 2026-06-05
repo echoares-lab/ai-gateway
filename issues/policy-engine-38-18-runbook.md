@@ -29,7 +29,7 @@ dependencies:
   - docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md
 files:
   - RUNBOOK.md
-claim_status: claimed-by-cursor-agent-575k-20260605
+claim_status: done
 blocks: []
 blocked_by:
   - policy-engine-38-15-admin-trace.md
@@ -42,4 +42,5 @@ github_issue: #137
 # 38-18 — Operator Runbook Extension
 
 **GitHub:** #137  
+**PR:** https://github.com/echoares-lab/ai-gateway/pull/151  
 **Design:** [docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md](../docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md)
