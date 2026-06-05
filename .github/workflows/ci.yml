@@ -55,11 +55,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install dependencies
         run: |
+          python3 -m venv .venv-ci
+          . .venv-ci/bin/activate
           pip install ruff pyyaml
       - name: Lint with ruff
-        run: ruff check services/translator/translator.py tests/mock-upstream/app.py
+        run: .venv-ci/bin/ruff check services/translator/translator.py tests/mock-upstream/app.py
       - name: Format check with ruff
-        run: ruff format --check services/translator/translator.py tests/mock-upstream/app.py
+        run: .venv-ci/bin/ruff format --check services/translator/translator.py tests/mock-upstream/app.py
       - name: Shell syntax check
         run: |
           bash -n cliproxy-setup.sh
@@ -184,7 +186,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install pytest dependencies
-        run: pip install -r tests/integration/requirements.txt
+        run: |
+          python3 -m venv .venv-ci
+          . .venv-ci/bin/activate
+          pip install -r tests/integration/requirements.txt
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build translator image (reuse in compose, skip rebuild)
@@ -230,7 +235,7 @@ jobs:
       - name: Run mock-tier pytest
         run: |
           GATEWAY_URL=http://localhost:4010 LITELLM_MASTER_KEY=sk-ci-mock ALLOW_MODEL_SKIP=0 \
-            python3 -m pytest tests/integration/ -m mock -v
+            .venv-ci/bin/python -m pytest tests/integration/ -m mock -v
       - name: Run shell E2E smoke (CI mock mode)
         run: |
           GATEWAY_E2E_CI=1 GATEWAY_URL=http://localhost:4010 bash tests/test-gateway-e2e.sh
