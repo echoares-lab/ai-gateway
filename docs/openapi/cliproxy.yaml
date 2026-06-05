@@ -7,6 +7,20 @@ paths:
   /v1/chat/completions:
     post:
       summary: Chat completions proxy
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object}
+            example:
+              model: "claude-sonnet-4-6"
+              messages: [{"role": "user", "content": "Explain quantum computing."}]
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              example:
+                choices: [{"message": {"content": "Quantum computing is..."}}]
   /v0/management/auth-files:
     get:
       summary: Get auth files for management
@@ -14,8 +28,21 @@ paths:
         - name: x-management-key
           in: header
           required: true
-          schema:
-            type: string
+          schema: {type: string}
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              example:
+                files: ["claude-token.json", "codex-token.json"]
   /v1/models:
     get:
       summary: List proxy models
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              example:
+                data: [{"id": "claude-sonnet-4-6"}, {"id": "gpt-5-4"}]
