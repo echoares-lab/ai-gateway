@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 
+from audit import RoutingAuditWriter
 from evaluator.agent_affinity import apply_agent_affinity
 from evaluator.budget import apply_budget_gates
 from evaluator.credential_events import handle_credential_event
@@ -53,6 +54,11 @@ def get_profile_store() -> ProfileStore:
 @lru_cache
 def get_inventory_store() -> InventoryStore:
     return InventoryStore.from_env()
+
+
+@lru_cache
+def get_audit_writer() -> RoutingAuditWriter:
+    return RoutingAuditWriter.from_env()
 
 
 def _filter_degraded_models(
@@ -221,10 +227,15 @@ def health() -> HealthResponse:
 
 
 @app.post("/v1/evaluate", response_model=EvaluateResponse)
-def evaluate_route(body: EvaluateRequest) -> EvaluateResponse:
+def evaluate_route(
+    body: EvaluateRequest,
+    audit_writer: RoutingAuditWriter = Depends(get_audit_writer),
+) -> EvaluateResponse:
     if not body.context.requested_model:
         raise HTTPException(status_code=422, detail="requested_model is required")
-    return EvaluateResponse(decision=evaluate(body))
+    decision = evaluate(body)
+    audit_writer.maybe_log(body.context, decision)
+    return EvaluateResponse(decision=decision)
 
 
 @app.post(

@@ -122,7 +122,7 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-13 cliproxy sync | unassigned | Optional; blocked: 38-11 |
 | 38-14 websocket | unassigned | Blocked: 38-04 |
 | 38-15 admin trace | unassigned | Blocked: 38-04 |
-| 38-16 audit log | unassigned | **Next claimable** — 38-08 done |
+| 38-16 audit log | **claimed-by-cursor-agent-575k** | In progress |
 | 38-17 integration tests | unassigned | Blocked: 38-14 |
 | 38-18 runbook | unassigned | Blocked: 38-15 |
 | 38-19 eval routing | unassigned | Optional Phase 5 |
@@ -131,9 +131,9 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 
 ## Next agent action
 
-**Claim:** [policy-engine-38-16-audit-log.md](./policy-engine-38-16-audit-log.md) — Phase 4 (38-08 done).
+**Claim:** [policy-engine-38-13-cliproxy-priority-sync.md](./policy-engine-38-13-cliproxy-priority-sync.md) (optional) or [policy-engine-38-04-translator.md](./policy-engine-38-04-translator.md) (blocked on P0-1..P0-3).
 
-Alternatives: [policy-engine-38-13-cliproxy-priority-sync.md](./policy-engine-38-13-cliproxy-priority-sync.md) (optional), [policy-engine-38-04-translator.md](./policy-engine-38-04-translator.md) (blocked on P0-1..P0-3).
+**In progress:** [policy-engine-38-16-audit-log.md](./policy-engine-38-16-audit-log.md) — claimed by cursor-agent-575k.
 
 ## Live claim_status summary
 
@@ -149,8 +149,9 @@ Alternatives: [policy-engine-38-13-cliproxy-priority-sync.md](./policy-engine-38
 | 38-04 translator | unassigned | #123 |
 | 38-06 agent affinity | done | #125 |
 | 38-10 pool schema | done | #129 |
+| 38-12 prober events | done | #131 |
 | Phase 0 prerequisites | tracking (not claimable) | #119 |
 | Epic coordination | not-claimable | #38 |
 
-**Next unblocked for implementation:** 38-16 audit log (38-08 done). **38-04** remains gated on P0-1..P0-3 per phase0 prerequisites.
+**Next unblocked for implementation:** 38-13 cliproxy sync (optional) after 38-16 lands. **38-04** remains gated on P0-1..P0-3 per phase0 prerequisites.
 
