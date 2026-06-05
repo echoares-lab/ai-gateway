@@ -70,6 +70,30 @@ async def _lifespan(application: FastAPI):
 app = FastAPI(lifespan=_lifespan)
 LITELLM = os.environ.get("LITELLM_URL", "http://litellm:4000")
 MODEL_PREFIX = "AI-Gateway:"
+POLICY_ENGINE_ENABLED = os.environ.get("POLICY_ENGINE_ENABLED", "false").lower() not in (
+    "0",
+    "false",
+    "no",
+)
+POLICY_ENGINE_URL = os.environ.get("POLICY_ENGINE_URL", "http://policy-engine:8080").rstrip("/")
+POLICY_ENGINE_TIMEOUT_MS = int(os.environ.get("POLICY_ENGINE_TIMEOUT_MS", "100"))
+ADMIN_POLICY_TRACE_ENABLED = os.environ.get("ADMIN_POLICY_TRACE_ENABLED", "true").lower() not in (
+    "0",
+    "false",
+    "no",
+)
+
+
+@dataclass
+class _PolicyTraceState:
+    evaluate_ms: float | None = None
+    evaluated_at: str | None = None
+    decision: dict | None = None
+    error: str | None = None
+
+
+_policy_trace = _PolicyTraceState()
+_policy_version_hint: str | None = None
 
 REQUEST_COUNT = Counter(
     "translator_requests_total",
@@ -297,25 +321,162 @@ def _outcome_for_status(status: int) -> str:
     return "success"
 
 
+def _tenancy_from_token(token: str | None) -> dict:
+    """Build TenancyContext fields from an ak- API key label."""
+    if not token or not isinstance(token, str):
+        return {}
+    token = token.removeprefix("Bearer ").strip()
+    if not token.startswith("ak-"):
+        return {}
+    parts = token.split("-")
+    if len(parts) < 6:
+        return {}
+    return {
+        "tenant_id": parts[1],
+        "workspace_id": parts[2],
+        "team_id": parts[3],
+        "repo_name": parts[4],
+        "environment": "-".join(parts[5:]),
+        "api_key_label": token,
+    }
+
+
 def _extract_and_apply_tenancy(token: str | None, body: dict) -> dict:
     """Extract tenant, workspace, team, repo, and environment from ak- API key and inject into metadata."""
-    if not token or not isinstance(token, str):
+    tenant_info = _tenancy_from_token(token)
+    if tenant_info:
+        if "metadata" not in body or not isinstance(body["metadata"], dict):
+            body["metadata"] = {}
+        body["metadata"].update({k: v for k, v in tenant_info.items() if k != "api_key_label"})
+    return body
+
+
+_quota_headroom_cache: list[dict] | None = None
+
+
+def _prom_counter_value(counter, **labels) -> float:
+    for metric in counter.collect():
+        for sample in metric.samples:
+            if all(sample.labels.get(k) == v for k, v in labels.items()):
+                return sample.value
+    return 0.0
+
+
+def _label_model(model: str) -> str:
+    if not model:
+        return "-"
+    if model.startswith(MODEL_PREFIX):
+        return model[len(MODEL_PREFIX) :]
+    return model
+
+
+def _build_rate_limit_hints(model: str) -> list[dict]:
+    provider = _provider_of(model)
+    label_model = _label_model(model)
+    rl_count = int(_prom_counter_value(PROVIDER_RATE_LIMITS, provider=provider, model=label_model))
+    if rl_count <= 0:
+        return []
+    return [{"provider": provider, "rolling_429_count_5m": rl_count, "pre_emptive_degraded": True}]
+
+
+def _load_quota_headroom_hints() -> list[dict]:
+    if _quota_headroom_cache is not None:
+        return list(_quota_headroom_cache)
+    raw = os.environ.get("QUOTA_HEADROOM_JSON", "").strip()
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        log.warning("Invalid QUOTA_HEADROOM_JSON — ignoring quota headroom hints")
+        return []
+    return data if isinstance(data, list) else []
+
+
+def _request_capabilities(body: dict) -> dict:
+    model = body.get("model", "")
+    tools = body.get("tools") or []
+    messages = body.get("messages") or []
+    has_vision = False
+    active_tool_chain = bool(tools)
+    for msg in messages:
+        if msg.get("role") == "tool":
+            active_tool_chain = True
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type", "") in ("image_url", "input_image") or "image_url" in item:
+                has_vision = True
+    return {
+        "has_tools": bool(tools),
+        "has_vision": has_vision,
+        "active_tool_chain": active_tool_chain,
+        "model_family": _provider_of(model) if model else None,
+    }
+
+
+def _build_routing_context(token: str | None, body: dict) -> dict:
+    metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
+    model = body.get("model", "")
+    return {
+        "requested_model": model,
+        "tenancy": _tenancy_from_token(token),
+        "capabilities": _request_capabilities(body),
+        "agent_id": metadata.get("agent_id"),
+        "session_id": metadata.get("session_id") or metadata.get("litellm_session_id"),
+        "rate_limits": _build_rate_limit_hints(model),
+        "quota_headroom": _load_quota_headroom_hints(),
+        "metadata": {},
+    }
+
+
+async def _evaluate_policy_engine(context: dict) -> dict | None:
+    """POST /v1/evaluate; fail-open on timeout or error."""
+    start = time.monotonic()
+    if _client is None:
+        log.warning("policy-engine evaluate skipped — httpx client not ready")
+        _record_policy_trace(None, (time.monotonic() - start) * 1000, error="client unavailable")
+        return None
+    url = f"{POLICY_ENGINE_URL}/v1/evaluate"
+    timeout = POLICY_ENGINE_TIMEOUT_MS / 1000.0
+    try:
+        resp = await _client.post(url, json={"context": context}, timeout=timeout)
+        elapsed_ms = (time.monotonic() - start) * 1000
+        if resp.status_code != 200:
+            log.warning("policy-engine evaluate returned %d — fail-open: %s", resp.status_code, resp.text[:200])
+            _record_policy_trace(None, elapsed_ms, error=f"http {resp.status_code}")
+            return None
+        decision = resp.json().get("decision")
+        if not isinstance(decision, dict):
+            log.warning("policy-engine response missing decision — fail-open")
+            _record_policy_trace(None, elapsed_ms, error="missing decision")
+            return None
+        _record_policy_trace(decision, elapsed_ms)
+        return decision
+    except httpx.TimeoutException:
+        elapsed_ms = (time.monotonic() - start) * 1000
+        log.warning("policy-engine evaluate timed out after %dms — fail-open", POLICY_ENGINE_TIMEOUT_MS)
+        _record_policy_trace(None, elapsed_ms, error="timeout")
+        return None
+    except Exception as exc:
+        elapsed_ms = (time.monotonic() - start) * 1000
+        log.warning("policy-engine evaluate failed (%s) — fail-open", exc)
+        _record_policy_trace(None, elapsed_ms, error=str(exc))
+        return None
+
+
+async def _apply_policy_engine(token: str | None, body: dict) -> dict:
+    if not POLICY_ENGINE_ENABLED:
         return body
-    token = token.removeprefix("Bearer ").strip()
-    if token.startswith("ak-"):
-        parts = token.split("-")
-        # ak-{org}-{workspace}-{team}-{repo}-{environment}
-        if len(parts) >= 6:
-            tenant_info = {
-                "tenant_id": parts[1],
-                "workspace_id": parts[2],
-                "team_id": parts[3],
-                "repo_name": parts[4],
-                "environment": "-".join(parts[5:]),
-            }
-            if "metadata" not in body or not isinstance(body["metadata"], dict):
-                body["metadata"] = {}
-            body["metadata"].update(tenant_info)
+    decision = await _evaluate_policy_engine(_build_routing_context(token, body))
+    if decision is None:
+        return body
+    if "metadata" not in body or not isinstance(body["metadata"], dict):
+        body["metadata"] = {}
+    body["metadata"]["routing_decision"] = decision
     return body
 
 
@@ -1021,6 +1182,7 @@ async def gemini_proxy(model_action: str, request: Request):
 
     # Extract and apply tenancy metadata
     oai_body = _extract_and_apply_tenancy(auth, oai_body)
+    oai_body = await _apply_policy_engine(auth, oai_body)
 
     oai_bytes = json.dumps(oai_body).encode()
     headers = {
@@ -1127,6 +1289,63 @@ async def gemini_proxy(model_action: str, request: Request):
     except Exception as e:
         log.error("Gemini response conversion error: %s", e)
         return Response(content=resp.content, status_code=resp.status_code)
+
+
+# ── Codex WebSocket policy (issue 38-14) ─────────────────────────────────────
+# WS /v1/responses proxies directly to CLIProxy; see POLICY_ENGINE_AND_ROUTING_REFACTOR.md §9.
+
+
+def _policy_engine_enabled() -> bool:
+    return os.environ.get("POLICY_ENGINE_ENABLED", "").lower() in ("1", "true", "yes")
+
+
+def _policy_engine_ws_evaluate_enabled() -> bool:
+    return os.environ.get("POLICY_ENGINE_WS_EVALUATE", "").lower() in ("1", "true", "yes")
+
+
+def codex_ws_policy_bypass() -> bool:
+    """True when Codex WS upgrade skips policy-engine evaluate (default).
+
+    Optional parity requires both POLICY_ENGINE_ENABLED and POLICY_ENGINE_WS_EVALUATE
+    (translator integration issue 38-04 must ship evaluate wiring first).
+    """
+    if _policy_engine_enabled() and _policy_engine_ws_evaluate_enabled():
+        return False
+    return True
+
+
+def _codex_ws_upstream_headers(
+    ws_headers: dict[str, str],
+    routing_decision: dict | None = None,
+) -> dict[str, str]:
+    """Build CLIProxy upstream handshake headers for Codex WebSocket proxy."""
+    skip = {
+        "host",
+        "upgrade",
+        "connection",
+        "sec-websocket-key",
+        "sec-websocket-version",
+        "sec-websocket-extensions",
+        "sec-websocket-protocol",
+        "content-length",
+    }
+    headers = {k: v for k, v in ws_headers.items() if k.lower() not in skip}
+
+    cliproxy_api_key = os.environ.get("CLIPROXY_API_KEY", "cliproxy-Wtgxs0tEBb4Usyam5qYg")
+    if cliproxy_api_key:
+        headers["authorization"] = f"Bearer {cliproxy_api_key}"
+
+    if routing_decision:
+        session_key = routing_decision.get("session_key")
+        if session_key:
+            headers["x-session-id"] = session_key
+        if routing_decision.get("quota_aware_mode"):
+            headers["x-quota-aware-mode"] = "true"
+        deprioritized = routing_decision.get("deprioritized_credentials") or []
+        if deprioritized:
+            headers["x-deprioritized-credentials"] = ",".join(str(c) for c in deprioritized)
+
+    return headers
 
 
 # ── Codex / OpenAI Responses API converters ──────────────────────────────────
@@ -1452,28 +1671,19 @@ async def responses_websocket(ws: WebSocket):
     # Target CLIProxy WebSocket URL
     cliproxy_ws_url = os.environ.get("CLIPROXY_WS_URL", "ws://cliproxy:8317/v1/responses")
 
-    # Filter client handshake headers to forward to CLIProxy
-    headers = {}
-    for k, v in ws.headers.items():
-        k_lower = k.lower()
-        if k_lower not in (
-            "host",
-            "upgrade",
-            "connection",
-            "sec-websocket-key",
-            "sec-websocket-version",
-            "sec-websocket-extensions",
-            "sec-websocket-protocol",
-            "content-length",
-        ):
-            headers[k] = v
+    ws_bypass = codex_ws_policy_bypass()
+    routing_decision = None
+    if ws_bypass:
+        log.info(
+            "Codex WebSocket policy bypass active (direct CLIProxy proxy); "
+            "set POLICY_ENGINE_WS_EVALUATE=true with POLICY_ENGINE_ENABLED for optional evaluate"
+        )
+    else:
+        log.info("Codex WebSocket policy evaluate requested — awaiting 38-04 translator wiring")
 
-    # Translate master key to CLIProxy API Key for the upstream connection
-    cliproxy_api_key = os.environ.get("CLIPROXY_API_KEY", "cliproxy-Wtgxs0tEBb4Usyam5qYg")
-    if cliproxy_api_key:
-        headers["authorization"] = f"Bearer {cliproxy_api_key}"
+    headers = _codex_ws_upstream_headers(dict(ws.headers), routing_decision)
 
-    log.info("Proxying Codex WebSocket to upstream: %s", cliproxy_ws_url)
+    log.info("Proxying Codex WebSocket to upstream: %s (policy_bypass=%s)", cliproxy_ws_url, ws_bypass)
     try:
         # Determine whether to use additional_headers or extra_headers
         import inspect
@@ -1562,7 +1772,9 @@ async def responses_proxy(request: Request):
         oai_body["stream"] = True
 
     # Extract and apply tenancy metadata
-    oai_body = _extract_and_apply_tenancy(request.headers.get("authorization"), oai_body)
+    auth = request.headers.get("authorization")
+    oai_body = _extract_and_apply_tenancy(auth, oai_body)
+    oai_body = await _apply_policy_engine(auth, oai_body)
 
     oai_bytes = json.dumps(oai_body).encode()
     headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "content-length", "content-type")}
@@ -1981,6 +2193,7 @@ async def claude_proxy(request: Request):
     )
     # Extract and apply tenancy metadata
     oai_body = _extract_and_apply_tenancy(api_key, oai_body)
+    oai_body = await _apply_policy_engine(api_key, oai_body)
 
     oai_bytes = json.dumps(oai_body).encode()
     headers = {
@@ -2271,7 +2484,94 @@ def _admin_models_panel(config: dict | None, visible_ids: list[str] | None, erro
     )
 
 
-def _admin_routing_panel(config: dict | None, metrics_text: str | None, errors: list[dict]) -> dict:
+def _admin_policy_trace_enabled() -> bool:
+    return ADMIN_POLICY_TRACE_ENABLED
+
+
+def _record_policy_trace(
+    decision: dict | None,
+    evaluate_ms: float,
+    *,
+    error: str | None = None,
+) -> None:
+    """Capture last policy-engine evaluate sample for /admin/status (issue 38-15)."""
+    global _policy_version_hint
+    if not _admin_policy_trace_enabled():
+        return
+    _policy_trace.evaluate_ms = round(evaluate_ms, 2)
+    _policy_trace.evaluated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    _policy_trace.decision = decision
+    _policy_trace.error = error
+    if isinstance(decision, dict) and decision.get("policy_version"):
+        _policy_version_hint = str(decision["policy_version"])
+
+
+def _redact_policy_decision_for_admin(decision: dict) -> dict:
+    """Bounded, redacted RoutingDecision sample for operator console."""
+    sample: dict = {}
+    for key in ("gate", "rules_applied", "policy_version", "quota_aware_mode"):
+        if key in decision:
+            sample[key] = decision[key]
+    if decision.get("quota_aware_mode"):
+        creds = decision.get("deprioritized_credentials")
+        if creds:
+            sample["deprioritized_credentials"] = list(creds)
+    if decision.get("session_key"):
+        sample["session_key"] = "[redacted]"
+    return sample
+
+
+def _build_admin_policy_engine_data(
+    *,
+    redis_connected: bool | None,
+    policy_version: str | None,
+) -> dict | None:
+    """Policy-engine trace subsection for routing panel (issue 38-15)."""
+    if not _admin_policy_trace_enabled():
+        return None
+    data: dict = {
+        "enabled": POLICY_ENGINE_ENABLED,
+        "trace_enabled": True,
+        "policy_version": policy_version or _policy_version_hint,
+        "redis_connected": redis_connected,
+        "last_evaluate_ms": _policy_trace.evaluate_ms,
+    }
+    if _policy_trace.decision:
+        data["last_decision"] = _redact_policy_decision_for_admin(_policy_trace.decision)
+    if _policy_trace.error:
+        data["last_error"] = _admin_redact(_policy_trace.error)[0]
+    return data
+
+
+async def _admin_policy_engine_connectivity() -> tuple[bool | None, str | None]:
+    """Best-effort Redis ping and policy-engine health for admin trace."""
+    redis_connected: bool | None = None
+    if _redis is not None:
+        try:
+            await _redis.ping()
+            redis_connected = True
+        except Exception:
+            redis_connected = False
+    policy_version = _policy_version_hint
+    if _client is not None:
+        try:
+            resp = await _client.get(f"{POLICY_ENGINE_URL}/v1/health", timeout=1.0)
+            if resp.status_code == 200:
+                body = resp.json()
+                if isinstance(body, dict) and body.get("policy_version"):
+                    policy_version = str(body["policy_version"])
+        except Exception:
+            pass
+    return redis_connected, policy_version
+
+
+def _admin_routing_panel(
+    config: dict | None,
+    metrics_text: str | None,
+    errors: list[dict],
+    *,
+    policy_engine: dict | None = None,
+) -> dict:
     router_settings = {}
     fallbacks = []
     if config:
@@ -2300,17 +2600,23 @@ def _admin_routing_panel(config: dict | None, metrics_text: str | None, errors: 
     status = "ok"
     if errors or metrics_text is None:
         status = "warning"
+    data = {
+        "router_settings": router_settings,
+        "fallbacks": fallbacks,
+        "provider_signals": provider_signals,
+        "cooldown_events": [],
+        "websocket_policy_bypass": codex_ws_policy_bypass(),
+        "websocket_policy_evaluate_enabled": _policy_engine_ws_evaluate_enabled(),
+        "policy_engine_enabled": _policy_engine_enabled(),
+    }
+    if policy_engine is not None:
+        data["policy_engine"] = policy_engine
     return _admin_panel(
         status,
         "repo:litellm-config.yaml + translator:/metrics",
         15,
         errors,
-        {
-            "router_settings": router_settings,
-            "fallbacks": fallbacks,
-            "provider_signals": provider_signals,
-            "cooldown_events": [],
-        },
+        data,
     )
 
 
@@ -2477,12 +2783,22 @@ async def admin_status():
     config, config_errors = _admin_load_litellm_config()
     visible_ids, model_errors = await _admin_fetch_visible_models()
     metrics_text, metrics_errors = await _admin_fetch_metrics_text()
+    redis_ok, policy_version = await _admin_policy_engine_connectivity()
+    policy_engine = _build_admin_policy_engine_data(
+        redis_connected=redis_ok,
+        policy_version=policy_version,
+    )
 
     panels = {
         "health": _admin_health_panel(),
         "models": _admin_models_panel(config, visible_ids, model_errors),
         "providers": _admin_providers_panel(),
-        "routing": _admin_routing_panel(config, metrics_text, metrics_errors),
+        "routing": _admin_routing_panel(
+            config,
+            metrics_text,
+            metrics_errors,
+            policy_engine=policy_engine,
+        ),
         "config_drift": _admin_config_drift_panel(config, config_errors),
         "token_analytics": _admin_token_analytics_panel(metrics_text, metrics_errors),
     }
@@ -2603,6 +2919,7 @@ async def proxy(path: str, request: Request):
             bd = json.loads(body)
             auth_token = request.headers.get("authorization", "")
             bd = _extract_and_apply_tenancy(auth_token, bd)
+            bd = await _apply_policy_engine(auth_token, bd)
             body = json.dumps(bd).encode()
             changed = True
         except Exception:
