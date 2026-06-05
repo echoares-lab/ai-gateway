@@ -223,6 +223,20 @@ jobs:
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
             up -d postgres cliproxy litellm
+          echo "Waiting for LiteLLM readiness (fresh Postgres migrations)..."
+          for i in {1..90}; do
+            if curl -sf http://localhost:4011/health/readiness >/dev/null; then
+              echo "LiteLLM ready"
+              break
+            fi
+            if [ "$i" -eq 90 ]; then
+              echo "LiteLLM never became ready"
+              docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs litellm || true
+              exit 1
+            fi
+            echo "waiting for litellm ($i/90)..."
+            sleep 5
+          done
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \

@@ -21,6 +21,8 @@ services:
     environment: {}
 
   litellm:
+    environment:
+      LITELLM_MIGRATIONS: ${LITELLM_MIGRATIONS:-}
     # Fresh Postgres + LiteLLM proxy_extras migrations can exceed dev defaults (~70s).
     healthcheck:
       test:
@@ -32,6 +34,13 @@ services:
       timeout: 5s
       retries: 24
       start_period: 120s
+
+  translator:
+    # CI: don't block `compose up translator` on LiteLLM health (compose wait can
+    # SIGKILL litellm while proxy_extras migrations run on a fresh Postgres volume).
+    depends_on:
+      litellm:
+        condition: service_started
 
   cpa-manager:
     image: seakee/cpa-manager:1.5.5
