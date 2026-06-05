@@ -1,0 +1,9 @@
+openapi: 3.0.3
+info:
+  title: CPA Manager API
+  description: CPA Manager management and status interface.
+  version: 1.0.0
+paths:
+  /management.html:
+    get:
+      summary: CPA Manager dashboard
