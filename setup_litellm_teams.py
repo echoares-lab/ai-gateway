@@ -17,6 +17,9 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "services", "translator"))
+from workspace_rules import load_workspace_rules, resolve_team_budget, tenancy_team_alias
+
 try:
     import requests
 except ImportError:
@@ -314,6 +317,24 @@ def _ensure_bashrc_wrapper():
     log("  bashrc: updated gateway wrappers (source ~/.bashrc to activate)")
 
 
+def _team_budget_payload(team_alias: str, rules: dict) -> dict:
+    budget = resolve_team_budget(team_alias, rules)
+    return {k: v for k, v in budget.items() if v is not None}
+
+
+def _apply_team_budget(litellm_admin_url: str, headers: dict, team_id: str, team_alias: str, rules: dict) -> None:
+    payload = {"team_id": team_id, **_team_budget_payload(team_alias, rules)}
+    if len(payload) <= 1:
+        return
+    try:
+        resp = requests.post(f"{litellm_admin_url}/team/update", headers=headers, json=payload, timeout=10)
+        resp.raise_for_status()
+        limits = ", ".join(f"{k}={v}" for k, v in payload.items() if k != "team_id")
+        log(f"  Applied team budget: {limits}")
+    except requests.RequestException as e:
+        warn(f"  Failed to apply budget for team {team_alias}: {e}")
+
+
 # --- Main ---
 
 def parse_args():
@@ -321,6 +342,10 @@ def parse_args():
     parser.add_argument("--slot", type=int, default=None, help="Dev stack slot number (e.g. 1, 2, ...)")
     parser.add_argument("--gateway-url", type=str, default=None, help="Explicit gateway API URL")
     parser.add_argument("--litellm-url", type=str, default=None, help="Explicit LiteLLM admin API URL")
+    parser.add_argument("--rules-file", type=str, default=None, help="Path to workspace-rules.yaml")
+    parser.add_argument("--org", type=str, default=None, help="Org slug for tenancy team alias")
+    parser.add_argument("--workspace", type=str, default=None, help="Workspace slug for tenancy team alias")
+    parser.add_argument("--team", type=str, default=None, help="Team slug for tenancy team alias")
     parser.add_argument("--force", action="store_true", help="Force deletion and regeneration of all keys")
     return parser.parse_args()
 
@@ -351,6 +376,9 @@ def main():
         "Content-Type": "application/json",
     }
 
+    workspace_rules = load_workspace_rules(args.rules_file)
+    tenancy_alias = tenancy_team_alias(args.org, args.workspace, args.team) if args.org and args.workspace and args.team else None
+
     log(f"Using LiteLLM at {litellm_admin_url}")
     log(f"Fetching repos from {ORG}...")
 
@@ -380,25 +408,25 @@ def main():
 
         log(f"\n--- {repo} ---")
 
-        # Reuse existing team or create a new one — never create duplicates.
-        if repo in existing_teams:
-            team_id = existing_teams[repo]
-            log(f"  Team already exists: {team_id}")
+        team_alias = tenancy_alias or repo
+        budget_rules_key = team_alias if team_alias in (workspace_rules.get("teams") or {}) else repo
+
+        if team_alias in existing_teams:
+            team_id = existing_teams[team_alias]
+            log(f"  Team already exists: {team_id} ({team_alias})")
         else:
             try:
-                resp = requests.post(
-                    f"{litellm_admin_url}/team/new",
-                    headers=headers,
-                    json={"team_alias": repo},
-                    timeout=10,
-                )
+                create_payload = {"team_alias": team_alias, **_team_budget_payload(budget_rules_key, workspace_rules)}
+                resp = requests.post(f"{litellm_admin_url}/team/new", headers=headers, json=create_payload, timeout=10)
                 resp.raise_for_status()
                 team_id = resp.json().get("team_id")
-                existing_teams[repo] = team_id
-                log(f"  Created team: {team_id}")
+                existing_teams[team_alias] = team_id
+                log(f"  Created team: {team_id} ({team_alias})")
             except requests.RequestException as e:
                 warn(f"  Failed to create team for {repo}: {e}")
                 continue
+
+        _apply_team_budget(litellm_admin_url, headers, team_id, budget_rules_key, workspace_rules)
 
         env_vars = []
         stale_vars = []
