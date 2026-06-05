@@ -42,6 +42,8 @@ github_issue: #141
 4. On completion, set `claim_status: done` and record PR link in issue body.
 5. **Do not claim** epic parent or Phase 0 tracking issue for implementation.
 6. **Hotspot rule:** `services/policy-engine/schemas.py` is owned by 38-1 (done) — additive changes only via new issues.
+7. **Do not double-claim 38-04:** Agent lane `142a1b91-9adf-45d2-8766-eb75a6c04231` was superseded by bundled work on `feat/translator-policy` — [PR #156](https://github.com/echoares-lab/ai-gateway/pull/156). Do not open a parallel branch for 38-04.
+8. **Do not double-claim 38-15:** [PR #157](https://github.com/echoares-lab/ai-gateway/pull/157) (`feat/admin-policy-trace`) was **closed as duplicate** — zero diff vs `feat/translator-policy`. Track 38-15 on PR #156 only.
 
 ## Phase order
 
@@ -115,29 +117,29 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-06 agent affinity | **done** | Agent affinity evaluator wired |
 | 38-07 rate-limit | **done** | Aggregator wired; inventory + Redis + translator merge |
 | 38-08 fallback | **done** | Layered evaluator + 11 unit tests (#127, PR #144) |
-| 38-09 budget | **done** | Soft gates + fail-open hard deny (#128, PR #142) |
+| 38-09 budget | **done** | Soft gates + fail-open hard deny (#128) |
 | 38-10 pool schema | **done** | Migration 002 in repo |
 | 38-11 pool aliases | **done** | Tier alias docs + claude-sonnet-4-6-at-native |
 | 38-12 prober events | **done** | POST /v1/events/credential + prober notifier |
-| 38-13 cliproxy sync | unassigned | Optional; blocked: 38-11 |
+| 38-13 cliproxy sync | **in-review** | PR #146 — optional CLIProxy pool priority sync (#132); 38-11 done |
 | 38-14 websocket | **done** | PR #156 — Option B bypass + design doc §9; closes #133 |
 | 38-15 admin trace | **in-review** | PR #156 — `policy_engine` panel in `/admin/status`; closes #134 on merge |
-| 38-16 audit log | **done** | PR #145 (merge queue) |
-| 38-17 integration tests | unassigned | Blocked: 38-14 |
-| 38-18 runbook | unassigned | Blocked: 38-15 |
+| 38-16 audit log | **done** | PR #145 |
+| 38-17 integration tests | unassigned | Blocked: 38-14 — unblocks when PR #156 merges |
+| 38-18 runbook | **done** | PR #151; design-only (38-15 pending) |
 | 38-19 eval routing | unassigned | Optional Phase 5 |
-| 38-20 mcp visibility | unassigned | Optional Phase 5 |
+| 38-20 mcp visibility | **in-review** | PR #148 (#139) |
 | 38-21 chargeback | unassigned | Optional Phase 5 |
-
-## Merge queue closeouts (2026-06-05)
-
-Batch merged to `main`: **#142** (38-9 budget), **#143** (38-12 prober), **#144** (38-8 fallback), **#145** (38-16 audit). Issue files below record PR links.
 
 ## Next agent action
 
-**Claim:** [policy-engine-38-13-cliproxy-priority-sync.md](./policy-engine-38-13-cliproxy-priority-sync.md) (optional) or [policy-engine-38-04-translator.md](./policy-engine-38-04-translator.md) (blocked on P0-1..P0-3).
+**In review:** [PR #156](https://github.com/echoares-lab/ai-gateway/pull/156) (`feat/translator-policy`) bundles 38-04, 38-14 (done), and 38-15. Duplicate [PR #157](https://github.com/echoares-lab/ai-gateway/pull/157) closed — identical branch.
 
-**Done:** 38-9 budget ([#128](./policy-engine-38-09-budget-gates.md), PR #142); 38-16 audit ([#135](./policy-engine-38-16-audit-log.md), PR #145).
+**In review:** [PR #146](https://github.com/echoares-lab/ai-gateway/pull/146) — 38-13 optional CLIProxy pool priority sync (#132).
+
+**Claim after #156 merges:** [policy-engine-38-17-integration-tests.md](./policy-engine-38-17-integration-tests.md) (#136) or optional [policy-engine-38-13-cliproxy-priority-sync.md](./policy-engine-38-13-cliproxy-priority-sync.md).
+
+**Done:** [policy-engine-38-16-audit-log.md](./policy-engine-38-16-audit-log.md) — PR #145; [policy-engine-38-14-websocket-parity.md](./policy-engine-38-14-websocket-parity.md) — PR #156.
 
 ## Live claim_status summary
 
@@ -149,13 +151,16 @@ Batch merged to `main`: **#142** (38-9 budget), **#143** (38-12 prober), **#144*
 | 38-05 repo affinity | done | — |
 | 38-06 agent affinity | done | — |
 | 38-07 rate-limit | done | #126 |
-| 38-08 fallback | done | #127, PR #144 |
+| 38-08 fallback | done | #127 |
 | 38-16 audit log | done | #135, PR #145 |
+| 38-14 websocket | **done** | PR #156 — Option B bypass + design doc §9; closes #133 |
 | 38-04 translator | **in-review** | PR #156 — `POLICY_ENGINE_ENABLED` hook + unit tests; agent `142a1b91` lane superseded |
+| 38-15 admin trace | **in-review** | PR #156 — `policy_engine` panel in `/admin/status`; closes #134 on merge |
 | 38-06 agent affinity | done | #125 |
 | 38-10 pool schema | done | #129 |
 | 38-12 prober events | done | #131 |
+| 38-13 cliproxy sync | in-review | #132, PR #146 |
 | Phase 0 prerequisites | tracking (not claimable) | #119 |
 | Epic coordination | not-claimable | #38 |
 
-**Next unblocked for implementation:** 38-13 cliproxy sync (optional; PR #146 in review). **38-04** remains gated on P0-1..P0-3 per phase0 prerequisites.
+**Next unblocked for implementation:** 38-17 integration tests (#136) after PR #156 merges. Do not re-claim 38-04 — see agent `142a1b91` supersession note above.

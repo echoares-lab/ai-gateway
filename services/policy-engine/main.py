@@ -96,9 +96,7 @@ def evaluate(
     """Evaluator — rate limits, repo affinity, budget, agent affinity, fallback."""
     redis_store = store if store is not None else get_redis_store()
     profiles_db = profile_store if profile_store is not None else get_profile_store()
-    inventory = (
-        inventory_store if inventory_store is not None else get_inventory_store()
-    )
+    inventory = inventory_store if inventory_store is not None else get_inventory_store()
 
     model = context.context.requested_model
     rules: list[str] = []
@@ -147,14 +145,12 @@ def evaluate(
     deny_reason = budget_result.deny_reason
     retry_after = budget_result.retry_after_seconds
 
-    preferred_cred, session_key, lock_family, cache_cold_start, tier_pref, agent_rules = (
-        apply_agent_affinity(
-            merged_context,
-            redis_store,
-            deprioritized_credentials=deprioritized,
-            tier_preference=tier_pref,
-            dry_run=context.context.dry_run,
-        )
+    preferred_cred, session_key, lock_family, cache_cold_start, tier_pref, agent_rules = apply_agent_affinity(
+        merged_context,
+        redis_store,
+        deprioritized_credentials=deprioritized,
+        tier_preference=tier_pref,
+        dry_run=context.context.dry_run,
     )
     rules.extend(agent_rules)
 
@@ -193,9 +189,7 @@ def evaluate(
     if profiles:
         debug["policy_profiles"] = [profile.profile_id for profile in profiles]
     if rate_eval.merged_rate_limits:
-        debug["rate_limits"] = [
-            snap.model_dump(mode="json") for snap in rate_eval.merged_rate_limits
-        ]
+        debug["rate_limits"] = [snap.model_dump(mode="json") for snap in rate_eval.merged_rate_limits]
     if rate_eval.skipped_models:
         debug["skipped_models_all_cooled"] = rate_eval.skipped_models
     if agent_affinity:
