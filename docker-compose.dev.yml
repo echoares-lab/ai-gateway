@@ -27,6 +27,44 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: docker.io/redis:7
+    restart: unless-stopped
+    command: >
+      --requirepass ${REDIS_AUTH:-myredissecret}
+      --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  policy-engine:
+    build:
+      context: ./services/policy-engine
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${DEV_POLICY_ENGINE_PORT:-8090}:8080"
+    environment:
+      REDIS_URL: redis://:${REDIS_AUTH:-myredissecret}@redis:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python - <<'PY'\nimport urllib.request, sys\ntry:\n    r = urllib.request.urlopen('http://127.0.0.1:8080/v1/health', timeout=3)\n    sys.exit(0 if 200 <= r.status < 300 else 1)\nexcept Exception:\n    sys.exit(1)\nPY"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
   cliproxy:
     build:
       context: ${CLIPROXY_BUILD_CONTEXT:-/home/dev/repos/CLIProxyAPI}
@@ -108,6 +146,8 @@ services:
     depends_on:
       litellm:
         condition: service_healthy
+      policy-engine:
+        condition: service_started
     environment:
       LITELLM_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
@@ -115,6 +155,10 @@ services:
       UPSTREAM_TIMEOUT: ${UPSTREAM_TIMEOUT:-30.0}
       LITELLM_CONFIG_PATH: /config/litellm-config.yaml
       DEV_SLOT: ${DEV_SLOT:-1}
+      REDIS_URL: redis://:${REDIS_AUTH:-myredissecret}@redis:6379
+      POLICY_ENGINE_URL: ${POLICY_ENGINE_URL:-http://policy-engine:8080}
+      POLICY_ENGINE_ENABLED: ${POLICY_ENGINE_ENABLED:-false}
+      POLICY_ENGINE_TIMEOUT_MS: ${POLICY_ENGINE_TIMEOUT_MS:-100}
     ports:
       - "${DEV_TRANSLATOR_PORT:-4010}:4000"
     volumes:

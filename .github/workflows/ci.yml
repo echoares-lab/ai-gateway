@@ -266,7 +266,7 @@ jobs:
           cp .env.example .env
           echo "LITELLM_MASTER_KEY=sk-ci-mock" >> .env
           echo "CLIPROXY_API_KEY=mock-key" >> .env
-      - name: Start mock stack (translator + litellm + postgres + MOCK cliproxy)
+      - name: Start mock stack (translator + litellm + postgres + MOCK cliproxy + policy-engine)
         env:
           TRANSLATOR_IMAGE: ai-translator-test:latest
           CLIPROXY_DEV_CONFIG: ${{ github.workspace }}/tests/cliproxy-config-ci.yaml
@@ -275,11 +275,11 @@ jobs:
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
-            build postgres cliproxy litellm
+            build postgres cliproxy litellm policy-engine
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
-            up -d postgres cliproxy litellm
+            up -d postgres cliproxy litellm policy-engine
           echo "Waiting for LiteLLM readiness (fresh Postgres migrations)..."
           # proxy_extras baseline + 123 migrations on a fresh CI Postgres volume can exceed 7.5m.
           for i in {1..180}; do
