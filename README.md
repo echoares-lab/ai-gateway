@@ -57,7 +57,7 @@ The following strategies are available and can be configured globally or per-key
 ### Fallback Logic
 The gateway is built to assume that consumer-tier accounts will hit rate limits (429 errors).
 *   **Automatic Cooldown:** When a model hits a rate limit, it is placed on a 60-second "cooldown" and skipped by the router.
-*   **Model Escallation:** If your preferred model (e.g., `claude-opus`) is exhausted, the router will automatically attempt the request with a sibling model (e.g., `claude-sonnet`) or a different provider (e.g., `gpt-5`).
+*   **Model Escalation:** If your preferred model (e.g., `claude-opus`) is exhausted, the router will automatically attempt the request with a sibling model (e.g., `claude-sonnet`) or a different provider (e.g., `gpt-5`).
 
 ## Client Considerations (Cursor / IDEs)
 
@@ -74,20 +74,16 @@ To use this gateway in Cursor, follow these steps:
 1.  **Open Settings:** Go to `Cursor Settings` -> `Models`.
 2.  **Configure OpenAI API:**
     *   **API Base URL:** `http://localhost:4000/v1`
-    *   **API Key:** Use the `LITELLM_MASTER_KEY` from your `.env` file.
+    *   **API Key:** Use the `LITELLM_MASTER_KEY` from your [`.env`](.env.example) file.
 3.  **Manage Models:**
     *   **Disable default models** (like Cursor's built-in Claude) to ensure all traffic routes through your local gateway for tracking and cost management.
-    *   **Add Custom Models:** Click `+ Add Model` and enter the IDs exactly as they appear in `litellm-config.yaml`.
+    *   **Add Custom Models:** Click `+ Add Model` and enter the IDs exactly as they appear in [`litellm-config.yaml`](litellm-config.yaml).
 4.  **Recommended Model IDs:**
     *   `claude-sonnet-4-6` (Standard)
     *   `claude-sonnet-4-6-high` (Deep Thinking mode)
     *   `gemini-pro-agent-high` (Google's agentic reasoning)
     *   `gpt-5-5` (Latest OpenAI flagship)
 5.  **Verify Connection:** Use the `Cursor Chat` and ask a question. Check your **Langfuse dashboard** (`http://localhost:3000`) to verify the request was captured.
-
-### Claude Code Plugins
-*   Modular packages that extend the AI's capabilities in the local environment.
-*   Bundle specialized agents, custom slash commands, and MCP servers into shareable units for team-wide AI workflows.
 
 ## Documentation Index
 *   [docs/TENANCY.md](./docs/TENANCY.md): Foundational tenancy and workspace domain model design.
