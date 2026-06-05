@@ -6,6 +6,7 @@ Evaluates fallback ordering per POLICY_ENGINE_AND_ROUTING_REFACTOR.md §5.5:
   3. Affinity family lock
   4. Rate-limit cooldown skip
   5. Health-weighted order
+  5b. Eval-quality reorder (optional, policy_json.eval)
   6. Cost tier preference (budget pressure)
   7. Static YAML baseline safety net
 """
@@ -19,6 +20,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from evaluator.quality import apply_quality_reorder, extract_eval_config, resolve_task_category
 from schemas import (
     BudgetSnapshot,
     PolicyProfile,
@@ -211,6 +213,7 @@ def evaluate_fallback_layers(
     policy_profiles: list[PolicyProfile] | None = None,
     baseline_path: str | None = None,
     tier_preference: str | None = None,
+    request_metadata: dict[str, Any] | None = None,
 ) -> FallbackResult:
     """Apply §5.5 fallback layers and return ordered deployments."""
     profiles = policy_profiles or []
@@ -284,6 +287,21 @@ def evaluate_fallback_layers(
             candidates = head + tail
             rules.append("fallback:health:weighted_order")
             debug["health_scores_used"] = {m: health_scores.get(m, 0.0) for m in tail}
+
+    # Layer 5b — eval-quality reorder (optional; fail-open when disabled or no scores)
+    eval_config = extract_eval_config(profiles)
+    task_category = resolve_task_category(eval_config, request_metadata)
+    quality_result = apply_quality_reorder(
+        candidates,
+        requested_model=requested_model,
+        eval_config=eval_config,
+        task_category=task_category,
+        health_scores=health_scores,
+    )
+    if quality_result.applied:
+        candidates = quality_result.candidates
+        rules.extend(quality_result.rules_applied)
+        debug.update(quality_result.debug)
 
     # Layer 6 — cost tier when budget pressure
     budget_pct = budget.team_budget_pct_used if budget else None

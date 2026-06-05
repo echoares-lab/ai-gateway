@@ -182,6 +182,7 @@ def evaluate(
         policy_profiles=profiles,
         baseline_path=DEFAULT_FALLBACK_BASELINE,
         tier_preference=tier_pref,
+        request_metadata=merged_context.metadata,
     )
     rules.extend(fallback_result.rules_applied)
 
