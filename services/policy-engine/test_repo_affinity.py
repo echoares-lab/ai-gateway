@@ -111,7 +111,10 @@ def test_evaluate_applies_repo_profile_from_fixture_store():
         profile_store=store,
     )
     assert "repo_affinity:repo:audit-prod:denylist" in decision.rules_applied
-    assert decision.fallback_chain == ["claude-sonnet-4-6", "claude-haiku-4-5"]
+    assert decision.fallback_chain == [
+        "claude-sonnet-4-6-at-native",
+        "claude-haiku-4-5",
+    ]
     assert decision.credential_tier_preference == "native"
 
 

@@ -2,7 +2,7 @@
 
 Evaluates RoutingContext and returns RoutingDecision. Phase 2 evaluators:
 repo affinity (38-5), rate-limit aggregation (38-7), budget gates (38-9),
-agent affinity (38-6).
+agent affinity (38-6), fallback layers (38-8).
 """
 
 from __future__ import annotations
@@ -14,8 +14,10 @@ from evaluator.agent_affinity import apply_agent_affinity
 from evaluator.budget import apply_budget_gates
 from evaluator.credential_events import handle_credential_event
 from evaluator.fallback import evaluate_fallback_layers
+from evaluator.rate_limit import aggregate_and_evaluate
 from evaluator.repo_affinity import apply_repo_affinity
 from fastapi import Depends, FastAPI, HTTPException
+from inventory_store import InventoryStore
 from profile_store import ProfileStore
 from redis_store import RedisStateStore
 from schemas import (
@@ -36,7 +38,6 @@ DEFAULT_FALLBACK_BASELINE = os.environ.get(
     "POLICY_DEFAULT_FALLBACK_BASELINE",
     "litellm-config.yaml",
 )
-PREEMPTIVE_429_THRESHOLD = int(os.environ.get("POLICY_PREEMPTIVE_429_THRESHOLD", "3"))
 
 
 @lru_cache
@@ -49,27 +50,34 @@ def get_profile_store() -> ProfileStore:
     return ProfileStore.from_env()
 
 
-def _quota_aware_stubs(context: EvaluateRequest) -> tuple[list[str], bool, list[str]]:
-    """Phase 1 stub for quota-aware deprioritization (full logic in 38-7 / 38-9)."""
-    deprioritized: list[str] = []
-    rules: list[str] = []
+@lru_cache
+def get_inventory_store() -> InventoryStore:
+    return InventoryStore.from_env()
 
-    for snapshot in context.context.rate_limits:
-        if snapshot.in_cooldown and snapshot.credential_id:
-            deprioritized.append(snapshot.credential_id)
-            rules.append("rate_limit:cooldown_skip")
-        if (
-            snapshot.rolling_429_count_5m >= PREEMPTIVE_429_THRESHOLD or snapshot.pre_emptive_degraded
-        ) and snapshot.credential_id:
-            if snapshot.credential_id not in deprioritized:
-                deprioritized.append(snapshot.credential_id)
-            rules.append("rate_limit:preemptive_deprioritize")
 
-    quota_aware = context.context.pool_affinity_mode == "quota-aware" or bool(deprioritized)
-    if context.context.pool_affinity_mode == "quota-aware":
-        rules.append("pool:quota_aware_mode")
+def _filter_degraded_models(
+    models: list[str],
+    skipped: list[str],
+) -> list[str]:
+    if not skipped:
+        return models
+    skip_set = set(skipped)
+    return [model for model in models if model not in skip_set]
 
-    return deprioritized, quota_aware, rules
+
+def _merge_deprioritized(
+    *groups: list[str] | None,
+) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        if not group:
+            continue
+        for cred_id in group:
+            if cred_id not in seen:
+                seen.add(cred_id)
+                merged.append(cred_id)
+    return merged
 
 
 def evaluate(
@@ -77,17 +85,17 @@ def evaluate(
     *,
     store: RedisStateStore | None = None,
     profile_store: ProfileStore | None = None,
+    inventory_store: InventoryStore | None = None,
 ) -> RoutingDecision:
-    """Evaluator — repo affinity profiles + quota-aware contract stubs."""
+    """Evaluator — rate limits, repo affinity, budget, agent affinity, fallback."""
     redis_store = store if store is not None else get_redis_store()
     profiles_db = profile_store if profile_store is not None else get_profile_store()
-    merged_context = redis_store.merge_rate_limits_from_redis(context.context)
-    context = context.model_copy(update={"context": merged_context})
+    inventory = (
+        inventory_store if inventory_store is not None else get_inventory_store()
+    )
 
     model = context.context.requested_model
     rules: list[str] = []
-    if redis_store.enabled:
-        rules.append("redis:rate_limits_merged")
 
     if context.context.dry_run:
         rules.append("dry_run:no_state_write")
@@ -97,36 +105,50 @@ def evaluate(
         redis_store=redis_store,
         cache_write=not context.context.dry_run,
     )
+    if profiles_db.enabled and profiles:
+        rules.append("postgres:profiles_loaded")
+
+    merged_context, rate_eval, merge_rules = aggregate_and_evaluate(
+        context.context,
+        redis_store=redis_store,
+        inventory_store=inventory,
+        profiles=profiles,
+    )
+    rules.extend(merge_rules)
+    rules.extend(rate_eval.rules_applied)
+
     allowed, fallback, tier_pref, affinity_rules = apply_repo_affinity(model, profiles)
     rules.extend(affinity_rules)
     if not affinity_rules:
         rules.append("stub:pass_through")
-    if profiles_db.enabled and profiles:
-        rules.append("postgres:profiles_loaded")
 
-    budget_result = apply_budget_gates(context.context, profiles)
+    if rate_eval.skipped_models:
+        allowed = _filter_degraded_models(allowed, rate_eval.skipped_models)
+        fallback = _filter_degraded_models(fallback, rate_eval.skipped_models)
+
+    budget_result = apply_budget_gates(merged_context, profiles)
     rules.extend(budget_result.rules_applied or [])
     if budget_result.credential_tier_preference:
         tier_pref = budget_result.credential_tier_preference
 
-    deprioritized, quota_aware, quota_rules = _quota_aware_stubs(context)
-    rules.extend(quota_rules)
-    for cred_id in budget_result.deprioritized_credentials or []:
-        if cred_id not in deprioritized:
-            deprioritized.append(cred_id)
-    if deprioritized:
-        quota_aware = True
+    deprioritized = _merge_deprioritized(
+        rate_eval.deprioritized_credentials,
+        budget_result.deprioritized_credentials,
+    )
+    quota_aware = rate_eval.quota_aware_mode or bool(deprioritized)
 
     gate = budget_result.gate
     deny_reason = budget_result.deny_reason
     retry_after = budget_result.retry_after_seconds
 
-    preferred_cred, session_key, lock_family, cache_cold_start, tier_pref, agent_rules = apply_agent_affinity(
-        context.context,
-        redis_store,
-        deprioritized_credentials=deprioritized,
-        tier_preference=tier_pref,
-        dry_run=context.context.dry_run,
+    preferred_cred, session_key, lock_family, cache_cold_start, tier_pref, agent_rules = (
+        apply_agent_affinity(
+            merged_context,
+            redis_store,
+            deprioritized_credentials=deprioritized,
+            tier_preference=tier_pref,
+            dry_run=context.context.dry_run,
+        )
     )
     rules.extend(agent_rules)
 
@@ -134,13 +156,13 @@ def evaluate(
     if context.context.agent_id and redis_store.enabled:
         agent_affinity = redis_store.get_agent_affinity(context.context.agent_id)
 
-    health_scores = context.context.metadata.get("health_scores")
+    health_scores = merged_context.metadata.get("health_scores")
     if not isinstance(health_scores, dict):
         health_scores = {}
 
-    deployment_credentials = context.context.metadata.get("deployment_credentials")
+    deployment_credentials = merged_context.metadata.get("deployment_credentials")
     if not isinstance(deployment_credentials, dict):
-        deployment_credentials = context.context.metadata.get("backing_credentials")
+        deployment_credentials = merged_context.metadata.get("backing_credentials")
     if not isinstance(deployment_credentials, dict):
         deployment_credentials = {}
 
@@ -148,9 +170,9 @@ def evaluate(
         model,
         allowed_models=allowed,
         policy_fallback=fallback,
-        capabilities=context.context.capabilities,
-        budget=context.context.budget,
-        rate_limits=context.context.rate_limits,
+        capabilities=merged_context.capabilities,
+        budget=merged_context.budget,
+        rate_limits=merged_context.rate_limits,
         deprioritized_credentials=deprioritized,
         agent_affinity=agent_affinity,
         health_scores=health_scores,
@@ -164,6 +186,12 @@ def evaluate(
     debug: dict = {"baseline": DEFAULT_FALLBACK_BASELINE, **fallback_result.debug}
     if profiles:
         debug["policy_profiles"] = [profile.profile_id for profile in profiles]
+    if rate_eval.merged_rate_limits:
+        debug["rate_limits"] = [
+            snap.model_dump(mode="json") for snap in rate_eval.merged_rate_limits
+        ]
+    if rate_eval.skipped_models:
+        debug["skipped_models_all_cooled"] = rate_eval.skipped_models
     if agent_affinity:
         debug["agent_affinity"] = agent_affinity
 

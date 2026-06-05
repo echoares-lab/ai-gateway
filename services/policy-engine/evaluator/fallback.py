@@ -223,24 +223,26 @@ def evaluate_fallback_layers(
 
     candidates = _baseline_chain(requested_model, policy_fallback, baseline_path)
     allowed_set = set(allowed_models) if allowed_models else {requested_model}
+    allowed_set.add(requested_model)
+    if policy_fallback:
+        allowed_set.update(policy_fallback)
 
     # Layer 1 — capability hard filter
-    before = len(candidates)
     if capabilities.has_tools:
+        before = len(candidates)
         candidates = [m for m in candidates if model_traits(m)["tools"]]
-        if len(candidates) < before:
-            rules.append("fallback:capability:filter_tools")
+        rules.append("fallback:capability:filter_tools")
+        if len(candidates) == before and before:
+            debug["capability_tools_noop"] = True
     if capabilities.has_vision:
         before = len(candidates)
         candidates = [m for m in candidates if model_traits(m)["vision"]]
-        if len(candidates) < before:
-            rules.append("fallback:capability:filter_vision")
+        rules.append("fallback:capability:filter_vision")
 
     # Layer 2 — policy allowlist
     before = len(candidates)
     candidates = [m for m in candidates if m in allowed_set]
-    if len(candidates) < before or allowed_set != {requested_model}:
-        rules.append("fallback:policy:allowlist")
+    rules.append("fallback:policy:allowlist")
 
     # Layer 3 — affinity family lock
     lock_family = False
@@ -256,8 +258,7 @@ def evaluate_fallback_layers(
             candidates = [
                 m for m in candidates if model_traits(m)["family"] == locked_family
             ]
-            if len(candidates) < before:
-                rules.append("fallback:affinity:family_lock")
+            rules.append("fallback:affinity:family_lock")
             lock_family = True
             debug["locked_model_family"] = locked_family
 
@@ -318,14 +319,14 @@ def evaluate_fallback_layers(
             rules.append("fallback:baseline:yaml")
             debug["yaml_baseline_source"] = baseline_path or "embedded"
 
-    # Tier-specific deployment names when policy dictates a pool tier
-    if tier_preference:
-        tier_models = [
-            f"{m}-at-{tier_preference}" if not m.endswith(f"-at-{tier_preference}") else m
-            for m in candidates
-        ]
-        candidates = _dedupe_preserve_order(tier_models)
-        rules.append("fallback:tier:deployment_alias")
+    # Tier-specific deployment name for the primary model only (38-11)
+    if tier_preference and candidates:
+        tier_suffix = f"-at-{tier_preference}"
+        primary = candidates[0]
+        if primary == requested_model and not primary.endswith(tier_suffix):
+            candidates = [f"{primary}{tier_suffix}", *candidates[1:]]
+            candidates = _dedupe_preserve_order(candidates)
+            rules.append("fallback:tier:deployment_alias")
 
     if not candidates:
         candidates = [requested_model]

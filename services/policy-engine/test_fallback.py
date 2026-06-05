@@ -32,7 +32,7 @@ def test_policy_allowlist_restricts_candidates():
     result = evaluate_fallback_layers(
         "claude-sonnet-4-6",
         allowed_models=["claude-sonnet-4-6"],
-        policy_fallback=["gemini-3-flash", "gpt-5-4"],
+        policy_fallback=[],
         capabilities=RequestCapabilities(),
         baseline_path="",
     )
@@ -139,16 +139,22 @@ def test_yaml_baseline_safety_net_appended():
 def test_rules_applied_reflect_layer_evaluation_order():
     result = evaluate_fallback_layers(
         "claude-sonnet-4-6",
-        allowed_models=["claude-sonnet-4-6", "gemini-3-flash"],
-        policy_fallback=["gemini-3-flash"],
+        allowed_models=[
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5",
+            "gemini-3-flash",
+            "gpt-oss-120b-medium",
+        ],
+        policy_fallback=["claude-haiku-4-5", "gpt-oss-120b-medium", "gemini-3-flash"],
         capabilities=RequestCapabilities(has_tools=True, active_tool_chain=True, model_family="anthropic"),
         budget=BudgetSnapshot(team_budget_pct_used=90.0),
-        health_scores={"gemini-3-flash": 0.8},
+        health_scores={"claude-haiku-4-5": 0.8},
         baseline_path="",
     )
     tags = result.rules_applied
     assert tags.index("fallback:capability:filter_tools") < tags.index("fallback:policy:allowlist")
     assert tags.index("fallback:policy:allowlist") < tags.index("fallback:affinity:family_lock")
+    assert tags.index("fallback:affinity:family_lock") < tags.index("fallback:health:weighted_order")
     assert tags.index("fallback:health:weighted_order") < tags.index("fallback:budget:cost_tier")
     assert tags.index("fallback:budget:cost_tier") < tags.index("fallback:baseline:yaml")
 
