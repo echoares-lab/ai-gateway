@@ -213,7 +213,6 @@ jobs:
           TRANSLATOR_IMAGE: ai-translator-test:latest
           CLIPROXY_DEV_CONFIG: ${{ github.workspace }}/tests/cliproxy-config-ci.yaml
           DEV_TRANSLATOR_PORT: "4010"
-          LITELLM_MIGRATIONS: "None"
         run: |
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \

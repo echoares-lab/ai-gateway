@@ -11,6 +11,11 @@
 # and the real config mount. The internal port stays 8317 so litellm-config.yaml
 # (api_base: http://cliproxy:8317/v1) needs no change.
 services:
+  postgres:
+    volumes:
+      - dev_pgdata:/var/lib/postgresql/data
+      - ./tests/init-db-mock-ci.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+
   cliproxy:
     build:
       context: ./tests/mock-upstream
