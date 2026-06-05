@@ -2,15 +2,22 @@
 # setup-repo-env.sh — bootstrap per-repo AI CLI isolation
 #
 # Usage:
-#   setup-repo-env.sh [--op] [repo-path]
+#   setup-repo-env.sh [--op] [--org ORG] [--workspace WS] [--team TEAM] [--env ENV] [repo-path]
 #
-# --op   Write a 1Password .envrc (no local .env needed) instead of dotenv-based one
+# --op          Write a 1Password .envrc (no local .env needed) instead of dotenv-based one
+# --org         Tenant org slug (default: echoares)
+# --workspace   Workspace slug (default: core)
+# --team        Team slug (default: eng) — single segment; see docs/TENANCY.md
+# --env         Environment slug (default: dev)
 #
 # What it does:
 #   1. Creates an isolated CODEX_HOME at ~/.codex-repos/<repo-name>/
 #   2. Writes config.toml routing Codex to the gateway with auto-approve
-#   3. Writes a .envrc into the repo root
+#   3. Writes a .envrc into the repo root (includes tenant key naming guidance)
 #   4. Runs `direnv allow` to whitelist it
+#
+# Gateway API keys should follow: ak-{org}-{workspace}-{team}-{repo}-{environment}
+# so the translator can attach tenant metadata (docs/TENANCY.md).
 
 set -euo pipefail
 
@@ -18,13 +25,26 @@ GATEWAY_URL="${GATEWAY_URL:-http://localhost:4000}"
 OP_VAULT="ai-gateway"
 OP_ITEM="dev-secrets"
 
+TENANT_ORG="${TENANT_ORG:-echoares}"
+TENANT_WORKSPACE="${TENANT_WORKSPACE:-core}"
+TENANT_TEAM="${TENANT_TEAM:-eng}"
+TENANT_ENV="${TENANT_ENV:-dev}"
+
 use_op=0
 repo_path=""
 
-for arg in "$@"; do
-    case "$arg" in
-        --op) use_op=1 ;;
-        *)    repo_path="$arg" ;;
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --op) use_op=1; shift ;;
+        --org) TENANT_ORG="${2:?--org requires a value}"; shift 2 ;;
+        --workspace) TENANT_WORKSPACE="${2:?--workspace requires a value}"; shift 2 ;;
+        --team) TENANT_TEAM="${2:?--team requires a value}"; shift 2 ;;
+        --env) TENANT_ENV="${2:?--env requires a value}"; shift 2 ;;
+        -h | --help)
+            sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *) repo_path="$1"; shift ;;
     esac
 done
 
@@ -35,9 +55,11 @@ fi
 repo_path=$(realpath "$repo_path")
 repo_name=$(basename "$repo_path")
 codex_home="$HOME/.codex-repos/$repo_name"
+tenant_key="ak-${TENANT_ORG}-${TENANT_WORKSPACE}-${TENANT_TEAM}-${repo_name}-${TENANT_ENV}"
 
-echo "→ Repo:       $repo_path"
-echo "→ CODEX_HOME: $codex_home"
+echo "→ Repo:         $repo_path"
+echo "→ CODEX_HOME:   $codex_home"
+echo "→ Tenant key:   $tenant_key  (use as Authorization: Bearer … in LiteLLM)"
 
 # 1. Create isolated CODEX_HOME
 mkdir -p "$codex_home"
@@ -59,9 +81,23 @@ echo "→ Wrote $codex_home/config.toml"
 envrc_path="$repo_path/.envrc"
 has_env=$([[ -f "$repo_path/.env" ]] && echo 1 || echo 0)
 
+_tenant_block() {
+    cat <<ENVRC
+# Tenancy (epic #30 — docs/TENANCY.md)
+export GATEWAY_TENANT_ORG="${TENANT_ORG}"
+export GATEWAY_TENANT_WORKSPACE="${TENANT_WORKSPACE}"
+export GATEWAY_TENANT_TEAM="${TENANT_TEAM}"
+export GATEWAY_TENANT_ENV="${TENANT_ENV}"
+export GATEWAY_TENANT_KEY_LABEL="${tenant_key}"
+# LiteLLM virtual key should match this label; map to client env vars below.
+ENVRC
+}
+
 if [[ $use_op -eq 1 ]] || [[ $has_env -eq 0 ]]; then
     # 1Password variant — no .env needed
-    cat > "$envrc_path" <<ENVRC
+    {
+        _tenant_block
+        cat <<ENVRC
 export CODEX_HOME="\$HOME/.codex-repos/${repo_name}"
 
 # Load API keys from 1Password vault (requires ~/.op-token with OP_SERVICE_ACCOUNT_TOKEN)
@@ -77,10 +113,13 @@ export OPENAI_BASE_URL=${GATEWAY_URL}/v1
 export ANTIGRAVITY_API_BASE=${GATEWAY_URL}/v1
 export CURSOR_API_BASE=${GATEWAY_URL}/v1
 ENVRC
+    } > "$envrc_path"
     echo "→ Wrote .envrc (1Password variant)"
 else
     # dotenv variant — loads from local .env, overrides CODEX_HOME
-    cat > "$envrc_path" <<ENVRC
+    {
+        _tenant_block
+        cat <<ENVRC
 dotenv
 export CODEX_HOME="\$HOME/.codex-repos/${repo_name}"
 
@@ -92,6 +131,7 @@ export OPENAI_BASE_URL="\${GATEWAY_URL}/v1"
 export ANTIGRAVITY_API_BASE="\${GATEWAY_URL}/v1"
 export CURSOR_API_BASE="\${GATEWAY_URL}/v1"
 ENVRC
+    } > "$envrc_path"
     echo "→ Wrote .envrc (dotenv variant)"
 fi
 
@@ -114,3 +154,4 @@ fi
 
 echo ""
 echo "Done. cd into $repo_path and API keys + CODEX_HOME load automatically."
+echo "Provision a LiteLLM key labeled ${tenant_key} and set OPENAI_API_KEY / ANTHROPIC_API_KEY to its value."
