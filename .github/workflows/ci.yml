@@ -14,8 +14,10 @@ on:
     types: [ opened, synchronize, reopened, labeled ]
   workflow_dispatch: {}
 
+# Single self-hosted runner: host ports (4010/4011/18080, stable :8080) cannot serve
+# parallel mock-integration stacks. Serialize the whole workflow (all refs).
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-self-hosted
   cancel-in-progress: true
 
 permissions:
@@ -80,7 +82,7 @@ jobs:
       - name: Install dependencies
         run: |
           python3 -m venv .venv-ci
-          .venv-ci/bin/pip install ruff pyyaml
+          .venv-ci/bin/pip install ruff pyyaml pydantic
       - name: Lint with ruff
         run: .venv-ci/bin/ruff check services/translator/translator.py tests/mock-upstream/app.py
       - name: Format check with ruff
@@ -131,7 +133,6 @@ jobs:
 
       - name: Validate policy-profiles.yaml
         run: |
-          .venv-ci/bin/pip install pydantic
           PYTHONPATH=services/policy-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
 
       - name: Check for hardcoded API keys
@@ -248,6 +249,9 @@ jobs:
 
   # Gate B: real translator + litellm + canned mock upstream (no OAuth, no real LLM).
   mock-integration:
+    concurrency:
+      group: ci-docker-host-ports
+      cancel-in-progress: false
     needs: changes
     if: >
       needs.changes.outputs.runtime == 'true' ||
@@ -259,6 +263,9 @@ jobs:
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
           sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
+      - name: Teardown stale mock stacks (self-hosted)
+        run: |
+          docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock down --remove-orphans || true
       - name: Ensure Python venv (PEP 668 / self-hosted)
         run: |
           sudo apt-get update
@@ -362,6 +369,9 @@ jobs:
 
   # Gate C: builds the CLIProxy fork and hits REAL providers. Not a required check.
   real-provider-e2e:
+    concurrency:
+      group: ci-docker-host-ports
+      cancel-in-progress: false
     if: >
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'run-e2e')
