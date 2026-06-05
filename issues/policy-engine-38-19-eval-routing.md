@@ -52,3 +52,5 @@ github_issue: #138
 - **Branch:** `feat/eval-routing`
 - **Worktree:** `/home/dev/.cursor/worktrees/ai-gateway__SSH__dev_/575k`
 - **Scope:** Design/docs stub — quality feedback loop for fallback weight tuning
+
+**PR:** https://github.com/echoares-lab/ai-gateway/pull/147
