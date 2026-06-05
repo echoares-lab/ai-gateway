@@ -1,0 +1,57 @@
+openapi: 3.0.3
+info:
+  title: Translator API
+  description: Translation proxy for multiple AI CLI formats to LiteLLM (OpenAI Chat Completions).
+  version: 1.0.0
+paths:
+  /v1/chat/completions:
+    post:
+      summary: Proxy for Cursor/OpenAI hybrid formats
+      responses:
+        '200':
+          description: Successful response
+        '400':
+          description: Invalid request
+  /v1beta/models/{model_action}:
+    get:
+      summary: Get models information
+      parameters:
+        - name: model_action
+          in: path
+          required: true
+          schema:
+            type: string
+    post:
+      summary: Gemini CLI format proxy
+      parameters:
+        - name: model_action
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+  /v1/responses:
+    post:
+      summary: Codex CLI / OpenAI Responses API proxy
+      responses:
+        '200':
+          description: Successful response
+    get:
+      summary: Codex WebSocket proxy
+      responses:
+        '101':
+          description: Switching Protocols (WebSocket)
+  /v1/messages:
+    post:
+      summary: Claude / Anthropic Messages API proxy
+      responses:
+        '200':
+          description: Successful response
+  /metrics:
+    get:
+      summary: Prometheus metrics endpoint
+      responses:
+        '200':
+          description: Success
