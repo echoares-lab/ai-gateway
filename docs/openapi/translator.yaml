@@ -7,11 +7,25 @@ paths:
   /v1/chat/completions:
     post:
       summary: Proxy for Cursor/OpenAI hybrid formats
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model: {type: string}
+                messages: {type: array, items: {type: object}}
+            example:
+              model: "AI-Gateway:gpt-4"
+              messages: [{"role": "user", "content": "Hello!"}]
       responses:
         '200':
           description: Successful response
-        '400':
-          description: Invalid request
+          content:
+            application/json:
+              example:
+                id: "chatcmpl-123"
+                choices: [{"message": {"role": "assistant", "content": "Hello there!"}}]
   /v1beta/models/{model_action}:
     get:
       summary: Get models information
@@ -19,16 +33,14 @@ paths:
         - name: model_action
           in: path
           required: true
-          schema:
-            type: string
+          schema: {type: string}
     post:
       summary: Gemini CLI format proxy
       parameters:
         - name: model_action
           in: path
           required: true
-          schema:
-            type: string
+          schema: {type: string}
       responses:
         '200':
           description: Successful response
