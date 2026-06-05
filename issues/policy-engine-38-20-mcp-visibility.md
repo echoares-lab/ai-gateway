@@ -54,3 +54,5 @@ github_issue: #139
 - **Branch:** `feat/mcp-visibility`
 - **Worktree:** `/home/dev/.cursor/worktrees/ai-gateway__SSH__dev_/575k`
 - **Scope:** Design/docs stub — workspace-level MCP server visibility via policy profiles
+
+**PR:** https://github.com/echoares-lab/ai-gateway/pull/148
