@@ -7,6 +7,15 @@ paths:
   /v1/chat/completions:
     post:
       summary: Chat completions proxy
+  /v0/management/auth-files:
+    get:
+      summary: Get auth files for management
+      parameters:
+        - name: x-management-key
+          in: header
+          required: true
+          schema:
+            type: string
   /v1/models:
     get:
       summary: List proxy models
