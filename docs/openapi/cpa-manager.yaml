@@ -7,3 +7,18 @@ paths:
   /management.html:
     get:
       summary: CPA Manager dashboard
+      responses:
+        '200':
+          description: Dashboard HTML
+          content:
+            text/html:
+              example: "<html><body><h1>CPA Manager Dashboard</h1></body></html>"
+  /health:
+    get:
+      summary: Health check endpoint
+      responses:
+        '200':
+          description: Health OK
+          content:
+            application/json:
+              example: {"status": "ok"}
