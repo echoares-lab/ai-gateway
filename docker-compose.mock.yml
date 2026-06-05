@@ -11,10 +11,14 @@ services:
       dockerfile: Dockerfile
     image: ai-mock-upstream:latest
     command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8317"]
+    # Gate B reaches cliproxy only on the compose network (no host bind).
+    ports: !override []
     volumes: []
     environment: {}
 
   litellm:
+    volumes: !override
+      - ./tests/litellm-config-mock.yaml:/app/config.yaml:ro
     environment:
       LITELLM_MIGRATIONS: ${LITELLM_MIGRATIONS:-}
       # Newer LiteLLM versions may attempt to create a baseline migration when
@@ -46,8 +50,9 @@ PY"
       dockerfile: Dockerfile
     image: ai-mock-policy-engine:latest
     command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
-    ports:
-      - "${DEV_POLICY_ENGINE_PORT:-8080}:8080"
+    # !override drops dev-stack 0.0.0.0:DEV_POLICY_ENGINE_PORT mapping (duplicate 18080 bind).
+    ports: !override
+      - "127.0.0.1:${DEV_POLICY_ENGINE_PORT:-18080}:8080"
     healthcheck:
       test:
         [
@@ -66,6 +71,9 @@ PY",
       retries: 10
 
   translator:
+    volumes: !override
+      - ./services/translator:/app
+      - ./tests/litellm-config-mock.yaml:/config/litellm-config.yaml:ro
     # CI: don't block `compose up translator` on LiteLLM health (compose wait can
     # SIGKILL litellm while proxy_extras migrations run on a fresh Postgres volume).
     # !reset drops dev-stack policy-engine dependency; mock tier keeps policy disabled.

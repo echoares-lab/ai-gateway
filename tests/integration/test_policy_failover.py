@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 
 import httpx
 import pytest
@@ -44,10 +45,17 @@ def _auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"}
 
 
-def _chat(client: httpx.Client, *, model: str, metadata: dict | None = None, tools: bool = False):
+def _chat(
+    client: httpx.Client,
+    *,
+    model: str,
+    metadata: dict | None = None,
+    tools: bool = False,
+    content: str = "ping",
+):
     body: dict = {
         "model": model,
-        "messages": [{"role": "user", "content": "ping"}],
+        "messages": [{"role": "user", "content": content}],
         "max_tokens": 5,
     }
     meta = dict(_DEFAULT_TENANCY)
@@ -148,6 +156,9 @@ def test_quota_429_preemptive_from_translator_rate_limit_signals(client, policy_
         client,
         model="claude-sonnet-4-6",
         metadata={"agent_id": "test:seed-429-counter"},
+        # LiteLLM drop_params strips metadata before cliproxy; user message reaches mock upstream.
+        # Unique suffix avoids LiteLLM response cache collisions across test runs.
+        content=f"test:seed-429-counter:{uuid.uuid4().hex}",
     )
     assert seed.status_code == 429, seed.text[:300]
 
