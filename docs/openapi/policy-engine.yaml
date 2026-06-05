@@ -1,0 +1,438 @@
+openapi: 3.0.3
+info:
+  title: Policy Engine API
+  description: |
+    Evaluates routing policy for AI Gateway requests (Epic #38).
+    Returns a RoutingDecision consumed by translator → LiteLLM metadata.
+    Design: docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md
+  version: 0.1.0
+
+paths:
+  /v1/health:
+    get:
+      summary: Service health check
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /v1/evaluate:
+    post:
+      summary: Evaluate routing policy for a request
+      operationId: evaluateRouting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluateRequest'
+            example:
+              context:
+                requested_model: claude-sonnet-4-6
+                tenancy:
+                  tenant_id: echoares
+                  workspace_id: core
+                  team_id: eng
+                  repo_name: gateway
+                  environment: dev
+                  api_key_label: ak-echoares-core-eng-gateway-dev
+                capabilities:
+                  has_tools: true
+                  active_tool_chain: true
+                  model_family: anthropic
+                agent_id: cursor-composer-abc123
+                session_id: sess-xyz
+                dry_run: false
+      responses:
+        '200':
+          description: Policy evaluation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluateResponse'
+        '422':
+          description: Invalid RoutingContext
+
+  /v1/profiles/{scope}/{id}:
+    get:
+      summary: Read policy profile (Phase 2)
+      operationId: getPolicyProfile
+      parameters:
+        - name: scope
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/PolicyScope'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Policy profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyProfile'
+        '404':
+          description: Profile not found
+
+  /v1/events/credential:
+    post:
+      summary: Credential state transition webhook (Phase 3)
+      operationId: postCredentialEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialEvent'
+      responses:
+        '202':
+          description: Event accepted
+
+components:
+  schemas:
+    PolicyScope:
+      type: string
+      enum: [org, workspace, team, repo]
+
+    GateAction:
+      type: string
+      enum: [allow, deny, throttle]
+
+    RequestCapabilities:
+      type: object
+      properties:
+        has_tools:
+          type: boolean
+          default: false
+        has_vision:
+          type: boolean
+          default: false
+        estimated_tokens:
+          type: integer
+          minimum: 0
+          nullable: true
+        active_tool_chain:
+          type: boolean
+          default: false
+        model_family:
+          type: string
+          nullable: true
+
+    TenancyContext:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+          nullable: true
+        workspace_id:
+          type: string
+          nullable: true
+        team_id:
+          type: string
+          nullable: true
+        repo_name:
+          type: string
+          nullable: true
+        environment:
+          type: string
+          nullable: true
+        api_key_label:
+          type: string
+          nullable: true
+          description: ak-{org}-{workspace}-{team}-{repo}-{env}
+
+    BudgetSnapshot:
+      type: object
+      properties:
+        team_budget_usd:
+          type: number
+          minimum: 0
+          nullable: true
+        team_spend_usd:
+          type: number
+          minimum: 0
+          nullable: true
+        team_budget_pct_used:
+          type: number
+          minimum: 0
+          maximum: 100
+          nullable: true
+        rpm_remaining:
+          type: integer
+          minimum: 0
+          nullable: true
+        tpm_remaining:
+          type: integer
+          minimum: 0
+          nullable: true
+
+    RateLimitSnapshot:
+      type: object
+      properties:
+        provider:
+          type: string
+          nullable: true
+        credential_id:
+          type: string
+          nullable: true
+        in_cooldown:
+          type: boolean
+          default: false
+        cooldown_until:
+          type: string
+          format: date-time
+          nullable: true
+        rolling_429_count_5m:
+          type: integer
+          minimum: 0
+          default: 0
+        pre_emptive_degraded:
+          type: boolean
+          default: false
+          description: Deprioritize before hard 429 when rolling rate exceeds threshold.
+
+    QuotaHeadroom:
+      type: object
+      required: [credential_id]
+      properties:
+        credential_id:
+          type: string
+        provider:
+          type: string
+          nullable: true
+        headroom_pct:
+          type: number
+          minimum: 0
+          maximum: 100
+          nullable: true
+        rpm_remaining:
+          type: integer
+          minimum: 0
+          nullable: true
+        requests_remaining:
+          type: integer
+          minimum: 0
+          nullable: true
+        below_soft_threshold:
+          type: boolean
+          default: false
+
+    RoutingContext:
+      type: object
+      required: [requested_model]
+      properties:
+        requested_model:
+          type: string
+          description: Model after AI-Gateway prefix strip
+        tenancy:
+          $ref: '#/components/schemas/TenancyContext'
+        capabilities:
+          $ref: '#/components/schemas/RequestCapabilities'
+        agent_id:
+          type: string
+          nullable: true
+        session_id:
+          type: string
+          nullable: true
+        conversation_fingerprint:
+          type: string
+          nullable: true
+        budget:
+          $ref: '#/components/schemas/BudgetSnapshot'
+        rate_limits:
+          type: array
+          items:
+            $ref: '#/components/schemas/RateLimitSnapshot'
+        quota_headroom:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuotaHeadroom'
+        pool_affinity_mode:
+          type: string
+          nullable: true
+          enum: [fill-first, quota-aware, round-robin]
+        metadata:
+          type: object
+          additionalProperties: true
+        dry_run:
+          type: boolean
+          default: false
+
+    RoutingDecision:
+      type: object
+      properties:
+        gate:
+          $ref: '#/components/schemas/GateAction'
+        deny_reason:
+          type: string
+          nullable: true
+        retry_after_seconds:
+          type: integer
+          minimum: 0
+          nullable: true
+        allowed_models:
+          type: array
+          items:
+            type: string
+        fallback_chain:
+          type: array
+          items:
+            type: string
+        ordered_deployments:
+          type: array
+          items:
+            type: string
+        credential_tier_preference:
+          type: string
+          nullable: true
+        preferred_credential_id:
+          type: string
+          nullable: true
+        session_key:
+          type: string
+          nullable: true
+        lock_model_family:
+          type: boolean
+          default: false
+        cache_cold_start:
+          type: boolean
+          default: false
+        quota_aware_mode:
+          type: boolean
+          default: false
+          description: CLIProxy quota-aware affinity — pre-emptive 429 avoidance.
+        deprioritized_credentials:
+          type: array
+          items:
+            type: string
+        policy_version:
+          type: string
+        evaluated_at:
+          type: string
+          format: date-time
+        rules_applied:
+          type: array
+          items:
+            type: string
+        debug:
+          type: object
+          additionalProperties: true
+
+    EvaluateRequest:
+      type: object
+      required: [context]
+      properties:
+        context:
+          $ref: '#/components/schemas/RoutingContext'
+
+    EvaluateResponse:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          $ref: '#/components/schemas/RoutingDecision'
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        policy_version:
+          type: string
+
+    PolicyProfile:
+      type: object
+      description: Phase 2 — stored in policy_profiles table
+      properties:
+        profile_id:
+          type: string
+        scope:
+          $ref: '#/components/schemas/PolicyScope'
+        scope_id:
+          type: string
+        allowed_models:
+          type: array
+          items:
+            type: string
+        denied_models:
+          type: array
+          items:
+            type: string
+        fallback_chain_override:
+          type: array
+          items:
+            type: string
+        credential_tier_preference:
+          type: string
+          nullable: true
+        policy_json:
+          type: object
+          additionalProperties: true
+          description: |
+            Scope-specific policy knobs. Budget gates (38-9) use the ``budget`` key:
+            ``soft_gate_threshold_pct`` (default 15), ``cost_tier_threshold_pct`` (default 80),
+            ``cost_tier_preference``, ``hard_gate_enabled`` (default false until P0-4).
+          properties:
+            budget:
+              $ref: '#/components/schemas/BudgetPolicyConfig'
+        enabled:
+          type: boolean
+          default: true
+
+    BudgetPolicyConfig:
+      type: object
+      properties:
+        soft_gate_threshold_pct:
+          type: number
+          minimum: 0
+          maximum: 100
+          default: 15
+          description: Deprioritize credentials when headroom_pct falls below this value.
+        cost_tier_threshold_pct:
+          type: number
+          minimum: 0
+          maximum: 100
+          default: 80
+          description: Apply cost_tier_preference when team_budget_pct_used exceeds this value.
+        cost_tier_preference:
+          type: string
+          nullable: true
+          description: Credential tier to prefer under budget pressure (e.g. economy).
+        hard_gate_enabled:
+          type: boolean
+          default: false
+          description: When true, deny requests on exhausted team budget (requires P0-4 for production).
+
+    CredentialEvent:
+      type: object
+      required: [credential_id, previous_status, new_status]
+      properties:
+        credential_id:
+          type: string
+        provider:
+          type: string
+        previous_status:
+          type: string
+        new_status:
+          type: string
+        cool_down_until:
+          type: string
+          format: date-time
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+          nullable: true
+          description: Event time for idempotent writes (credential_id + timestamp).
