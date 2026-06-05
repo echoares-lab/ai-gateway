@@ -1,6 +1,8 @@
 # MCP Tool Visibility — Design Stub
 
-> **Status:** Design only (no runtime behavior change). Implements the Phase 5
+> **Status:** Phase 5b runtime resolver in policy-engine (`allowed_mcp_servers` /
+> `denied_mcp_servers` on `RoutingDecision`). LiteLLM tool-list filter (5c) pending.
+> Implements the Phase 5
 > optional scope for Epic #38 issue 38-20 ([#139](https://github.com/echoares-lab/ai-gateway/issues/139)),
 > child of tenancy epic [#30](https://github.com/echoares-lab/ai-gateway/issues/30)
 > follow-up **TENANCY-4** (workspace-level MCP tool visibility filters).
@@ -121,7 +123,7 @@ a deny occurs (extends 38-16).
 | Phase | Issue slice | Deliverable |
 |-------|-------------|-------------|
 | **5a** (this stub) | 38-20 | Design doc + `policy_json.mcp` schema + dispatch |
-| **5b** | follow-up | Profile store reads `mcp` section; unit tests |
+| **5b** | 38-20 | Profile store reads `mcp` section; unit tests (**done**) |
 | **5c** | follow-up | Wire resolver into LiteLLM tool exposure path |
 | **5d** | follow-up | Admin console panel: effective MCP visibility per repo |
 | **5e** | TENANCY-4 closeout | ROADMAP #30 child issue done; RUNBOOK operator guide |

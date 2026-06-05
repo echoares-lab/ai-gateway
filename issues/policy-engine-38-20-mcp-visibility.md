@@ -14,7 +14,7 @@ scope: |
   - Phased implementation breakdown (5b–5e)
   - TENANCY.md cross-link for child issue #4
 non_goals:
-  - Runtime tool filtering (follow-up 5c)
+  - LiteLLM tool-list filtering (follow-up 5c)
   - MCP routing in translator.py
   - Per-argument tool ACL
 acceptance:
@@ -33,12 +33,13 @@ files:
   - docs/MCP_TOOL_VISIBILITY.md
   - issues/policy-engine-38-20-mcp-visibility.md
   - docs/TENANCY.md
-claim_status: in-review
+claim_status: done
 blocks: []
 blocked_by: []
 execution_notes: |
-  Design stub acceptable per Phase 5 dispatch. Runtime filter deferred until
-  LiteLLM integration spike (5c).
+  Phase 5b: policy-engine `resolve_mcp_visibility()` merges `policy_json.mcp`
+  and injects `allowed_mcp_servers` / `denied_mcp_servers` into RoutingDecision.
+  LiteLLM tool-list filter (5c) remains follow-up.
 github_issue: #139
 ---
 
