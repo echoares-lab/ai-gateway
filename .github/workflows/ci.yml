@@ -53,13 +53,18 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+      - name: Ensure Python venv (PEP 668 / self-hosted)
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
       - name: Install dependencies
         run: |
-          pip install ruff pyyaml
+          python3 -m venv .venv-ci
+          .venv-ci/bin/pip install ruff pyyaml
       - name: Lint with ruff
-        run: ruff check services/translator/translator.py tests/mock-upstream/app.py
+        run: .venv-ci/bin/ruff check services/translator/translator.py tests/mock-upstream/app.py
       - name: Format check with ruff
-        run: ruff format --check services/translator/translator.py tests/mock-upstream/app.py
+        run: .venv-ci/bin/ruff format --check services/translator/translator.py tests/mock-upstream/app.py
       - name: Shell syntax check
         run: |
           bash -n cliproxy-setup.sh
@@ -131,9 +136,6 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - name: Run credential-prober unit tests
         run: |
           python3 -m unittest discover -s services/credential-prober -p 'test_*.py' -v
@@ -183,8 +185,14 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+      - name: Ensure Python venv (PEP 668 / self-hosted)
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
       - name: Install pytest dependencies
-        run: pip install -r tests/integration/requirements.txt
+        run: |
+          python3 -m venv .venv-ci
+          .venv-ci/bin/pip install -r tests/integration/requirements.txt
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build translator image (reuse in compose, skip rebuild)
@@ -205,7 +213,6 @@ jobs:
           TRANSLATOR_IMAGE: ai-translator-test:latest
           CLIPROXY_DEV_CONFIG: ${{ github.workspace }}/tests/cliproxy-config-ci.yaml
           DEV_TRANSLATOR_PORT: "4010"
-          LITELLM_MIGRATIONS: "None"
         run: |
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
@@ -215,6 +222,21 @@ jobs:
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
             up -d postgres cliproxy litellm
+          echo "Waiting for LiteLLM readiness (fresh Postgres migrations)..."
+          # proxy_extras baseline + 123 migrations on a fresh CI Postgres volume can exceed 7.5m.
+          for i in {1..180}; do
+            if curl -sf http://localhost:4011/health/readiness >/dev/null; then
+              echo "LiteLLM ready"
+              break
+            fi
+            if [ "$i" -eq 180 ]; then
+              echo "LiteLLM never became ready"
+              docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs litellm || true
+              exit 1
+            fi
+            echo "waiting for litellm ($i/180)..."
+            sleep 5
+          done
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
@@ -230,7 +252,7 @@ jobs:
       - name: Run mock-tier pytest
         run: |
           GATEWAY_URL=http://localhost:4010 LITELLM_MASTER_KEY=sk-ci-mock ALLOW_MODEL_SKIP=0 \
-            python3 -m pytest tests/integration/ -m mock -v
+            .venv-ci/bin/python -m pytest tests/integration/ -m mock -v
       - name: Run shell E2E smoke (CI mock mode)
         run: |
           GATEWAY_E2E_CI=1 GATEWAY_URL=http://localhost:4010 bash tests/test-gateway-e2e.sh
@@ -248,13 +270,14 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - name: Set up python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
+      - name: Ensure Python venv (PEP 668 / self-hosted)
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
       - name: Install pytest dependencies
-        run: pip install -r tests/integration/requirements.txt
+        run: |
+          python3 -m venv .venv-ci
+          .venv-ci/bin/pip install -r tests/integration/requirements.txt
       - name: Setup environment file
         run: cp .env.example .env
       - name: Seed real OAuth creds

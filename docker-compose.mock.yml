@@ -11,6 +11,11 @@
 # and the real config mount. The internal port stays 8317 so litellm-config.yaml
 # (api_base: http://cliproxy:8317/v1) needs no change.
 services:
+  postgres:
+    volumes:
+      - dev_pgdata:/var/lib/postgresql/data
+      - ./tests/init-db-mock-ci.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+
   cliproxy:
     build:
       context: ./tests/mock-upstream
@@ -19,6 +24,32 @@ services:
     command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8317"]
     volumes: []
     environment: {}
+
+  litellm:
+    environment:
+      LITELLM_MIGRATIONS: ${LITELLM_MIGRATIONS:-}
+      # Newer LiteLLM versions may attempt to create a baseline migration when
+      # the DB schema isn't empty (Prisma P3005). The default migration path can
+      # be read-only inside the container image; force a writable directory.
+      LITELLM_MIGRATION_DIR: ${LITELLM_MIGRATION_DIR:-/tmp/litellm_migrations}
+    # Fresh Postgres + LiteLLM proxy_extras migrations can exceed dev defaults (~70s).
+    healthcheck:
+      test:
+        [
+        "CMD-SHELL",
+        "python - <<'PY'\nimport urllib.request, sys\ntry:\n    r = urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=3)\n    sys.exit(0 if 200 <= r.status < 300 else 1)\nexcept Exception:\n    sys.exit(1)\nPY"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 120s
+
+  translator:
+    # CI: don't block `compose up translator` on LiteLLM health (compose wait can
+    # SIGKILL litellm while proxy_extras migrations run on a fresh Postgres volume).
+    depends_on:
+      litellm:
+        condition: service_started
 
   cpa-manager:
     image: seakee/cpa-manager:1.5.5
