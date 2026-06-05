@@ -153,11 +153,11 @@ services:
     restart: always
     depends_on:
       litellm:
-        condition: service_started
+        condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       policy-engine:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "4000:4000"
     environment:
@@ -284,7 +284,15 @@ services:
     volumes:
       - langfuse_redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "--no-auth-warning",
+          "-a",
+          "${REDIS_AUTH:-myredissecret}",
+          "ping",
+        ]
       interval: 3s
       timeout: 10s
       retries: 10
