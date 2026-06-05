@@ -54,3 +54,5 @@ github_issue: #140
 - **Branch:** `feat/chargeback-attribution`
 - **Worktree:** `/home/dev/.cursor/worktrees/ai-gateway__SSH__dev_/575k`
 - **Scope:** Design/docs stub — spend attribution by repo/agent using audit log + Langfuse
+
+**PR:** https://github.com/echoares-lab/ai-gateway/pull/150
