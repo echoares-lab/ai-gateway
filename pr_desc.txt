@@ -1,0 +1,3 @@
+## Summary
+Adding OpenAPI documentation for CPA Manager service to facilitate Scalar integration.
+Closes: issues/api-doc-cpa-manager.md
