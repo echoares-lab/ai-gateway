@@ -337,10 +337,13 @@ services:
       - CLIPROXY_URL=http://cliproxy:8317
       - CLIPROXY_MANAGEMENT_KEY=${CLIPROXY_MANAGEMENT_KEY:-cliproxy-mgmt-H6VXKpUCzmeDuHcGmH8Oqg}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
+      - POLICY_ENGINE_URL=${POLICY_ENGINE_URL:-http://policy-engine:8080}
     depends_on:
       postgres:
         condition: service_healthy
       cliproxy:
+        condition: service_started
+      policy-engine:
         condition: service_started
 
 

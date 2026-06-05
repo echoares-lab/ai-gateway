@@ -118,6 +118,18 @@ def test_evaluate_reflects_event_cooldown(client: TestClient, fake_store: RedisS
     assert "rate_limit:cooldown_skip" in decision.rules_applied
 
 
+
+def test_suspended_event_sets_long_cooldown(fake_store: RedisStateStore):
+    event = CredentialEvent(
+        credential_id="cred-susp", provider="openai", previous_status="HEALTHY",
+        new_status="SUSPENDED", reason="operator disabled",
+    )
+    assert handle_credential_event(event, fake_store) is True
+    snap = fake_store.rate_limit_to_snapshot("openai", "cred-susp")
+    assert snap is not None
+    assert snap.in_cooldown is True
+
+
 def test_healthy_transition_does_not_write_redis(fake_store: RedisStateStore):
     event = CredentialEvent(
         credential_id="cred-5",

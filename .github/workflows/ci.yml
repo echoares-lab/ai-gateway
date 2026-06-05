@@ -181,9 +181,17 @@ jobs:
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
           sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
+      - name: Ensure Python venv (PEP 668 / self-hosted)
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
+      - name: Install credential-prober test dependencies
+        run: |
+          python3 -m venv .venv-ci
+          .venv-ci/bin/pip install -r services/credential-prober/requirements-test.txt
       - name: Run credential-prober unit tests
         run: |
-          python3 -m unittest discover -s services/credential-prober -p 'test_*.py' -v
+          .venv-ci/bin/python -m unittest discover -s services/credential-prober -p 'test_*.py' -v
 
       - name: Fix workspace permissions (self-hosted)
         if: always()

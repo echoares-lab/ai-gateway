@@ -3,9 +3,10 @@ import logging
 import os
 import time
 import urllib.request
+from datetime import datetime, timedelta, timezone
 
 import psycopg2
-from notifier import send_slack_alert
+from notifier import notify_policy_engine, send_slack_alert
 from psycopg2.extras import Json
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -15,6 +16,10 @@ CLIPROXY_URL = os.environ.get("CLIPROXY_URL", "http://cliproxy:8317")
 MGMT_KEY = os.environ.get("CLIPROXY_MANAGEMENT_KEY", "cliproxy-mgmt-H6VXKpUCzmeDuHcGmH8Oqg")
 DB_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/postgres")
 POLL_INTERVAL = int(os.environ.get("PROBER_INTERVAL_SEC", "30"))
+DEGRADED_COOLDOWN_SEC = int(os.environ.get("PROBER_DEGRADED_COOLDOWN_SEC", "60"))
+CRITICAL_COOLDOWN_SEC = int(os.environ.get("PROBER_CRITICAL_COOLDOWN_SEC", "604800"))
+
+ROUTING_EXCLUDED = frozenset({"DEGRADED", "CRITICAL", "SUSPENDED", "EXPIRED"})
 
 
 def get_cliproxy_auth_files():
@@ -39,6 +44,35 @@ def map_status(file_data):
     return "DEGRADED"
 
 
+def compute_cool_down_until(status: str, *, now: datetime | None = None) -> datetime | None:
+    now = now or datetime.now(timezone.utc)
+    if status == "DEGRADED":
+        return now + timedelta(seconds=DEGRADED_COOLDOWN_SEC)
+    if status in {"CRITICAL", "SUSPENDED", "EXPIRED"}:
+        return now + timedelta(seconds=CRITICAL_COOLDOWN_SEC)
+    return None
+
+
+def _emit_transition(
+    cred_id: str,
+    provider: str,
+    old_status: str | None,
+    new_status: str,
+    reason: str,
+    cool_down_until: datetime | None,
+) -> None:
+    previous = old_status or "UNKNOWN"
+    send_slack_alert(f"credential_{new_status.lower()}", cred_id, provider, reason)
+    notify_policy_engine(
+        cred_id,
+        provider,
+        previous,
+        new_status,
+        reason=reason,
+        cool_down_until=cool_down_until if new_status in ROUTING_EXCLUDED else None,
+    )
+
+
 def sync_inventory():
     files = get_cliproxy_auth_files()
     if not files:
@@ -48,10 +82,9 @@ def sync_inventory():
     try:
         conn = psycopg2.connect(DB_URL)
         cur = conn.cursor()
-
-        # Load existing statuses to detect transitions
         cur.execute("SELECT credential_id, status FROM credential_inventory")
         existing_statuses = {row[0]: row[1] for row in cur.fetchall()}
+        now = datetime.now(timezone.utc)
 
         for f in files:
             cred_id = f.get("id", "unknown")
@@ -61,38 +94,37 @@ def sync_inventory():
             fingerprint = f.get("auth_index") or "none"
             failures = f.get("failed", 0)
             status_msg = f.get("status_message") or ""
+            cool_down_until = compute_cool_down_until(status, now=now)
             metadata = {
                 "recent_requests": f.get("recent_requests", []),
                 "status_message": status_msg,
                 "updated_at": f.get("updated_at", ""),
             }
 
-            # Detect transition
             old_status = existing_statuses.get(cred_id)
             if old_status is not None and old_status != status:
-                event_name = f"credential_{status.lower()}"
                 reason = status_msg if status_msg else f"Status changed from {old_status} to {status}"
-                send_slack_alert(event_name, cred_id, provider, reason)
-            elif old_status is None and status in ("CRITICAL", "DEGRADED"):
-                # Initial import is failing or degraded: send alert
-                event_name = f"credential_{status.lower()}"
+                _emit_transition(cred_id, provider, old_status, status, reason, cool_down_until)
+            elif old_status is None and status in ROUTING_EXCLUDED:
                 reason = status_msg if status_msg else f"Initial import status: {status}"
-                send_slack_alert(event_name, cred_id, provider, reason)
+                _emit_transition(cred_id, provider, None, status, reason, cool_down_until)
 
             cur.execute(
                 """
                 INSERT INTO credential_inventory
-                (credential_id, provider, label, key_fingerprint, status, consecutive_failures, metadata)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (credential_id, provider, label, key_fingerprint, status,
+                 cool_down_until, consecutive_failures, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (credential_id) DO UPDATE SET
                 provider = EXCLUDED.provider,
                 label = EXCLUDED.label,
                 key_fingerprint = EXCLUDED.key_fingerprint,
                 status = EXCLUDED.status,
+                cool_down_until = EXCLUDED.cool_down_until,
                 consecutive_failures = EXCLUDED.consecutive_failures,
                 metadata = EXCLUDED.metadata;
             """,
-                (cred_id, provider, label, fingerprint, status, failures, Json(metadata)),
+                (cred_id, provider, label, fingerprint, status, cool_down_until, failures, Json(metadata)),
             )
 
         conn.commit()

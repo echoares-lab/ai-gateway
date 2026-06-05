@@ -7,7 +7,9 @@ from datetime import datetime
 from redis_store import RedisStateStore, _utcnow
 from schemas import CredentialEvent
 
-COOLDOWN_STATUSES = frozenset({"DEGRADED", "COOLDOWN", "CRITICAL"})
+COOLDOWN_STATUSES = frozenset({"DEGRADED", "COOLDOWN", "CRITICAL", "SUSPENDED", "EXPIRED"})
+SUSPENDED_STATUSES = frozenset({"CRITICAL", "SUSPENDED", "EXPIRED"})
+DEFAULT_SUSPENDED_COOLDOWN_SECONDS = 604800
 RATE_LIMIT_STATUS = "RATE_LIMITED"
 RATE_LIMIT_KEYWORDS = ("429", "rate limit", "rate_limit", "rate-limited")
 
@@ -39,10 +41,16 @@ def handle_credential_event(event: CredentialEvent, store: RedisStateStore) -> b
         return True
 
     if event.new_status in COOLDOWN_STATUSES:
+        cooldown_seconds = (
+            DEFAULT_SUSPENDED_COOLDOWN_SECONDS
+            if event.new_status in SUSPENDED_STATUSES and event.cool_down_until is None
+            else 60
+        )
         store.apply_credential_cooldown(
             event.provider,
             event.credential_id,
             cooldown_until=event.cool_down_until,
+            cooldown_seconds=cooldown_seconds,
             event_at=event_at,
             status=event.new_status,
         )
