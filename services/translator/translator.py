@@ -323,12 +323,10 @@ def _record_token_usage(model: str, response_json: dict) -> None:
     """Extract and record token usage from API response for analytics (#117)."""
     provider = _provider_of(model)
     label_model = model or "-"
-    
     try:
         usage = response_json.get("usage", {})
         input_tokens = usage.get("prompt_tokens", 0)
         output_tokens = usage.get("completion_tokens", 0)
-        
         if input_tokens > 0 or output_tokens > 0:
             TOKEN_INPUT.labels(provider, label_model).inc(input_tokens)
             TOKEN_OUTPUT.labels(provider, label_model).inc(output_tokens)
