@@ -41,8 +41,10 @@ execution_notes: |
   **Quota-aware:** QuotaHeadroom from credential_inventory.metadata + CLIProxy quota-summary.
   Soft gate aligns with quota-aware pre-emptive strategy (38-7).
   **Shipped:** `evaluator/budget.py` — soft deprioritize always on; hard deny fail-open until P0-4
-  (`BUDGET_HARD_GATE_ENABLED` or `policy_json.budget.hard_gate_enabled`). PR pending.
+  (`BUDGET_HARD_GATE_ENABLED` or `policy_json.budget.hard_gate_enabled`). Merged via merge queue **PR #142** (2026-06-05).
 github_issue: #128
 ---
 
 # 38-9 — Account Budget Gates (Quota Headroom)
+
+**PR:** https://github.com/echoares-lab/ai-gateway/pull/142

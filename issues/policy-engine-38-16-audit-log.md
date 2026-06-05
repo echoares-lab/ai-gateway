@@ -12,9 +12,9 @@ scope: |
 non_goals:
   - Real-time analytics dashboard
 acceptance:
-  - [ ] Deny/throttle decisions always logged
-  - [ ] quota_aware_mode and deprioritized_credentials in stored JSON
-  - [ ] Sampling configurable via POLICY_AUDIT_SAMPLE_RATE
+  - [x] Deny/throttle decisions always logged
+  - [x] quota_aware_mode and deprioritized_credentials in stored JSON
+  - [x] Sampling configurable via POLICY_AUDIT_SAMPLE_RATE
 tests: |
   Gate A: audit writer unit tests
 risks: |
@@ -30,7 +30,8 @@ blocks: []
 blocked_by:
   - policy-engine-38-08-fallback-evaluator.md
 execution_notes: |
-  Table defined in migration 002 — wire write path only.
+  Table defined in migration 002 — write path shipped in PR #145.
+  Merged via merge queue batch with #142–#144 (2026-06-05).
 github_issue: #135
 ---
 
