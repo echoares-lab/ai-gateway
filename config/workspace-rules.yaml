@@ -1,0 +1,22 @@
+# Workspace team budget and rate-limit rules (TENANCY.md §3.2, P0-4).
+# Applied by setup_litellm_teams.py via LiteLLM /team/new and /team/update.
+
+version: 1
+
+defaults:
+  max_budget: 100.0
+  budget_duration: 30d
+  rpm_limit: 60
+  tpm_limit: 100000
+
+teams:
+  echoares-core-eng:
+    max_budget: 500.0
+    budget_duration: 30d
+    rpm_limit: 120
+    tpm_limit: 200000
+  ai-gateway:
+    max_budget: 250.0
+    budget_duration: 30d
+    rpm_limit: 90
+    tpm_limit: 150000

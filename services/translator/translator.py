@@ -77,6 +77,13 @@ POLICY_ENGINE_ENABLED = os.environ.get("POLICY_ENGINE_ENABLED", "false").lower()
 )
 POLICY_ENGINE_URL = os.environ.get("POLICY_ENGINE_URL", "http://policy-engine:8080").rstrip("/")
 POLICY_ENGINE_TIMEOUT_MS = int(os.environ.get("POLICY_ENGINE_TIMEOUT_MS", "100"))
+TEAM_BUDGET_SNAPSHOT_ENABLED = os.environ.get("TEAM_BUDGET_SNAPSHOT_ENABLED", "true").lower() not in (
+    "0",
+    "false",
+    "no",
+)
+TEAM_BUDGET_CACHE_TTL_SEC = int(os.environ.get("TEAM_BUDGET_CACHE_TTL_SEC", "30"))
+LITELLM_ADMIN_URL = os.environ.get("LITELLM_ADMIN_URL", LITELLM).rstrip("/")
 ADMIN_POLICY_TRACE_ENABLED = os.environ.get("ADMIN_POLICY_TRACE_ENABLED", "true").lower() not in (
     "0",
     "false",
@@ -367,6 +374,9 @@ def _normalize_upstream_authorization(headers: dict) -> None:
 
 
 _quota_headroom_cache: list[dict] | None = None
+_team_alias_index: dict[str, str] | None = None
+_team_alias_index_at: float = 0.0
+_budget_snapshot_cache: dict[str, tuple[float, dict]] = {}
 
 
 def _prom_counter_value(counter, **labels) -> float:
@@ -408,6 +418,128 @@ def _load_quota_headroom_hints() -> list[dict]:
     return data if isinstance(data, list) else []
 
 
+def _team_slug_from_tenancy(tenancy: dict) -> str | None:
+    parts = [tenancy.get("tenant_id"), tenancy.get("workspace_id"), tenancy.get("team_id")]
+    if not all(parts):
+        return None
+    return "-".join(parts)
+
+
+def _budget_pct_used(spend: float | None, max_budget: float | None) -> float | None:
+    if max_budget is None or max_budget <= 0:
+        return None
+    return min(100.0, (spend or 0.0) / max_budget * 100.0)
+
+
+def _parse_team_info_to_budget(team_info: dict) -> dict:
+    max_budget = team_info.get("max_budget")
+    spend = team_info.get("spend") or 0.0
+    snapshot: dict = {
+        "team_budget_usd": max_budget,
+        "team_spend_usd": spend if max_budget is not None else None,
+        "team_budget_pct_used": _budget_pct_used(spend, max_budget),
+    }
+    for src, dst in (("rpm_limit_remaining", "rpm_remaining"), ("tpm_limit_remaining", "tpm_remaining")):
+        if team_info.get(src) is not None:
+            snapshot[dst] = team_info[src]
+    return snapshot
+
+
+def _load_budget_snapshot_override() -> dict | None:
+    raw = os.environ.get("TEAM_BUDGET_SNAPSHOT_JSON", "").strip()
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        log.warning("Invalid TEAM_BUDGET_SNAPSHOT_JSON — ignoring budget snapshot override")
+        return None
+    return data if isinstance(data, dict) else None
+
+
+async def _litellm_admin_get(path: str, *, params: dict | None = None) -> dict | None:
+    if _client is None:
+        return None
+    master_key = os.environ.get("LITELLM_MASTER_KEY", "")
+    if not master_key:
+        return None
+    headers = {"Authorization": f"Bearer {master_key}"}
+    try:
+        resp = await _client.get(
+            f"{LITELLM_ADMIN_URL}{path}",
+            headers=headers,
+            params=params,
+            timeout=0.25,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+async def _resolve_litellm_team_id(team_alias: str) -> str | None:
+    global _team_alias_index, _team_alias_index_at
+    now = time.monotonic()
+    if _team_alias_index is None or (now - _team_alias_index_at) > TEAM_BUDGET_CACHE_TTL_SEC:
+        data = await _litellm_admin_get("/team/list")
+        teams = []
+        if isinstance(data, list):
+            teams = data
+        elif isinstance(data, dict):
+            teams = data.get("teams") or []
+        _team_alias_index = {
+            t["team_alias"]: t["team_id"]
+            for t in teams
+            if isinstance(t, dict) and t.get("team_alias") and t.get("team_id")
+        }
+        _team_alias_index_at = now
+    return (_team_alias_index or {}).get(team_alias)
+
+
+async def _fetch_litellm_team_budget(team_alias: str) -> dict | None:
+    cached = _budget_snapshot_cache.get(team_alias)
+    now = time.monotonic()
+    if cached and cached[0] > now:
+        return dict(cached[1])
+
+    team_id = await _resolve_litellm_team_id(team_alias)
+    if not team_id:
+        return None
+    data = await _litellm_admin_get("/team/info", params={"team_id": team_id})
+    if not data:
+        return None
+    team_info = data.get("team_info") if isinstance(data.get("team_info"), dict) else data
+    if not isinstance(team_info, dict):
+        return None
+    snapshot = _parse_team_info_to_budget(team_info)
+    _budget_snapshot_cache[team_alias] = (now + TEAM_BUDGET_CACHE_TTL_SEC, snapshot)
+    return snapshot
+
+
+async def _load_team_budget_snapshot(tenancy: dict) -> dict | None:
+    if not TEAM_BUDGET_SNAPSHOT_ENABLED:
+        return None
+    override = _load_budget_snapshot_override()
+    if override is not None:
+        return override
+    if not tenancy:
+        return None
+    aliases = []
+    slug = _team_slug_from_tenancy(tenancy)
+    if slug:
+        aliases.append(slug)
+    repo_name = tenancy.get("repo_name")
+    if repo_name and repo_name not in aliases:
+        aliases.append(repo_name)
+    for alias in aliases:
+        snapshot = await _fetch_litellm_team_budget(alias)
+        if snapshot is not None:
+            return snapshot
+    return None
+
+
 def _request_capabilities(body: dict) -> dict:
     model = body.get("model", "")
     tools = body.get("tools") or []
@@ -433,10 +565,10 @@ def _request_capabilities(body: dict) -> dict:
     }
 
 
-def _build_routing_context(token: str | None, body: dict) -> dict:
+def _build_routing_context(token: str | None, body: dict, *, budget: dict | None = None) -> dict:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
     model = body.get("model", "")
-    return {
+    ctx = {
         "requested_model": model,
         "tenancy": _tenancy_from_token(token),
         "capabilities": _request_capabilities(body),
@@ -446,6 +578,9 @@ def _build_routing_context(token: str | None, body: dict) -> dict:
         "quota_headroom": _load_quota_headroom_hints(),
         "metadata": {},
     }
+    if budget is not None:
+        ctx["budget"] = budget
+    return ctx
 
 
 async def _evaluate_policy_engine(context: dict) -> dict | None:
@@ -486,7 +621,9 @@ async def _evaluate_policy_engine(context: dict) -> dict | None:
 async def _apply_policy_engine(token: str | None, body: dict) -> dict:
     if not POLICY_ENGINE_ENABLED:
         return body
-    decision = await _evaluate_policy_engine(_build_routing_context(token, body))
+    tenancy = _tenancy_from_token(token)
+    budget = await _load_team_budget_snapshot(tenancy)
+    decision = await _evaluate_policy_engine(_build_routing_context(token, body, budget=budget))
     if decision is None:
         return body
     if "metadata" not in body or not isinstance(body["metadata"], dict):

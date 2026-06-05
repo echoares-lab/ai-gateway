@@ -115,6 +115,24 @@ def test_routing_context_includes_quota_headroom(monkeypatch):
     assert ctx["quota_headroom"][0]["credential_id"] == "cred-a"
 
 
+def test_parse_team_info_to_budget_pct():
+    snapshot = t._parse_team_info_to_budget({"max_budget": 100.0, "spend": 85.0})
+    assert snapshot["team_budget_pct_used"] == 85.0
+
+
+def test_build_routing_context_includes_budget():
+    ctx = t._build_routing_context(None, {"model": "x", "messages": []}, budget={"team_budget_pct_used": 100.0})
+    assert ctx["budget"]["team_budget_pct_used"] == 100.0
+
+
+@pytest.mark.asyncio
+async def test_load_team_budget_snapshot_from_override(monkeypatch):
+    monkeypatch.setattr(t, "TEAM_BUDGET_SNAPSHOT_ENABLED", True)
+    monkeypatch.setenv("TEAM_BUDGET_SNAPSHOT_JSON", '{"team_budget_pct_used": 99.0}')
+    snapshot = await t._load_team_budget_snapshot({"tenant_id": "echoares", "workspace_id": "core", "team_id": "eng"})
+    assert snapshot["team_budget_pct_used"] == 99.0
+
+
 def test_rate_limit_hints_from_provider_counter():
     t.PROVIDER_RATE_LIMITS.labels(provider="anthropic", model="claude-sonnet-4-6").inc()
     hints = t._build_rate_limit_hints("claude-sonnet-4-6")
