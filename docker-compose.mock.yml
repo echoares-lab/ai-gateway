@@ -47,7 +47,7 @@ PY"
     image: ai-mock-policy-engine:latest
     command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
     ports:
-      - "${DEV_POLICY_ENGINE_PORT:-8160}:8080"
+      - "${DEV_POLICY_ENGINE_PORT:-8080}:8080"
     healthcheck:
       test:
         [

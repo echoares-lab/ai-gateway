@@ -11,7 +11,7 @@ from conftest import MASTER_KEY
 
 pytestmark = [pytest.mark.mock]
 
-POLICY_ENGINE_URL = os.environ.get("POLICY_ENGINE_URL", "http://localhost:8160")
+POLICY_ENGINE_URL = os.environ.get("POLICY_ENGINE_URL", "http://localhost:8080")
 _TENANT_KEY = "ak-echoares-core-eng-gateway-dev"
 
 
