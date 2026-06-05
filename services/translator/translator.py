@@ -125,6 +125,23 @@ PROVIDER_RATE_LIMITS = Counter(
     ["provider", "model"],
 )
 
+# --- Token usage analytics (issue #117) ---
+TOKEN_INPUT = Counter(
+    "translator_token_input_total",
+    "Total input tokens processed by provider and model",
+    ["provider", "model"],
+)
+TOKEN_OUTPUT = Counter(
+    "translator_token_output_total",
+    "Total output tokens processed by provider and model",
+    ["provider", "model"],
+)
+TOKEN_REQUESTS = Counter(
+    "translator_token_requests_total",
+    "Total requests with token data by provider and model",
+    ["provider", "model"],
+)
+
 
 @app.get("/metrics")
 async def metrics():
@@ -300,6 +317,25 @@ def _extract_and_apply_tenancy(token: str | None, body: dict) -> dict:
                 body["metadata"] = {}
             body["metadata"].update(tenant_info)
     return body
+
+
+def _record_token_usage(model: str, response_json: dict) -> None:
+    """Extract and record token usage from API response for analytics (#117)."""
+    provider = _provider_of(model)
+    label_model = model or "-"
+    
+    try:
+        usage = response_json.get("usage", {})
+        input_tokens = usage.get("prompt_tokens", 0)
+        output_tokens = usage.get("completion_tokens", 0)
+        
+        if input_tokens > 0 or output_tokens > 0:
+            TOKEN_INPUT.labels(provider, label_model).inc(input_tokens)
+            TOKEN_OUTPUT.labels(provider, label_model).inc(output_tokens)
+            TOKEN_REQUESTS.labels(provider, label_model).inc()
+    except (AttributeError, TypeError, KeyError):
+        # Safely ignore malformed responses
+        pass
 
 
 def _record_provider_signal(model: str, status: int, elapsed: float) -> None:
@@ -1084,6 +1120,8 @@ async def gemini_proxy(model_action: str, request: Request):
         resp_json = resp.json()
         if ck:
             await _cache_set(ck + ":json", [json.dumps(resp_json)])
+        # Record token usage for analytics (#117)
+        _record_token_usage(model, resp_json)
         gemini_resp = _oai_to_gemini_resp(resp_json, model)
         return Response(
             content=json.dumps(gemini_resp).encode(), status_code=200, headers={"content-type": "application/json"}
@@ -1666,6 +1704,8 @@ async def responses_proxy(request: Request):
         resp_json = resp.json()
         if ck:
             await _cache_set(ck + ":json", [json.dumps(resp_json)])
+        # Record token usage for analytics (#117)
+        _record_token_usage(oai_body.get("model", "-"), resp_json)
         responses_resp = _oai_to_responses_resp(resp_json)
         return Response(
             content=json.dumps(responses_resp).encode(), status_code=200, headers={"content-type": "application/json"}
@@ -2030,6 +2070,8 @@ async def claude_proxy(request: Request):
         resp_json = resp.json()
         if ck:
             await _cache_set(ck + ":json", [json.dumps(resp_json)])
+        # Record token usage for analytics (#117)
+        _record_token_usage(model, resp_json)
         claude_resp = _oai_to_claude_resp(resp_json)
         return Response(
             content=json.dumps(claude_resp).encode(), status_code=200, headers={"content-type": "application/json"}
