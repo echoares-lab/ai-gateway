@@ -265,6 +265,74 @@ for f in json.load(sys.stdin).get('files', []):
 
 ---
 
+## Pool priority sync (optional, issue 38-13)
+
+Postgres `credential_pool_members` tier + priority can be pushed to CLIProxy auth
+files so promoted pool config affects fill-first drain order. **Disabled by default**
+— enable only after migration `002_policy_profiles_pools.sql` is applied and pool
+members are populated.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `CLIPROXY_PRIORITY_SYNC_ENABLED` | `false` | Master switch for sync/rollback |
+| `CLIPROXY_PRIORITY_BACKUP_DIR` | `~/.cliproxy/priority-backups` | Git-trackable JSON backups before each sync |
+| `CLIPROXY_URL` | `http://cliproxy:8317` | CLIProxy base URL |
+| `CLIPROXY_MANAGEMENT_KEY` | (from `.env`) | Management API key |
+| `DATABASE_URL` | (from `.env`) | Postgres with `credential_pool_members` |
+
+Pools with `affinity_mode = quota-aware` are **skipped** — priority sync must not
+override quota-aware deprioritization.
+
+### Sync from pool members
+
+```bash
+source .env
+export CLIPROXY_PRIORITY_SYNC_ENABLED=true
+./scripts/sync-cliproxy-pool-priority.sh          # push priorities + write backup
+./scripts/sync-cliproxy-pool-priority.sh --dry-run  # preview without PATCH
+```
+
+Tier defaults when `credential_pool_members.priority = 0`: `native=100`,
+`antigravity=50`, `emergency=10`. Explicit member priority always wins.
+
+### Rollback
+
+Each successful sync writes `pool-sync-<timestamp>.json` and updates
+`pool-sync-latest.json` in the backup dir. Commit backups to git when promoting
+pool config so rollback is reproducible.
+
+```bash
+export CLIPROXY_PRIORITY_SYNC_ENABLED=true
+./scripts/sync-cliproxy-pool-priority.sh rollback
+./scripts/sync-cliproxy-pool-priority.sh rollback --backup ~/.cliproxy/priority-backups/pool-sync-20260605T120000Z.json
+```
+
+### Manual fallback (management API unavailable)
+
+When the management API is down, edit credential JSON directly under
+`~/.cli-proxy-api/` (CLIProxy hot-reloads in ~30s):
+
+```json
+{
+  "email": "user@example.com",
+  "type": "claude",
+  "priority": 100
+}
+```
+
+Or patch a single file:
+
+```bash
+curl -X PATCH "http://localhost:8317/v0/management/auth-files/fields" \
+  -H "X-Management-Key: $CLIPROXY_MANAGEMENT_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"claude-user@example.com.json","priority":100}'
+```
+
+Clear priority (revert to default ordering) by setting `"priority": 0`.
+
+---
+
 ## Update Workflow
 
 Run this whenever CLIProxyAPI releases a new version or you want to sync new models:
