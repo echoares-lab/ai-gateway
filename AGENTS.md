@@ -1,5 +1,8 @@
 # AI Gateway — Agent Instructions
 
+See the [API Documentation System](docs/API_DOCUMENTATION.md) for technical endpoint references.
+**Mandatory**: Any new API endpoints created or discovered must be documented in `docs/openapi/` and registered in the system.
+
 These instructions apply to **any AI coding agent** working in this repo
 (Claude Code, Cursor Agent, Codex, Amp, or similar). For deep-dive detail
 on architecture and commands, see `CLAUDE.md`. For operational procedures,

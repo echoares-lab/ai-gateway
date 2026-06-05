@@ -74,6 +74,15 @@ LiteLLM Virtual Keys and Teams represent the primary runtime enforcement mechani
 - **LiteLLM Team:** Maps directly to a Team ({org}-{workspace}-{team}). Used to track collective rate limits (RPM, TPM) and dollar budgets.
 - **LiteLLM Key:** Maps directly to a Repository / Client in a specific environment.
 
+### 3.3 Repo bootstrap (`setup-repo-env.sh`)
+Per-repo CLI isolation:
+
+```bash
+setup-repo-env.sh --org echoares --workspace core --team eng --env dev /path/to/repo
+```
+
+The script writes `CODEX_HOME`, gateway URLs in `.envrc`, and documents the expected LiteLLM key label `ak-{org}-{workspace}-{team}-{repo}-{environment}`. Use `gen-client-config.sh` with the same tenant flags for client snippets.
+
 ---
 
 ## 4. Visibility & Isolation Boundaries
@@ -95,12 +104,10 @@ To maintain context efficiency and velocity, the following are explicitly marked
 - Deploying the frontend admin dashboard or user roles.
 
 ### Proposed Follow-up Child Issues (Epic #30)
-1. **#64 -- feat(tenancy): implement tenant metadata extraction in translator**
-   Extract tenant, workspace, and team ID from incoming JWTs or API key metadata and forward them as LiteLLM headers/metadata.
-2. **#65 -- feat(tenancy): multi-tenant budget and rate limit enforcement**
-   Configure LiteLLM team budgets and rate limits dynamically based on tenant workspace rules.
-3. **#66 -- feat(tenancy): workspace-level MCP tool visibility filters**
-   Limit which MCP servers and database tools are visible to a request based on tenant team membership.
+1. **Done — tenant metadata in translator** ([#79](https://github.com/echoares-lab/ai-gateway/pull/79))
+2. **Done — bootstrap alignment** ([#107](https://github.com/echoares-lab/ai-gateway/issues/107))
+3. **feat(tenancy): multi-tenant budget and rate limit enforcement** — LiteLLM team budgets from workspace rules
+4. **feat(tenancy): workspace-level MCP tool visibility filters** — restrict MCP servers by team membership
 
 ---
 

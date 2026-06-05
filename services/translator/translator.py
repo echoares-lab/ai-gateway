@@ -125,6 +125,23 @@ PROVIDER_RATE_LIMITS = Counter(
     ["provider", "model"],
 )
 
+# --- Token usage analytics (issue #117) ---
+TOKEN_INPUT = Counter(
+    "translator_token_input_total",
+    "Total input tokens processed by provider and model",
+    ["provider", "model"],
+)
+TOKEN_OUTPUT = Counter(
+    "translator_token_output_total",
+    "Total output tokens processed by provider and model",
+    ["provider", "model"],
+)
+TOKEN_REQUESTS = Counter(
+    "translator_token_requests_total",
+    "Total requests with token data by provider and model",
+    ["provider", "model"],
+)
+
 
 @app.get("/metrics")
 async def metrics():
@@ -300,6 +317,23 @@ def _extract_and_apply_tenancy(token: str | None, body: dict) -> dict:
                 body["metadata"] = {}
             body["metadata"].update(tenant_info)
     return body
+
+
+def _record_token_usage(model: str, response_json: dict) -> None:
+    """Extract and record token usage from API response for analytics (#117)."""
+    provider = _provider_of(model)
+    label_model = model or "-"
+    try:
+        usage = response_json.get("usage", {})
+        input_tokens = usage.get("prompt_tokens", 0)
+        output_tokens = usage.get("completion_tokens", 0)
+        if input_tokens > 0 or output_tokens > 0:
+            TOKEN_INPUT.labels(provider, label_model).inc(input_tokens)
+            TOKEN_OUTPUT.labels(provider, label_model).inc(output_tokens)
+            TOKEN_REQUESTS.labels(provider, label_model).inc()
+    except (AttributeError, TypeError, KeyError):
+        # Safely ignore malformed responses
+        pass
 
 
 def _record_provider_signal(model: str, status: int, elapsed: float) -> None:
@@ -1084,6 +1118,8 @@ async def gemini_proxy(model_action: str, request: Request):
         resp_json = resp.json()
         if ck:
             await _cache_set(ck + ":json", [json.dumps(resp_json)])
+        # Record token usage for analytics (#117)
+        _record_token_usage(model, resp_json)
         gemini_resp = _oai_to_gemini_resp(resp_json, model)
         return Response(
             content=json.dumps(gemini_resp).encode(), status_code=200, headers={"content-type": "application/json"}
@@ -1666,6 +1702,8 @@ async def responses_proxy(request: Request):
         resp_json = resp.json()
         if ck:
             await _cache_set(ck + ":json", [json.dumps(resp_json)])
+        # Record token usage for analytics (#117)
+        _record_token_usage(oai_body.get("model", "-"), resp_json)
         responses_resp = _oai_to_responses_resp(resp_json)
         return Response(
             content=json.dumps(responses_resp).encode(), status_code=200, headers={"content-type": "application/json"}
@@ -2030,6 +2068,8 @@ async def claude_proxy(request: Request):
         resp_json = resp.json()
         if ck:
             await _cache_set(ck + ":json", [json.dumps(resp_json)])
+        # Record token usage for analytics (#117)
+        _record_token_usage(model, resp_json)
         claude_resp = _oai_to_claude_resp(resp_json)
         return Response(
             content=json.dumps(claude_resp).encode(), status_code=200, headers={"content-type": "application/json"}
@@ -2329,6 +2369,73 @@ def _admin_config_drift_panel(config: dict | None, config_errors: list[dict]) ->
     )
 
 
+def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -> dict:
+    """Build token usage analytics panel from live Prometheus metrics (#117)."""
+    by_provider: dict[str, dict] = {}
+    by_model: list[dict] = []
+
+    if metrics_text:
+        for line in metrics_text.splitlines():
+            if line.startswith("#") or not line.strip():
+                continue
+            # Match token counters: translator_token_input_total{provider="...",model="..."} value
+            m = re.match(
+                r'translator_token_(input|output)_total\{provider="([^"]+)",model="([^"]+)"\}\s+([\d.e+]+)',
+                line,
+            )
+            if not m:
+                continue
+            kind, provider, model, raw_val = m.group(1), m.group(2), m.group(3), m.group(4)
+            try:
+                val = int(float(raw_val))
+            except ValueError:
+                continue
+
+            # Aggregate by provider
+            if provider not in by_provider:
+                by_provider[provider] = {"provider": provider, "input_tokens": 0, "output_tokens": 0, "models": set()}
+            by_provider[provider][f"{kind}_tokens"] += val
+            by_provider[provider]["models"].add(model)
+
+            # Per-model entry
+            existing = next((e for e in by_model if e["model"] == model and e["provider"] == provider), None)
+            if not existing:
+                existing = {"model": model, "provider": provider, "input_tokens": 0, "output_tokens": 0}
+                by_model.append(existing)
+            existing[f"{kind}_tokens"] += val
+
+    # Serialise provider summary (sets → counts)
+    provider_summary = [
+        {
+            "provider": v["provider"],
+            "model_count": len(v["models"]),
+            "input_tokens": v["input_tokens"],
+            "output_tokens": v["output_tokens"],
+            "total_tokens": v["input_tokens"] + v["output_tokens"],
+        }
+        for v in by_provider.values()
+    ]
+    total_input = sum(p["input_tokens"] for p in provider_summary)
+    total_output = sum(p["output_tokens"] for p in provider_summary)
+
+    status = "ok" if metrics_text and not errors else "warning"
+    return _admin_panel(
+        status,
+        "translator:/metrics (token counters)",
+        0,
+        errors,
+        {
+            "summary": {
+                "total_input_tokens": total_input,
+                "total_output_tokens": total_output,
+                "total_tokens": total_input + total_output,
+            },
+            "by_provider": provider_summary,
+            "by_model": sorted(by_model, key=lambda e: e["input_tokens"] + e["output_tokens"], reverse=True),
+        },
+    )
+
+
 async def _admin_fetch_visible_models() -> tuple[list[str] | None, list[dict]]:
     """Fetch client-visible model ids from LiteLLM, server-side. Bounded; never raises."""
     if _client is None:
@@ -2357,6 +2464,13 @@ async def _admin_fetch_metrics_text() -> tuple[str | None, list[dict]]:
         return None, [_admin_error("metrics_error", f"{type(exc).__name__}: {exc}", "translator:/metrics")]
 
 
+@app.get("/admin/analytics/tokens")
+async def admin_token_analytics():
+    """Granular token usage analytics by provider and model (#117)."""
+    metrics_text, errors = await _admin_fetch_metrics_text()
+    return _admin_token_analytics_panel(metrics_text, errors)
+
+
 @app.get("/admin/status")
 async def admin_status():
     """Read-only operator status aggregator (admin-console.v1)."""
@@ -2370,6 +2484,7 @@ async def admin_status():
         "providers": _admin_providers_panel(),
         "routing": _admin_routing_panel(config, metrics_text, metrics_errors),
         "config_drift": _admin_config_drift_panel(config, config_errors),
+        "token_analytics": _admin_token_analytics_panel(metrics_text, metrics_errors),
     }
     return {
         "schema_version": ADMIN_SCHEMA_VERSION,

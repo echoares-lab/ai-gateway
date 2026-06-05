@@ -673,7 +673,7 @@ async def test_admin_status_endpoint_shape():
     assert resp.status_code == 200
     body = resp.json()
     assert body["schema_version"] == "admin-console.v1"
-    assert set(body["panels"].keys()) == {"health", "models", "providers", "routing", "config_drift"}
+    assert set(body["panels"].keys()) == {"health", "models", "providers", "routing", "config_drift", "token_analytics"}
     assert body["panels"]["health"]["status"] == "ok"
     # No obvious secret leakage in the serialized response.
     raw = json.dumps(body)

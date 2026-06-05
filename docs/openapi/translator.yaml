@@ -1,0 +1,120 @@
+openapi: 3.0.3
+info:
+  title: Translator API
+  description: Translation proxy for multiple AI CLI formats to LiteLLM (OpenAI Chat Completions).
+  version: 1.0.0
+paths:
+  /v1/chat/completions:
+    post:
+      summary: Proxy for Cursor/OpenAI hybrid formats
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model: {type: string}
+                messages: {type: array, items: {type: object}}
+            example:
+              model: "AI-Gateway:gpt-4"
+              messages: [{"role": "user", "content": "Hello!"}]
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              example:
+                id: "chatcmpl-123"
+                choices: [{"message": {"role": "assistant", "content": "Hello there!"}}]
+  /v1beta/models/{model_action}:
+    get:
+      summary: Get models information
+      parameters:
+        - name: model_action
+          in: path
+          required: true
+          schema: {type: string}
+    post:
+      summary: Gemini CLI format proxy
+      parameters:
+        - name: model_action
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Successful response
+  /v1/responses:
+    post:
+      summary: Codex CLI / OpenAI Responses API proxy
+      responses:
+        '200':
+          description: Successful response
+    get:
+      summary: Codex WebSocket proxy
+      responses:
+        '101':
+          description: Switching Protocols (WebSocket)
+  /v1/messages:
+    post:
+      summary: Claude / Anthropic Messages API proxy
+      responses:
+        '200':
+          description: Successful response
+  /metrics:
+    get:
+      summary: Prometheus metrics endpoint
+      responses:
+        '200':
+          description: Success
+  /admin/status:
+    get:
+      summary: Read-only operator status aggregator
+      responses:
+        '200':
+          description: admin-console.v1 JSON payload
+          content:
+            application/json:
+              example:
+                schema_version: "admin-console.v1"
+                panels:
+                  token_analytics:
+                    status: "ok"
+                    data:
+                      summary:
+                        total_input_tokens: 1250000
+                        total_output_tokens: 350000
+                        total_tokens: 1600000
+  /admin/analytics/tokens:
+    get:
+      summary: Granular token usage analytics by provider and model
+      responses:
+        '200':
+          description: Token analytics panel
+          content:
+            application/json:
+              example:
+                status: "ok"
+                source: "translator:/metrics (token counters)"
+                data:
+                  summary:
+                    total_input_tokens: 1250000
+                    total_output_tokens: 350000
+                    total_tokens: 1600000
+                  by_provider:
+                    - provider: "anthropic"
+                      model_count: 3
+                      input_tokens: 600000
+                      output_tokens: 150000
+                      total_tokens: 750000
+                  by_model:
+                    - model: "claude-sonnet-4-6"
+                      provider: "anthropic"
+                      input_tokens: 350000
+                      output_tokens: 85000
+  /admin/dashboard:
+    get:
+      summary: Admin console HTML dashboard
+      responses:
+        '200':
+          description: HTML dashboard page
