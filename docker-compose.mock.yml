@@ -20,6 +20,19 @@ services:
     volumes: []
     environment: {}
 
+  litellm:
+    # Fresh Postgres + LiteLLM proxy_extras migrations can exceed dev defaults (~70s).
+    healthcheck:
+      test:
+        [
+        "CMD-SHELL",
+        "python - <<'PY'\nimport urllib.request, sys\ntry:\n    r = urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=3)\n    sys.exit(0 if 200 <= r.status < 300 else 1)\nexcept Exception:\n    sys.exit(1)\nPY"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 120s
+
   cpa-manager:
     image: seakee/cpa-manager:1.5.5
     restart: unless-stopped
