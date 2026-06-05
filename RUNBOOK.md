@@ -615,7 +615,7 @@ docker compose restart litellm
 ```bash
 cd ~/repos/ai-gateway
 docker compose up -d
-# LiteLLM healthcheck gates the translator startup — no manual wait needed
+# LiteLLM, Redis, and policy-engine healthchecks gate translator startup — no manual wait needed
 ./cliproxy-setup.sh health
 ```
 
@@ -627,10 +627,86 @@ Central routing evaluator for repo/agent affinity, budget gates, rate-limit stat
 fallback ordering. Design: [POLICY_ENGINE_AND_ROUTING_REFACTOR.md](./docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md).
 OpenAPI: [docs/openapi/policy-engine.yaml](./docs/openapi/policy-engine.yaml).
 
-> **Rollout status:** Evaluators and audit log (38-16) are implemented in
-> `services/policy-engine/`. Translator wire-up (`POLICY_ENGINE_ENABLED`, 38-04) and
-> admin policy trace (38-15) are not production-default yet. Procedures below describe
-> **target operator behavior**; enable per dev slot first.
+> **Rollout status:** Epic #38 is complete on `main`. The policy-engine service runs in
+> the stable compose stack with `POLICY_ENGINE_ENABLED=false` by default (Stage 0).
+> Enable Stage 2 on stable only after validating in a dev slot (Stage 1).
+
+### Enabling on stable stack (Stage 2)
+
+HTTP routing evaluate is **fail-open**: if policy-engine is down or times out, the
+translator forwards without `routing_decision` and static YAML fallbacks apply.
+WebSocket `/v1/responses` bypasses evaluate unless you also set
+`POLICY_ENGINE_WS_EVALUATE=true` (Stage 3 — not recommended until Gate C WS smoke).
+
+**Prerequisites**
+
+| Check | Command / action |
+|-------|------------------|
+| Migration 002 applied | `./db/apply-migrations.sh ai-postgres-1` |
+| Policy-engine healthy | `curl -s http://127.0.0.1:8080/v1/health \| jq .` |
+| Redis reachable | `source .env && redis-cli -u "$REDIS_URL" ping` |
+| Stage 1 validated | `./dev-env.sh start 1` with `POLICY_ENGINE_ENABLED=true`, then `./dev-env.sh test 1` |
+| Admin trace ready | `curl -s http://localhost:4000/admin/status -H "Authorization: Bearer $LITELLM_MASTER_KEY" \| jq .policy_engine` |
+
+**Enable (stable worktree only — never edit from a feature worktree serving slot 0)**
+
+1. In `/home/dev/repos/ai-gateway/.env`, set:
+
+   ```bash
+   POLICY_ENGINE_ENABLED=true
+   # Optional: raise evaluate timeout during first hour (default 100ms)
+   # POLICY_ENGINE_TIMEOUT_MS=250
+   ```
+
+2. Recreate translator so it picks up the flag (compose gates on healthy deps):
+
+   ```bash
+   cd ~/repos/ai-gateway
+   docker compose up -d policy-engine translator
+   ```
+
+   `translator` waits for `litellm`, `redis`, and `policy-engine` healthchecks before
+   accepting traffic (see `docker-compose.yml` `depends_on`).
+
+3. **Gate D smoke** (stable):
+
+   ```bash
+   ./cliproxy-setup.sh health
+   ./cliproxy-setup.sh test claude-sonnet-4-6
+   ./cliproxy-setup.sh test gemini-3-flash
+   ./cliproxy-setup.sh test gpt-5-4
+   ```
+
+4. Confirm evaluate path — admin status should show `policy_engine.enabled: true` and
+   `policy_engine.reachable: true`. Spot-check audit sampling:
+
+   ```sql
+   SELECT evaluated_at, gate, requested_model
+   FROM routing_decisions_log
+   ORDER BY evaluated_at DESC LIMIT 5;
+   ```
+
+**Rollback (fastest)**
+
+```bash
+# In stable .env
+POLICY_ENGINE_ENABLED=false
+docker compose up -d translator
+```
+
+Traffic continues immediately; evaluate calls are skipped. Fix policy-engine or stores
+using the [fail-open procedure](#fail-open-procedure) below, then re-enable.
+
+**Optional Stage 3 — WebSocket evaluate**
+
+Only after HTTP Stage 2 is stable and Gate C WS smoke passes:
+
+```bash
+POLICY_ENGINE_WS_EVALUATE=true   # requires POLICY_ENGINE_ENABLED=true
+```
+
+See [CLIENT_COMPATIBILITY.md](./docs/CLIENT_COMPATIBILITY.md) and design doc §9 for Codex
+WS bypass semantics.
 
 ### Dependencies (Redis + Postgres)
 
@@ -770,7 +846,7 @@ Static `litellm-config.yaml` fallbacks remain the safety net.
 **Incident checklist:**
 
 1. Confirm traffic still flows: `./cliproxy-setup.sh test claude-sonnet-4-6`
-2. Disable enforcement (fastest): set `POLICY_ENGINE_ENABLED=false` on translator and restart dev slot
+2. Disable enforcement (fastest): set `POLICY_ENGINE_ENABLED=false` in `.env` and `docker compose up -d translator` (stable or dev slot)
 3. Check policy-engine logs: `docker compose logs policy-engine --tail=50` (when deployed)
 4. Inspect last audit denies: `SELECT gate, decision_json FROM routing_decisions_log ORDER BY evaluated_at DESC LIMIT 10;`
 5. If bad profile promoted: `UPDATE policy_profiles SET enabled = false WHERE profile_id = '...';`

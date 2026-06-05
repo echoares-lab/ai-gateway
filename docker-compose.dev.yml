@@ -34,7 +34,15 @@ services:
       --requirepass ${REDIS_AUTH:-myredissecret}
       --maxmemory-policy noeviction
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "--no-auth-warning",
+          "-a",
+          "${REDIS_AUTH:-myredissecret}",
+          "ping",
+        ]
       interval: 3s
       timeout: 10s
       retries: 10
@@ -146,8 +154,10 @@ services:
     depends_on:
       litellm:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       policy-engine:
-        condition: service_started
+        condition: service_healthy
     environment:
       LITELLM_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
