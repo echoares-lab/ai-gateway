@@ -24,8 +24,8 @@ SCALAR_HTML = """
 """
 
 @app.get("/")
-async def get_docs():
-    return HTMLResponse(SCALAR_HTML)
+async def get_docs(spec: str = "translator.yaml"):
+    return HTMLResponse(SCALAR_HTML.replace("data-url=\"/openapi/translator.yaml\"", f"data-url=\"/openapi/{spec}\""))
 
 # Endpoint to serve OpenAPI YAMLs
 @app.get("/openapi/{filename}")
