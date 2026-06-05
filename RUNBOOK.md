@@ -553,6 +553,31 @@ docker compose up -d
 
 ---
 
+## Policy routing audit log
+
+The policy engine writes sampled routing decisions to Postgres
+``routing_decisions_log`` (migration ``002_policy_profiles_pools.sql``).
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `POLICY_AUDIT_SAMPLE_RATE` | `0.01` | Fraction of **allow** decisions logged (1%) |
+| `POLICY_AUDIT_QUEUE_MAX` | `1000` | Async write queue depth before drop |
+
+**Sampling:** `deny` and `throttle` gates are always logged. `allow` decisions are
+sampled at ``POLICY_AUDIT_SAMPLE_RATE``. Dry-run evaluations never write.
+
+**Retention:** keep audit rows for **30 days**, then prune:
+
+```sql
+DELETE FROM routing_decisions_log
+WHERE evaluated_at < now() - interval '30 days';
+```
+
+Schedule via cron or a Postgres maintenance job. Read access is granted to
+``mcp_readonly`` for admin/MCP tooling.
+
+---
+
 ## File Reference
 
 | File | Purpose |
