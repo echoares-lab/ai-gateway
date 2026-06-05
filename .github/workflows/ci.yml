@@ -132,7 +132,7 @@ jobs:
       - name: Validate policy-profiles.yaml
         run: |
           .venv-ci/bin/pip install pydantic
-          PYTHONPATH=services/policy-engine python3 scripts/validate_policy_profiles.py
+          PYTHONPATH=services/policy-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
 
       - name: Check for hardcoded API keys
         run: |
