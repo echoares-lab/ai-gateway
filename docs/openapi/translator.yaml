@@ -67,3 +67,54 @@ paths:
       responses:
         '200':
           description: Success
+  /admin/status:
+    get:
+      summary: Read-only operator status aggregator
+      responses:
+        '200':
+          description: admin-console.v1 JSON payload
+          content:
+            application/json:
+              example:
+                schema_version: "admin-console.v1"
+                panels:
+                  token_analytics:
+                    status: "ok"
+                    data:
+                      summary:
+                        total_input_tokens: 1250000
+                        total_output_tokens: 350000
+                        total_tokens: 1600000
+  /admin/analytics/tokens:
+    get:
+      summary: Granular token usage analytics by provider and model
+      responses:
+        '200':
+          description: Token analytics panel
+          content:
+            application/json:
+              example:
+                status: "ok"
+                source: "translator:/metrics (token counters)"
+                data:
+                  summary:
+                    total_input_tokens: 1250000
+                    total_output_tokens: 350000
+                    total_tokens: 1600000
+                  by_provider:
+                    - provider: "anthropic"
+                      model_count: 3
+                      input_tokens: 600000
+                      output_tokens: 150000
+                      total_tokens: 750000
+                  by_model:
+                    - model: "claude-sonnet-4-6"
+                      provider: "anthropic"
+                      input_tokens: 350000
+                      output_tokens: 85000
+  /admin/dashboard:
+    get:
+      summary: Admin console HTML dashboard
+      responses:
+        '200':
+          description: HTML dashboard page
