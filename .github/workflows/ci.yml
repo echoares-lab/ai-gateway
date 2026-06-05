@@ -44,6 +44,8 @@ jobs:
               - 'tests/**'
               - 'docker-compose*.yml'
               - 'litellm-config.yaml'
+              - 'config/**'
+              - 'scripts/**'
               - 'Dockerfile*'
               - '*.sh'
               - 'Makefile'
@@ -126,6 +128,11 @@ jobs:
 
           print(f"✓ litellm-config.yaml: YAML syntax OK, {len(data.get('model_list') or [])} models validated")
           PY
+
+      - name: Validate policy-profiles.yaml
+        run: |
+          .venv-ci/bin/pip install pydantic
+          PYTHONPATH=services/policy-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
 
       - name: Check for hardcoded API keys
         run: |
