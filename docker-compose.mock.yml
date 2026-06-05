@@ -47,7 +47,8 @@ services:
   translator:
     # CI: don't block `compose up translator` on LiteLLM health (compose wait can
     # SIGKILL litellm while proxy_extras migrations run on a fresh Postgres volume).
-    depends_on:
+    # !reset drops dev-stack policy-engine dependency; mock tier keeps policy disabled.
+    depends_on: !reset
       litellm:
         condition: service_started
 
