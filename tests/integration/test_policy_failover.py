@@ -13,6 +13,13 @@ pytestmark = [pytest.mark.mock]
 
 POLICY_ENGINE_URL = os.environ.get("POLICY_ENGINE_URL", "http://localhost:8080")
 _TENANT_KEY = "ak-echoares-core-eng-gateway-dev"
+_DEFAULT_TENANCY = {
+    "tenant_id": "echoares",
+    "workspace_id": "core",
+    "team_id": "eng",
+    "repo_name": "gateway",
+    "environment": "dev",
+}
 
 
 @pytest.fixture(scope="session")
@@ -32,8 +39,9 @@ def reset_policy_debug(policy_engine):
     yield
 
 
-def _tenant_headers() -> dict[str, str]:
-    return {"Authorization": f"Bearer {_TENANT_KEY}"}
+def _auth_headers() -> dict[str, str]:
+    key = MASTER_KEY or _TENANT_KEY
+    return {"Authorization": f"Bearer {key}"}
 
 
 def _chat(client: httpx.Client, *, model: str, metadata: dict | None = None, tools: bool = False):
@@ -42,8 +50,10 @@ def _chat(client: httpx.Client, *, model: str, metadata: dict | None = None, too
         "messages": [{"role": "user", "content": "ping"}],
         "max_tokens": 5,
     }
+    meta = dict(_DEFAULT_TENANCY)
     if metadata:
-        body["metadata"] = metadata
+        meta.update(metadata)
+    body["metadata"] = meta
     if tools:
         body["tools"] = [
             {
@@ -54,7 +64,7 @@ def _chat(client: httpx.Client, *, model: str, metadata: dict | None = None, too
                 },
             }
         ]
-    return client.post("/v1/chat/completions", json=body, headers=_tenant_headers())
+    return client.post("/v1/chat/completions", json=body, headers=_auth_headers())
 
 
 def _last_decision(policy_engine: httpx.Client) -> dict:
