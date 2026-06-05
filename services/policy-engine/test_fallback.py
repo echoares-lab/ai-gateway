@@ -185,6 +185,7 @@ def test_rules_applied_reflect_layer_evaluation_order():
     assert tags.index("fallback:affinity:family_lock") < tags.index("fallback:health:weighted_order")
     assert tags.index("fallback:health:weighted_order") < tags.index("fallback:budget:cost_tier")
     assert tags.index("fallback:budget:cost_tier") < tags.index("fallback:baseline:yaml")
+    assert "eval:quality_reorder" not in tags
 
 
 def test_load_yaml_baseline_from_repo_config():

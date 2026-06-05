@@ -132,7 +132,7 @@ jobs:
       - name: Validate policy-profiles.yaml
         run: |
           .venv-ci/bin/pip install pydantic
-          PYTHONPATH=services/policy-engine python3 scripts/validate_policy_profiles.py
+          PYTHONPATH=services/policy-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
 
       - name: Check for hardcoded API keys
         run: |
@@ -287,7 +287,7 @@ jobs:
           TRANSLATOR_IMAGE: ai-translator-test:latest
           CLIPROXY_DEV_CONFIG: ${{ github.workspace }}/tests/cliproxy-config-ci.yaml
           DEV_TRANSLATOR_PORT: "4010"
-          DEV_POLICY_ENGINE_PORT: "8080"
+          DEV_POLICY_ENGINE_PORT: "18080"
           LITELLM_MIGRATIONS: "None"
         run: |
           # Reuse aidevmock Postgres volume on self-hosted runners (avoid ~7m Prisma migrations each job).
@@ -343,7 +343,7 @@ jobs:
       - name: Run mock-tier pytest
         run: |
           GATEWAY_URL=http://localhost:4010 LITELLM_MASTER_KEY=sk-ci-mock ALLOW_MODEL_SKIP=0 \
-            POLICY_ENGINE_URL=http://localhost:8080 \
+            POLICY_ENGINE_URL=http://localhost:18080 \
             .venv-ci/bin/python -m pytest tests/integration/ -m mock -v
       - name: Run shell E2E smoke (CI mock mode)
         run: |
