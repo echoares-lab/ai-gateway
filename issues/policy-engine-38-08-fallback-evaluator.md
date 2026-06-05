@@ -34,7 +34,7 @@ dependencies:
 files:
   - services/policy-engine/evaluator/fallback.py
   - services/policy-engine/main.py
-claim_status: claimed
+claim_status: done
 blocks:
   - policy-engine-38-16-audit-log.md
   - policy-engine-38-17-integration-tests.md
@@ -48,3 +48,11 @@ github_issue: #127
 ---
 
 # 38-8 — Fallback Rule Evaluator
+
+## Closeout
+
+- **Claim-ID:** cursor-policy-fallback-eval-20260605T055013Z
+- **Status:** done
+- **PR:** https://github.com/echoares-lab/ai-gateway/pull/144
+- **Files:** `evaluator/fallback.py`, `main.py`, `test_fallback.py`
+- **Tests:** 10/10 `test_fallback.py` pass; 83/83 policy-engine suite pass

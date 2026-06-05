@@ -112,18 +112,18 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-03 redis | **done** | Cooldown registry, agent affinity, profile/decision cache keys |
 | 38-04 translator | unassigned | Blocked: 38-02 + Phase 0 P0-1..P0-3 for shared env |
 | 38-05 repo affinity | **done** | Postgres read + repo affinity + Redis profile cache |
-| 38-06 agent affinity | unassigned | **Next claimable (Phase 2)** — 38-03 done |
-| 38-07 rate-limit | unassigned | Blocked: P0-2, P0-5 (38-03 done) |
-| 38-08 fallback | unassigned | Blocked: 38-05, 38-06, 38-07 |
+| 38-06 agent affinity | **done** | Agent affinity evaluator wired |
+| 38-07 rate-limit | **done** | Aggregator wired; inventory + Redis + translator merge |
+| 38-08 fallback | **done** | Layered evaluator + 10 unit tests (#127, PR #144) |
 | 38-09 budget | **done** | Soft gates + fail-open hard deny (#128) |
 | 38-10 pool schema | **done** | Migration 002 in repo |
 | 38-11 pool aliases | **done** | Tier alias docs + claude-sonnet-4-6-at-native |
-| 38-12 prober events | unassigned | Blocked: 38-07, P0-6 |
+| 38-12 prober events | **done** | POST /v1/events/credential + prober notifier |
 | 38-13 cliproxy sync | unassigned | Optional; blocked: 38-11 |
 | 38-14 websocket | unassigned | Blocked: 38-04 |
 | 38-15 admin trace | unassigned | Blocked: 38-04 |
-| 38-16 audit log | unassigned | Blocked: 38-08 |
-| 38-17 integration tests | unassigned | Blocked: 38-08, 38-14 |
+| 38-16 audit log | unassigned | **Next claimable** — 38-08 done |
+| 38-17 integration tests | unassigned | Blocked: 38-14 |
 | 38-18 runbook | unassigned | Blocked: 38-15 |
 | 38-19 eval routing | unassigned | Optional Phase 5 |
 | 38-20 mcp visibility | unassigned | Optional Phase 5 |
@@ -131,9 +131,9 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 
 ## Next agent action
 
-**Claim:** [policy-engine-38-07-rate-limit-aggregator.md](./policy-engine-38-07-rate-limit-aggregator.md) — Phase 2 parallel lane.
+**Claim:** [policy-engine-38-16-audit-log.md](./policy-engine-38-16-audit-log.md) — Phase 4 (38-08 done).
 
-Alternative: [policy-engine-38-04-translator.md](./policy-engine-38-04-translator.md) if Phase 0 P0-1..P0-3 gate clears.
+Alternatives: [policy-engine-38-13-cliproxy-priority-sync.md](./policy-engine-38-13-cliproxy-priority-sync.md) (optional), [policy-engine-38-04-translator.md](./policy-engine-38-04-translator.md) (blocked on P0-1..P0-3).
 
 ## Live claim_status summary
 
@@ -142,10 +142,15 @@ Alternative: [policy-engine-38-04-translator.md](./policy-engine-38-04-translato
 | 38-01 schemas | done | #120 |
 | 38-02 scaffold | done | #121 |
 | 38-03 redis | done | #122 |
+| 38-05 repo affinity | done | — |
+| 38-06 agent affinity | done | — |
+| 38-07 rate-limit | done | #126 |
+| 38-08 fallback | done | #127 |
 | 38-04 translator | unassigned | #123 |
+| 38-06 agent affinity | done | #125 |
 | 38-10 pool schema | done | #129 |
 | Phase 0 prerequisites | tracking (not claimable) | #119 |
 | Epic coordination | not-claimable | #38 |
 
-**Next unblocked for implementation:** 38-05/38-06/38-07 (Phase 2, after 38-03). **38-04** remains gated on P0-1..P0-3 per phase0 prerequisites.
+**Next unblocked for implementation:** 38-16 audit log (38-08 done). **38-04** remains gated on P0-1..P0-3 per phase0 prerequisites.
 
