@@ -32,7 +32,8 @@ Medium-priority roadmap epics remain available for future child issues:
 Low-priority roadmap epics are coordination items until split into approved
 atomic issues:
 
-- **Evaluation-driven routing quality loop** ([#37](https://github.com/echoares-lab/ai-gateway/issues/37)).
+- **Evaluation-driven routing quality loop** ([#37](https://github.com/echoares-lab/ai-gateway/issues/37)):
+  design stub in [EVAL_DRIVEN_ROUTING.md](./EVAL_DRIVEN_ROUTING.md) (Epic #38 issue 38-19, [#138](https://github.com/echoares-lab/ai-gateway/issues/138)).
 
 ---
 
