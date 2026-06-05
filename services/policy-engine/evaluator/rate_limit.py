@@ -97,11 +97,14 @@ def merge_rate_limit_sources(
 
     credential_ids = _collect_credential_ids(context)
     if inventory_store is not None and inventory_store.enabled and credential_ids:
-        for snap in inventory_store.cooldown_snapshots(credential_ids):
+        inventory_snaps = inventory_store.routing_snapshots(credential_ids)
+        for snap in inventory_snaps:
             key = _cred_key(snap)
             by_cred[key] = _merge_snapshots(by_cred.get(key), snap)
-        if any(s.in_cooldown for s in by_cred.values()):
-            rules.append("rate_limit:inventory_cooldown_merged")
+        if inventory_snaps:
+            rules.append("rate_limit:inventory_routing_merged")
+        if any(s.in_cooldown for s in inventory_snaps):
+            rules.append("rate_limit:inventory_status_excluded")
 
     merged_list = list(by_cred.values())
     merged_context = context.model_copy(update={"rate_limits": merged_list})

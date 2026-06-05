@@ -69,7 +69,8 @@ def test_merge_inventory_cool_down_until():
         ],
     )
     merged, rules = merge_rate_limit_sources(ctx, inventory_store=inventory)
-    assert "rate_limit:inventory_cooldown_merged" in rules
+    assert "rate_limit:inventory_routing_merged" in rules
+    assert "rate_limit:inventory_status_excluded" in rules
     snap = merged.rate_limits[0]
     assert snap.in_cooldown is True
     assert snap.cooldown_until == future
@@ -186,6 +187,18 @@ def test_aggregate_and_evaluate_end_to_end(fake_redis: RedisStateStore):
     assert evaluation.quota_aware_mode is True
 
 
+
+def test_inventory_critical_status_deprioritized():
+    inventory = InventoryStore(None, enabled=False, fixtures={"cred-critical": ("anthropic", None, "CRITICAL")})
+    ctx = RoutingContext(
+        requested_model="claude-sonnet-4-6",
+        rate_limits=[RateLimitSnapshot(provider="anthropic", credential_id="cred-critical")],
+    )
+    _, evaluation, merge_rules = aggregate_and_evaluate(ctx, inventory_store=inventory)
+    assert "rate_limit:inventory_status_excluded" in merge_rules
+    assert "cred-critical" in evaluation.deprioritized_credentials
+
+
 def test_evaluate_wires_aggregator_with_inventory_and_redis(fake_redis: RedisStateStore):
     cooldown = datetime.now(timezone.utc) + timedelta(seconds=30)
     fake_redis.record_rate_limit_429("gemini", "cred-hot", cooldown_until=cooldown)
@@ -206,7 +219,7 @@ def test_evaluate_wires_aggregator_with_inventory_and_redis(fake_redis: RedisSta
         store=fake_redis,
         inventory_store=inventory,
     )
-    assert "rate_limit:inventory_cooldown_merged" in decision.rules_applied
+    assert "rate_limit:inventory_routing_merged" in decision.rules_applied
     assert "redis:rate_limits_merged" in decision.rules_applied
     assert "cred-hot" in decision.deprioritized_credentials
     assert "rate_limit:cooldown_skip" in decision.rules_applied
