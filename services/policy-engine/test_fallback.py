@@ -63,6 +63,34 @@ def test_agent_affinity_family_lock_blocks_cross_family_with_tools():
     assert result.lock_model_family is True
 
 
+def test_deprioritized_credentials_skip_before_health_scoring():
+    """Quota-aware deprioritized creds skip deployments before health reorder."""
+    result = evaluate_fallback_layers(
+        "claude-sonnet-4-6",
+        allowed_models=["claude-sonnet-4-6", "gemini-3-flash", "gpt-5-4"],
+        policy_fallback=["gemini-3-flash", "gpt-5-4"],
+        capabilities=RequestCapabilities(),
+        deprioritized_credentials=["cred-g1", "cred-g2"],
+        deployment_credentials={
+            "gemini-3-flash": ["cred-g1", "cred-g2"],
+            "gpt-5-4": ["cred-o1"],
+        },
+        health_scores={
+            "gemini-3-flash": 0.95,
+            "gpt-5-4": 0.4,
+        },
+        baseline_path="",
+    )
+    assert "gemini-3-flash" not in result.ordered_deployments
+    assert "gpt-5-4" in result.ordered_deployments
+    assert "fallback:rate_limit:cooldown_skip" in result.rules_applied
+    if "fallback:health:weighted_order" in result.rules_applied:
+        assert (
+            result.rules_applied.index("fallback:rate_limit:cooldown_skip")
+            < result.rules_applied.index("fallback:health:weighted_order")
+        )
+
+
 def test_cooldown_skip_removes_deployments_with_all_creds_unavailable():
     result = evaluate_fallback_layers(
         "claude-sonnet-4-6",

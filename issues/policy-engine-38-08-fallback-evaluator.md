@@ -55,4 +55,4 @@ github_issue: #127
 - **Status:** done
 - **PR:** https://github.com/echoares-lab/ai-gateway/pull/144
 - **Files:** `evaluator/fallback.py`, `main.py`, `test_fallback.py`
-- **Tests:** 10/10 `test_fallback.py` pass; 83/83 policy-engine suite pass
+- **Tests:** 11/11 `test_fallback.py` pass; 84/84 policy-engine suite pass

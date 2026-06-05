@@ -114,7 +114,7 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-05 repo affinity | **done** | Postgres read + repo affinity + Redis profile cache |
 | 38-06 agent affinity | **done** | Agent affinity evaluator wired |
 | 38-07 rate-limit | **done** | Aggregator wired; inventory + Redis + translator merge |
-| 38-08 fallback | **done** | Layered evaluator + 10 unit tests (#127, PR #144) |
+| 38-08 fallback | **done** | Layered evaluator + 11 unit tests (#127, PR #144) |
 | 38-09 budget | **done** | Soft gates + fail-open hard deny (#128) |
 | 38-10 pool schema | **done** | Migration 002 in repo |
 | 38-11 pool aliases | **done** | Tier alias docs + claude-sonnet-4-6-at-native |
