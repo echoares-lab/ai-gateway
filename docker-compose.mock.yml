@@ -11,6 +11,8 @@ services:
       dockerfile: Dockerfile
     image: ai-mock-upstream:latest
     command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8317"]
+    # Gate B reaches cliproxy only on the compose network (no host bind).
+    ports: !override []
     volumes: []
     environment: {}
 

@@ -9,7 +9,7 @@ ROOT="${1:-.}"
 cd "$ROOT"
 
 COMPOSE=(docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock)
-MOCK_PORTS=(18080 4010 4011)
+MOCK_PORTS=(18080 4010 4011 8327)
 
 "${COMPOSE[@]}" down --remove-orphans || true
 if [[ "${CI_MOCK_DOWN_VOLUMES:-}" == "1" ]]; then
