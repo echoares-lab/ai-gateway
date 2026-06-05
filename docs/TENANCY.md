@@ -107,7 +107,7 @@ To maintain context efficiency and velocity, the following are explicitly marked
 1. **Done — tenant metadata in translator** ([#79](https://github.com/echoares-lab/ai-gateway/pull/79))
 2. **Done — bootstrap alignment** ([#107](https://github.com/echoares-lab/ai-gateway/issues/107))
 3. **feat(tenancy): multi-tenant budget and rate limit enforcement** — LiteLLM team budgets from workspace rules
-4. **feat(tenancy): workspace-level MCP tool visibility filters** — restrict MCP servers by team membership
+4. **feat(tenancy): workspace-level MCP tool visibility filters** — restrict MCP servers by team membership; design stub in [MCP_TOOL_VISIBILITY.md](./MCP_TOOL_VISIBILITY.md) (Epic #38 issue 38-20, [#139](https://github.com/echoares-lab/ai-gateway/issues/139))
 
 ---
 
