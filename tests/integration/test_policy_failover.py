@@ -67,12 +67,33 @@ def _chat(client: httpx.Client, *, model: str, metadata: dict | None = None, too
     return client.post("/v1/chat/completions", json=body, headers=_auth_headers())
 
 
-def _last_decision(policy_engine: httpx.Client) -> dict:
+def _last_evaluate(policy_engine: httpx.Client) -> dict:
     payload = policy_engine.get("/v1/debug/last").json()
     assert payload, "policy-engine received no /v1/evaluate call"
+    return payload
+
+
+def _last_decision(policy_engine: httpx.Client) -> dict:
+    payload = _last_evaluate(policy_engine)
     decision = payload.get("decision")
     assert isinstance(decision, dict), f"unexpected debug payload: {payload}"
     return decision
+
+
+def _last_context(policy_engine: httpx.Client) -> dict:
+    payload = _last_evaluate(policy_engine)
+    context = payload.get("context")
+    assert isinstance(context, dict), f"unexpected debug payload: {payload}"
+    return context
+
+
+def _policy_trace(client: httpx.Client) -> dict:
+    resp = client.get("/admin/status")
+    assert resp.status_code == 200, resp.text[:300]
+    routing = resp.json().get("panels", {}).get("routing", {})
+    trace = routing.get("data", {}).get("policy_engine")
+    assert isinstance(trace, dict), f"policy_engine trace missing from admin status: {routing}"
+    return trace
 
 
 @pytest.mark.mock
@@ -98,7 +119,7 @@ def test_agent_family_lock_blocks_cross_family_tools(client, policy_engine):
 
 
 @pytest.mark.mock
-def test_quota_429_fixture_deprioritizes_credentials(client, policy_engine):
+def test_quota_429_preemptive_deprioritizes_credentials(client, policy_engine):
     resp = _chat(
         client,
         model="claude-sonnet-4-6",
@@ -107,7 +128,43 @@ def test_quota_429_fixture_deprioritizes_credentials(client, policy_engine):
     assert resp.status_code == 200, resp.text[:300]
     decision = _last_decision(policy_engine)
     assert decision.get("quota_aware_mode") is True
+    deprioritized = decision.get("deprioritized_credentials") or []
+    assert deprioritized == ["cred-hot", "cred-warm"]
+    assert "gemini-2.5-flash" not in decision.get("ordered_deployments", [])
+    assert decision.get("ordered_deployments") == ["claude-sonnet-4-6", "gpt-5.5"]
+    rules = decision.get("rules_applied", [])
+    assert "mock:rate_limit:preemptive" in rules
+    assert "fallback:rate_limit:cooldown_skip" in rules
+
+    trace = _policy_trace(client)
+    last = trace.get("last_decision", {})
+    assert last.get("quota_aware_mode") is True
+    assert last.get("deprioritized_credentials") == ["cred-hot", "cred-warm"]
+
+
+@pytest.mark.mock
+def test_quota_429_preemptive_from_translator_rate_limit_signals(client, policy_engine):
+    seed = _chat(
+        client,
+        model="claude-sonnet-4-6",
+        metadata={"agent_id": "test:seed-429-counter"},
+    )
+    assert seed.status_code == 429, seed.text[:300]
+
+    resp = _chat(client, model="claude-sonnet-4-6", metadata={"agent_id": "composer-follow-up"})
+    assert resp.status_code == 200, resp.text[:300]
+
+    context = _last_context(policy_engine)
+    rate_limits = context.get("rate_limits") or []
+    assert any(
+        isinstance(rl, dict) and rl.get("pre_emptive_degraded") for rl in rate_limits
+    ), f"expected pre_emptive_degraded rate_limits in context, got {rate_limits}"
+
+    decision = _last_decision(policy_engine)
+    assert decision.get("quota_aware_mode") is True
     assert "cred-hot" in (decision.get("deprioritized_credentials") or [])
+    assert "gemini-2.5-flash" not in decision.get("ordered_deployments", [])
+    assert "mock:rate_limit:preemptive" in decision.get("rules_applied", [])
 
 
 @pytest.mark.mock
@@ -121,25 +178,68 @@ def test_repo_allowlist_restricts_ordered_deployments(client, policy_engine):
 def test_repo_denylist_gate(client, policy_engine):
     resp = _chat(client, model="claude-sonnet-4-6", metadata={"agent_id": "test:repo-denylist"})
     assert resp.status_code == 200, resp.text[:300]
-    assert _last_decision(policy_engine).get("gate") == "deny"
+    decision = _last_decision(policy_engine)
+    assert decision.get("gate") == "deny"
+    assert decision.get("deny_reason") == "repo denylist"
+    assert decision.get("ordered_deployments") == []
 
 
 @pytest.mark.mock
-def test_budget_deny_gate(client, policy_engine):
+def test_budget_deny_hard_gate_with_retry_after(client, policy_engine):
     resp = _chat(client, model="claude-sonnet-4-6", metadata={"agent_id": "test:budget-deny"})
     assert resp.status_code == 200, resp.text[:300]
     decision = _last_decision(policy_engine)
     assert decision.get("gate") == "deny"
+    assert decision.get("deny_reason") == "budget exhausted"
     assert decision.get("retry_after_seconds") == 60
+    assert "mock:budget:hard_deny" in decision.get("rules_applied", [])
+    assert decision.get("quota_aware_mode") is False
+
+    trace = _policy_trace(client)
+    last = trace.get("last_decision", {})
+    assert last.get("gate") == "deny"
+    assert "deprioritized_credentials" not in last
 
 
 @pytest.mark.mock
-def test_cooldown_skip_shifts_fallback_chain(client, policy_engine):
+def test_cooldown_skip_removes_degraded_fallback(client, policy_engine):
     resp = _chat(client, model="claude-sonnet-4-6", metadata={"agent_id": "test:cooldown-skip"})
     assert resp.status_code == 200, resp.text[:300]
     decision = _last_decision(policy_engine)
-    assert "gemini-2.5-flash" not in decision.get("ordered_deployments", [])
-    assert "gpt-5.5" in decision.get("ordered_deployments", [])
+    ordered = decision.get("ordered_deployments", [])
+    fallback = decision.get("fallback_chain", [])
+    assert ordered[0] == "claude-sonnet-4-6"
+    assert "gemini-2.5-flash" not in ordered
+    assert "gpt-5.5" in ordered
+    assert fallback == ["gpt-5.5"]
+    rules = decision.get("rules_applied", [])
+    assert "mock:cooldown_skip" in rules
+    assert "fallback:rate_limit:cooldown_skip" in rules
+
+
+@pytest.mark.mock
+def test_inventory_exclude_deprioritizes_degraded_credentials(client, policy_engine):
+    resp = _chat(
+        client,
+        model="claude-sonnet-4-6",
+        metadata={"agent_id": "test:inventory-exclude"},
+    )
+    assert resp.status_code == 200, resp.text[:300]
+    decision = _last_decision(policy_engine)
+    assert decision.get("quota_aware_mode") is True
+    assert decision.get("deprioritized_credentials") == ["cred-degraded"]
+    ordered = decision.get("ordered_deployments", [])
+    assert ordered[0] == "claude-sonnet-4-6"
+    assert "gemini-2.5-flash" not in ordered
+    assert "gpt-5.5" in ordered
+    rules = decision.get("rules_applied", [])
+    assert "mock:inventory:exclude" in rules
+    assert "rate_limit:inventory_cooldown_merged" in rules
+    assert "fallback:rate_limit:cooldown_skip" in rules
+
+    trace = _policy_trace(client)
+    last = trace.get("last_decision", {})
+    assert last.get("deprioritized_credentials") == ["cred-degraded"]
 
 
 @pytest.mark.mock

@@ -115,11 +115,28 @@ def _sse(model: str, with_tool: bool):
     yield "data: [DONE]\n\n"
 
 
+def _metadata_agent_id(body: dict) -> str | None:
+    metadata = body.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    agent_id = metadata.get("agent_id")
+    return agent_id if isinstance(agent_id, str) else None
+
+
+def _should_rate_limit(body: dict) -> bool:
+    return _metadata_agent_id(body) == "test:seed-429-counter"
+
+
 @app.post("/v1/chat/completions")
 async def chat(request: Request):
     body = await request.json()
     model = body.get("model", "mock-model")
     with_tool = _has_tools(body)
+    if _should_rate_limit(body):
+        return JSONResponse(
+            {"error": {"message": "rate limited", "type": "rate_limit_error"}},
+            status_code=429,
+        )
     if body.get("stream"):
         return StreamingResponse(_sse(model, with_tool), media_type="text/event-stream")
     return JSONResponse(_completion(model, with_tool))

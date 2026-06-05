@@ -74,6 +74,23 @@ def _scenario_decision(context: dict[str, Any]) -> dict[str, Any]:
             fallback_chain=["gpt-5.5"],
             rules_applied=["mock:cooldown_skip", "fallback:rate_limit:cooldown_skip"],
         )
+    if agent_id == "test:inventory-exclude" or any(
+        isinstance(rl, dict)
+        and rl.get("credential_id") == "cred-degraded"
+        and rl.get("in_cooldown")
+        for rl in rate_limits
+    ):
+        return _base_decision(
+            quota_aware_mode=True,
+            deprioritized_credentials=["cred-degraded"],
+            ordered_deployments=["claude-sonnet-4-6", "gpt-5.5"],
+            fallback_chain=["gpt-5.5"],
+            rules_applied=[
+                "mock:inventory:exclude",
+                "rate_limit:inventory_cooldown_merged",
+                "fallback:rate_limit:cooldown_skip",
+            ],
+        )
     if agent_id == "test:repo-allowlist":
         return _base_decision(
             allowed_models=["claude-sonnet-4-6"],
