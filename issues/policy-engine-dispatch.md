@@ -14,9 +14,9 @@ scope: |
 non_goals:
   - Replacing GitHub issues (mirror for repo-local agents)
 acceptance:
-  - [ ] All child issue files listed with dependencies
-  - [ ] Parallel lanes documented
-  - [ ] Quota-aware issues flagged (38-1, 38-7, 38-9, 38-10, 38-11)
+  - [x] All child issue files listed with dependencies
+  - [x] Parallel lanes documented
+  - [x] Quota-aware issues flagged (38-1, 38-7, 38-9, 38-10, 38-11)
 tests: |
   N/A — coordination doc
 dependencies:
@@ -25,6 +25,7 @@ dependencies:
 files:
   - issues/policy-engine-*.md
 claim_status: not-claimable
+epic_status: complete
 github_issue: #141
 ---
 
