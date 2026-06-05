@@ -1,5 +1,9 @@
 name: CI Suite
 
+env:
+  # Prevent root-owned __pycache__ files on self-hosted runners
+  PYTHONDONTWRITEBYTECODE: "1"
+
 on:
   push:
     branches: [ main ]
@@ -26,6 +30,10 @@ jobs:
       isolation: ${{ steps.filter.outputs.isolation }}
       credential_prober: ${{ steps.filter.outputs.credential_prober }}
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
@@ -49,9 +57,19 @@ jobs:
             credential_prober:
               - 'services/credential-prober/**'
 
+      - name: Fix workspace permissions (self-hosted)
+        if: always()
+        run: |
+          sudo rm -rf services/translator/__pycache__ || true
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+
   lint-and-syntax:
     runs-on: self-hosted
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - name: Ensure Python venv (PEP 668 / self-hosted)
         run: |
@@ -117,9 +135,19 @@ jobs:
           fi
           echo "✓ No hardcoded API keys found"
 
+      - name: Fix workspace permissions (self-hosted)
+        if: always()
+        run: |
+          sudo rm -rf services/translator/__pycache__ || true
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+
   unit-tests:
     runs-on: self-hosted
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - name: Build translator image locally
         run: |
@@ -128,6 +156,12 @@ jobs:
         run: |
           docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
 
+      - name: Fix workspace permissions (self-hosted)
+        if: always()
+        run: |
+          sudo rm -rf services/translator/__pycache__ || true
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+
   credential-prober:
     needs: changes
     if: >
@@ -135,10 +169,20 @@ jobs:
       github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - name: Run credential-prober unit tests
         run: |
           python3 -m unittest discover -s services/credential-prober -p 'test_*.py' -v
+
+      - name: Fix workspace permissions (self-hosted)
+        if: always()
+        run: |
+          sudo rm -rf services/translator/__pycache__ || true
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   multi-repo-isolation:
     needs: changes
@@ -147,6 +191,10 @@ jobs:
       github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - name: Install direnv
         run: sudo apt-get update && sudo apt-get install -y direnv
@@ -176,6 +224,12 @@ jobs:
           eval "$(direnv hook bash)"
           REPOS_BASE=/tmp/mock-repos bash tests/test-multi-repo-isolation.sh
 
+      - name: Fix workspace permissions (self-hosted)
+        if: always()
+        run: |
+          sudo rm -rf services/translator/__pycache__ || true
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+
   # Gate B: real translator + litellm + canned mock upstream (no OAuth, no real LLM).
   mock-integration:
     needs: changes
@@ -184,6 +238,10 @@ jobs:
       github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - name: Ensure Python venv (PEP 668 / self-hosted)
         run: |
@@ -262,6 +320,12 @@ jobs:
           docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs || true
           docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock down -v
 
+      - name: Fix workspace permissions (self-hosted)
+        if: always()
+        run: |
+          sudo rm -rf services/translator/__pycache__ || true
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+
   # Gate C: builds the CLIProxy fork and hits REAL providers. Not a required check.
   real-provider-e2e:
     if: >
@@ -269,6 +333,10 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'run-e2e')
     runs-on: self-hosted
     steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - name: Ensure Python venv (PEP 668 / self-hosted)
         run: |
@@ -313,3 +381,9 @@ jobs:
         run: |
           docker compose -f docker-compose.dev.yml -p aidev1 logs || true
           ./dev-env.sh stop 1
+
+      - name: Fix workspace permissions (self-hosted)
+        if: always()
+        run: |
+          sudo rm -rf services/translator/__pycache__ || true
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true

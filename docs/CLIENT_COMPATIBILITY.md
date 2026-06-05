@@ -41,6 +41,7 @@ An **Integration Profile** defines the exact base URL, authorization mapping, mo
 - **Base URL:** `http://localhost:4000/v1/responses`
 - **Authorization:** `Bearer ak-...`
 - **Responses Compaction:** Calls to `/v1/responses/compact` with non-OpenAI models are rewritten to `gpt-5-5` to avoid upstream proxy unsupported failures.
+- **WebSocket multi-turn:** Codex CLI opens `WS /v1/responses` for persistent sessions. The translator proxies directly to CLIProxy (`CLIPROXY_WS_URL`), bypassing LiteLLM and the policy-engine evaluate path. See [POLICY_ENGINE_AND_ROUTING_REFACTOR.md §9](./POLICY_ENGINE_AND_ROUTING_REFACTOR.md#9-websocket-path--codex-bypass-issue-38-14). CLIProxy session-affinity and credential routing still apply upstream.
 
 #### Gemini Profile
 - **Base URL:** `http://localhost:4000/v1beta/models/...`
@@ -80,6 +81,7 @@ An analysis of `tests/integration/test_gateway.py` against the supported client 
    - **Gaps:** Missing E2E integration test hitting `/v1/responses/compact` with a Claude model mapping to verify full client-gateway lifecycle works on production slots.
 4. **WebSocket Protocol Multi-turn Compatibility:**
    - **Status:** E2E websocket proxy is tested for raw connection establishment.
+   - **Policy engine:** WS path explicitly bypasses policy-engine evaluate (issue 38-14). HTTP `/v1/responses` uses LiteLLM + optional evaluate when `POLICY_ENGINE_ENABLED=true`.
    - **Gaps:** Missing multi-turn conversation and cancellation frame integration tests.
 
 ---

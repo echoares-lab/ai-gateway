@@ -289,10 +289,38 @@ Rules:
       {"provider": "anthropic", "model": "claude-sonnet-4-6", "outcome": "success", "requests": 100},
       {"provider": "openai", "model": "gpt-5-3-codex", "outcome": "rate_limited", "requests": 2}
     ],
-    "cooldown_events": []
+    "cooldown_events": [],
+    "websocket_policy_bypass": true,
+    "websocket_policy_evaluate_enabled": false,
+    "policy_engine_enabled": false,
+    "policy_engine": {
+      "enabled": false,
+      "trace_enabled": true,
+      "policy_version": "v0-stub",
+      "redis_connected": true,
+      "last_evaluate_ms": 12.5,
+      "last_decision": {
+        "gate": "allow",
+        "rules_applied": ["repo:affinity", "quota:deprioritize"],
+        "policy_version": "v0-stub",
+        "quota_aware_mode": true,
+        "deprioritized_credentials": ["cred-low-headroom"],
+        "session_key": "[redacted]"
+      }
+    }
   }
 }
 ```
+
+`websocket_policy_bypass` (issue 38-14): when `true`, `WS /v1/responses` skips
+policy-engine evaluate and proxies directly to CLIProxy.
+
+`policy_engine` (issue 38-15): nested under `panels.routing.data` when
+`ADMIN_POLICY_TRACE_ENABLED=true` (default). Exposes `POLICY_ENGINE_ENABLED`,
+`last_evaluate_ms`, bounded `last_decision` (`rules_applied`, `quota_aware_mode`,
+`deprioritized_credentials` when quota-aware), Redis connectivity, and
+`policy_version` from policy-engine health or last decision. `session_key` is
+always `[redacted]` in operator views.
 
 ### Warning fixture
 
