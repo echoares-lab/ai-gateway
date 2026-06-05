@@ -228,9 +228,13 @@ cmd_stop_mock() {
     echo "mock slot ${slot} stopped"
 }
 
-cmd_list() {
-    docker ps --filter "name=aidev" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+cmd_cleanup() {
+    echo "Purging all aidev containers and volumes..."
+    docker ps -a --filter "name=aidev" --format "{{.Names}}" | xargs -r docker rm -f
+    docker volume ls --filter "name=aidev" --format "{{.Name}}" | xargs -r docker volume rm
+    echo "Cleanup complete."
 }
+
 
 # ---------------------------------------------------------------------------
 # Dispatch
@@ -251,8 +255,9 @@ case "$CMD" in
     test-mock)         cmd_test_mock "$@" ;;
     stop-mock)         cmd_stop_mock "$@" ;;
     list)              cmd_list ;;
+    cleanup)           cmd_cleanup ;;
     *)
-        echo "Usage: $0 {start|stop|rebuild|rebuild-cliproxy|logs|sync-db|test|start-mock|test-mock|stop-mock|list} [slot]"
+        echo "Usage: $0 {start|stop|rebuild|rebuild-cliproxy|logs|sync-db|test|start-mock|test-mock|stop-mock|list|cleanup} [slot]"
         echo ""
         echo "Slot 0 is reserved (stable stack). Default slot: 1"
         echo ""
