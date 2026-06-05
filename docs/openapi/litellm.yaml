@@ -1,0 +1,15 @@
+openapi: 3.0.3
+info:
+  title: LiteLLM API
+  description: LiteLLM gateway API configuration and health.
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+  /v1/models:
+    get:
+      summary: List available models
+  /v1/chat/completions:
+    post:
+      summary: Chat completions endpoint
