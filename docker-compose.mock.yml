@@ -46,7 +46,8 @@ PY"
       dockerfile: Dockerfile
     image: ai-mock-policy-engine:latest
     command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
-    ports:
+    # !override drops dev-stack 0.0.0.0:DEV_POLICY_ENGINE_PORT mapping (duplicate 18080 bind).
+    ports: !override
       - "127.0.0.1:${DEV_POLICY_ENGINE_PORT:-18080}:8080"
     healthcheck:
       test:
