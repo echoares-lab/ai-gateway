@@ -123,8 +123,38 @@ def _metadata_agent_id(body: dict) -> str | None:
     return agent_id if isinstance(agent_id, str) else None
 
 
+_SEED_429_AGENT_ID = "test:seed-429-counter"
+
+
+def _message_text(content) -> str | None:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") in ("text", "input_text"):
+                text = item.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+        if parts:
+            return "\n".join(parts)
+    return None
+
+
+def _seed_429_user_content(body: dict) -> bool:
+    for msg in body.get("messages") or []:
+        if not isinstance(msg, dict) or msg.get("role") != "user":
+            continue
+        text = _message_text(msg.get("content"))
+        if text and (text == _SEED_429_AGENT_ID or text.startswith(f"{_SEED_429_AGENT_ID}:")):
+            return True
+    return False
+
+
 def _should_rate_limit(body: dict) -> bool:
-    return _metadata_agent_id(body) == "test:seed-429-counter"
+    return _metadata_agent_id(body) == _SEED_429_AGENT_ID or _seed_429_user_content(body)
 
 
 @app.post("/v1/chat/completions")
