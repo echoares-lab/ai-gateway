@@ -43,6 +43,7 @@ github_issue: #141
 5. **Do not claim** epic parent or Phase 0 tracking issue for implementation.
 6. **Hotspot rule:** `services/policy-engine/schemas.py` is owned by 38-1 (done) — additive changes only via new issues.
 7. **Do not double-claim 38-04:** Agent lane `142a1b91-9adf-45d2-8766-eb75a6c04231` was superseded by bundled work on `feat/translator-policy` — [PR #156](https://github.com/echoares-lab/ai-gateway/pull/156). Do not open a parallel branch for 38-04.
+8. **Do not double-claim 38-15:** [PR #157](https://github.com/echoares-lab/ai-gateway/pull/157) (`feat/admin-policy-trace`) was **closed as duplicate** — zero diff vs `feat/translator-policy`. Track 38-15 on PR #156 only.
 
 ## Phase order
 
@@ -132,7 +133,7 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 
 ## Next agent action
 
-**In review:** [PR #156](https://github.com/echoares-lab/ai-gateway/pull/156) (`feat/translator-policy`) bundles 38-04, 38-14 (done), and 38-15.
+**In review:** [PR #156](https://github.com/echoares-lab/ai-gateway/pull/156) (`feat/translator-policy`) bundles 38-04, 38-14 (done), and 38-15. Duplicate [PR #157](https://github.com/echoares-lab/ai-gateway/pull/157) closed — identical branch.
 
 **Claim after #156 merges:** [policy-engine-38-17-integration-tests.md](./policy-engine-38-17-integration-tests.md) (#136) or optional [policy-engine-38-13-cliproxy-priority-sync.md](./policy-engine-38-13-cliproxy-priority-sync.md).
 
