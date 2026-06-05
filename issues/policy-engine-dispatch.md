@@ -126,7 +126,7 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-15 admin trace | **in-review** | PR #156 — `policy_engine` panel in `/admin/status`; closes #134 on merge |
 | 38-16 audit log | **done** | PR #145 |
 | 38-17 integration tests | unassigned | Blocked: 38-14 — unblocks when PR #156 merges |
-| 38-18 runbook | unassigned | Blocked: 38-15 |
+| 38-18 runbook | **done** | PR #151; design-only (38-15 pending) |
 | 38-19 eval routing | unassigned | Optional Phase 5 |
 | 38-20 mcp visibility | **in-review** | PR #148 (#139) |
 | 38-21 chargeback | unassigned | Optional Phase 5 |
