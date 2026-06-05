@@ -1,0 +1,12 @@
+openapi: 3.0.3
+info:
+  title: Cliproxy API
+  description: CLIProxy OAuth and model proxy service.
+  version: 1.0.0
+paths:
+  /v1/chat/completions:
+    post:
+      summary: Chat completions proxy
+  /v1/models:
+    get:
+      summary: List proxy models
