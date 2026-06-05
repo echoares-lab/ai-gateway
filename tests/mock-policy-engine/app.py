@@ -44,9 +44,7 @@ def _scenario_decision(context: dict[str, Any]) -> dict[str, Any]:
             fallback_chain=[],
             rules_applied=["mock:agent-family-lock", "fallback:affinity:family_lock"],
         )
-    if agent_id == "test:quota-429-deprioritize" or any(
-        rl.get("pre_emptive_degraded") for rl in rate_limits if isinstance(rl, dict)
-    ):
+    if agent_id == "test:quota-429-deprioritize":
         return _base_decision(
             quota_aware_mode=True,
             deprioritized_credentials=["cred-hot", "cred-warm"],
@@ -97,6 +95,15 @@ def _scenario_decision(context: dict[str, Any]) -> dict[str, Any]:
             ordered_deployments=["claude-sonnet-4-6"],
             fallback_chain=[],
             rules_applied=["mock:repo:allowlist", "fallback:policy:allowlist"],
+        )
+    if agent_id == "composer-follow-up" and any(
+        rl.get("pre_emptive_degraded") for rl in rate_limits if isinstance(rl, dict)
+    ):
+        return _base_decision(
+            quota_aware_mode=True,
+            deprioritized_credentials=["cred-hot", "cred-warm"],
+            ordered_deployments=["claude-sonnet-4-6", "gpt-5.5"],
+            rules_applied=["mock:rate_limit:preemptive", "fallback:rate_limit:cooldown_skip"],
         )
     return _base_decision()
 
