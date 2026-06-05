@@ -1,0 +1,33 @@
+# Git-tracked policy profile source (P0-7, Epic #35).
+# Validate: python3 scripts/validate_policy_profiles.py
+# Promote:   python3 scripts/promote_policy_profiles.py --apply
+
+version: 1
+
+profiles:
+  - profile_id: prof-echoares-org
+    scope: org
+    scope_id: echoares
+    credential_tier_preference: native
+    enabled: true
+    policy_json:
+      budget:
+        soft_gate_threshold_pct: 15
+        cost_tier_threshold_pct: 80
+      rate_limit:
+        preemptive_429_threshold: 3
+
+  - profile_id: prof-gateway-repo
+    scope: repo
+    scope_id: gateway
+    denied_models:
+      - gpt-5-4
+    fallback_chain_override:
+      - claude-sonnet-4-6
+      - claude-haiku-4-5
+    credential_tier_preference: native
+    enabled: true
+    policy_json:
+      mcp:
+        mode: denylist
+        servers: []

@@ -1,4 +1,4 @@
-.PHONY: lint test-unit test-mock test-fast test-e2e
+.PHONY: lint test-unit test-mock test-fast test-e2e validate-policy-profiles
 
 # Lint the translator + the mock upstream app (mirrors the CI fast tier).
 lint:
@@ -18,8 +18,12 @@ test-mock:
 	-./dev-env.sh test-mock 9
 	./dev-env.sh stop-mock 9
 
+# Offline schema check for git-tracked policy profile promotion (P0-7).
+validate-policy-profiles:
+	python3 scripts/validate_policy_profiles.py
+
 # Fast tier = what CI runs on every push/PR (no OAuth, no real LLM).
-test-fast: lint test-unit test-mock
+test-fast: lint test-unit validate-policy-profiles test-mock
 
 # Full real-provider E2E. Needs real OAuth in ~/.cli-proxy-api (slot 1 -> :4010).
 # Runs only the slim `smoke` subset.

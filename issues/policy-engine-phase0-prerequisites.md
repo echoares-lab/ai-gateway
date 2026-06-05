@@ -43,7 +43,7 @@ Design reference: [docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md](../docs/POLICY_EN
 | P0-4 | LiteLLM team RPM/TPM/dollar budget enforcement scoped | TENANCY-3 / [#30](https://github.com/echoares-lab/ai-gateway/issues/30) | **Open** | 38-9 |
 | P0-5 | `credential_inventory` table + prober sync | [#33](https://github.com/echoares-lab/ai-gateway/issues/33) | **Partial** (read-only sync live) | 38-7, 38-10 |
 | P0-6 | Credential inventory → active rotation (degraded creds excluded from routing) | [#33](https://github.com/echoares-lab/ai-gateway/issues/33) | **Open** | 38-12, 38-13 |
-| P0-7 | Config promotion validation path for policy profiles | [#35](https://github.com/echoares-lab/ai-gateway/issues/35) | **Open** (design only) | 38-5 promotion |
+| P0-7 | Config promotion validation path for policy profiles | [#35](https://github.com/echoares-lab/ai-gateway/issues/35) | **Done** ([policy-engine-p0-7-promotion.md](./policy-engine-p0-7-promotion.md)) | 38-5 promotion |
 
 ## What can start before gate clears
 
