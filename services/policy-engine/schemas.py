@@ -151,6 +151,15 @@ class RoutingDecision(BaseModel):
         description="Credential IDs to skip — pre-emptive deprioritization before hard 429.",
     )
 
+    allowed_mcp_servers: list[str] | None = Field(
+        default=None,
+        description="Allowed MCP server aliases; None = no visibility filter.",
+    )
+    denied_mcp_servers: list[str] = Field(
+        default_factory=list,
+        description="Denied MCP aliases when denylist cannot resolve against a registry.",
+    )
+
     policy_version: str = "v0-stub"
     evaluated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     rules_applied: list[str] = Field(default_factory=list)

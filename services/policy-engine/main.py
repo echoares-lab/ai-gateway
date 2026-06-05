@@ -15,6 +15,7 @@ from evaluator.agent_affinity import apply_agent_affinity
 from evaluator.budget import apply_budget_gates
 from evaluator.credential_events import handle_credential_event
 from evaluator.fallback import evaluate_fallback_layers
+from evaluator.mcp_visibility import resolve_mcp_visibility
 from evaluator.rate_limit import aggregate_and_evaluate
 from evaluator.repo_affinity import apply_repo_affinity
 from fastapi import Depends, FastAPI, HTTPException
@@ -126,6 +127,13 @@ def evaluate(
     if not affinity_rules:
         rules.append("stub:pass_through")
 
+    registered_mcp = merged_context.metadata.get("registered_mcp_servers")
+    mcp_result = resolve_mcp_visibility(
+        profiles,
+        registered_mcp_servers=registered_mcp,
+    )
+    rules.extend(mcp_result.rules_applied)
+
     if rate_eval.skipped_models:
         allowed = _filter_degraded_models(allowed, rate_eval.skipped_models)
         fallback = _filter_degraded_models(fallback, rate_eval.skipped_models)
@@ -210,6 +218,8 @@ def evaluate(
         cache_cold_start=cache_cold_start,
         quota_aware_mode=quota_aware,
         deprioritized_credentials=deprioritized,
+        allowed_mcp_servers=mcp_result.allowed_mcp_servers,
+        denied_mcp_servers=mcp_result.denied_mcp_servers,
         policy_version=POLICY_VERSION,
         rules_applied=rules,
         debug=debug,
