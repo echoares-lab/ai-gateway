@@ -23,6 +23,10 @@ services:
   litellm:
     environment:
       LITELLM_MIGRATIONS: ${LITELLM_MIGRATIONS:-}
+      # Newer LiteLLM versions may attempt to create a baseline migration when
+      # the DB schema isn't empty (Prisma P3005). The default migration path can
+      # be read-only inside the container image; force a writable directory.
+      LITELLM_MIGRATION_DIR: ${LITELLM_MIGRATION_DIR:-/tmp/litellm_migrations}
     # Fresh Postgres + LiteLLM proxy_extras migrations can exceed dev defaults (~70s).
     healthcheck:
       test:
