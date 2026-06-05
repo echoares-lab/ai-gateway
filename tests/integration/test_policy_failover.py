@@ -136,4 +136,5 @@ def test_cooldown_skip_shifts_fallback_chain(client, policy_engine):
 def test_admin_status_reports_policy_engine_enabled(client):
     resp = client.get("/admin/status")
     assert resp.status_code == 200
-    assert resp.json().get("panels", {}).get("routing", {}).get("policy_engine_enabled") is True
+    routing = resp.json().get("panels", {}).get("routing", {})
+    assert routing.get("data", {}).get("policy_engine_enabled") is True

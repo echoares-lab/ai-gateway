@@ -351,6 +351,21 @@ def _extract_and_apply_tenancy(token: str | None, body: dict) -> dict:
     return body
 
 
+def _normalize_upstream_authorization(headers: dict) -> None:
+    """Swap ak- tenant labels for the LiteLLM virtual key; ak- keys are not valid upstream."""
+    auth_key = None
+    auth_val = None
+    for key, value in headers.items():
+        if key.lower() == "authorization":
+            auth_key = key
+            auth_val = value
+            break
+    token = (auth_val or "").removeprefix("Bearer ").strip()
+    master_key = os.environ.get("LITELLM_MASTER_KEY", "sk-a3698c2000395d1181397b256415e680")
+    if not token or token.startswith("ak-"):
+        headers[auth_key or "authorization"] = f"Bearer {master_key}"
+
+
 _quota_headroom_cache: list[dict] | None = None
 
 
@@ -1778,9 +1793,7 @@ async def responses_proxy(request: Request):
 
     oai_bytes = json.dumps(oai_body).encode()
     headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "content-length", "content-type")}
-    if "authorization" not in {k.lower() for k in headers}:
-        master_key = os.environ.get("LITELLM_MASTER_KEY", "sk-a3698c2000395d1181397b256415e680")
-        headers["authorization"] = f"Bearer {master_key}"
+    _normalize_upstream_authorization(headers)
     headers["content-type"] = "application/json"
     headers["content-length"] = str(len(oai_bytes))
 
@@ -2926,9 +2939,7 @@ async def proxy(path: str, request: Request):
             pass
 
     headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
-    if "authorization" not in {k.lower() for k in headers}:
-        master_key = os.environ.get("LITELLM_MASTER_KEY", "sk-a3698c2000395d1181397b256415e680")
-        headers["authorization"] = f"Bearer {master_key}"
+    _normalize_upstream_authorization(headers)
     log.info(
         "Proxy request path: %s headers: %s", path, {k: v for k, v in headers.items() if k.lower() != "authorization"}
     )
