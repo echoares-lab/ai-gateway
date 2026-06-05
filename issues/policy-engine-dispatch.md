@@ -126,7 +126,7 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-15 admin trace | **in-review** | PR #156 — `policy_engine` panel in `/admin/status`; closes #134 on merge |
 | 38-16 audit log | **done** | PR #145 |
 | 38-17 integration tests | unassigned | Blocked: 38-14 — unblocks when PR #156 merges |
-| 38-18 runbook | unassigned | Blocked: 38-15 |
+| 38-18 runbook | **done** | PR #151; design-only (38-15 pending) |
 | 38-19 eval routing | **in-review** | PR #147 (#138) |
 | 38-20 mcp visibility | **in-review** | PR #148 (#139) |
 | 38-21 chargeback | unassigned | Optional Phase 5 |
@@ -156,7 +156,6 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-08 fallback | done | #127 |
 | 38-16 audit log | done | #135, PR #145 |
 | 38-19 eval routing | in-review | #138, PR #147 |
-| 38-20 mcp visibility | in-review | #139, PR #148 |
 | 38-14 websocket | **done** | PR #156 — Option B bypass + design doc §9; closes #133 |
 | 38-04 translator | **in-review** | PR #156 — `POLICY_ENGINE_ENABLED` hook + unit tests; agent `142a1b91` lane superseded |
 | 38-15 admin trace | **in-review** | PR #156 — `policy_engine` panel in `/admin/status`; closes #134 on merge |
