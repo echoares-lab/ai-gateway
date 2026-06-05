@@ -71,6 +71,16 @@ EOF
 }
 
 get_api_key() {
+  if [ -n "${CLIPROXY_API_KEY:-}" ]; then
+    echo "$CLIPROXY_API_KEY"
+    return
+  fi
+  local from_env
+  from_env=$(grep '^CLIPROXY_API_KEY=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2-)
+  if [ -n "$from_env" ]; then
+    echo "$from_env"
+    return
+  fi
   grep -A2 'api-keys:' "$CLIPROXY_CONFIG" 2>/dev/null | grep '^\s*-' | sed 's/.*"\(.*\)".*/\1/' | head -1
 }
 
@@ -106,7 +116,7 @@ cmd_quota_summary() {
 
   echo "=== Per-credential quota summary ==="
   CLIPROXY_QUOTA_RAW="$raw" python3 - <<'PYEOF'
-import os, json
+import os, json, sys
 
 data = json.loads(os.environ["CLIPROXY_QUOTA_RAW"])
 files = data.get("files", [])
@@ -761,25 +771,6 @@ cmd_apply() {
   echo ""
   echo "Step 3: Health check"
   cmd_health
-}
-
-cmd_quota_summary() {
-  local api_key
-  api_key=$(get_api_key)
-  echo "Quota / usage summary from CLIProxyAPI:"
-  curl -sf -H "Authorization: Bearer $api_key" "http://localhost:$CLIPROXY_PORT/v1/models" \
-    | python3 -c "
-import sys, json, collections
-data = json.load(sys.stdin).get('data', [])
-by_provider = collections.Counter(m.get('owned_by', 'unknown') for m in data)
-print()
-print('  Provider           Models')
-print('  ──────────────────────────────')
-for provider, count in sorted(by_provider.items()):
-    print(f'  {provider:<20} {count}')
-print()
-print(f'  Total: {sum(by_provider.values())} models across {len(by_provider)} providers')
-" 2>/dev/null || echo "  CLIProxyAPI not reachable on port $CLIPROXY_PORT"
 }
 
 # ──────────────────────────────────────────────
