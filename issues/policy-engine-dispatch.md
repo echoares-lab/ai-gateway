@@ -40,7 +40,7 @@ github_issue: #141
 
 **Merged (policy epic):** [#142](https://github.com/echoares-lab/ai-gateway/pull/142) budget · [#143](https://github.com/echoares-lab/ai-gateway/pull/143) prober · [#144](https://github.com/echoares-lab/ai-gateway/pull/144) fallback · [#145](https://github.com/echoares-lab/ai-gateway/pull/145) audit · [#146](https://github.com/echoares-lab/ai-gateway/pull/146) cliproxy sync · [#147–#150](https://github.com/echoares-lab/ai-gateway/pull/147) Phase 5 design stubs · [#151](https://github.com/echoares-lab/ai-gateway/pull/151) runbook · [#155](https://github.com/echoares-lab/ai-gateway/pull/155) compose · [#156](https://github.com/echoares-lab/ai-gateway/pull/156) translator + admin trace + websocket · [#158](https://github.com/echoares-lab/ai-gateway/pull/158) Gate B failover integration (#136).
 
-**Open (CI only, not epic scope):** [#159](https://github.com/echoares-lab/ai-gateway/pull/159), [#160](https://github.com/echoares-lab/ai-gateway/pull/160) — superseded by combined mock-integration fix on `fix/mock-integration-ci`.
+**CI (merged):** [#160](https://github.com/echoares-lab/ai-gateway/pull/160) mock Postgres volume + LiteLLM fail-fast · [#161](https://github.com/echoares-lab/ai-gateway/pull/161) self-hosted workspace permissions · [#159](https://github.com/echoares-lab/ai-gateway/pull/159) closed (superseded).
 
 **Remaining optional work:** Hardening / expansion of 38-17 matrix; no unblocked Phase 1–4 implementation issues.
 
@@ -145,8 +145,6 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 ## Next agent action
 
 **Epic #38:** All tracked issues 38-01 … 38-21 are **done** on `main` (implementation + design stubs). Optional follow-ups: expand 38-17 integration matrix, enable real policy-engine in production routing.
-
-**CI:** Merge [#160](https://github.com/echoares-lab/ai-gateway/pull/160) (persist mock Postgres volume + LiteLLM fail-fast) after green checks. Close [#159](https://github.com/echoares-lab/ai-gateway/pull/159) as superseded.
 
 
 ## Live claim_status summary
