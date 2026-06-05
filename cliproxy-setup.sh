@@ -81,7 +81,7 @@ get_api_key() {
     echo "$from_env"
     return
   fi
-  grep -A2 'api-keys:' "$CLIPROXY_CONFIG" 2>/dev/null | grep '^\s*-' | sed 's/.*"\(.*\)".*/\1/' | head -1
+  grep -A2 'api-keys:' "$CLIPROXY_CONFIG" 2>/dev/null | grep '^\s*-' | sed -E 's/^\s*-\s*//' | sed -E 's/^"([^"]*)".*/\1/' | head -1
 }
 
 get_mgmt_key() {

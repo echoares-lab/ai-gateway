@@ -2614,6 +2614,20 @@ def _admin_models_panel(config: dict | None, visible_ids: list[str] | None, erro
         )
         if not is_visible and visible_ids is not None:
             drift.append({"model": alias, "kind": "configured_not_visible", "severity": "warning"})
+    configured_set = set(configured)
+    for alias in sorted(visible_aliases - configured_set):
+        models.append(
+            {
+                "id": f"{MODEL_PREFIX}{alias}",
+                "config_alias": alias,
+                "provider_family": _provider_of(alias),
+                "visible": True,
+                "configured": False,
+                "notes": [],
+            }
+        )
+        if visible_ids is not None:
+            drift.append({"model": alias, "kind": "visible_not_configured", "severity": "warning"})
     status = "ok"
     if errors or visible_ids is None:
         status = "warning"
