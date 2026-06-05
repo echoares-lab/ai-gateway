@@ -327,7 +327,7 @@ services:
       dockerfile: Dockerfile
     restart: always
     ports:
-      - \\\"8002:8000\\\"
+      - "8002:8000"
     volumes:
       - ./docs/openapi:/app/docs/openapi:ro
 
