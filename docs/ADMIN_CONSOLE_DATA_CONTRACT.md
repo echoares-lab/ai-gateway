@@ -343,6 +343,171 @@ always `[redacted]` in operator views.
 
 ---
 
+## 7.1 Policy engine panel (issue 38-15)
+
+Operator-facing trace of policy-engine evaluate output. Mirrors
+`RoutingDecision.to_metadata()` from `services/policy-engine/schemas.py` — the same
+shape the translator injects as `metadata.routing_decision` on HTTP paths (issue
+38-04). Design reference:
+[`docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md`](./POLICY_ENGINE_AND_ROUTING_REFACTOR.md).
+
+### Source(s)
+
+- Translator env: `POLICY_ENGINE_ENABLED`, `POLICY_ENGINE_WS_EVALUATE`
+- Policy-engine `GET /health` (optional reachability)
+- Bounded recent rows from `routing_decisions_log` (issue 38-16, sampled audit)
+
+### `policy_decision` object
+
+Each trace row exposes a `policy_decision` object with these fields (all map 1:1 to
+`RoutingDecision`; `debug` is never surfaced in admin payloads):
+
+| Field | Type | Notes |
+|---|---|---|
+| `gate` | `allow` \| `deny` \| `throttle` | Hard gate outcome |
+| `deny_reason` | string \| null | Present when `gate` is `deny` or `throttle` |
+| `retry_after_seconds` | integer \| null | Throttle hint for clients |
+| `allowed_models` | string[] | Post-capability-filter allowlist |
+| `fallback_chain` | string[] | Ordered model fallbacks for this request |
+| `ordered_deployments` | string[] | LiteLLM deployment ordering hint |
+| `credential_tier_preference` | string \| null | e.g. `pro`, `max` |
+| `preferred_credential_id` | string \| null | Redact or hash in UI (see below) |
+| `session_key` | string \| null | CLIProxy session-affinity key; truncate in UI |
+| `lock_model_family` | boolean | Affinity family lock |
+| `cache_cold_start` | boolean | Cold-start routing hint |
+| `quota_aware_mode` | boolean | CLIProxy quota-aware affinity active |
+| `deprioritized_credentials` | string[] | Pre-emptive skip list; redact IDs |
+| `policy_version` | string | Evaluator version stamp |
+| `evaluated_at` | ISO-8601 UTC | Decision timestamp |
+| `rules_applied` | string[] | Evaluator rule IDs, e.g. `rate_limit:cooldown` |
+
+### Payload
+
+```json
+{
+  "status": "ok",
+  "source": "translator:env + policy-engine:/health + postgres:routing_decisions_log",
+  "freshness_seconds": 30,
+  "errors": [],
+  "data": {
+    "policy_engine_enabled": false,
+    "websocket_policy_bypass": true,
+    "websocket_policy_evaluate_enabled": false,
+    "policy_engine_url": "http://policy-engine:8080",
+    "policy_engine_reachable": true,
+    "policy_version": "v0-stub",
+    "recent_decisions": [
+      {
+        "request_id": "req-abc123",
+        "tenant_id": "echoares",
+        "team_id": "eng",
+        "repo_name": "ai-gateway",
+        "agent_id": null,
+        "requested_model": "claude-sonnet-4-6",
+        "gate": "allow",
+        "evaluated_at": "2026-06-05T12:00:00Z",
+        "policy_decision": {
+          "gate": "allow",
+          "deny_reason": null,
+          "retry_after_seconds": null,
+          "allowed_models": ["claude-sonnet-4-6"],
+          "fallback_chain": ["claude-sonnet-4-6", "gpt-5-4", "gemini-3-flash"],
+          "ordered_deployments": [],
+          "credential_tier_preference": null,
+          "preferred_credential_id": null,
+          "session_key": "agent-abc",
+          "lock_model_family": false,
+          "cache_cold_start": false,
+          "quota_aware_mode": true,
+          "deprioritized_credentials": ["cred-…[redacted]"],
+          "policy_version": "v0-stub",
+          "evaluated_at": "2026-06-05T12:00:00Z",
+          "rules_applied": ["repo_affinity:team-eng", "rate_limit:deprioritize"]
+        }
+      }
+    ],
+    "deny_throttle_count_1h": 0
+  }
+}
+```
+
+### Field rules
+
+- `recent_decisions` is bounded (recommended max 20 rows), newest first. When
+  `POLICY_ENGINE_ENABLED=false`, return an empty list with `status: unknown` rather
+  than omitting the panel.
+- `policy_decision` in list rows is the full `RoutingDecision.to_metadata()` shape;
+  omit `debug` even when present in evaluate responses.
+- `deny_throttle_count_1h` counts `gate` in (`deny`, `throttle`) from audit log or
+  metrics; used for operator alerting.
+- Duplicate routing-panel flags (`policy_engine_enabled`, `websocket_policy_bypass`,
+  `websocket_policy_evaluate_enabled`) may appear here for a self-contained panel;
+  values must match `panels.routing.data`.
+
+### Redaction rules
+
+- `preferred_credential_id` and entries in `deprioritized_credentials`: show
+  truncated hash or `[redacted]`; never raw OAuth credential identifiers.
+- `session_key`: show first 8 chars + `…` unless operator enables full display in a
+  future audited action.
+- No `debug` blob, no full `RoutingContext`, no API keys or bearer tokens.
+
+### Disabled fixture
+
+```json
+{
+  "status": "unknown",
+  "source": "translator:env",
+  "freshness_seconds": 0,
+  "errors": [],
+  "data": {
+    "policy_engine_enabled": false,
+    "websocket_policy_bypass": true,
+    "websocket_policy_evaluate_enabled": false,
+    "policy_engine_reachable": null,
+    "recent_decisions": [],
+    "deny_throttle_count_1h": null
+  }
+}
+```
+
+### Throttle fixture
+
+```json
+{
+  "status": "warning",
+  "source": "postgres:routing_decisions_log",
+  "freshness_seconds": 15,
+  "errors": [],
+  "data": {
+    "policy_engine_enabled": true,
+    "recent_decisions": [
+      {
+        "request_id": "req-throttle-1",
+        "requested_model": "gpt-5-3-codex",
+        "gate": "throttle",
+        "evaluated_at": "2026-06-05T12:05:00Z",
+        "policy_decision": {
+          "gate": "throttle",
+          "deny_reason": "team budget 95% consumed",
+          "retry_after_seconds": 60,
+          "allowed_models": [],
+          "fallback_chain": [],
+          "quota_aware_mode": false,
+          "deprioritized_credentials": [],
+          "policy_version": "v0-stub",
+          "evaluated_at": "2026-06-05T12:05:00Z",
+          "rules_applied": ["budget:soft_gate"]
+        }
+      }
+    ],
+    "deny_throttle_count_1h": 3
+  }
+}
+```
+
+---
+
 ## 8. Config drift panel
 
 ### Source(s)
@@ -433,7 +598,9 @@ Future aggregator issue (#69) must follow these contract rules:
 ## 11. References
 
 - [`docs/ADMIN_CONSOLE.md`](./ADMIN_CONSOLE.md) — parent design and implementation plan.
+- [`docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md`](./POLICY_ENGINE_AND_ROUTING_REFACTOR.md) — policy-engine architecture, `RoutingDecision` schema, translator injection, and admin trace (38-15).
 - [`docs/ADAPTIVE_ROUTING.md`](./ADAPTIVE_ROUTING.md) — routing inputs and provider signals.
+- [`docs/openapi/policy-engine.yaml`](./openapi/policy-engine.yaml) — OpenAPI schema for `RoutingDecision`.
 - [`RUNBOOK.md`](../RUNBOOK.md) — operational command sources.
 - [`litellm-config.yaml`](../litellm-config.yaml) — model, router, fallback, and MCP config.
 - Child implementation issue: #69 (read-only status aggregator).

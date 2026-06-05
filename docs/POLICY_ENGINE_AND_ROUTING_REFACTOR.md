@@ -152,8 +152,14 @@ is returned, the translator may forward `session_key` as `X-Session-ID` and
 
 ### Admin visibility
 
-`/admin/status` → `panels.routing.data.websocket_policy_bypass` reports whether WS
-traffic bypasses policy-engine (issue 38-15 extends with full `policy_engine` panel).
+`/admin/status` exposes policy-engine operator trace (issue 38-15). Contract:
+[`docs/ADMIN_CONSOLE_DATA_CONTRACT.md` §7.1](./ADMIN_CONSOLE_DATA_CONTRACT.md#71-policy-engine-panel-issue-38-15).
+
+| Surface | Location | Notes |
+|---------|----------|-------|
+| WS bypass flag | `panels.routing.data.websocket_policy_bypass` | Issue 38-14 |
+| Policy trace panel | `panels.policy_engine` | `recent_decisions[].policy_decision` mirrors `RoutingDecision.to_metadata()` |
+| Routing flags | `panels.routing.data` | `policy_engine_enabled`, `websocket_policy_evaluate_enabled` |
 
 ---
 

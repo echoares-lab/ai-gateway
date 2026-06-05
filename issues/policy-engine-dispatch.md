@@ -121,19 +121,23 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-10 pool schema | **done** | Migration 002 in repo |
 | 38-11 pool aliases | **done** | Tier alias docs + claude-sonnet-4-6-at-native |
 | 38-12 prober events | **done** | POST /v1/events/credential + prober notifier |
-| 38-13 cliproxy sync | unassigned | Optional; blocked: 38-11 |
+| 38-13 cliproxy sync | **in-review** | PR #146 — optional CLIProxy pool priority sync (#132); 38-11 done |
 | 38-14 websocket | **done** | PR #156 — Option B bypass + design doc §9; closes #133 |
 | 38-15 admin trace | **in-review** | PR #156 — `policy_engine` panel in `/admin/status`; closes #134 on merge |
 | 38-16 audit log | **done** | PR #145 |
 | 38-17 integration tests | unassigned | Blocked: 38-14 — unblocks when PR #156 merges |
 | 38-18 runbook | unassigned | Blocked: 38-15 |
 | 38-19 eval routing | **in-review** | PR #147 (#138) |
-| 38-20 mcp visibility | unassigned | Optional Phase 5 |
+| 38-20 mcp visibility | **in-review** | PR #148 (#139) |
 | 38-21 chargeback | unassigned | Optional Phase 5 |
 
 ## Next agent action
 
+**In review:** [38-19 eval routing](./policy-engine-38-19-eval-routing.md) — design stub (#138).
+
 **In review:** [PR #156](https://github.com/echoares-lab/ai-gateway/pull/156) (`feat/translator-policy`) bundles 38-04, 38-14 (done), and 38-15. Duplicate [PR #157](https://github.com/echoares-lab/ai-gateway/pull/157) closed — identical branch.
+
+**In review:** [PR #146](https://github.com/echoares-lab/ai-gateway/pull/146) — 38-13 optional CLIProxy pool priority sync (#132).
 
 **Claim after #156 merges:** [policy-engine-38-17-integration-tests.md](./policy-engine-38-17-integration-tests.md) (#136) or optional [policy-engine-38-13-cliproxy-priority-sync.md](./policy-engine-38-13-cliproxy-priority-sync.md).
 
@@ -151,12 +155,15 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-07 rate-limit | done | #126 |
 | 38-08 fallback | done | #127 |
 | 38-16 audit log | done | #135, PR #145 |
+| 38-19 eval routing | in-review | #138, PR #147 |
+| 38-20 mcp visibility | in-review | #139, PR #148 |
 | 38-14 websocket | **done** | PR #156 — Option B bypass + design doc §9; closes #133 |
 | 38-04 translator | **in-review** | PR #156 — `POLICY_ENGINE_ENABLED` hook + unit tests; agent `142a1b91` lane superseded |
 | 38-15 admin trace | **in-review** | PR #156 — `policy_engine` panel in `/admin/status`; closes #134 on merge |
 | 38-06 agent affinity | done | #125 |
 | 38-10 pool schema | done | #129 |
 | 38-12 prober events | done | #131 |
+| 38-13 cliproxy sync | in-review | #132, PR #146 |
 | Phase 0 prerequisites | tracking (not claimable) | #119 |
 | Epic coordination | not-claimable | #38 |
 

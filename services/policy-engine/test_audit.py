@@ -67,11 +67,7 @@ def test_should_log_audit_samples_allow():
     assert should_log_audit(GateAction.ALLOW, sample_rate=1.0, rng=rng) is True
 
     rng2 = random.Random(1)
-    hits = sum(
-        1
-        for _ in range(1000)
-        if should_log_audit(GateAction.ALLOW, sample_rate=0.1, rng=rng2)
-    )
+    hits = sum(1 for _ in range(1000) if should_log_audit(GateAction.ALLOW, sample_rate=0.1, rng=rng2))
     assert 50 < hits < 150
 
 
@@ -122,9 +118,7 @@ def test_write_record_executes_insert():
             "agent_id": None,
             "requested_model": "claude-sonnet-4-6",
             "gate": "allow",
-            "decision_json": build_decision_json(
-                _decision(), context_hash="hash-1"
-            ),
+            "decision_json": build_decision_json(_decision(), context_hash="hash-1"),
             "policy_version": "v0-test",
             "evaluated_at": datetime(2026, 6, 5, 12, 0, 0, tzinfo=timezone.utc),
         }

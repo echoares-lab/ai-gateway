@@ -222,25 +222,47 @@ async def responses_compact(request: Request):
     )
 
 
+_MOCK_AUTH_FILES: dict[str, dict] = {
+    "antigravity-mock.json": {
+        "id": "antigravity-mock.json",
+        "provider": "antigravity",
+        "label": "mock@example.com",
+        "auth_index": "mock_fingerprint",
+        "status": "active",
+        "failed": 0,
+        "recent_requests": [],
+        "status_message": "",
+        "priority": 0,
+    },
+    "claude-mock.json": {
+        "id": "claude-mock.json",
+        "provider": "claude",
+        "label": "claude-mock@example.com",
+        "auth_index": "claude_fingerprint",
+        "status": "active",
+        "failed": 0,
+        "recent_requests": [],
+        "status_message": "",
+        "priority": 50,
+    },
+}
+
+
 @app.get("/v0/management/auth-files")
 async def management_auth_files(request: Request):
     # Simulate CLIProxy inventory list
-    return JSONResponse(
-        {
-            "files": [
-                {
-                    "id": "antigravity-mock.json",
-                    "provider": "antigravity",
-                    "label": "mock@example.com",
-                    "auth_index": "mock_fingerprint",
-                    "status": "active",
-                    "failed": 0,
-                    "recent_requests": [],
-                    "status_message": "",
-                }
-            ]
-        }
-    )
+    return JSONResponse({"files": list(_MOCK_AUTH_FILES.values())})
+
+
+@app.patch("/v0/management/auth-files/fields")
+async def management_patch_auth_fields(request: Request):
+    body = await request.json()
+    name = body.get("name")
+    if not name or name not in _MOCK_AUTH_FILES:
+        return JSONResponse({"error": "auth file not found"}, status_code=404)
+    if "priority" in body:
+        _MOCK_AUTH_FILES[name]["priority"] = int(body["priority"])
+    return JSONResponse({"status": "ok", "name": name})
 
 
 @app.websocket("/v1/responses")
