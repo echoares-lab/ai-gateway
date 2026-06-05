@@ -21,6 +21,19 @@ CRITICAL_COOLDOWN_SEC = int(os.environ.get("PROBER_CRITICAL_COOLDOWN_SEC", "6048
 
 ROUTING_EXCLUDED = frozenset({"DEGRADED", "CRITICAL", "SUSPENDED", "EXPIRED"})
 
+# CLIProxy auth-file provider names → credential_inventory CHECK enum
+_CLIPROXY_PROVIDER_MAP = {
+    "antigravity": "gemini",
+    "claude": "anthropic",
+    "codex": "openai",
+    "gemini-cli": "gemini",
+}
+
+
+def normalize_provider(cliproxy_provider: str) -> str:
+    p = (cliproxy_provider or "unknown").lower()
+    return _CLIPROXY_PROVIDER_MAP.get(p, p)
+
 
 def get_cliproxy_auth_files():
     req = urllib.request.Request(f"{CLIPROXY_URL}/v0/management/auth-files", headers={"x-management-key": MGMT_KEY})
@@ -88,7 +101,7 @@ def sync_inventory():
 
         for f in files:
             cred_id = f.get("id", "unknown")
-            provider = f.get("provider", "unknown")
+            provider = normalize_provider(f.get("provider", "unknown"))
             label = f.get("label") or f.get("account") or f.get("email") or "unknown"
             status = map_status(f)
             fingerprint = f.get("auth_index") or "none"

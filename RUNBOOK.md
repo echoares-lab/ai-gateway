@@ -614,6 +614,8 @@ docker compose restart litellm
 ### Full stack restart (e.g. after server reboot)
 ```bash
 cd ~/repos/ai-gateway
+# Apply Postgres migrations before credential-prober writes credential_inventory
+./db/apply-migrations.sh ai-postgres-1
 docker compose up -d
 # LiteLLM, Redis, and policy-engine healthchecks gate translator startup — no manual wait needed
 ./cliproxy-setup.sh health

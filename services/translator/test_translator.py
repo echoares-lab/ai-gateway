@@ -603,6 +603,14 @@ class TestAdminModelsPanel(unittest.TestCase):
         assert panel["status"] == "warning"
         assert any(d["model"] == "gpt-5-4" for d in panel["data"]["drift"])
 
+    def test_drift_when_visible_not_configured(self):
+        panel = t._admin_models_panel(self._config(), ["claude-sonnet-4-6", "gemini-3-flash"], [])
+        assert panel["status"] == "warning"
+        assert any(
+            d["model"] == "gemini-3-flash" and d["kind"] == "visible_not_configured"
+            for d in panel["data"]["drift"]
+        )
+
     def test_warning_when_visible_unknown(self):
         panel = t._admin_models_panel(self._config(), None, [])
         assert panel["status"] == "warning"

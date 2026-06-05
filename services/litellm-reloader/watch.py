@@ -52,9 +52,9 @@ def _restart() -> bool:
         return False
 
 
-def _only_modified(ch: Change, _: str) -> bool:
-    """Filter to only detect file modifications, not attribute changes."""
-    return ch == Change.modified
+def _config_content_changed(ch: Change, _: str) -> bool:
+    """Detect content changes: edits and atomic file replace (delete + recreate)."""
+    return ch in (Change.modified, Change.added)
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ def validate_config(config_path: str) -> bool:
 def main():
     log.info("Watching %s — will restart %s on change", CONFIG, CONTAINER)
     try:
-        for _ in watch(CONFIG, watch_filter=_only_modified):
+        for _ in watch(CONFIG, watch_filter=_config_content_changed):
             log.info("Change detected in %s", CONFIG)
             time.sleep(0.5)  # debounce: some editors write in two steps
             if validate_config(CONFIG):
