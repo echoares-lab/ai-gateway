@@ -271,6 +271,8 @@ jobs:
           TRANSLATOR_IMAGE: ai-translator-test:latest
           CLIPROXY_DEV_CONFIG: ${{ github.workspace }}/tests/cliproxy-config-ci.yaml
           DEV_TRANSLATOR_PORT: "4010"
+          DEV_POLICY_ENGINE_PORT: "8160"
+          LITELLM_MIGRATIONS: "None"
         run: |
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
@@ -310,6 +312,7 @@ jobs:
       - name: Run mock-tier pytest
         run: |
           GATEWAY_URL=http://localhost:4010 LITELLM_MASTER_KEY=sk-ci-mock ALLOW_MODEL_SKIP=0 \
+            POLICY_ENGINE_URL=http://localhost:8160 \
             .venv-ci/bin/python -m pytest tests/integration/ -m mock -v
       - name: Run shell E2E smoke (CI mock mode)
         run: |
