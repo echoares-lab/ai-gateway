@@ -66,8 +66,10 @@ run_compose() {
 
     local op_run_prefix=""
     if [ -f "$HOME/.op-token" ]; then
-        export OP_SERVICE_ACCOUNT_TOKEN
-        OP_SERVICE_ACCOUNT_TOKEN=$(cat "$HOME/.op-token")
+        set -a
+        # shellcheck disable=SC1091
+        source "$HOME/.op-token"
+        set +a
         op_run_prefix="op run --"
     elif grep -q 'op://' "$ENV_FILE" 2>/dev/null; then
         die "Secrets in $ENV_FILE are 1Password references, but ~/.op-token is missing."
@@ -234,8 +236,10 @@ cmd_test() {
 
     local op_run_prefix=""
     if [ -f "$HOME/.op-token" ]; then
-        export OP_SERVICE_ACCOUNT_TOKEN
-        OP_SERVICE_ACCOUNT_TOKEN=$(cat "$HOME/.op-token")
+        set -a
+        # shellcheck disable=SC1091
+        source "$HOME/.op-token"
+        set +a
         op_run_prefix="op run --"
     elif grep -q 'op://' "$ENV_FILE" 2>/dev/null; then
         die "Secrets in $ENV_FILE are 1Password references, but ~/.op-token is missing."

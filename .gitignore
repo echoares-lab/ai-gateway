@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.production
+.rotate-secrets-op.env
+.env.env.bak-*
 
 # OAuth token files and CLIProxyAPI credentials
 .cli-proxy-api/
