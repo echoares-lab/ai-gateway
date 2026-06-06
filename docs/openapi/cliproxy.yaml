@@ -1,16 +1,159 @@
 openapi: 3.0.3
 info:
-  title: Cliproxy API
-  description: CLIProxy OAuth and model proxy service.
+  title: CLIProxy API
+  description: CLIProxy OAuth, model proxy service, and management API.
   version: 1.0.0
+
+servers:
+  - url: http://localhost:8317
+    description: Default CLIProxy local server
+
+components:
+  securitySchemes:
+    ManagementKeyHeader:
+      type: apiKey
+      in: header
+      name: x-management-key
+    ManagementKeyBearer:
+      type: http
+      scheme: bearer
+
+  schemas:
+    Config:
+      type: object
+      properties:
+        debug:
+          type: boolean
+        proxy-url:
+          type: string
+        api-keys:
+          type: array
+          items:
+            type: string
+        ampcode:
+          type: object
+          properties:
+            upstream-url:
+              type: string
+            restrict-management-to-localhost:
+              type: boolean
+        quota-exceeded:
+          type: object
+          properties:
+            switch-project:
+              type: boolean
+            switch-preview-model:
+              type: boolean
+        gemini-api-key:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderKey'
+        claude-api-key:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderKey'
+        codex-api-key:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderKey'
+        request-log:
+          type: boolean
+        request-retry:
+          type: integer
+        max-retry-interval:
+          type: integer
+        openai-compatibility:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderKey'
+
+    ProviderKey:
+      type: object
+      properties:
+        api-key:
+          type: string
+        base-url:
+          type: string
+        proxy-url:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        excluded-models:
+          type: array
+          items:
+            type: string
+        auth-index:
+          type: string
+          readOnly: true
+
+    UsageRecord:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        latency_ms:
+          type: integer
+        source:
+          type: string
+        auth_index:
+          type: string
+        tokens:
+          type: object
+          properties:
+            input_tokens:
+              type: integer
+            output_tokens:
+              type: integer
+            reasoning_tokens:
+              type: integer
+            total_tokens:
+              type: integer
+        failed:
+          type: boolean
+        provider:
+          type: string
+        model:
+          type: string
+        endpoint:
+          type: string
+        request_id:
+          type: string
+
+    LogStream:
+      type: object
+      properties:
+        lines:
+          type: array
+          items:
+            type: string
+        line-count:
+          type: integer
+        latest-timestamp:
+          type: integer
+
+    AuthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, wait, error]
+        error:
+          type: string
+
 paths:
+  # Proxy Endpoints
   /v1/chat/completions:
     post:
       summary: Chat completions proxy
+      tags: [Proxy]
       requestBody:
         content:
           application/json:
-            schema: {type: object}
+            schema:
+              type: object
             example:
               model: "claude-sonnet-4-6"
               messages: [{"role": "user", "content": "Explain quantum computing."}]
@@ -21,24 +164,11 @@ paths:
             application/json:
               example:
                 choices: [{"message": {"content": "Quantum computing is..."}}]
-  /v0/management/auth-files:
-    get:
-      summary: Get auth files for management
-      parameters:
-        - name: x-management-key
-          in: header
-          required: true
-          schema: {type: string}
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              example:
-                files: ["claude-token.json", "codex-token.json"]
+
   /v1/models:
     get:
       summary: List proxy models
+      tags: [Proxy]
       responses:
         '200':
           description: Successful response
@@ -46,3 +176,644 @@ paths:
             application/json:
               example:
                 data: [{"id": "claude-sonnet-4-6"}, {"id": "gpt-5-4"}]
+
+  # Management Endpoints
+  /v0/management/config:
+    get:
+      summary: Get full configuration
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: Configuration JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Config'
+
+  /v0/management/config.yaml:
+    get:
+      summary: Download raw YAML configuration
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: YAML file
+          content:
+            application/yaml:
+              schema:
+                type: string
+    put:
+      summary: Replace configuration with YAML
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      requestBody:
+        content:
+          application/yaml:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Update status
+          content:
+            application/json:
+              example: { "ok": true, "changed": ["config"] }
+
+  /v0/management/api-keys:
+    get:
+      summary: Get proxy service authentication keys
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: List of keys
+          content:
+            application/json:
+              example: { "api-keys": ["k1", "k2"] }
+    put:
+      summary: Replace all proxy authentication keys
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+      responses:
+        '200':
+          description: Updated
+    patch:
+      summary: Update a proxy authentication key
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                old: {type: string}
+                new: {type: string}
+                index: {type: integer}
+                value: {type: string}
+      responses:
+        '200':
+          description: Updated
+
+  /v0/management/gemini-api-key:
+    get:
+      summary: Get Gemini API keys
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: List of Gemini keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  gemini-api-key:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProviderKey'
+    put:
+      summary: Replace Gemini API keys
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProviderKey'
+      responses:
+        '200':
+          description: Updated
+
+  /v0/management/claude-api-key:
+    get:
+      summary: Get Claude API keys
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: List of Claude keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  claude-api-key:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProviderKey'
+    put:
+      summary: Replace Claude API keys
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProviderKey'
+      responses:
+        '200':
+          description: Updated
+
+  /v0/management/auth-files:
+    get:
+      summary: List registered authentication credentials
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: List of files
+          content:
+            application/json:
+              example:
+                files: ["claude-token.json", "codex-token.json"]
+    post:
+      summary: Upload/register a new authentication file
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      parameters:
+        - name: name
+          in: query
+          schema: {type: string}
+          description: Filename when using raw JSON body
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Upload successful
+          content:
+            application/json:
+              example: { "status": "ok" }
+    delete:
+      summary: Delete authentication files
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      parameters:
+        - name: name
+          in: query
+          schema: {type: string}
+        - name: all
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: Deleted
+
+  /v0/management/usage-queue:
+    get:
+      summary: Pop records from the usage telemetry queue
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      parameters:
+        - name: count
+          in: query
+          schema: {type: integer, default: 1}
+      responses:
+        '200':
+          description: Array of usage records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UsageRecord'
+
+  /v0/management/logs:
+    get:
+      summary: Stream recent log lines
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      parameters:
+        - name: after
+          in: query
+          schema: {type: integer}
+          description: Unix timestamp
+      responses:
+        '200':
+          description: Log stream
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogStream'
+    delete:
+      summary: Clear/truncate log files
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: Cleared
+
+  /v0/management/get-auth-status:
+    get:
+      summary: Poll the status of an active OAuth flow
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      parameters:
+        - name: state
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Auth status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatus'
+
+  /v0/management/latest-version:
+    get:
+      summary: Get latest release version from GitHub
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: Version string
+          content:
+            application/json:
+              example: { "version": "v1.2.3" }
+
+  /v0/management/debug:
+    get:
+      summary: Get current debug state
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: Debug state
+          content:
+            application/json:
+              example: { "value": true }
+    put:
+      summary: Set debug state
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value: {type: boolean}
+      responses:
+        '200':
+          description: Updated
+
+  /v0/management/proxy-url:
+    get:
+      summary: Get global proxy URL
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: Proxy URL
+          content:
+            application/json:
+              example: { "value": "socks5://127.0.0.1:1080" }
+    put:
+      summary: Set global proxy URL
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value: {type: string}
+      responses:
+        '200':
+          description: Updated
+    delete:
+      summary: Clear global proxy URL
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: Cleared
+
+  /v0/management/usage-statistics-enabled:
+    get:
+      summary: Check if telemetry collection is active
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: Enabled state
+          content:
+            application/json:
+              example: { "value": true }
+    put:
+      summary: Enable/disable telemetry collection
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value: {type: boolean}
+      responses:
+        '200':
+          description: Updated
+
+  /v0/management/api-key-usage:
+    get:
+      summary: Get request buckets grouped by provider and key
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: Usage statistics
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v0/management/openai-compatibility:
+    get:
+      summary: Get custom OpenAI-compatible providers
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: List of providers
+    put:
+      summary: Replace OpenAI-compatible providers
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProviderKey'
+      responses:
+        '200':
+          description: Updated
+
+  /v0/management/oauth-excluded-models:
+    get:
+      summary: Get model blocks for OAuth providers
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: Excluded models map
+    put:
+      summary: Set model blocks
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+      responses:
+        '200':
+          description: Updated
+
+  /v0/management/auth-files/download:
+    get:
+      summary: Download a specific auth file
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: The auth file content
+          content:
+            application/json:
+              schema: {type: object}
+
+  /v0/management/vertex/import:
+    post:
+      summary: Import Google Vertex AI service account keys
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: {type: string, format: binary}
+                location: {type: string}
+      responses:
+        '200':
+          description: Imported
+
+  /v0/management/anthropic-auth-url:
+    get:
+      summary: Start Claude login flow
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      parameters:
+        - name: is_webui
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: Auth URL and state
+          content:
+            application/json:
+              example: { "url": "https://...", "state": "xyz" }
+
+  /v0/management/codex-auth-url:
+    get:
+      summary: Start Codex login flow
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      parameters:
+        - name: is_webui
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: Auth URL and state
+
+  /v0/management/gemini-cli-auth-url:
+    get:
+      summary: Start Gemini CLI login
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      parameters:
+        - name: project_id
+          in: query
+          schema: {type: string}
+        - name: is_webui
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: Auth URL and state
+
+  /v0/management/antigravity-auth-url:
+    get:
+      summary: Start Antigravity login flow
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      parameters:
+        - name: is_webui
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: Auth URL and state
+
+  /v0/management/logging-to-file:
+    get:
+      summary: Check if logs are written to disk
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: Enabled state
+    put:
+      summary: Set logging to file
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value: {type: boolean}
+      responses:
+        '200':
+          description: Updated
+
+  /v0/management/request-error-logs:
+    get:
+      summary: List error log files
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      responses:
+        '200':
+          description: List of error log files
+
+  /v0/management/request-error-logs/{name}:
+    get:
+      summary: Download a specific error log file
+      tags: [Management]
+      security:
+        - ManagementKeyHeader: []
+        - ManagementKeyBearer: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Log file content
