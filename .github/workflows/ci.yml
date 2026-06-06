@@ -84,9 +84,9 @@ jobs:
           python3 -m venv .venv-ci
           .venv-ci/bin/pip install ruff pyyaml pydantic
       - name: Lint with ruff
-        run: .venv-ci/bin/ruff check services/translator/translator.py tests/mock-upstream/app.py
+        run: .venv-ci/bin/ruff check services/translator/main.py tests/mock-upstream/app.py
       - name: Format check with ruff
-        run: .venv-ci/bin/ruff format --check services/translator/translator.py tests/mock-upstream/app.py
+        run: .venv-ci/bin/ruff format --check services/translator/main.py tests/mock-upstream/app.py
       - name: Shell syntax check
         run: |
           bash -n cliproxy-setup.sh

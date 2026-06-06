@@ -6,7 +6,7 @@ Tests token extraction and Prometheus metric recording for Translator responses.
 import json
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
-import translator
+import main
 
 
 def test_record_token_usage_anthropic():
@@ -19,9 +19,9 @@ def test_record_token_usage_anthropic():
     }
     
     # Mock the Prometheus counters
-    with patch.object(translator.TOKEN_INPUT, 'labels') as mock_input, \
-         patch.object(translator.TOKEN_OUTPUT, 'labels') as mock_output, \
-         patch.object(translator.TOKEN_REQUESTS, 'labels') as mock_requests:
+    with patch.object(main.TOKEN_INPUT, 'labels') as mock_input, \
+         patch.object(main.TOKEN_OUTPUT, 'labels') as mock_output, \
+         patch.object(main.TOKEN_REQUESTS, 'labels') as mock_requests:
         
         mock_input_counter = MagicMock()
         mock_output_counter = MagicMock()
@@ -31,7 +31,7 @@ def test_record_token_usage_anthropic():
         mock_output.return_value = mock_output_counter
         mock_requests.return_value = mock_requests_counter
         
-        translator._record_token_usage("claude-sonnet-4-6", response)
+        main._record_token_usage("claude-sonnet-4-6", response)
         
         # Verify metrics were recorded
         mock_input.assert_called_once_with("anthropic", "claude-sonnet-4-6")
@@ -53,8 +53,8 @@ def test_record_token_usage_openai():
         }
     }
     
-    with patch.object(translator.TOKEN_INPUT, 'labels') as mock_input, \
-         patch.object(translator.TOKEN_OUTPUT, 'labels') as mock_output:
+    with patch.object(main.TOKEN_INPUT, 'labels') as mock_input, \
+         patch.object(main.TOKEN_OUTPUT, 'labels') as mock_output:
         
         mock_input_counter = MagicMock()
         mock_output_counter = MagicMock()
@@ -62,7 +62,7 @@ def test_record_token_usage_openai():
         mock_input.return_value = mock_input_counter
         mock_output.return_value = mock_output_counter
         
-        translator._record_token_usage("gpt-5-4", response)
+        main._record_token_usage("gpt-5-4", response)
         
         mock_input.assert_called_once_with("openai", "gpt-5-4")
         mock_input_counter.inc.assert_called_once_with(250)
@@ -80,8 +80,8 @@ def test_record_token_usage_gemini():
         }
     }
     
-    with patch.object(translator.TOKEN_INPUT, 'labels') as mock_input, \
-         patch.object(translator.TOKEN_OUTPUT, 'labels') as mock_output:
+    with patch.object(main.TOKEN_INPUT, 'labels') as mock_input, \
+         patch.object(main.TOKEN_OUTPUT, 'labels') as mock_output:
         
         mock_input_counter = MagicMock()
         mock_output_counter = MagicMock()
@@ -89,7 +89,7 @@ def test_record_token_usage_gemini():
         mock_input.return_value = mock_input_counter
         mock_output.return_value = mock_output_counter
         
-        translator._record_token_usage("gemini-3-flash", response)
+        main._record_token_usage("gemini-3-flash", response)
         
         mock_input.assert_called_once_with("google", "gemini-3-flash")
         mock_input_counter.inc.assert_called_once_with(512)
@@ -103,16 +103,16 @@ def test_record_token_usage_missing_usage():
     response = {"choices": [{"message": {"content": "Hello"}}]}
     
     # Should not raise an exception
-    translator._record_token_usage("claude-sonnet-4-6", response)
+    main._record_token_usage("claude-sonnet-4-6", response)
 
 
 def test_record_token_usage_malformed_response():
     """Test graceful handling of malformed responses."""
-    with patch.object(translator.TOKEN_INPUT, 'labels') as mock_input:
+    with patch.object(main.TOKEN_INPUT, 'labels') as mock_input:
         # Should not raise an exception even with invalid input
-        translator._record_token_usage("claude-sonnet-4-6", None)
-        translator._record_token_usage("claude-sonnet-4-6", "not a dict")
-        translator._record_token_usage("claude-sonnet-4-6", {})
+        main._record_token_usage("claude-sonnet-4-6", None)
+        main._record_token_usage("claude-sonnet-4-6", "not a dict")
+        main._record_token_usage("claude-sonnet-4-6", {})
         
         # Metrics should not be called
         mock_input.assert_not_called()
@@ -127,11 +127,11 @@ def test_record_token_usage_zero_tokens():
         }
     }
     
-    with patch.object(translator.TOKEN_INPUT, 'labels') as mock_input, \
-         patch.object(translator.TOKEN_OUTPUT, 'labels') as mock_output, \
-         patch.object(translator.TOKEN_REQUESTS, 'labels') as mock_requests:
+    with patch.object(main.TOKEN_INPUT, 'labels') as mock_input, \
+         patch.object(main.TOKEN_OUTPUT, 'labels') as mock_output, \
+         patch.object(main.TOKEN_REQUESTS, 'labels') as mock_requests:
         
-        translator._record_token_usage("claude-sonnet-4-6", response)
+        main._record_token_usage("claude-sonnet-4-6", response)
         
         # Should not record metrics for zero tokens
         mock_input.assert_not_called()

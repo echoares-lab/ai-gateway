@@ -1,13 +1,13 @@
 import pytest
 from fastapi.testclient import TestClient
-from translator import app
+from main import app
 import json
 import httpx
 
 def test_responses_compact_interception():
     client = TestClient(app)
     
-    import translator
+    import main
     
     class MockResponse:
         status_code = 200
@@ -23,9 +23,9 @@ def test_responses_compact_interception():
         called_body = content
         return MockResponse()
     
-    # Initialize translator._client first
-    translator._client = httpx.AsyncClient()
-    translator._client.request = mock_request
+    # Initialize main._client first
+    main._client = httpx.AsyncClient()
+    main._client.request = mock_request
     
     try:
         # 1. Test compaction for an OpenAI model (should not be mapped)
@@ -49,4 +49,4 @@ def test_responses_compact_interception():
         assert body_data["model"] == "gpt-5-5"
         
     finally:
-        translator._client = None
+        main._client = None

@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
-import translator as t
+import main as t
 
 
 def _reset_policy_trace() -> None:

@@ -1,5 +1,5 @@
 """
-Unit tests for translator.py.
+Unit tests for main.py.
 
 Run inside the container:
   docker compose exec translator pytest test_translator.py -v
@@ -17,12 +17,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 # ---------------------------------------------------------------------------
-# Inline-import the module under test.  translator.py lives next to this file
+# Inline-import the module under test.  main.py lives next to this file
 # when running inside the container; on the host we add the directory to sys.path.
 # ---------------------------------------------------------------------------
 import os
 sys.path.insert(0, os.path.dirname(__file__))
-import translator as t
+import main as t
 
 
 # ===========================================================================
@@ -460,7 +460,7 @@ async def test_post_with_retry_retries_on_502():
     mock_client.post = fake_post
 
     with patch.object(t, "_client", mock_client), \
-         patch("translator.asyncio.sleep", new=AsyncMock()):
+         patch("main.asyncio.sleep", new=AsyncMock()):
         result = await t._post_with_retry("http://litellm:4000/v1/chat/completions", {}, b"{}", retries=1)
 
     assert result.status_code == 200
@@ -476,7 +476,7 @@ async def test_post_with_retry_stops_after_retries_exhausted():
     mock_client.post = AsyncMock(return_value=err_resp)
 
     with patch.object(t, "_client", mock_client), \
-         patch("translator.asyncio.sleep", new=AsyncMock()):
+         patch("main.asyncio.sleep", new=AsyncMock()):
         result = await t._post_with_retry("http://litellm:4000/v1/chat/completions", {}, b"{}", retries=2)
 
     assert result.status_code == 503
@@ -492,7 +492,7 @@ def test_responses_proxy_timeout_non_stream():
     async def mock_post_with_retry(*args, **kwargs):
         raise httpx.TimeoutException("Simulated upstream timeout")
 
-    with patch("translator._post_with_retry", mock_post_with_retry), \
+    with patch("main._post_with_retry", mock_post_with_retry), \
          patch.dict(os.environ, {"LITELLM_MASTER_KEY": "test-key"}):
         response = client.post(
             "/v1/responses",

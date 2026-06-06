@@ -151,7 +151,7 @@ services:
     build:
       context: ./services/translator
       dockerfile: Dockerfile
-    command: uvicorn translator:app --host 0.0.0.0 --port 4000 --reload --workers 1
+    command: uvicorn main:app --host 0.0.0.0 --port 4000 --reload --workers 1
     restart: always
     depends_on:
       litellm:

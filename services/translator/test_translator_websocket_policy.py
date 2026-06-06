@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(__file__))
-import translator as t
+import main as t
 
 
 class TestCodexWsPolicyBypass(unittest.TestCase):

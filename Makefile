@@ -2,8 +2,8 @@
 
 # Lint the translator + the mock upstream app (mirrors the CI fast tier).
 lint:
-	ruff check services/translator/translator.py tests/mock-upstream/app.py
-	ruff format --check services/translator/translator.py tests/mock-upstream/app.py
+	ruff check services/translator/main.py tests/mock-upstream/app.py
+	ruff format --check services/translator/main.py tests/mock-upstream/app.py
 
 # Unit tests: build the translator image and run the fully-mocked suite.
 test-unit:

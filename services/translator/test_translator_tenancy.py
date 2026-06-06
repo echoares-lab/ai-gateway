@@ -1,13 +1,13 @@
 import pytest
 from fastapi.testclient import TestClient
-from translator import app
+from main import app
 import json
 import httpx
 
 def test_tenancy_metadata_extraction():
     client = TestClient(app)
     
-    import translator
+    import main
     
     class MockResponse:
         status_code = 200
@@ -23,8 +23,8 @@ def test_tenancy_metadata_extraction():
         called_body = kwargs.get("content") or kwargs.get("data")
         return MockResponse()
         
-    translator._client = httpx.AsyncClient()
-    translator._client.request = mock_request
+    main._client = httpx.AsyncClient()
+    main._client.request = mock_request
     
     tenant_key = "Bearer ak-echoares-core-eng-gateway-dev"
     
@@ -90,4 +90,4 @@ def test_tenancy_metadata_extraction():
         assert body_data["metadata"]["environment"] == "dev"
 
     finally:
-        translator._client = None
+        main._client = None
