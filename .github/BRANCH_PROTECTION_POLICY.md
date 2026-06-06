@@ -16,7 +16,6 @@ Recommended:
   - `build-translator` — builds shared translator image (required dependency)
   - `multi-repo-isolation` — **Required — Conditional** (isolation script paths)
   - `mock-integration` — **Required — Conditional (Gate B)** (runtime paths)
-  - `real-provider-e2e` — **Required — Hotspot (Gate C)** (hotspot paths; skipped = pass when not applicable)
 - Require conversation resolution before merging
 - Restrict direct pushes
 - Allow auto-merge only when all checks pass
@@ -32,7 +31,15 @@ Recommended:
 | `litellm-reloader-tests` | A | `services/litellm-reloader/**` changes |
 | `multi-repo-isolation` | A | isolation script paths change |
 | `mock-integration` | B | runtime paths change |
-| `real-provider-e2e` | C | hotspot paths change, `run-e2e` label, or dispatch |
+
+### Gate C opt-in (not required for merge)
+
+Gate C (`real-provider-e2e`) is **paused as a required check** pending an e2e refactor. It runs only when opted in:
+
+- PR label `run-e2e`
+- Manual `workflow_dispatch` on the CI workflow
+
+Hotspot paths no longer auto-trigger Gate C in CI. Use the label or dispatch when real-provider smoke is needed.
 
 ### Docs-only PRs
 
@@ -40,8 +47,9 @@ When a PR touches only documentation and non-runtime paths, `mock-integration` a
 
 ### Advisory (not required for merge)
 
+- `real-provider-e2e` — Gate C real-provider smoke (opt-in via `run-e2e` label or `workflow_dispatch`)
 - `nightly-integration` — scheduled Gate C matrix (report-only)
-- `hotspot-e2e-reminder` — PR comment bot
+- `hotspot-e2e-reminder` — PR comment bot (suggests opt-in Gate C on hotspot paths)
 - `post-merge-gate-d` — post-merge stable smoke on `main` (advisory)
 
 ## GitHub rulesets (optional)

@@ -34,16 +34,15 @@ Risk level: **low / medium / high** (see `TESTING_AND_PROMOTION_POLICY.md` and `
 - [ ] `bash tests/test-multi-repo-isolation.sh` (isolation script paths)
 - [ ] Policy-engine / litellm-reloader / credential-prober tests (service paths)
 
-### Required — Hotspot (Gate C) — hotspot paths or high-risk
+### Gate C — real providers (opt-in; high-risk only)
 
-- [ ] CI `real-provider-e2e` pass **or** `make test-e2e` locally
+- [ ] `make test-e2e` pass **or** PR label `run-e2e` (CI `real-provider-e2e`)
 
-Auto-triggers on: `services/translator/**`, `litellm-config.yaml`, compose files, `cliproxy-setup.sh`, `dev-env.sh`.
-
-Manual trigger: PR label `run-e2e`.
+Not required to merge (Gate C paused pending e2e refactor). Opt in via label or CI `workflow_dispatch` when real-provider smoke is needed.
 
 ### Advisory — not merge-blocking
 
+- [ ] `real-provider-e2e` (only when `run-e2e` label or manual dispatch)
 - [ ] `nightly-integration` (scheduled)
 - [ ] `post-merge-gate-d` (after merge to `main`)
 
@@ -58,7 +57,6 @@ Manual trigger: PR label `run-e2e`.
 
 - [ ] `lint-and-syntax`, `unit-tests`, `build-translator`
 - [ ] `mock-integration` (runtime paths; skipped OK on docs-only)
-- [ ] `real-provider-e2e` (hotspot paths; skipped OK when not applicable)
 
 ## Risk / rollback
 

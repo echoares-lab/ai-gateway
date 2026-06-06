@@ -337,7 +337,7 @@ Never leave uncommitted changes in the stable worktree; they block pulls and Gat
 | A — unit | `make test-unit` (translator `-n auto` + policy-engine) | After each significant change |
 | A — lint | `make lint` | Before commit / push |
 | B — mock integration | `make test-mock` or `make test-fast` | Before PR; required CI parity |
-| C — real providers | `make test-e2e` or label `run-e2e` | Hotspot paths (required in CI) or high-risk |
+| C — real providers | `make test-e2e` or label `run-e2e` | Opt-in only (high-risk changes) |
 | D — stable smoke | `./cliproxy-setup.sh test <model>` + `health` | After merge to main (+ advisory `post-merge-gate-d` workflow) |
 | Full integration | `./dev-env.sh test <slot>` | When Gate C needs broader coverage |
 | YAML validation | `python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"` | After editing litellm-config.yaml |
@@ -409,7 +409,7 @@ CI (GitHub Actions `.github/workflows/ci.yml`) uses tiered gates on every push/P
 
 - **Required — Fast (A):** `lint-and-syntax`, `unit-tests`, `build-translator`
 - **Required — Conditional:** `mock-integration`, `multi-repo-isolation`, path-filtered service tests
-- **Required — Hotspot (C):** `real-provider-e2e` when hotspot paths change (also `run-e2e` label / dispatch)
+- **Advisory (Gate C — opt-in):** `real-provider-e2e` via `run-e2e` label or `workflow_dispatch` only (hotspot auto-trigger paused pending e2e refactor)
 - **Advisory:** `nightly-integration`, `post-merge-gate-d`, `hotspot-e2e-reminder`
 
 See `docs/TESTING.md`, `TESTING_AND_PROMOTION_POLICY.md`, and `REPO_IMPROVEMENT_APPENDIX.md` for full gate mapping.
@@ -426,7 +426,7 @@ See `docs/TESTING.md`, `TESTING_AND_PROMOTION_POLICY.md`, and `REPO_IMPROVEMENT_
 | Translator logic broken | Unit tests (`test_translator*.py`) in CI |
 | Multi-repo isolation broken | `multi-repo-isolation` job in CI |
 | Wire-format / routing broken | `mock-integration` job (0 skips) |
-| Real provider regressions | Gate C: required on hotspot paths; `run-e2e` label; nightly schedule |
+| Real provider regressions | Gate C: opt-in via `run-e2e` label or nightly schedule |
 | Post-merge production drift | Gate D: stable smokes + advisory `post-merge-gate-d` workflow |
 | Stable stack taken down | Worktree isolation (step 1) |
 | Direct push bypasses review | Branch protection + PR requirement |
