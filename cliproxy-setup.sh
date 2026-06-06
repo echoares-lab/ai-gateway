@@ -15,7 +15,8 @@ CLIPROXY_CONFIG="$CLIPROXY_DIR/config.yaml"
 CLIPROXY_REPO="router-for-me/CLIProxyAPI"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LITELLM_CONFIG="${LITELLM_CONFIG:-$SCRIPT_DIR/litellm-config.yaml}"
-LITELLM_KEY="${LITELLM_MASTER_KEY:-$(grep '^LITELLM_MASTER_KEY=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2)}"
+LITELLM_KEY="${LITELLM_MASTER_KEY:-$(grep '^LITELLM_MASTER_KEY=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2 || true)}"
+TRANSLATOR_URL="${TRANSLATOR_URL:-http://localhost:${TRANSLATOR_PORT:-4000}}"
 
 # Detect OS/arch for binary download
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -97,6 +98,14 @@ get_mgmt_key() {
     return
   fi
   grep 'management-key:' "$CLIPROXY_CONFIG" 2>/dev/null | sed 's/.*management-key:\s*//' | tr -d '"' | head -1
+}
+
+get_translator_admin_key() {
+  if [ -n "${TRANSLATOR_ADMIN_KEY:-}" ]; then
+    echo "$TRANSLATOR_ADMIN_KEY"
+    return
+  fi
+  grep '^TRANSLATOR_ADMIN_KEY=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2- || true
 }
 
 cmd_quota_summary() {
@@ -519,7 +528,254 @@ cmd_upgrade() {
   echo "Done. Run: $0 health"
 }
 
-cmd_sync_models() {
+translator_admin_post() {
+  local endpoint="$1"
+  local body="$2"
+  local output_file="$3"
+  local admin_key
+  admin_key=$(get_translator_admin_key)
+  if [ -z "$admin_key" ]; then
+    echo "ERROR: TRANSLATOR_ADMIN_KEY is required for sync-models apply mode."
+    echo "Set TRANSLATOR_ADMIN_KEY in .env or use: $0 sync-models --legacy"
+    return 1
+  fi
+
+  curl -fsS -X POST "$TRANSLATOR_URL$endpoint" \
+    -H "Content-Type: application/json" \
+    -H "x-admin-key: $admin_key" \
+    -d "$body" \
+    -o "$output_file"
+}
+
+translator_admin_patch() {
+  local endpoint="$1"
+  local body="$2"
+  local admin_key
+  admin_key=$(get_translator_admin_key)
+  curl -fsS -X PATCH "$TRANSLATOR_URL$endpoint" \
+    -H "Content-Type: application/json" \
+    -H "x-admin-key: $admin_key" \
+    -d "$body" >/dev/null
+}
+
+summarize_model_sync_response() {
+  local response_file="$1"
+  python3 - "$response_file" <<'PYEOF'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    body = json.load(handle)
+
+print(f"  Source: {body.get('source', '-')}")
+print(f"  Imported: {body.get('imported_count', 0)}")
+diffs = body.get("diffs") or []
+if diffs:
+    by_kind = {}
+    for diff in diffs:
+        by_kind[diff.get("kind", "unknown")] = by_kind.get(diff.get("kind", "unknown"), 0) + 1
+    print("  Diffs: " + ", ".join(f"{k}={v}" for k, v in sorted(by_kind.items())))
+else:
+    print("  Diffs: none")
+
+errors = body.get("errors") or []
+if errors:
+    print("  Errors:")
+    for err in errors:
+        print(f"    - {err.get('code', 'error')}: {err.get('message', err)}")
+    sys.exit(1)
+PYEOF
+}
+
+extract_synced_model_ids() {
+  local response_file="$1"
+  python3 - "$response_file" <<'PYEOF'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    body = json.load(handle)
+for model in body.get("models") or []:
+    model_id = model.get("model_id")
+    if model_id:
+        print(model_id)
+PYEOF
+}
+
+probe_translator_registry_models() {
+  local sync_response_file="$1"
+  local admin_key
+  admin_key=$(get_translator_admin_key)
+
+  echo ""
+  echo "Probing registry models through translator..."
+  local probed=0 disabled=0 transient=0 failed=0
+  while IFS= read -r model_id; do
+    [ -n "$model_id" ] || continue
+    probed=$((probed + 1))
+    local probe_file
+    probe_file=$(mktemp)
+    if ! curl -fsS -X POST "$TRANSLATOR_URL/admin/models/$model_id/probe" \
+      -H "Content-Type: application/json" \
+      -H "x-admin-key: $admin_key" \
+      -d '{}' \
+      -o "$probe_file"; then
+      echo "  WARN $model_id probe request failed"
+      failed=$((failed + 1))
+      rm -f "$probe_file"
+      continue
+    fi
+
+    local probe_status
+    probe_status=$(python3 - "$probe_file" <<'PYEOF'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    print(json.load(handle).get("probe_status", "unknown"))
+PYEOF
+)
+    rm -f "$probe_file"
+
+    case "$probe_status" in
+      success)
+        echo "  OK   $model_id"
+        ;;
+      rate_limited|temporarily_unavailable|timeout)
+        echo "  WARN $model_id $probe_status; keeping enabled"
+        transient=$((transient + 1))
+        ;;
+      missing_model|malformed_response|error)
+        echo "  DEAD $model_id $probe_status; disabling in registry"
+        if translator_admin_patch "/admin/models/$model_id" '{"enabled":false,"status":"UNAVAILABLE","source":"sync-models"}'; then
+          disabled=$((disabled + 1))
+        else
+          failed=$((failed + 1))
+        fi
+        ;;
+      *)
+        echo "  WARN $model_id $probe_status; keeping enabled"
+        transient=$((transient + 1))
+        ;;
+    esac
+  done < <(extract_synced_model_ids "$sync_response_file")
+  echo "  Probe summary: probed=$probed disabled=$disabled transient=$transient failed=$failed"
+}
+
+apply_reconcile_response() {
+  local response_file="$1"
+  python3 - "$response_file" "$LITELLM_CONFIG" "$GEMINI_MAP_FILE" <<'PYEOF'
+import json
+import os
+import sys
+import tempfile
+
+import yaml
+
+response_path, litellm_path, gemini_path = sys.argv[1:]
+with open(response_path, encoding="utf-8") as handle:
+    body = json.load(handle)
+
+errors = body.get("errors") or []
+if errors:
+    print("  Reconcile errors:")
+    for err in errors:
+        print(f"    - {err.get('code', 'error')}: {err.get('message', err)}")
+    sys.exit(1)
+
+resources = {item.get("name"): item for item in body.get("resources") or []}
+targets = {
+    "litellm-config.yaml": litellm_path,
+    "gemini-model-map.json": gemini_path,
+}
+
+changed = []
+for name, path in targets.items():
+    resource = resources.get(name)
+    if not resource:
+        print(f"  Missing reconcile resource: {name}")
+        sys.exit(1)
+    content = resource.get("content", "")
+    if name.endswith(".yaml"):
+        yaml.safe_load(content)
+    else:
+        json.loads(content)
+    if not resource.get("changed", False):
+        continue
+    directory = os.path.dirname(path) or "."
+    fd, tmp_path = tempfile.mkstemp(prefix=f".{os.path.basename(path)}.", dir=directory)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    os.replace(tmp_path, path)
+    changed.append(name)
+
+if changed:
+    print("changed:" + ",".join(changed))
+else:
+    print("no_change")
+PYEOF
+}
+
+cmd_sync_models_registry() {
+  local sync_response reconcile_response apply_result
+  sync_response=$(mktemp)
+  reconcile_response=$(mktemp)
+
+  echo "Syncing CLIProxy models into translator registry..."
+  if ! translator_admin_post "/admin/models/sync" '{"dry_run":false,"source":"cliproxy"}' "$sync_response"; then
+    echo "ERROR: translator registry sync failed at $TRANSLATOR_URL."
+    echo "Use the explicit emergency path if needed: $0 sync-models --legacy"
+    rm -f "$sync_response" "$reconcile_response"
+    return 1
+  fi
+  if ! summarize_model_sync_response "$sync_response"; then
+    rm -f "$sync_response" "$reconcile_response"
+    return 1
+  fi
+
+  if [ "${CLIPROXY_SYNC_PROBE:-true}" != "false" ]; then
+    probe_translator_registry_models "$sync_response"
+  else
+    echo ""
+    echo "Skipping model probes because CLIPROXY_SYNC_PROBE=false."
+  fi
+
+  echo ""
+  echo "Reconciling LiteLLM and Gemini config from translator registry..."
+  if ! translator_admin_post "/admin/models/reconcile" '{"dry_run":true,"include_disabled":false}' "$reconcile_response"; then
+    echo "ERROR: translator reconcile failed at $TRANSLATOR_URL."
+    rm -f "$sync_response" "$reconcile_response"
+    return 1
+  fi
+  if ! apply_result=$(apply_reconcile_response "$reconcile_response"); then
+    echo "$apply_result"
+    rm -f "$sync_response" "$reconcile_response"
+    return 1
+  fi
+  echo "  $apply_result"
+
+  if [[ "$apply_result" == changed:* ]]; then
+    echo ""
+    echo "Validating YAML syntax..."
+    if ! validate_yaml "$LITELLM_CONFIG"; then
+      echo "❌ Config changes invalid — aborting restart"
+      rm -f "$sync_response" "$reconcile_response"
+      return 1
+    fi
+    echo "✓ YAML valid"
+    echo ""
+    echo "Config updated — restarting LiteLLM..."
+    docker compose -f "$SCRIPT_DIR/docker-compose.yml" restart litellm
+    echo "Done. New model list:"
+    sleep 12
+    cmd_models
+  else
+    echo ""
+    echo "No config changes needed."
+  fi
+  rm -f "$sync_response" "$reconcile_response"
+}
+
+cmd_sync_models_legacy() {
   local api_key
   api_key=$(get_api_key)
   local AUDIT_LOG="$SCRIPT_DIR/sync-models.log"
@@ -666,6 +922,27 @@ PYEOF
   fi
 }
 
+cmd_sync_models() {
+  case "${1:-}" in
+    --legacy|legacy)
+      echo "Using legacy direct sync-models path by explicit request."
+      cmd_sync_models_legacy
+      ;;
+    "")
+      if [ "${CLIPROXY_SYNC_MODE:-registry}" = "legacy" ]; then
+        echo "Using legacy direct sync-models path because CLIPROXY_SYNC_MODE=legacy."
+        cmd_sync_models_legacy
+      else
+        cmd_sync_models_registry
+      fi
+      ;;
+    *)
+      echo "Usage: $0 sync-models [--legacy]"
+      return 2
+      ;;
+  esac
+}
+
 cmd_health() {
   local api_key
   api_key=$(get_api_key)
@@ -766,7 +1043,7 @@ cmd_apply() {
   echo "Step 1: Check for CLIProxyAPI upgrade"
   cmd_upgrade
   echo ""
-  echo "Step 2: Sync model list with LiteLLM config"
+  echo "Step 2: Sync model registry and reconcile LiteLLM config"
   cmd_sync_models
   echo ""
   echo "Step 3: Health check"
@@ -782,7 +1059,7 @@ cmd="${1:-help}"
 case "$cmd" in
   install)         cmd_install ;;
   upgrade)         cmd_upgrade ;;
-  sync-models)     cmd_sync_models ;;
+  sync-models)     cmd_sync_models "${@:2}" ;;
   health)          cmd_health ;;
   models)          cmd_models ;;
   quota-summary)   cmd_quota_summary ;;
@@ -942,7 +1219,8 @@ Setup:
 
 Operations:
   apply                Full update workflow: upgrade → sync-models → health
-  sync-models          Probe all models; add new working ones, remove dead ones
+  sync-models          Sync via translator registry APIs; writes reconciled config
+  sync-models --legacy Emergency direct mutation path for one-release rollback
   upgrade              Download newer binary + rebuild Docker image if available
   health               Show per-provider auth status and container state
   models               List models grouped by provider from CLIProxyAPI
