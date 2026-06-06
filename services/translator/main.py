@@ -47,9 +47,12 @@ from core.metrics import (
 )
 from core.model_registry import (
     ModelRegistryListResponse,
+    ModelRegistryMutationResponse,
+    ModelRegistryPatchRequest,
     ModelRegistryStore,
     ModelRegistrySyncRequest,
     ModelRegistrySyncResponse,
+    ModelRegistryWriteRequest,
     load_models_from_litellm_config,
 )
 from core.state import _policy_trace
@@ -2734,6 +2737,42 @@ async def admin_models():
     return _load_model_registry_with_config_fallback()
 
 
+@app.post("/admin/models", response_model=ModelRegistryMutationResponse)
+async def admin_model_create(request: Request, body: ModelRegistryWriteRequest):
+    """Create or replace one model registry record."""
+    auth_error = _require_admin_key(request)
+    if auth_error is not None:
+        return auth_error
+    store = _model_registry_store()
+    if not store.enabled:
+        return ModelRegistryMutationResponse(
+            accepted=False,
+            registry_available=False,
+            errors=[
+                _admin_error(
+                    "registry_unavailable",
+                    "DATABASE_URL or psycopg2 unavailable",
+                    "postgres:model_registry",
+                )
+            ],
+        )
+    try:
+        model = store.upsert_model(body.to_record())
+    except Exception as exc:
+        return ModelRegistryMutationResponse(
+            accepted=False,
+            registry_available=store.enabled,
+            errors=[
+                _admin_error(
+                    "registry_write_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "postgres:model_registry",
+                )
+            ],
+        )
+    return ModelRegistryMutationResponse(registry_available=True, model=model)
+
+
 @app.get("/admin/models/{model_id}", response_model=ModelRegistryListResponse)
 async def admin_model(model_id: str):
     """Read one model registry record by id, with config fallback."""
@@ -2755,6 +2794,110 @@ async def admin_model(model_id: str):
         models=matches,
         errors=loaded.errors,
     )
+
+
+@app.patch("/admin/models/{model_id}", response_model=ModelRegistryMutationResponse)
+async def admin_model_patch(
+    model_id: str,
+    request: Request,
+    body: ModelRegistryPatchRequest,
+):
+    """Patch one model registry record."""
+    auth_error = _require_admin_key(request)
+    if auth_error is not None:
+        return auth_error
+    store = _model_registry_store()
+    current = store.get_model(model_id)
+    if current is None:
+        return JSONResponse(
+            {
+                "accepted": False,
+                "registry_available": store.enabled,
+                "model": None,
+                "errors": [
+                    _admin_error(
+                        "model_not_found",
+                        f"{model_id} not found",
+                        "postgres:model_registry",
+                    )
+                ],
+            },
+            status_code=404,
+        )
+    try:
+        model = store.upsert_model(body.apply(current))
+    except Exception as exc:
+        return ModelRegistryMutationResponse(
+            accepted=False,
+            registry_available=store.enabled,
+            errors=[
+                _admin_error(
+                    "registry_write_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "postgres:model_registry",
+                )
+            ],
+        )
+    return ModelRegistryMutationResponse(registry_available=store.enabled, model=model)
+
+
+@app.delete("/admin/models/{model_id}", response_model=ModelRegistryMutationResponse)
+async def admin_model_delete(model_id: str, request: Request, hard: bool = False):
+    """Disable one model by default; hard delete only when hard=true."""
+    auth_error = _require_admin_key(request)
+    if auth_error is not None:
+        return auth_error
+    store = _model_registry_store()
+    try:
+        if hard:
+            deleted = store.hard_delete_model(model_id)
+            if not deleted:
+                return JSONResponse(
+                    {
+                        "accepted": False,
+                        "registry_available": store.enabled,
+                        "model": None,
+                        "errors": [
+                            _admin_error(
+                                "model_not_found",
+                                f"{model_id} not found",
+                                "postgres:model_registry",
+                            )
+                        ],
+                    },
+                    status_code=404,
+                )
+            return ModelRegistryMutationResponse(registry_available=store.enabled)
+        model = store.disable_model(model_id)
+    except Exception as exc:
+        return ModelRegistryMutationResponse(
+            accepted=False,
+            registry_available=store.enabled,
+            errors=[
+                _admin_error(
+                    "registry_write_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "postgres:model_registry",
+                )
+            ],
+        )
+    if model is None:
+        return JSONResponse(
+            {
+                "accepted": False,
+                "registry_available": store.enabled,
+                "model": None,
+                "errors": [
+                    _admin_error(
+                        "model_not_found",
+                        f"{model_id} not found",
+                        "postgres:model_registry",
+                    )
+                ],
+            },
+            status_code=404,
+        )
+    return ModelRegistryMutationResponse(registry_available=store.enabled, model=model)
 
 
 @app.post("/admin/models/sync", response_model=ModelRegistrySyncResponse)

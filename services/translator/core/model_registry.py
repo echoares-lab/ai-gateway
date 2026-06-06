@@ -67,6 +67,73 @@ class ModelRegistrySyncResponse(BaseModel):
     errors: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class ModelRegistryMutationResponse(BaseModel):
+    accepted: bool = True
+    dry_run: bool = False
+    registry_available: bool
+    model: ModelRegistryRecord | None = None
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ModelRegistryWriteRequest(BaseModel):
+    model_id: str
+    provider: str | None = None
+    family: str | None = None
+    upstream_model: str
+    litellm_model: str | None = None
+    enabled: bool = True
+    status: str = "UNKNOWN"
+    supports_tools: bool | None = None
+    supports_vision: bool | None = None
+    max_input_tokens: int | None = Field(default=None, ge=0)
+    max_output_tokens: int | None = Field(default=None, ge=0)
+    cost_tier: int | None = Field(default=None, ge=1, le=3)
+    policy_metadata: dict[str, Any] = Field(default_factory=dict)
+    source: str = "manual"
+
+    def to_record(self) -> ModelRegistryRecord:
+        provider = self.provider or provider_of(self.model_id)
+        return ModelRegistryRecord(
+            model_id=self.model_id,
+            provider=provider,
+            family=self.family
+            or (provider if provider != "unknown" else family_of(self.model_id)),
+            upstream_model=self.upstream_model,
+            litellm_model=self.litellm_model or f"openai/{self.upstream_model}",
+            enabled=self.enabled,
+            status=self.status,
+            supports_tools=self.supports_tools,
+            supports_vision=self.supports_vision,
+            max_input_tokens=self.max_input_tokens,
+            max_output_tokens=self.max_output_tokens,
+            cost_tier=self.cost_tier
+            if self.cost_tier is not None
+            else cost_tier_of(self.model_id),
+            policy_metadata=self.policy_metadata,
+            source=self.source,
+        )
+
+
+class ModelRegistryPatchRequest(BaseModel):
+    provider: str | None = None
+    family: str | None = None
+    upstream_model: str | None = None
+    litellm_model: str | None = None
+    enabled: bool | None = None
+    status: str | None = None
+    supports_tools: bool | None = None
+    supports_vision: bool | None = None
+    max_input_tokens: int | None = Field(default=None, ge=0)
+    max_output_tokens: int | None = Field(default=None, ge=0)
+    cost_tier: int | None = Field(default=None, ge=1, le=3)
+    policy_metadata: dict[str, Any] | None = None
+    source: str | None = None
+
+    def apply(self, current: ModelRegistryRecord) -> ModelRegistryRecord:
+        updates = {k: v for k, v in self.model_dump().items() if v is not None}
+        return current.model_copy(update=updates)
+
+
 @dataclass
 class RegistryLoadResult:
     source: str
@@ -327,3 +394,23 @@ class ModelRegistryStore:
                 )
             conn.commit()
         return len(models)
+
+    def upsert_model(self, model: ModelRegistryRecord) -> ModelRegistryRecord:
+        self.upsert_models([model])
+        return self.get_model(model.model_id) or model
+
+    def disable_model(self, model_id: str) -> ModelRegistryRecord | None:
+        current = self.get_model(model_id)
+        if current is None:
+            return None
+        disabled = current.model_copy(update={"enabled": False, "status": "DISABLED"})
+        return self.upsert_model(disabled)
+
+    def hard_delete_model(self, model_id: str) -> bool:
+        if not self.enabled:
+            raise RuntimeError("model registry database is not configured")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM model_registry WHERE model_id = %s", (model_id,))
+            deleted = cur.rowcount > 0
+            conn.commit()
+        return deleted

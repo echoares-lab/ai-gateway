@@ -132,6 +132,27 @@ paths:
                     enabled: true
                     status: "UNKNOWN"
                 errors: []
+    post:
+      summary: Create or replace a model registry record
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            example:
+              model_id: "gpt-5-4"
+              upstream_model: "gpt-5.4"
+              supports_tools: true
+      responses:
+        '200':
+          description: Model upserted
+        '403':
+          description: Invalid admin key
+        '503':
+          description: Admin mutations disabled or registry unavailable
   /admin/models/{model_id}:
     get:
       summary: Read one model registry record
@@ -143,6 +164,49 @@ paths:
       responses:
         '200':
           description: Matching model record
+        '404':
+          description: Model not found
+    patch:
+      summary: Update one model registry record
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            example:
+              enabled: true
+              status: "HEALTHY"
+              cost_tier: 2
+      responses:
+        '200':
+          description: Model updated
+        '404':
+          description: Model not found
+    delete:
+      summary: Disable one model registry record
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: hard
+          in: query
+          required: false
+          schema: {type: boolean, default: false}
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Model disabled or deleted
         '404':
           description: Model not found
   /admin/models/sync:

@@ -9,7 +9,35 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(__file__))
 import main as t
-from core.model_registry import load_models_from_litellm_config
+from core.model_registry import ModelRegistryRecord, load_models_from_litellm_config
+
+
+class _FakeRegistryStore:
+    enabled = True
+
+    def __init__(self):
+        self.models: dict[str, ModelRegistryRecord] = {}
+
+    def list_models(self):
+        raise AssertionError("not used")
+
+    def get_model(self, model_id: str):
+        return self.models.get(model_id)
+
+    def upsert_model(self, model: ModelRegistryRecord):
+        self.models[model.model_id] = model
+        return model
+
+    def disable_model(self, model_id: str):
+        model = self.models.get(model_id)
+        if model is None:
+            return None
+        disabled = model.model_copy(update={"enabled": False, "status": "DISABLED"})
+        self.models[model_id] = disabled
+        return disabled
+
+    def hard_delete_model(self, model_id: str):
+        return self.models.pop(model_id, None) is not None
 
 
 def _write_config(path):
@@ -120,3 +148,55 @@ def test_admin_models_sync_dry_run(monkeypatch, tmp_path):
     assert body["dry_run"] is True
     assert body["imported_count"] == 2
     assert body["models"][0]["source"] == "litellm-config"
+
+
+def test_admin_model_create_patch_and_disable(monkeypatch):
+    store = _FakeRegistryStore()
+    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+
+    client = TestClient(t.app)
+    create = client.post(
+        "/admin/models",
+        headers={"x-admin-key": "test-admin"},
+        json={
+            "model_id": "gpt-5-4",
+            "upstream_model": "gpt-5.4",
+            "supports_tools": True,
+        },
+    )
+    assert create.status_code == 200
+    assert create.json()["model"]["litellm_model"] == "openai/gpt-5.4"
+    assert store.models["gpt-5-4"].provider == "openai"
+
+    patch = client.patch(
+        "/admin/models/gpt-5-4",
+        headers={"x-admin-key": "test-admin"},
+        json={"status": "HEALTHY", "cost_tier": 2},
+    )
+    assert patch.status_code == 200
+    assert patch.json()["model"]["status"] == "HEALTHY"
+    assert patch.json()["model"]["cost_tier"] == 2
+
+    delete = client.delete(
+        "/admin/models/gpt-5-4", headers={"x-admin-key": "test-admin"}
+    )
+    assert delete.status_code == 200
+    assert delete.json()["model"]["enabled"] is False
+    assert delete.json()["model"]["status"] == "DISABLED"
+
+
+def test_admin_model_patch_missing_returns_404(monkeypatch):
+    store = _FakeRegistryStore()
+    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+
+    client = TestClient(t.app)
+    resp = client.patch(
+        "/admin/models/missing",
+        headers={"x-admin-key": "test-admin"},
+        json={"enabled": False},
+    )
+
+    assert resp.status_code == 404
+    assert resp.json()["errors"][0]["code"] == "model_not_found"
