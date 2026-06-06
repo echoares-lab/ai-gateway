@@ -97,34 +97,51 @@ seed_auth_volume() {
         alpine sh -c "cp -r /src/. /dst/ && echo 'seeded $(ls /dst | wc -l) entries'"
 }
 
-wait_for_litellm() {
+wait_for_postgres() {
     local slot="$1"
-    local litellm_port="$2"
-    local max_attempts="${3:-180}"
-    echo "waiting for LiteLLM readiness on :${litellm_port} (fresh Postgres migrations may take several minutes) ..."
+    local pg_container="aidev${slot}-postgres-1"
+    echo "waiting for postgres (${pg_container}) ..."
     local i
-    for (( i=1; i<=max_attempts; i++ )); do
-        if curl -sf "http://localhost:${litellm_port}/health/readiness" >/dev/null; then
-            echo "LiteLLM ready"
+    for (( i=1; i<=24; i++ )); do
+        if docker exec "$pg_container" pg_isready -U postgres >/dev/null 2>&1; then
+            echo "postgres ready"
             return 0
         fi
-        local litellm_cid
-        litellm_cid="$(run_compose "$slot" ps -q litellm 2>/dev/null || true)"
-        if [[ -n "$litellm_cid" ]] && [[ "$(docker inspect -f '{{.State.Status}}' "$litellm_cid" 2>/dev/null || true)" == "exited" ]]; then
-            echo "LiteLLM container exited early (cid=${litellm_cid}). Recent logs:" >&2
-            run_compose "$slot" logs --no-color --tail 200 litellm || true
-            return 1
-        fi
-        if run_compose "$slot" logs --no-color --tail 200 litellm 2>/dev/null | grep -Eq 'P3005|Prisma.*(panic|fatal|error)|database schema is not empty'; then
-            echo "Detected Prisma/LiteLLM fatal error during startup. Recent logs:" >&2
-            run_compose "$slot" logs --no-color --tail 200 litellm || true
-            return 1
-        fi
-        echo "  waiting for litellm (${i}/${max_attempts}) ..."
+        echo "  waiting for postgres (${i}/24) ..."
         sleep 5
     done
-    echo "LiteLLM never became ready on :${litellm_port}" >&2
-    run_compose "$slot" logs --no-color --tail 200 litellm || true
+    echo "postgres never became ready" >&2
+    return 1
+}
+
+load_mock_litellm_data() {
+    local slot="$1"
+    "${SCRIPT_DIR}/scripts/load-mock-data.sh" "aidev${slot}-postgres-1"
+}
+
+apply_dev_migrations() {
+    local slot="$1"
+    local pg_container="aidev${slot}-postgres-1"
+    echo "applying gateway schema migrations to ${pg_container} ..."
+    "${SCRIPT_DIR}/db/apply-migrations.sh" "$pg_container"
+}
+
+wait_for_http() {
+    local url="$1"
+    local label="$2"
+    local max_attempts="${3:-36}"
+    local sleep_secs="${4:-5}"
+    echo "waiting for ${label} (${url}) ..."
+    local i
+    for (( i=1; i<=max_attempts; i++ )); do
+        if curl -sf "$url" >/dev/null; then
+            echo "${label} ready"
+            return 0
+        fi
+        echo "  waiting for ${label} (${i}/${max_attempts}) ..."
+        sleep "$sleep_secs"
+    done
+    echo "${label} never became ready (${url})" >&2
     return 1
 }
 
@@ -138,12 +155,13 @@ cmd_start() {
     slot_ports "$slot"
     echo "starting dev slot ${slot}: translator=:${TRANSLATOR_PORT}  litellm=:${LITELLM_PORT}  cliproxy=:${CLIPROXY_PORT}"
     seed_auth_volume "$slot"
-    # Stage core services first; translator depends on litellm healthy and compose
-    # can fail the whole stack when proxy_extras migrations exceed the health window.
-    run_compose "$slot" up -d --build \
-        postgres redis cliproxy policy-engine litellm litellm-reloader credential-prober cpa-manager
-    wait_for_litellm "$slot" "$LITELLM_PORT"
-    run_compose "$slot" up -d --no-build translator
+    # Bootstrap postgres, load pre-migrated LiteLLM schema, apply gateway migrations, then full stack.
+    # LITELLM_MIGRATIONS=None skips proxy_extras (see docker-compose.dev.yml).
+    run_compose "$slot" up -d --build postgres redis
+    wait_for_postgres "$slot"
+    load_mock_litellm_data "$slot"
+    apply_dev_migrations "$slot"
+    run_compose "$slot" up -d --build
     echo ""
     echo "dev slot ${slot} is up:"
     echo "  translator  http://localhost:${TRANSLATOR_PORT}/health"
@@ -237,7 +255,11 @@ cmd_start_mock() {
     slot_ports "$slot"
     echo "starting MOCK slot ${slot}: translator=:${TRANSLATOR_PORT} (no OAuth, canned upstream)"
     # No seed_auth_volume — the mock upstream needs no credentials.
-    run_compose "$slot" -f "$MOCK_OVERLAY" up -d --build postgres cliproxy policy-engine litellm translator credential-prober
+    run_compose "$slot" -f "$MOCK_OVERLAY" up -d --build postgres redis
+    wait_for_postgres "$slot"
+    load_mock_litellm_data "$slot"
+    apply_dev_migrations "$slot"
+    run_compose "$slot" -f "$MOCK_OVERLAY" up -d --build cliproxy policy-engine litellm translator credential-prober
     echo ""
     echo "mock slot ${slot} is up: translator http://localhost:${TRANSLATOR_PORT}/health"
 }
