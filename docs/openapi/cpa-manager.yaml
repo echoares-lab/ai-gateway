@@ -3,6 +3,21 @@ info:
   title: CPA Manager API
   description: CPA Manager management and status interface.
   version: 1.0.0
+
+servers:
+  - url: http://localhost:18317
+    description: Default CPA Manager local server
+
+components:
+  securitySchemes:
+    ManagementKeyHeader:
+      type: apiKey
+      in: header
+      name: x-management-key
+    ManagementKeyBearer:
+      type: http
+      scheme: bearer
+
 paths:
   /management.html:
     get:
@@ -13,6 +28,7 @@ paths:
           content:
             text/html:
               example: "<html><body><h1>CPA Manager Dashboard</h1></body></html>"
+
   /health:
     get:
       summary: Health check endpoint
@@ -22,3 +38,94 @@ paths:
           content:
             application/json:
               example: {"status": "ok"}
+
+  /v0/usage:
+    get:
+      summary: Get detailed usage statistics
+      tags: [Usage]
+      responses:
+        '200':
+          description: Usage data
+          content:
+            application/json:
+              example:
+                requests: 1250
+                tokens:
+                  input: 50000
+                  output: 75000
+
+  /v0/usage/summary:
+    get:
+      summary: Get aggregated usage summary
+      tags: [Usage]
+      responses:
+        '200':
+          description: Usage summary
+          content:
+            application/json:
+              example:
+                total_requests: 10000
+                daily_average: 150
+
+  /v0/quota:
+    get:
+      summary: Check current quota status
+      tags: [Quota]
+      responses:
+        '200':
+          description: Quota status
+          content:
+            application/json:
+              example:
+                plus_usage: "3.5h/5h"
+                reset_time: "2026-06-07T00:00:00Z"
+
+  /v0/accounts:
+    get:
+      summary: List configured accounts and health status
+      tags: [Accounts]
+      responses:
+        '200':
+          description: Account list
+          content:
+            application/json:
+              example:
+                accounts:
+                  - id: "account-1"
+                    status: "healthy"
+                  - id: "account-2"
+                    status: "cooldown"
+
+  /v0/accounts/check:
+    post:
+      summary: Trigger manual health check
+      tags: [Accounts]
+      responses:
+        '200':
+          description: Check triggered
+
+  /v0/config:
+    get:
+      summary: Get current configuration
+      tags: [Config]
+      responses:
+        '200':
+          description: Configuration JSON
+    put:
+      summary: Update configuration
+      tags: [Config]
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '200':
+          description: Updated
+
+  /v0/channels:
+    get:
+      summary: Get provider routing and channels
+      tags: [Channels]
+      responses:
+        '200':
+          description: Channel info
