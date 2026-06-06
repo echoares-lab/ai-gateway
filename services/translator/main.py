@@ -26,6 +26,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import core.metrics  # noqa: F401 — register cache hit/miss counters
 import httpx
@@ -56,6 +57,7 @@ from core.metrics import (
     UPSTREAM_ERRORS,
 )
 from core.model_registry import (
+    ModelProbeResponse,
     ModelRegistryListResponse,
     ModelRegistryMutationResponse,
     ModelRegistryPatchRequest,
@@ -63,7 +65,10 @@ from core.model_registry import (
     ModelRegistrySyncRequest,
     ModelRegistrySyncResponse,
     ModelRegistryWriteRequest,
+    diff_discovered_models,
     load_models_from_litellm_config,
+    merge_discovered_model,
+    record_from_cliproxy_model,
 )
 from core.policy.evaluate import process_credential_event_async
 from core.policy.schemas import CredentialEvent
@@ -2114,6 +2119,7 @@ ADMIN_ERROR_MAXLEN = 400
 TRANSLATOR_ADMIN_KEY = os.environ.get("TRANSLATOR_ADMIN_KEY", "")
 CLIPROXY_URL = os.environ.get("CLIPROXY_URL", "http://cliproxy:8317").rstrip("/")
 CLIPROXY_MANAGEMENT_KEY = os.environ.get("CLIPROXY_MANAGEMENT_KEY", "")
+MODEL_PROBE_TIMEOUT = float(os.environ.get("MODEL_PROBE_TIMEOUT", "8.0"))
 
 _SECRET_PATTERNS = [
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]{12,}"),
@@ -2253,6 +2259,97 @@ def _load_model_registry_with_config_fallback() -> ModelRegistryListResponse:
         models=fallback.models,
         errors=[*registry.errors, *fallback.errors],
     )
+
+
+def _probe_result_status(resp: httpx.Response) -> tuple[str, list[dict]]:
+    if resp.status_code in (401, 403):
+        return "auth_failure", []
+    if resp.status_code == 404:
+        return "missing_model", []
+    if resp.status_code == 429:
+        return "rate_limited", []
+    if resp.status_code in (408, 425, 500, 502, 503, 504):
+        return "temporarily_unavailable", []
+    if resp.status_code < 200 or resp.status_code >= 300:
+        return "error", []
+    try:
+        body = resp.json()
+    except Exception as exc:
+        return "malformed_response", [
+            _admin_error(
+                "probe_malformed_response",
+                f"{type(exc).__name__}: {exc}",
+                "litellm:/v1/chat/completions",
+            )
+        ]
+    choices = body.get("choices") if isinstance(body, dict) else None
+    if not isinstance(choices, list) or not choices:
+        return "malformed_response", [
+            _admin_error(
+                "probe_malformed_response",
+                "response did not contain a non-empty choices list",
+                "litellm:/v1/chat/completions",
+            )
+        ]
+    return "success", []
+
+
+async def _probe_model_via_litellm(model_id: str) -> tuple[str, int | None, list[dict]]:
+    if _client is None:
+        return (
+            "error",
+            None,
+            [
+                _admin_error(
+                    "client_unavailable",
+                    "http client not initialized",
+                    "litellm:/v1/chat/completions",
+                )
+            ],
+        )
+    master_key = os.environ.get("LITELLM_MASTER_KEY", "")
+    headers = {"authorization": f"Bearer {master_key}"} if master_key else {}
+    payload = {
+        "model": model_id,
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 1,
+        "stream": False,
+    }
+    try:
+        resp = await _client.post(
+            f"{LITELLM}/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=MODEL_PROBE_TIMEOUT,
+        )
+    except httpx.TimeoutException:
+        return "timeout", None, []
+    except httpx.HTTPError as exc:
+        return (
+            "error",
+            None,
+            [
+                _admin_error(
+                    "probe_http_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "litellm:/v1/chat/completions",
+                )
+            ],
+        )
+    except Exception as exc:
+        return (
+            "error",
+            None,
+            [
+                _admin_error(
+                    "probe_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "litellm:/v1/chat/completions",
+                )
+            ],
+        )
+    status, errors = _probe_result_status(resp)
+    return status, resp.status_code, errors
 
 
 def _admin_parse_provider_metrics(text: str) -> list[dict]:
@@ -2814,6 +2911,59 @@ async def _fetch_cliproxy_auth_files() -> tuple[list[dict], list[dict]]:
         ]
 
 
+async def _fetch_cliproxy_models_for_registry() -> tuple[list[dict], list[dict]]:
+    if _client is None:
+        return [], [
+            _admin_error(
+                "client_unavailable",
+                "http client not initialized",
+                "cliproxy:/v1/models",
+            )
+        ]
+    api_key = os.environ.get("CLIPROXY_API_KEY", "").strip()
+    if not api_key:
+        return [], [
+            _admin_error(
+                "cliproxy_api_key_missing",
+                "CLIPROXY_API_KEY is required",
+                "cliproxy:/v1/models",
+            )
+        ]
+    try:
+        resp = await _client.get(
+            f"{CLIPROXY_URL}/v1/models",
+            headers={"authorization": f"Bearer {api_key}"},
+            timeout=5.0,
+        )
+        if resp.status_code != 200:
+            return [], [
+                _admin_error(
+                    "cliproxy_http_error",
+                    f"/v1/models returned {resp.status_code}",
+                    "cliproxy:/v1/models",
+                )
+            ]
+        body = resp.json()
+        data = body.get("data") if isinstance(body, dict) else None
+        if not isinstance(data, list):
+            return [], [
+                _admin_error(
+                    "cliproxy_bad_response",
+                    "response missing data array",
+                    "cliproxy:/v1/models",
+                )
+            ]
+        return [item for item in data if isinstance(item, dict)], []
+    except Exception as exc:
+        return [], [
+            _admin_error(
+                "cliproxy_fetch_error",
+                f"{type(exc).__name__}: {exc}",
+                "cliproxy:/v1/models",
+            )
+        ]
+
+
 async def _emit_credential_transition_to_policy(transition: CredentialTransition) -> bool:
     event = CredentialEvent(
         credential_id=transition.credential_id,
@@ -3118,20 +3268,107 @@ async def admin_model_delete(model_id: str, request: Request, hard: bool = False
     return ModelRegistryMutationResponse(registry_available=store.enabled, model=model)
 
 
-@app.post("/admin/models/sync", response_model=ModelRegistrySyncResponse)
-async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
-    """Import current LiteLLM config into the Postgres model registry."""
+@app.post("/admin/models/{model_id}/probe", response_model=ModelProbeResponse)
+async def admin_model_probe(model_id: str, request: Request):
+    """Probe one model through LiteLLM and persist the normalized probe result."""
     auth_error = _require_admin_key(request)
     if auth_error is not None:
         return auth_error
 
-    loaded = load_models_from_litellm_config(LITELLM_CONFIG_PATH)
     store = _model_registry_store()
-    errors = list(loaded.errors)
+    current = store.get_model(model_id)
+    if current is None:
+        return JSONResponse(
+            {
+                "accepted": False,
+                "registry_available": store.enabled,
+                "model_id": model_id,
+                "probe_status": "missing_model",
+                "probe_http_status": None,
+                "probe_checked_at": datetime.now(timezone.utc).isoformat(),
+                "model": None,
+                "errors": [
+                    _admin_error(
+                        "model_not_found",
+                        f"{model_id} not found",
+                        "postgres:model_registry",
+                    )
+                ],
+            },
+            status_code=404,
+        )
+
+    probe_status, probe_http_status, errors = await _probe_model_via_litellm(model_id)
+    checked_at = datetime.now(timezone.utc)
+    try:
+        model = store.update_probe_result(
+            model_id,
+            probe_status=probe_status,
+            probe_http_status=probe_http_status,
+            probe_checked_at=checked_at,
+        )
+    except Exception as exc:
+        return ModelProbeResponse(
+            accepted=False,
+            registry_available=store.enabled,
+            model_id=model_id,
+            probe_status=probe_status,
+            probe_http_status=probe_http_status,
+            probe_checked_at=checked_at,
+            model=current,
+            errors=[
+                *errors,
+                _admin_error(
+                    "registry_write_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "postgres:model_registry",
+                ),
+            ],
+        )
+
+    return ModelProbeResponse(
+        registry_available=store.enabled,
+        model_id=model_id,
+        probe_status=probe_status,
+        probe_http_status=probe_http_status,
+        probe_checked_at=checked_at,
+        model=model or current,
+        errors=errors,
+    )
+
+
+@app.post("/admin/models/sync", response_model=ModelRegistrySyncResponse)
+async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
+    """Import current LiteLLM config or CLIProxy discovery into the model registry."""
+    auth_error = _require_admin_key(request)
+    if auth_error is not None:
+        return auth_error
+
+    store = _model_registry_store()
+    existing = store.list_models()
+    existing_models = existing.models if existing.registry_available else []
+    errors = list(existing.errors)
+    source = body.source
+
+    if source == "cliproxy":
+        entries, fetch_errors = await _fetch_cliproxy_models_for_registry()
+        discovered = [model for model in (record_from_cliproxy_model(entry) for entry in entries) if model is not None]
+        errors.extend(fetch_errors)
+        diffs = diff_discovered_models(discovered, existing_models)
+        loaded_models = [
+            merge_discovered_model(model, {m.model_id: m for m in existing_models}.get(model.model_id))
+            for model in discovered
+        ]
+    else:
+        loaded = load_models_from_litellm_config(LITELLM_CONFIG_PATH)
+        errors.extend(loaded.errors)
+        loaded_models = loaded.models
+        diffs = diff_discovered_models(loaded_models, existing_models)
+
     imported = 0
-    if not body.dry_run:
+    if not body.dry_run and not errors:
         try:
-            imported = store.upsert_models(loaded.models)
+            imported = store.upsert_models(loaded_models)
         except Exception as exc:
             errors.append(
                 _admin_error(
@@ -3141,14 +3378,15 @@ async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
                 )
             )
     else:
-        imported = len(loaded.models)
+        imported = len(loaded_models) if body.dry_run else 0
     return ModelRegistrySyncResponse(
         dry_run=body.dry_run,
-        source=body.source,
+        source=source,
         registry_available=store.enabled,
         imported_count=imported,
-        skipped_count=0,
-        models=loaded.models,
+        skipped_count=max(0, len(loaded_models) - imported),
+        models=loaded_models,
+        diffs=diffs,
         errors=errors,
     )
 

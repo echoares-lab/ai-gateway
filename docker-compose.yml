@@ -178,6 +178,7 @@ services:
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-60}
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - CLIPROXY_API_KEY=${CLIPROXY_API_KEY}
+      - CLIPROXY_URL=http://cliproxy:8317
       - UPSTREAM_TIMEOUT=${UPSTREAM_TIMEOUT:-30.0}
       - LITELLM_CONFIG_PATH=/config/litellm-config.yaml
     volumes:
