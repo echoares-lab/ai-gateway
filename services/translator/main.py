@@ -24,7 +24,7 @@ import re
 import subprocess
 import time
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -89,6 +89,7 @@ UPSTREAM_TIMEOUT = float(os.environ.get("UPSTREAM_TIMEOUT", "30.0"))
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
     global _client, _redis
+    credential_sync_task: asyncio.Task | None = None
     _client = httpx.AsyncClient(
         timeout=httpx.Timeout(UPSTREAM_TIMEOUT, connect=10.0),
         limits=httpx.Limits(
@@ -105,7 +106,18 @@ async def _lifespan(application: FastAPI):
         except Exception as exc:
             log.warning("Redis cache unavailable (%s) — caching disabled", exc)
             _redis = None
+    if TRANSLATOR_CREDENTIAL_SYNC_ENABLED:
+        credential_sync_task = asyncio.create_task(_credential_sync_scheduler_loop())
+        log.info(
+            "translator credential sync scheduler enabled interval=%ss dry_run=%s",
+            TRANSLATOR_CREDENTIAL_SYNC_INTERVAL_SEC,
+            TRANSLATOR_CREDENTIAL_SYNC_DRY_RUN,
+        )
     yield
+    if credential_sync_task is not None:
+        credential_sync_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await credential_sync_task
     if _client is not None:
         await _client.aclose()
     if _redis is not None:
@@ -134,9 +146,28 @@ ADMIN_POLICY_TRACE_ENABLED = os.environ.get("ADMIN_POLICY_TRACE_ENABLED", "true"
     "false",
     "no",
 )
+TRANSLATOR_CREDENTIAL_SYNC_ENABLED = os.environ.get("TRANSLATOR_CREDENTIAL_SYNC_ENABLED", "false").lower() not in (
+    "0",
+    "false",
+    "no",
+)
+TRANSLATOR_CREDENTIAL_SYNC_INTERVAL_SEC = max(
+    1,
+    int(os.environ.get("TRANSLATOR_CREDENTIAL_SYNC_INTERVAL_SEC", "300")),
+)
+TRANSLATOR_CREDENTIAL_SYNC_INITIAL_DELAY_SEC = max(
+    0,
+    int(os.environ.get("TRANSLATOR_CREDENTIAL_SYNC_INITIAL_DELAY_SEC", "30")),
+)
+TRANSLATOR_CREDENTIAL_SYNC_DRY_RUN = os.environ.get("TRANSLATOR_CREDENTIAL_SYNC_DRY_RUN", "false").lower() not in (
+    "0",
+    "false",
+    "no",
+)
 
 
 _policy_version_hint: str | None = None
+_credential_sync_lock = asyncio.Lock()
 
 
 @app.get("/metrics")
@@ -2976,6 +3007,121 @@ async def _emit_credential_transition_to_policy(transition: CredentialTransition
     return await process_credential_event_async(event)
 
 
+async def _sync_credentials_from_cliproxy(
+    body: CredentialInventorySyncRequest,
+) -> CredentialInventorySyncResponse:
+    """Sync CLIProxy auth-file state into credential_inventory."""
+    async with _credential_sync_lock:
+        store = _credential_inventory_store()
+        files, errors = await _fetch_cliproxy_auth_files()
+        credentials = [record_from_auth_file(item) for item in files]
+        transitions: list[CredentialTransition] = []
+        imported = 0
+
+        if errors:
+            return CredentialInventorySyncResponse(
+                accepted=False,
+                dry_run=body.dry_run,
+                registry_available=store.enabled,
+                discovered_count=len(credentials),
+                imported_count=0,
+                credentials=_redact_credential_records(credentials),
+                errors=errors,
+            )
+
+        old_statuses: dict[str, str] = {}
+        if store.enabled:
+            try:
+                old_statuses = store.existing_statuses()
+            except Exception as exc:
+                errors.append(
+                    _admin_error(
+                        "registry_read_error",
+                        f"{type(exc).__name__}: {exc}",
+                        "postgres:credential_inventory",
+                    )
+                )
+        else:
+            errors.append(
+                _admin_error(
+                    "registry_unavailable",
+                    "DATABASE_URL or psycopg2 unavailable",
+                    "postgres:credential_inventory",
+                )
+            )
+
+        for credential in credentials:
+            transition = transition_for_record(credential, old_statuses.get(credential.credential_id))
+            if transition is not None:
+                transitions.append(transition)
+
+        if not body.dry_run and store.enabled and not errors:
+            try:
+                imported = store.upsert_credentials(credentials)
+            except Exception as exc:
+                errors.append(
+                    _admin_error(
+                        "registry_write_error",
+                        f"{type(exc).__name__}: {exc}",
+                        "postgres:credential_inventory",
+                    )
+                )
+            else:
+                for transition in transitions:
+                    try:
+                        await _emit_credential_transition_to_policy(transition)
+                    except Exception as exc:
+                        errors.append(
+                            _admin_error(
+                                "policy_event_error",
+                                f"{type(exc).__name__}: {exc}",
+                                "translator:policy-event",
+                            )
+                        )
+        elif body.dry_run:
+            imported = len(credentials)
+
+        return CredentialInventorySyncResponse(
+            accepted=not errors,
+            dry_run=body.dry_run,
+            registry_available=store.enabled,
+            discovered_count=len(credentials),
+            imported_count=imported,
+            credentials=_redact_credential_records(credentials),
+            transitions=transitions,
+            errors=errors,
+        )
+
+
+async def _run_scheduled_credential_sync() -> CredentialInventorySyncResponse:
+    response = await _sync_credentials_from_cliproxy(
+        CredentialInventorySyncRequest(dry_run=TRANSLATOR_CREDENTIAL_SYNC_DRY_RUN)
+    )
+    log.info(
+        "credential sync scheduler completed accepted=%s dry_run=%s discovered=%d imported=%d transitions=%d errors=%d",
+        response.accepted,
+        response.dry_run,
+        response.discovered_count,
+        response.imported_count,
+        len(response.transitions),
+        len(response.errors),
+    )
+    return response
+
+
+async def _credential_sync_scheduler_loop() -> None:
+    if TRANSLATOR_CREDENTIAL_SYNC_INITIAL_DELAY_SEC:
+        await asyncio.sleep(TRANSLATOR_CREDENTIAL_SYNC_INITIAL_DELAY_SEC)
+    while True:
+        try:
+            await _run_scheduled_credential_sync()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("credential sync scheduler failed: %s: %s", type(exc).__name__, _admin_redact(str(exc))[0])
+        await asyncio.sleep(TRANSLATOR_CREDENTIAL_SYNC_INTERVAL_SEC)
+
+
 @app.get("/admin/analytics/tokens")
 async def admin_token_analytics():
     """Granular token usage analytics by provider and model (#117)."""
@@ -2996,86 +3142,7 @@ async def admin_credentials_sync(request: Request, body: CredentialInventorySync
     auth_error = _require_admin_key(request)
     if auth_error is not None:
         return auth_error
-
-    store = _credential_inventory_store()
-    files, errors = await _fetch_cliproxy_auth_files()
-    credentials = [record_from_auth_file(item) for item in files]
-    transitions: list[CredentialTransition] = []
-    imported = 0
-
-    if errors:
-        return CredentialInventorySyncResponse(
-            accepted=False,
-            dry_run=body.dry_run,
-            registry_available=store.enabled,
-            discovered_count=len(credentials),
-            imported_count=0,
-            credentials=_redact_credential_records(credentials),
-            errors=errors,
-        )
-
-    old_statuses: dict[str, str] = {}
-    if store.enabled:
-        try:
-            old_statuses = store.existing_statuses()
-        except Exception as exc:
-            errors.append(
-                _admin_error(
-                    "registry_read_error",
-                    f"{type(exc).__name__}: {exc}",
-                    "postgres:credential_inventory",
-                )
-            )
-    else:
-        errors.append(
-            _admin_error(
-                "registry_unavailable",
-                "DATABASE_URL or psycopg2 unavailable",
-                "postgres:credential_inventory",
-            )
-        )
-
-    for credential in credentials:
-        transition = transition_for_record(credential, old_statuses.get(credential.credential_id))
-        if transition is not None:
-            transitions.append(transition)
-
-    if not body.dry_run and store.enabled and not errors:
-        try:
-            imported = store.upsert_credentials(credentials)
-        except Exception as exc:
-            errors.append(
-                _admin_error(
-                    "registry_write_error",
-                    f"{type(exc).__name__}: {exc}",
-                    "postgres:credential_inventory",
-                )
-            )
-        else:
-            for transition in transitions:
-                try:
-                    await _emit_credential_transition_to_policy(transition)
-                except Exception as exc:
-                    errors.append(
-                        _admin_error(
-                            "policy_event_error",
-                            f"{type(exc).__name__}: {exc}",
-                            "translator:policy-event",
-                        )
-                    )
-    elif body.dry_run:
-        imported = len(credentials)
-
-    return CredentialInventorySyncResponse(
-        accepted=not errors,
-        dry_run=body.dry_run,
-        registry_available=store.enabled,
-        discovered_count=len(credentials),
-        imported_count=imported,
-        credentials=_redact_credential_records(credentials),
-        transitions=transitions,
-        errors=errors,
-    )
+    return await _sync_credentials_from_cliproxy(body)
 
 
 @app.post("/admin/credentials/{credential_id}/probe", response_model=CredentialProbeResponse)

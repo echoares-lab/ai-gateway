@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 from datetime import datetime, timezone
@@ -160,6 +161,59 @@ def test_admin_credentials_sync_apply_writes_and_emits_policy_event(monkeypatch)
     assert store.credentials[0].status == "CRITICAL"
     assert len(emitted) == 1
     assert emitted[0].new_status == "CRITICAL"
+
+
+def test_scheduled_credential_sync_uses_apply_mode_and_bounded_logs(monkeypatch, caplog):
+    store = _FakeCredentialStore(existing={"claude-mock.json": "HEALTHY"})
+    emitted = []
+    monkeypatch.setattr(t, "_credential_inventory_store", lambda: store)
+    monkeypatch.setattr(t, "_client", _FakeHttpClient())
+    monkeypatch.setattr(t, "CLIPROXY_MANAGEMENT_KEY", "mgmt-key")
+    monkeypatch.setattr(t, "TRANSLATOR_CREDENTIAL_SYNC_DRY_RUN", False)
+
+    async def fake_emit(transition):
+        emitted.append(transition)
+        return True
+
+    monkeypatch.setattr(t, "_emit_credential_transition_to_policy", fake_emit)
+
+    with caplog.at_level(logging.INFO, logger="translator"):
+        response = asyncio.run(t._run_scheduled_credential_sync())
+
+    assert response.accepted is True
+    assert response.dry_run is False
+    assert response.imported_count == 1
+    assert len(emitted) == 1
+    assert store.credentials[0].credential_id == "claude-mock.json"
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert "credential sync scheduler completed" in log_text
+    assert "operator@example.com" not in log_text
+    assert "abc123secretfingerprint" not in log_text
+
+
+def test_credential_sync_scheduler_loop_uses_interval_and_cancels(monkeypatch):
+    calls = []
+    sleeps = []
+    monkeypatch.setattr(t, "TRANSLATOR_CREDENTIAL_SYNC_INITIAL_DELAY_SEC", 0)
+    monkeypatch.setattr(t, "TRANSLATOR_CREDENTIAL_SYNC_INTERVAL_SEC", 7)
+
+    async def fake_run():
+        calls.append("run")
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(t, "_run_scheduled_credential_sync", fake_run)
+    monkeypatch.setattr(t.asyncio, "sleep", fake_sleep)
+
+    try:
+        asyncio.run(t._credential_sync_scheduler_loop())
+    except asyncio.CancelledError:
+        pass
+
+    assert calls == ["run"]
+    assert sleeps == [7]
 
 
 def test_admin_credential_probe_is_documented_unsupported(monkeypatch):

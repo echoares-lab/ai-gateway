@@ -621,6 +621,24 @@ docker compose up -d
 ./cliproxy-setup.sh health
 ```
 
+### Translator credential sync scheduler (optional)
+
+The standalone `credential-prober` service remains the default writer for
+`credential_inventory`. Translator can run the same CLIProxy auth-file sync loop,
+but it is opt-in and should be treated as a single-writer mode.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `TRANSLATOR_CREDENTIAL_SYNC_ENABLED` | `false` | Enables the translator background sync loop |
+| `TRANSLATOR_CREDENTIAL_SYNC_INTERVAL_SEC` | `300` | Seconds between sync attempts |
+| `TRANSLATOR_CREDENTIAL_SYNC_INITIAL_DELAY_SEC` | `30` | Startup delay before the first sync |
+| `TRANSLATOR_CREDENTIAL_SYNC_DRY_RUN` | `false` | Preview discovered credentials without writing inventory |
+
+When enabling the translator scheduler in a dev slot, leave
+`credential-prober` running first and compare `/admin/credentials/sync` output
+with the scheduler logs. For stable promotion, run only one active inventory
+writer at a time to avoid duplicate cooldown events.
+
 ---
 
 ## Policy Engine (operator)
