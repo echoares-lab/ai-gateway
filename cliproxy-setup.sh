@@ -1135,7 +1135,7 @@ case "$cmd" in
     ;;
 
   test)
-    MODEL="${2:-claude-sonnet-4-6}"
+    MODEL="${2:-claude-sonnet-4-5-20250929}"
     echo "Testing LiteLLM → CLIProxyAPI with model: $MODEL"
     curl -s -X POST http://localhost:4000/v1/chat/completions \
       -H "Content-Type: application/json" \
@@ -1145,7 +1145,7 @@ case "$cmd" in
     ;;
 
   test-direct)
-    MODEL="${2:-claude-sonnet-4-6}"
+    MODEL="${2:-claude-sonnet-4-5-20250929}"
     API_KEY=$(get_api_key)
     echo "Testing CLIProxyAPI directly with model: $MODEL"
     curl -s -X POST "http://localhost:$CLIPROXY_PORT/v1/chat/completions" \
@@ -1158,7 +1158,7 @@ case "$cmd" in
   test-all)
     # One representative model per provider; tests the full translator→litellm→cliproxy path
     declare -A PROVIDER_MODELS=(
-      [claude]="claude-sonnet-4-6"
+      [claude]="claude-sonnet-4-5-20250929"
       [gemini]="gemini-3-flash"
       [openai]="gpt-5-4"
       [xai]="grok-4"

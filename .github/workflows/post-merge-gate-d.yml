@@ -24,7 +24,7 @@ jobs:
         run: ./cliproxy-setup.sh health
       - name: Gate D — model smokes
         run: |
-          ./cliproxy-setup.sh test claude-sonnet-4-6
+          ./cliproxy-setup.sh test claude-sonnet-4-5-20250929
           ./cliproxy-setup.sh test gemini-3-flash
           ./cliproxy-setup.sh test gpt-5-4
       - name: Summary
