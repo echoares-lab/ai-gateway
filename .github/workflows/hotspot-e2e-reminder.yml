@@ -24,7 +24,7 @@ jobs:
         with:
           filters: |
             hotspot:
-              - 'services/translator/translator.py'
+              - 'services/translator/main.py'
               - 'litellm-config.yaml'
               - 'docker-compose.yml'
               - 'docker-compose.dev.yml'
