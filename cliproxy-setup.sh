@@ -210,14 +210,23 @@ alias_in_config() {
   grep -q "model_name: $1" "$LITELLM_CONFIG" 2>/dev/null
 }
 
-# Probe a model via CLIProxyAPI; return status code (0 = success, 429/503 = rate/unavail, other = error)
-# Returns: 0 (success), 429 (rate limit), 503 (unavailable), other HTTP code, or -1 (network error)
+# Classify probe HTTP response (success|transient|missing_model|preserve).
+classify_probe_response() {
+  local http_code="$1"
+  local body="$2"
+  python3 "$SCRIPT_DIR/scripts/sync_models_probe_classify.py" "$http_code" <<< "$body"
+}
+
+# Probe a model via CLIProxyAPI.
+# Sets PROBE_HTTP_CODE and PROBE_OUTCOME; returns:
+#   0  = success
+#  42  = transient / preserve (do not remove from config)
+#  44  = missing_model (safe to remove)
 probe_model() {
   local model="$1"
   local api_key
   api_key=$(get_api_key)
 
-  # Capture HTTP status code
   local http_code
   local result
   result=$(curl -s --max-time 20 -w "\n%{http_code}" -X POST "http://localhost:$CLIPROXY_PORT/v1/chat/completions" \
@@ -227,26 +236,16 @@ probe_model() {
 
   http_code=$(echo "$result" | tail -1)
   PROBE_HTTP_CODE="$http_code"
-  local body=$(echo "$result" | head -n -1)
+  local body
+  body=$(echo "$result" | head -n -1)
 
-  # Check if HTTP code was successful
-  if [ "$http_code" = "200" ]; then
-    # Verify response has choices array
-    if echo "$body" | python3 -c "import sys,json; r=json.load(sys.stdin); exit(0 if r.get('choices') else 1)" 2>/dev/null; then
-      return 0  # Success
-    else
-      return 1  # Invalid response
-    fi
-  else
-    # Return mapped values so they fit in 0-255 range and don't exit script under set -e
-    if [ "$http_code" = "429" ]; then
-      return 42
-    elif [ "$http_code" = "503" ]; then
-      return 53
-    else
-      return 99
-    fi
-  fi
+  PROBE_OUTCOME=$(classify_probe_response "$http_code" "$body")
+
+  case "$PROBE_OUTCOME" in
+    success) return 0 ;;
+    missing_model) return 44 ;;
+    *) return 42 ;;  # transient, preserve, auth failures — never remove
+  esac
 }
 
 # ──────────────────────────────────────────────
@@ -640,11 +639,7 @@ PYEOF
       success)
         echo "  OK   $model_id"
         ;;
-      rate_limited|temporarily_unavailable|timeout)
-        echo "  WARN $model_id $probe_status; keeping enabled"
-        transient=$((transient + 1))
-        ;;
-      missing_model|malformed_response|error)
+      missing_model)
         echo "  DEAD $model_id $probe_status; disabling in registry"
         if translator_admin_patch "/admin/models/$model_id" '{"enabled":false,"status":"UNAVAILABLE","source":"sync-models"}'; then
           disabled=$((disabled + 1))
@@ -808,14 +803,10 @@ print(m.group(1) if m else '')
 
     if [ "$status" = "0" ]; then
       echo "  OK   $alias"
-    elif [ "$status" = "42" ] || [ "$status" = "53" ]; then
-      # Transient error (rate limit or unavailable) — don't remove, just warn
-      echo "  WARN $alias — rate limited / temporarily unavailable (HTTP $PROBE_HTTP_CODE) — skipping removal"
-      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) SKIPPED $alias (probe $PROBE_HTTP_CODE - transient, will retry next sync)" >> "$AUDIT_LOG"
-    else
-      # 404 or other error — model likely doesn't exist, mark for removal
-      echo "  DEAD $alias (HTTP $PROBE_HTTP_CODE) — removing"
-      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) REMOVED $alias (probe $PROBE_HTTP_CODE - model not found)" >> "$AUDIT_LOG"
+    elif [ "$status" = "44" ]; then
+      # Definitive model-not-found — safe to remove from config
+      echo "  DEAD $alias (HTTP $PROBE_HTTP_CODE, $PROBE_OUTCOME) — removing"
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) REMOVED $alias (probe $PROBE_HTTP_CODE - $PROBE_OUTCOME)" >> "$AUDIT_LOG"
       # Use Python to safely remove the model block from YAML
       python3 - "$LITELLM_CONFIG" "$alias" <<'PYEOF'
 import sys, re
@@ -828,6 +819,10 @@ with open(path, 'w') as f: f.write(txt)
 PYEOF
       gemini_map_remove "$alias"
       changed=true
+    else
+      # Rate limits, cooldowns, auth issues, and other transient failures — preserve
+      echo "  WARN $alias — probe $PROBE_OUTCOME (HTTP $PROBE_HTTP_CODE) — skipping removal"
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) SKIPPED $alias (probe $PROBE_HTTP_CODE - $PROBE_OUTCOME, will retry next sync)" >> "$AUDIT_LOG"
     fi
   done < <(grep 'model_name:' "$LITELLM_CONFIG" | awk '{print $3}')
 
@@ -865,12 +860,11 @@ with open(path, 'w') as f: f.write(txt)
 PYEOF
       gemini_map_add "$model_id" "$alias"
       changed=true
-    elif [ "$status" = "42" ] || [ "$status" = "53" ]; then
-      # Transient error — skip this run, will retry on next sync
-      echo "rate limited / unavailable (HTTP $PROBE_HTTP_CODE) — skipping"
+    elif [ "$status" = "44" ]; then
+      echo "model not found (HTTP $PROBE_HTTP_CODE) — skipping"
     else
-      # 404 or other error — model not available
-      echo "not available (HTTP $PROBE_HTTP_CODE) — skipping"
+      # Transient / preserve — skip this run, will retry on next sync
+      echo "probe $PROBE_OUTCOME (HTTP $PROBE_HTTP_CODE) — skipping"
     fi
   done <<< "$raw_models"
 
