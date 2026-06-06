@@ -55,6 +55,30 @@ def test_build_decision_json_includes_quota_fields():
     assert payload["decision"]["gate"] == "allow"
 
 
+def test_build_decision_json_includes_canonical_registry_metadata():
+    payload = build_decision_json(
+        _decision(),
+        context_hash="hash-1",
+        model_registry={
+            "canonical_model_id": "claude-sonnet-4-6",
+            "provider": "anthropic",
+            "family": "claude",
+            "upstream_model": "claude-sonnet-4-6",
+            "deployment_credentials": ["redacted"],
+        },
+    )
+
+    assert payload["canonical_model_id"] == "claude-sonnet-4-6"
+    assert payload["canonical_provider"] == "anthropic"
+    assert payload["canonical_family"] == "claude"
+    assert payload["model_registry"] == {
+        "canonical_model_id": "claude-sonnet-4-6",
+        "provider": "anthropic",
+        "family": "claude",
+        "upstream_model": "claude-sonnet-4-6",
+    }
+
+
 def test_should_log_audit_always_deny_throttle():
     rng = random.Random(0)
     assert should_log_audit(GateAction.DENY, sample_rate=0.0, rng=rng) is True
@@ -100,6 +124,24 @@ def test_maybe_log_always_records_deny():
     assert row["repo_name"] == "gateway"
     assert row["agent_id"] == "agent-9"
     assert row["decision_json"]["quota_aware_mode"] is False
+
+
+def test_maybe_log_copies_registry_metadata_to_decision_json():
+    sink: list = []
+    writer = RoutingAuditWriter(None, enabled=True, sample_rate=1.0, sink=sink)
+    ctx = RoutingContext(
+        requested_model="sonnet",
+        metadata={
+            "model_registry": {
+                "canonical_model_id": "claude-sonnet-4-6",
+                "provider": "anthropic",
+                "family": "claude",
+            }
+        },
+    )
+
+    assert writer.maybe_log(ctx, _decision(), rng=random.Random(0)) is True
+    assert sink[0]["decision_json"]["canonical_model_id"] == "claude-sonnet-4-6"
 
 
 def test_write_record_executes_insert():

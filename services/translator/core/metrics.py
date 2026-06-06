@@ -70,3 +70,18 @@ TOKEN_REQUESTS = Counter(
     "Total requests with token data by provider and model",
     ["provider", "model"],
 )
+TOKEN_CANONICAL_INPUT = Counter(
+    "translator_token_canonical_input_total",
+    "Total input tokens processed by requested provider/model and canonical registry model",
+    ["provider", "model", "canonical_model_id", "canonical_provider", "canonical_family"],
+)
+TOKEN_CANONICAL_OUTPUT = Counter(
+    "translator_token_canonical_output_total",
+    "Total output tokens processed by requested provider/model and canonical registry model",
+    ["provider", "model", "canonical_model_id", "canonical_provider", "canonical_family"],
+)
+TOKEN_CANONICAL_REQUESTS = Counter(
+    "translator_token_canonical_requests_total",
+    "Total requests with token data by requested provider/model and canonical registry model",
+    ["provider", "model", "canonical_model_id", "canonical_provider", "canonical_family"],
+)

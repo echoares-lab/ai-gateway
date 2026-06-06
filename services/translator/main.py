@@ -51,6 +51,9 @@ from core.metrics import (
     PROVIDER_REQUESTS,
     REQUEST_COUNT,
     REQUEST_LATENCY,
+    TOKEN_CANONICAL_INPUT,
+    TOKEN_CANONICAL_OUTPUT,
+    TOKEN_CANONICAL_REQUESTS,
     TOKEN_INPUT,
     TOKEN_OUTPUT,
     TOKEN_REQUESTS,
@@ -747,6 +750,32 @@ def _record_token_usage(model: str, response_json: dict) -> None:
             TOKEN_INPUT.labels(provider, label_model).inc(input_tokens)
             TOKEN_OUTPUT.labels(provider, label_model).inc(output_tokens)
             TOKEN_REQUESTS.labels(provider, label_model).inc()
+            registry_metadata = _model_registry_metadata_for_policy(model)
+            if registry_metadata:
+                canonical_model_id = registry_metadata.get("canonical_model_id") or label_model
+                canonical_provider = registry_metadata.get("provider") or provider
+                canonical_family = registry_metadata.get("family") or canonical_provider
+                TOKEN_CANONICAL_INPUT.labels(
+                    provider,
+                    label_model,
+                    canonical_model_id,
+                    canonical_provider,
+                    canonical_family,
+                ).inc(input_tokens)
+                TOKEN_CANONICAL_OUTPUT.labels(
+                    provider,
+                    label_model,
+                    canonical_model_id,
+                    canonical_provider,
+                    canonical_family,
+                ).inc(output_tokens)
+                TOKEN_CANONICAL_REQUESTS.labels(
+                    provider,
+                    label_model,
+                    canonical_model_id,
+                    canonical_provider,
+                    canonical_family,
+                ).inc()
     except (AttributeError, TypeError, KeyError):
         # Safely ignore malformed responses
         pass
@@ -2851,6 +2880,7 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
     """Build token usage analytics panel from live Prometheus metrics (#117)."""
     by_provider: dict[str, dict] = {}
     by_model: list[dict] = []
+    by_canonical: dict[tuple[str, str, str], dict] = {}
 
     if metrics_text:
         for line in metrics_text.splitlines():
@@ -2862,45 +2892,63 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
                 line,
             )
             if not m:
+                canonical_match = re.match(
+                    r"translator_token_canonical_(input|output)_total\{([^}]*)\}\s+([\d.e+]+)",
+                    line,
+                )
+                if not canonical_match:
+                    continue
+                kind = canonical_match.group(1)
+                labels = _parse_prometheus_labels(canonical_match.group(2))
+                try:
+                    val = int(float(canonical_match.group(3)))
+                except ValueError:
+                    continue
+                canonical_model_id = labels.get("canonical_model_id") or labels.get("model") or "-"
+                canonical_provider = labels.get("canonical_provider") or labels.get("provider") or "-"
+                canonical_family = labels.get("canonical_family") or canonical_provider
+                requested_model = labels.get("model") or "-"
+                key = (canonical_model_id, canonical_provider, canonical_family)
+                if key not in by_canonical:
+                    by_canonical[key] = {
+                        "canonical_model_id": canonical_model_id,
+                        "canonical_provider": canonical_provider,
+                        "canonical_family": canonical_family,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "requested_models": set(),
+                    }
+                by_canonical[key][f"{kind}_tokens"] += val
+                by_canonical[key]["requested_models"].add(requested_model)
                 continue
-            kind, provider, model, raw_val = (
-                m.group(1),
-                m.group(2),
-                m.group(3),
-                m.group(4),
-            )
+            kind = m.group(1)
+            provider = m.group(2)
+            model = m.group(3)
             try:
-                val = int(float(raw_val))
+                val = int(float(m.group(4)))
             except ValueError:
                 continue
 
-            # Aggregate by provider
-            if provider not in by_provider:
-                by_provider[provider] = {
-                    "provider": provider,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "models": set(),
-                }
-            by_provider[provider][f"{kind}_tokens"] += val
-            by_provider[provider]["models"].add(model)
+            _add_token_metric(by_provider, by_model, provider, model, kind, val)
 
-            # Per-model entry
-            existing = next(
-                (e for e in by_model if e["model"] == model and e["provider"] == provider),
-                None,
-            )
-            if not existing:
-                existing = {
-                    "model": model,
-                    "provider": provider,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                }
-                by_model.append(existing)
-            existing[f"{kind}_tokens"] += val
+    canonical_summary = [
+        {
+            "canonical_model_id": v["canonical_model_id"],
+            "canonical_provider": v["canonical_provider"],
+            "canonical_family": v["canonical_family"],
+            "requested_models": sorted(v["requested_models"]),
+            "input_tokens": v["input_tokens"],
+            "output_tokens": v["output_tokens"],
+            "total_tokens": v["input_tokens"] + v["output_tokens"],
+        }
+        for v in by_canonical.values()
+    ]
+    canonical_summary.sort(
+        key=lambda e: e["input_tokens"] + e["output_tokens"],
+        reverse=True,
+    )
 
-    # Serialise provider summary (sets → counts)
+    # Serialise provider summary (sets -> counts)
     provider_summary = [
         {
             "provider": v["provider"],
@@ -2932,8 +2980,49 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
                 key=lambda e: e["input_tokens"] + e["output_tokens"],
                 reverse=True,
             ),
+            "by_canonical_model": canonical_summary,
         },
     )
+
+
+def _parse_prometheus_labels(raw: str) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    for match in re.finditer(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:[^"\\]|\\.)*)"', raw):
+        labels[match.group(1)] = match.group(2).replace(r"\"", '"').replace(r"\\", "\\")
+    return labels
+
+
+def _add_token_metric(
+    by_provider: dict[str, dict],
+    by_model: list[dict],
+    provider: str,
+    model: str,
+    kind: str,
+    val: int,
+) -> None:
+    if provider not in by_provider:
+        by_provider[provider] = {
+            "provider": provider,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "models": set(),
+        }
+    by_provider[provider][f"{kind}_tokens"] += val
+    by_provider[provider]["models"].add(model)
+
+    existing = next(
+        (e for e in by_model if e["model"] == model and e["provider"] == provider),
+        None,
+    )
+    if not existing:
+        existing = {
+            "model": model,
+            "provider": provider,
+            "input_tokens": 0,
+            "output_tokens": 0,
+        }
+        by_model.append(existing)
+    existing[f"{kind}_tokens"] += val
 
 
 async def _admin_fetch_visible_models() -> tuple[list[str] | None, list[dict]]:
