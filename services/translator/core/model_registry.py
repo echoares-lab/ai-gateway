@@ -64,6 +64,7 @@ class ModelRegistrySyncResponse(BaseModel):
     imported_count: int = 0
     skipped_count: int = 0
     models: list[ModelRegistryRecord] = Field(default_factory=list)
+    diffs: list[dict[str, Any]] = Field(default_factory=list)
     errors: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -179,6 +180,13 @@ def cost_tier_of(model: str) -> int | None:
     return 2 if provider_of(m) != "unknown" else None
 
 
+def normalize_model_id(model_id: str) -> str:
+    model = model_id
+    if model.startswith("AI-Gateway:"):
+        model = model[len("AI-Gateway:") :]
+    return model.replace(".", "-")
+
+
 def _error(code: str, message: str, source: str) -> dict[str, Any]:
     return {"code": code, "message": message, "source": source}
 
@@ -217,6 +225,75 @@ def record_from_litellm_entry(entry: dict[str, Any]) -> ModelRegistryRecord | No
         source="litellm-config",
         aliases=[],
     )
+
+
+def record_from_cliproxy_model(entry: dict[str, Any]) -> ModelRegistryRecord | None:
+    raw_model_id = entry.get("id") or entry.get("model")
+    if not raw_model_id:
+        return None
+    model_id = normalize_model_id(str(raw_model_id))
+    provider = provider_of(model_id)
+    return ModelRegistryRecord(
+        model_id=model_id,
+        provider=provider,
+        family=family_of(model_id),
+        upstream_model=str(raw_model_id).removeprefix("AI-Gateway:"),
+        litellm_model=f"openai/{str(raw_model_id).removeprefix('AI-Gateway:')}",
+        enabled=True,
+        status="UNKNOWN",
+        cost_tier=cost_tier_of(model_id),
+        policy_metadata={
+            "cliproxy_model_id": str(raw_model_id),
+            "owned_by": entry.get("owned_by"),
+        },
+        source="cliproxy",
+    )
+
+
+def merge_discovered_model(
+    discovered: ModelRegistryRecord,
+    current: ModelRegistryRecord | None,
+) -> ModelRegistryRecord:
+    if current is None:
+        return discovered
+    metadata = dict(current.policy_metadata)
+    metadata.update(discovered.policy_metadata)
+    return current.model_copy(
+        update={
+            "provider": discovered.provider,
+            "family": discovered.family,
+            "upstream_model": discovered.upstream_model,
+            "litellm_model": discovered.litellm_model,
+            "source": discovered.source,
+            "policy_metadata": metadata,
+        }
+    )
+
+
+def diff_discovered_models(
+    discovered: list[ModelRegistryRecord],
+    existing: list[ModelRegistryRecord],
+) -> list[dict[str, Any]]:
+    existing_by_id = {model.model_id: model for model in existing}
+    diffs: list[dict[str, Any]] = []
+    for model in discovered:
+        current = existing_by_id.get(model.model_id)
+        if current is None:
+            diffs.append({"kind": "add", "model_id": model.model_id})
+            continue
+        changed_fields = []
+        for field_name in ("provider", "family", "upstream_model", "litellm_model", "source"):
+            if getattr(current, field_name) != getattr(model, field_name):
+                changed_fields.append(field_name)
+        if changed_fields:
+            diffs.append(
+                {
+                    "kind": "update",
+                    "model_id": model.model_id,
+                    "fields": changed_fields,
+                }
+            )
+    return diffs
 
 
 def load_models_from_litellm_config(path: str) -> RegistryLoadResult:
