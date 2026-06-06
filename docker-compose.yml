@@ -119,34 +119,6 @@ services:
       timeout: 3s
       retries: 3
 
-  policy-engine:
-    build:
-      context: ./services/policy-engine
-      dockerfile: Dockerfile
-    restart: always
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:8080:8080"
-    environment:
-      REDIS_URL: redis://:${REDIS_AUTH:-myredissecret}@redis:6379
-      DATABASE_URL: ${LITELLM_DATABASE_URL}
-      BUDGET_HARD_GATE_ENABLED: ${BUDGET_HARD_GATE_ENABLED:-false}
-      BUDGET_HARD_GATE_RETRY_AFTER: ${BUDGET_HARD_GATE_RETRY_AFTER:-60}
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "python - <<'PY'\nimport urllib.request, sys\ntry:\n    r = urllib.request.urlopen('http://127.0.0.1:8080/v1/health', timeout=3)\n    sys.exit(0 if 200 <= r.status < 300 else 1)\nexcept Exception:\n    sys.exit(1)\nPY"
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-
   translator:
     build:
       context: ./services/translator
@@ -158,14 +130,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      policy-engine:
-        condition: service_healthy
     ports:
       - "4000:4000"
     environment:
       - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
       - REDIS_URL=redis://:${REDIS_AUTH:-myredissecret}@redis:6379
-      - POLICY_ENGINE_URL=${POLICY_ENGINE_URL:-http://policy-engine:8080}
       - POLICY_ENGINE_ENABLED=${POLICY_ENGINE_ENABLED:-false}
       - POLICY_ENGINE_TIMEOUT_MS=${POLICY_ENGINE_TIMEOUT_MS:-100}
       - TEAM_BUDGET_SNAPSHOT_ENABLED=${TEAM_BUDGET_SNAPSHOT_ENABLED:-true}
@@ -341,13 +310,13 @@ services:
       - CLIPROXY_URL=http://cliproxy:8317
       - CLIPROXY_MANAGEMENT_KEY=${CLIPROXY_MANAGEMENT_KEY:-cliproxy-mgmt-H6VXKpUCzmeDuHcGmH8Oqg}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
-      - POLICY_ENGINE_URL=${POLICY_ENGINE_URL:-http://policy-engine:8080}
+      - TRANSLATOR_URL=${TRANSLATOR_URL:-http://translator:4000}
     depends_on:
       postgres:
         condition: service_healthy
       cliproxy:
         condition: service_started
-      policy-engine:
+      translator:
         condition: service_started
 
 

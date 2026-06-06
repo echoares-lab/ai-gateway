@@ -12,7 +12,7 @@ import threading
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 
-from schemas import GateAction, RoutingContext, RoutingDecision
+from .schemas import GateAction, RoutingContext, RoutingDecision
 
 logger = logging.getLogger(__name__)
 

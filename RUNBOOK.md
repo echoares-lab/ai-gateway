@@ -617,7 +617,7 @@ cd ~/repos/ai-gateway
 # Apply Postgres migrations before credential-prober writes credential_inventory
 ./db/apply-migrations.sh ai-postgres-1
 docker compose up -d
-# LiteLLM, Redis, and policy-engine healthchecks gate translator startup — no manual wait needed
+# LiteLLM and Redis healthchecks gate translator startup — no manual wait needed
 ./cliproxy-setup.sh health
 ```
 
@@ -629,14 +629,14 @@ Central routing evaluator for repo/agent affinity, budget gates, rate-limit stat
 fallback ordering. Design: [POLICY_ENGINE_AND_ROUTING_REFACTOR.md](./docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md).
 OpenAPI: [docs/openapi/policy-engine.yaml](./docs/openapi/policy-engine.yaml).
 
-> **Rollout status:** Epic #38 is complete on `main`. The policy-engine service runs in
-> the stable compose stack with `POLICY_ENGINE_ENABLED=false` by default (Stage 0).
+> **Rollout status:** Epic #38 is complete on `main`. Policy evaluation runs **in-process**
+> inside the translator with `POLICY_ENGINE_ENABLED=false` by default (Stage 0).
 > Enable Stage 2 on stable only after validating in a dev slot (Stage 1).
 
 ### Enabling on stable stack (Stage 2)
 
-HTTP routing evaluate is **fail-open**: if policy-engine is down or times out, the
-translator forwards without `routing_decision` and static YAML fallbacks apply.
+HTTP routing evaluate is **fail-open**: if the in-process evaluator is unavailable,
+the translator forwards without `routing_decision` and static YAML fallbacks apply.
 WebSocket `/v1/responses` bypasses evaluate unless you also set
 `POLICY_ENGINE_WS_EVALUATE=true` (Stage 3 — not recommended until Gate C WS smoke).
 
@@ -645,8 +645,7 @@ WebSocket `/v1/responses` bypasses evaluate unless you also set
 | Check | Command / action |
 |-------|------------------|
 | Migration 002 applied | `./db/apply-migrations.sh ai-postgres-1` |
-| Policy-engine healthy | `curl -s http://127.0.0.1:8080/v1/health \| jq .` |
-| Redis reachable | `source .env && redis-cli -u "$REDIS_URL" ping` |
+| Redis reachable | `source .env && redis-cli -u "redis://:${REDIS_AUTH:-myredissecret}@127.0.0.1:6379" ping` |
 | Stage 1 validated | `./dev-env.sh start 1` with `POLICY_ENGINE_ENABLED=true`, then `./dev-env.sh test 1` |
 | Admin trace ready | `curl -s http://localhost:4000/admin/status -H "Authorization: Bearer $LITELLM_MASTER_KEY" \| jq .policy_engine` |
 
@@ -656,19 +655,16 @@ WebSocket `/v1/responses` bypasses evaluate unless you also set
 
    ```bash
    POLICY_ENGINE_ENABLED=true
-   # Optional: raise evaluate timeout during first hour (default 100ms)
-   # POLICY_ENGINE_TIMEOUT_MS=250
    ```
 
-2. Recreate translator so it picks up the flag (compose gates on healthy deps):
+2. Recreate translator so it picks up the flag:
 
    ```bash
    cd ~/repos/ai-gateway
-   docker compose up -d policy-engine translator
+   docker compose up -d translator
    ```
 
-   `translator` waits for `litellm`, `redis`, and `policy-engine` healthchecks before
-   accepting traffic (see `docker-compose.yml` `depends_on`).
+   `translator` waits for `litellm` and `redis` healthchecks before accepting traffic.
 
 3. **Gate D smoke** (stable):
 
@@ -679,8 +675,7 @@ WebSocket `/v1/responses` bypasses evaluate unless you also set
    ./cliproxy-setup.sh test gpt-5-4
    ```
 
-4. Confirm evaluate path — admin status should show `policy_engine.enabled: true` and
-   `policy_engine.reachable: true`. Spot-check audit sampling:
+4. Confirm evaluate path — admin status should show `policy_engine.enabled: true`.
 
    ```sql
    SELECT evaluated_at, gate, requested_model
@@ -696,7 +691,7 @@ POLICY_ENGINE_ENABLED=false
 docker compose up -d translator
 ```
 
-Traffic continues immediately; evaluate calls are skipped. Fix policy-engine or stores
+Traffic continues immediately; evaluate calls are skipped. Fix Redis/Postgres policy stores
 using the [fail-open procedure](#fail-open-procedure) below, then re-enable.
 
 **Optional Stage 3 — WebSocket evaluate**
@@ -715,7 +710,7 @@ WS bypass semantics.
 | Store | Used for | Env var | Degraded behavior |
 |-------|----------|---------|-------------------|
 | **Redis** | Agent affinity (`affinity:agent:*`), cooldown registry (`rate_limit:*`), profile cache, last-known-good decisions | `REDIS_URL` | Hot state disabled; evaluator continues with Postgres + request context only |
-| **Postgres** | `policy_profiles`, `credential_pools`, `credential_pool_members`, `credential_inventory`, `routing_decisions_log` | `DATABASE_URL` (policy-engine service) | Profiles/inventory reads fail-open to baseline; audit writer disabled |
+| **Postgres** | `policy_profiles`, `credential_pools`, `credential_pool_members`, `credential_inventory`, `routing_decisions_log` | `DATABASE_URL` (translator in-process evaluator) | Profiles/inventory reads fail-open to baseline; audit writer disabled |
 
 **Health checks:**
 
@@ -849,7 +844,7 @@ Static `litellm-config.yaml` fallbacks remain the safety net.
 
 1. Confirm traffic still flows: `./cliproxy-setup.sh test claude-sonnet-4-6`
 2. Disable enforcement (fastest): set `POLICY_ENGINE_ENABLED=false` in `.env` and `docker compose up -d translator` (stable or dev slot)
-3. Check policy-engine logs: `docker compose logs policy-engine --tail=50` (when deployed)
+3. Check translator logs: `docker compose logs translator --tail=50`
 4. Inspect last audit denies: `SELECT gate, decision_json FROM routing_decisions_log ORDER BY evaluated_at DESC LIMIT 10;`
 5. If bad profile promoted: `UPDATE policy_profiles SET enabled = false WHERE profile_id = '...';`
 6. Re-enable after fix; watch deny/throttle rate in audit log
@@ -921,7 +916,7 @@ on the policy-engine container and restart. Revert to `0.01` after resolution.
 | `litellm-config.yaml` | Model routing (auto-managed by sync-models) |
 | `.env` | Secrets (keys, passwords) — never commit |
 | `cliproxy-setup.sh` | Setup, auth, sync, health CLI |
-| `services/policy-engine/` | Policy evaluator service (Epic #38) |
+| `services/translator/core/policy/` | In-process policy evaluator (Epic #38 / Epic 2) |
 | `db/migrations/002_policy_profiles_pools.sql` | Policy profiles, pools, audit log schema |
 | `~/.cliproxy/config.yaml` | CLIProxyAPI config (port, API key, management key) |
 | `~/.cli-proxy-api/*.json` | OAuth token files (Claude, Codex, Gemini) |

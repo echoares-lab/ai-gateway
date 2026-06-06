@@ -8,7 +8,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from schemas import PolicyProfile, PolicyScope
+from core.policy.schemas import PolicyProfile, PolicyScope
 
 
 class BudgetPolicyConfig(BaseModel):
@@ -35,7 +35,7 @@ class McpPolicyConfig(BaseModel):
 
 def _default_profiles_path() -> Path:
     here = Path(__file__).resolve().parent
-    repo_root = here.parents[1]
+    repo_root = here.parents[3]
     candidates = [
         repo_root / "config" / "policy-profiles.yaml",
         here / "config" / "policy-profiles.yaml",

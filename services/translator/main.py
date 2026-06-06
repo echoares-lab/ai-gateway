@@ -47,6 +47,9 @@ from core.metrics import (
 )
 from core.policy import PolicyEvaluator
 from core.policy import policy_version as in_process_policy_version
+from core.policy.credential_events import handle_credential_event
+from core.policy.evaluate import get_redis_store
+from core.policy.schemas import CredentialEvent
 from core.state import _policy_trace
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
@@ -102,7 +105,6 @@ POLICY_ENGINE_ENABLED = os.environ.get("POLICY_ENGINE_ENABLED", "false").lower()
     "false",
     "no",
 )
-POLICY_ENGINE_URL = os.environ.get("POLICY_ENGINE_URL", "http://policy-engine:8080").rstrip("/")
 TEAM_BUDGET_SNAPSHOT_ENABLED = os.environ.get("TEAM_BUDGET_SNAPSHOT_ENABLED", "true").lower() not in (
     "0",
     "false",
@@ -1904,6 +1906,18 @@ async def claude_proxy(request: Request):
     except Exception as e:
         log.error("Claude response conversion error: %s", e)
         return Response(content=resp.content, status_code=resp.status_code)
+
+
+@app.post("/v1/events/credential")
+async def post_credential_event(request: Request):
+    """Credential inventory transitions from credential-prober (in-process Redis state)."""
+    try:
+        payload = await request.json()
+        event = CredentialEvent.model_validate(payload)
+    except Exception as exc:
+        return JSONResponse({"accepted": False, "error": str(exc)}, status_code=400)
+    accepted = handle_credential_event(event, get_redis_store())
+    return {"accepted": accepted}
 
 
 @app.get("/health")

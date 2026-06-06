@@ -27,7 +27,7 @@ class TestSlackNotifier(unittest.TestCase):
 
 class TestPolicyEngineNotifier(unittest.TestCase):
     @patch("urllib.request.urlopen")
-    @patch.dict(os.environ, {"POLICY_ENGINE_URL": "http://policy-engine:8080"})
+    @patch.dict(os.environ, {"TRANSLATOR_URL": "http://translator:4000"})
     def test_notify_policy_engine_success(self, mock_urlopen):
         mock_response = MagicMock()
         mock_response.status = 202

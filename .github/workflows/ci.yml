@@ -134,7 +134,7 @@ jobs:
 
       - name: Validate policy-profiles.yaml
         run: |
-          PYTHONPATH=services/policy-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
+          PYTHONPATH=services/translator .venv-ci/bin/python3 scripts/validate_policy_profiles.py
 
       - name: Check for hardcoded API keys
         run: |
@@ -292,12 +292,11 @@ jobs:
           cp .env.example .env
           echo "LITELLM_MASTER_KEY=sk-ci-mock" >> .env
           echo "CLIPROXY_API_KEY=mock-key" >> .env
-      - name: Start mock stack (translator + litellm + postgres + MOCK cliproxy + policy-engine)
+      - name: Start mock stack (translator + litellm + postgres + MOCK cliproxy)
         env:
           TRANSLATOR_IMAGE: ai-translator-test:latest
           CLIPROXY_DEV_CONFIG: ${{ github.workspace }}/tests/cliproxy-config-ci.yaml
           DEV_TRANSLATOR_PORT: "4010"
-          DEV_POLICY_ENGINE_PORT: "18080"
           LITELLM_MIGRATIONS: "None"
         run: |
           # Reuse aidevmock Postgres volume on self-hosted runners (avoid ~7m Prisma migrations each job).
@@ -305,11 +304,11 @@ jobs:
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
-            build postgres cliproxy litellm policy-engine
+            build postgres cliproxy litellm
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
-            up -d postgres cliproxy litellm policy-engine
+            up -d postgres cliproxy litellm redis
           echo "Waiting for LiteLLM readiness (fresh Postgres migrations)..."
           # proxy_extras baseline + 123 migrations on a fresh CI Postgres volume can exceed 7.5m.
           for i in {1..180}; do
@@ -351,7 +350,6 @@ jobs:
       - name: Run mock-tier pytest
         run: |
           GATEWAY_URL=http://localhost:4010 LITELLM_MASTER_KEY=sk-ci-mock ALLOW_MODEL_SKIP=0 \
-            POLICY_ENGINE_URL=http://localhost:18080 \
             .venv-ci/bin/python -m pytest tests/integration/ -m mock -v
       - name: Run shell E2E smoke (CI mock mode)
         run: |
