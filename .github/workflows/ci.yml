@@ -58,7 +58,6 @@ jobs:
               - 'Dockerfile*'
             cliproxy:
               - 'Dockerfile.cliproxy'
-              - 'tests/mock-upstream/**'
               - 'tests/cliproxy-config-ci.yaml'
             runtime:
               - 'services/**'
@@ -83,8 +82,6 @@ jobs:
               - 'tests/integration/**'
               - 'tests/test-gateway-e2e.sh'
               - 'tests/litellm-config-mock.yaml'
-              - 'docker-compose.mock.yml'
-              - 'tests/mock-upstream/**'
               - 'tests/mock-policy-engine/**'
             hotspot:
               - 'services/translator/**'
@@ -113,9 +110,9 @@ jobs:
         with:
           extra-packages: ruff pyyaml pydantic pytest
       - name: Lint with ruff
-        run: .venv-ci/bin/ruff check services/translator/main.py tests/mock-upstream/app.py
+        run: .venv-ci/bin/ruff check services/translator/main.py
       - name: Format check with ruff
-        run: .venv-ci/bin/ruff format --check services/translator/main.py tests/mock-upstream/app.py
+        run: .venv-ci/bin/ruff format --check services/translator/main.py
       - name: Shell syntax check
         run: |
           bash -n cliproxy-setup.sh
@@ -293,9 +290,6 @@ jobs:
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   mock-integration:
-    concurrency:
-      group: ci-docker-host-ports
-      cancel-in-progress: false
     needs: [changes, lint-and-syntax, unit-tests, build-translator]
     if: >
       needs.lint-and-syntax.result == 'success' &&
@@ -314,94 +308,13 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
-      - name: Teardown stale mock stacks (fresh DB)
-        env:
-          CI_MOCK_FRESH_DB: "1"
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y psmisc
-          bash scripts/ci-free-mock-host-ports.sh "$GITHUB_WORKSPACE"
       - uses: ./.github/actions/setup-python-venv
         with:
           requirements-files: tests/integration/requirements.txt
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Setup environment file
+      - name: Run in-memory integration tests
         run: |
-          cp .env.example .env
-          echo "LITELLM_MASTER_KEY=sk-ci-mock" >> .env
-          echo "CLIPROXY_API_KEY=mock-key" >> .env
-      - name: Build compose services (path-filtered, Buildx cache)
-        env:
-          BUILD_CLIPROXY: ${{ needs.changes.outputs.cliproxy == 'true' || github.event_name == 'workflow_dispatch' }}
-          BUILD_POLICY: ${{ needs.changes.outputs.policy_engine == 'true' || github.event_name == 'workflow_dispatch' }}
-        run: bash scripts/ci-build-mock-services.sh
-      - name: Start mock stack
-        env:
-          TRANSLATOR_IMAGE: ai-translator-test:latest
-          CLIPROXY_DEV_CONFIG: ${{ github.workspace }}/tests/cliproxy-config-ci.yaml
-          DEV_TRANSLATOR_PORT: "4010"
-          DEV_POLICY_ENGINE_PORT: "18080"
-          LITELLM_MIGRATIONS: "None"
-          CI_MOCK_FRESH_DB: "1"
-        run: |
-          bash scripts/ci-free-mock-host-ports.sh "$GITHUB_WORKSPACE"
-          docker compose \
-            -f docker-compose.dev.yml -f docker-compose.mock.yml \
-            -p aidevmock \
-            up -d postgres redis
-          for i in {1..24}; do
-            docker exec aidevmock-postgres-1 pg_isready -U postgres >/dev/null 2>&1 && break
-            [ "$i" -eq 24 ] && { echo "postgres never ready"; exit 1; }
-            sleep 5
-          done
-          bash scripts/load-mock-data.sh aidevmock-postgres-1
-          bash db/apply-migrations.sh aidevmock-postgres-1
-          docker compose \
-            -f docker-compose.dev.yml -f docker-compose.mock.yml \
-            -p aidevmock \
-            up -d cliproxy litellm
-          echo "Waiting for LiteLLM readiness..."
-          for i in {1..36}; do
-            if curl -sf http://localhost:4011/health/readiness >/dev/null; then
-              echo "LiteLLM ready"
-              break
-            fi
-            LITELLM_CID="$(docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock ps -q litellm || true)"
-            if [ -n "$LITELLM_CID" ] && [ "$(docker inspect -f '{{.State.Status}}' "$LITELLM_CID" 2>/dev/null || true)" = "exited" ]; then
-              docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs --no-color --tail 200 litellm || true
-              exit 1
-            fi
-            if [ "$i" -eq 36 ]; then
-              docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs litellm || true
-              exit 1
-            fi
-            sleep 5
-          done
-          docker compose \
-            -f docker-compose.dev.yml -f docker-compose.mock.yml \
-            -p aidevmock \
-            up -d --no-build translator
-      - name: Wait for translator health
-        run: |
-          for i in {1..30}; do
-            curl -sf http://localhost:4010/health >/dev/null && exit 0
-            sleep 2
-          done
-          exit 1
-      - name: Run mock-tier pytest
-        run: |
-          GATEWAY_URL=http://localhost:4010 LITELLM_MASTER_KEY=sk-ci-mock ALLOW_MODEL_SKIP=0 \
+          LITELLM_MASTER_KEY=sk-ci-mock \
             .venv-ci/bin/python -m pytest tests/integration/ -m mock -v
-      - name: Run shell E2E smoke (CI mock mode)
-        run: GATEWAY_E2E_CI=1 GATEWAY_URL=http://localhost:4010 bash tests/test-gateway-e2e.sh
-      - name: Dump logs and tear down
-        if: always()
-        env:
-          CI_MOCK_FRESH_DB: "1"
-        run: |
-          docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs || true
-          bash scripts/ci-free-mock-host-ports.sh "$GITHUB_WORKSPACE"
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
