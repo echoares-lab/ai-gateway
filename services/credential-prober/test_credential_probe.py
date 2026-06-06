@@ -28,8 +28,32 @@ class TestCredentialProbeHelpers(unittest.TestCase):
     def test_map_auth_file_status_preserves_existing_mapping(self):
         self.assertEqual(map_auth_file_status({"disabled": True, "status": "active"}), "SUSPENDED")
         self.assertEqual(map_auth_file_status({"status": "active"}), "HEALTHY")
-        self.assertEqual(map_auth_file_status({"status": "error"}), "CRITICAL")
+        self.assertEqual(
+            map_auth_file_status({"status": "error", "status_message": "401 Unauthorized"}),
+            "CRITICAL",
+        )
         self.assertEqual(map_auth_file_status({"status": "unknown"}), "DEGRADED")
+
+    def test_map_auth_file_status_treats_quota_429_as_degraded(self):
+        self.assertEqual(
+            map_auth_file_status(
+                {
+                    "status": "error",
+                    "unavailable": True,
+                    "status_message": "quota exhausted",
+                    "next_retry_after": "2026-06-06T13:01:00Z",
+                }
+            ),
+            "DEGRADED",
+        )
+        self.assertEqual(
+            map_auth_file_status({"status": "error", "status_message": "429 Too Many Requests"}),
+            "DEGRADED",
+        )
+        self.assertEqual(
+            map_auth_file_status({"status": "error", "status_message": "transient upstream error"}),
+            "DEGRADED",
+        )
 
     def test_compute_cooldown_uses_status_specific_duration(self):
         now = datetime(2026, 6, 6, 13, 0, tzinfo=timezone.utc)
@@ -41,6 +65,19 @@ class TestCredentialProbeHelpers(unittest.TestCase):
         self.assertEqual(
             compute_cool_down_until("CRITICAL", now=now, critical_cooldown_sec=90),
             now + timedelta(seconds=90),
+        )
+
+    def test_compute_cooldown_prefers_next_retry_after(self):
+        now = datetime(2026, 6, 6, 13, 0, tzinfo=timezone.utc)
+        retry_at = now + timedelta(seconds=45)
+        self.assertEqual(
+            compute_cool_down_until(
+                "DEGRADED",
+                now=now,
+                degraded_cooldown_sec=60,
+                next_retry_after=retry_at,
+            ),
+            retry_at,
         )
 
     def test_build_inventory_payload_matches_db_upsert_fields(self):
@@ -77,6 +114,28 @@ class TestCredentialProbeHelpers(unittest.TestCase):
             },
         )
 
+    def test_build_inventory_payload_quota_error_uses_degraded_and_retry_after(self):
+        now = datetime(2026, 6, 6, 13, 0, tzinfo=timezone.utc)
+        retry_at = now + timedelta(seconds=45)
+        payload = build_inventory_payload(
+            {
+                "id": "file-2.json",
+                "provider": "claude",
+                "label": "acct",
+                "auth_index": "fp2",
+                "status": "error",
+                "unavailable": True,
+                "failed": 1,
+                "status_message": "quota exhausted",
+                "next_retry_after": retry_at.isoformat().replace("+00:00", "Z"),
+                "recent_requests": [],
+            },
+            now=now,
+        )
+
+        self.assertEqual(payload["status"], "DEGRADED")
+        self.assertEqual(payload["cool_down_until"], retry_at)
+
     def test_transition_payload_preserves_routing_exclusion_shape(self):
         cooldown = datetime(2026, 6, 6, 13, 1, tzinfo=timezone.utc)
         payload = build_transition_payload(
@@ -94,6 +153,17 @@ class TestCredentialProbeHelpers(unittest.TestCase):
         self.assertEqual(payload["reason"], "401 Unauthorized")
         self.assertEqual(payload["cool_down_until"], cooldown)
         self.assertEqual(payload["slack_event"], "credential_critical")
+
+    def test_transition_reason_prefixes_quota_messages_for_policy_engine(self):
+        payload = build_transition_payload(
+            credential_id="cred-2",
+            provider="anthropic",
+            old_status="HEALTHY",
+            new_status="DEGRADED",
+            status_message="quota exhausted",
+            cool_down_until=datetime(2026, 6, 6, 13, 1, tzinfo=timezone.utc),
+        )
+        self.assertEqual(payload["reason"], "429 quota exhausted")
 
     def test_policy_engine_event_payload_shape(self):
         timestamp = datetime(2026, 6, 6, 13, 0, tzinfo=timezone.utc)
