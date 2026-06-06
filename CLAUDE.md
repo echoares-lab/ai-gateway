@@ -94,7 +94,7 @@ source .env && curl -s http://localhost:4000/v1/models -H "Authorization: Bearer
 
 ```
 External client (Cursor, curl, SDK)
-  └─► Cloudflare Tunnel (ai.plexplease.com) → 10.10.10.52:4000
+  └─► Cloudflare Tunnel (gateway.example.com) → gateway-host.example:4000
         └─► translator (port 4000, public)   ← entry point for ALL traffic
               └─► litellm (port 4000 internal, 4001 external for UI)
                     └─► cliproxy (port 8317)
@@ -204,7 +204,7 @@ git worktree remove /home/dev/worktrees/ai-gateway-feat-X
 
 ## Cursor Integration
 
-- **Base URL**: `https://ai.plexplease.com/v1`
+- **Base URL**: `https://gateway.example.com/v1`
 - **Model names**: Must use `AI-Gateway:` prefix, e.g. `AI-Gateway:claude-sonnet-4-6`
 - The prefix is added by the translator's `/v1/models` response and stripped before forwarding to LiteLLM — no changes to `litellm-config.yaml` needed for new models.
 

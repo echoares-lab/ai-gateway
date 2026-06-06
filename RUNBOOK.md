@@ -198,7 +198,7 @@ CLIProxyAPI ships a built-in web UI at `/management.html` since v6.0.19.
 Port 8317 is now exposed on `0.0.0.0` (all interfaces). On a shared or public network, consider firewalling this port to trusted IPs only, or reverting to `127.0.0.1:8317:8317` in `docker-compose.yml` and using SSH forwarding:
 
 ```bash
-ssh -L 8317:127.0.0.1:8317 dev@10.10.10.52 -p 22
+ssh -L 8317:127.0.0.1:8317 user@gateway-host.example -p 22
 # then open http://localhost:8317/management.html locally
 ```
 
@@ -221,7 +221,7 @@ source .env
 curl -X PATCH "http://localhost:8317/v0/management/auth-files/fields" \
   -H "X-Management-Key: $CLIPROXY_MANAGEMENT_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"name":"antigravity-account@gmail.com.json","proxy_url":"socks5://proxy1:1080"}'
+  -d '{"name":"antigravity-oauth-account@example.com.json","proxy_url":"socks5://proxy1:1080"}'
 ```
 
 Clear a proxy assignment by setting `proxy_url` to `""`.
@@ -231,9 +231,9 @@ Clear a proxy assignment by setting `proxy_url` to `""`.
 CLIProxy hot-reloads on file change (~30s):
 
 ```bash
-# e.g. ~/.cli-proxy-api/claude-firetvstream@gmail.com.json
+# e.g. ~/.cli-proxy-api/claude-oauth-account@example.com.json
 {
-  "email": "firetvstream@gmail.com",
+  "email": "oauth-account@example.com",
   "type": "claude",
   "proxy_url": "socks5://proxy2:1080",
   ...

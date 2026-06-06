@@ -16,7 +16,7 @@
 #
 #   client      one of: cursor | claude-code | codex | gemini | openai-sdk | all
 #               (default: all)
-#   --base-url  gateway base URL (default: https://ai.plexplease.com)
+#   --base-url  gateway base URL (default: http://localhost:4000)
 #   --key-var   env var name to reference for the key (default: AI_GATEWAY_KEY)
 #   --org/--workspace/--team/--repo/--env  build example ak-… key label in header
 #
@@ -27,7 +27,7 @@
 
 set -euo pipefail
 
-BASE_URL="https://ai.plexplease.com"
+BASE_URL="http://localhost:4000"
 KEY_VAR="AI_GATEWAY_KEY"
 CLIENT="all"
 TENANT_ORG="echoares"

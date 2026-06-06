@@ -306,8 +306,8 @@ def _normalize_upstream_authorization(headers: dict) -> None:
             auth_val = value
             break
     token = (auth_val or "").removeprefix("Bearer ").strip()
-    master_key = os.environ.get("LITELLM_MASTER_KEY", "sk-a3698c2000395d1181397b256415e680")
-    if not token or token.startswith("ak-"):
+    master_key = os.environ.get("LITELLM_MASTER_KEY", "")
+    if master_key and (not token or token.startswith("ak-")):
         headers[auth_key or "authorization"] = f"Bearer {master_key}"
 
 
@@ -1160,7 +1160,7 @@ def _codex_ws_upstream_headers(
     }
     headers = {k: v for k, v in ws_headers.items() if k.lower() not in skip}
 
-    cliproxy_api_key = os.environ.get("CLIPROXY_API_KEY", "cliproxy-Wtgxs0tEBb4Usyam5qYg")
+    cliproxy_api_key = os.environ.get("CLIPROXY_API_KEY", "")
     if cliproxy_api_key:
         headers["authorization"] = f"Bearer {cliproxy_api_key}"
 
@@ -1474,7 +1474,7 @@ async def responses_websocket(ws: WebSocket):
     if not client_auth:
         client_auth = ws.query_params.get("key", "")
 
-    expected_master_key = os.environ.get("LITELLM_MASTER_KEY", "sk-a3698c2000395d1181397b256415e680")
+    expected_master_key = os.environ.get("LITELLM_MASTER_KEY", "")
     is_authorized = True
 
     if client_auth:

@@ -732,7 +732,7 @@ PYEOF
   echo "  Force re-auth with: ./cliproxy-setup.sh login-claude | login-codex | login-gemini"
   echo ""
   echo "  For re-auth on a remote server, open SSH port forwards first (local terminal):"
-  echo "    ssh -L 54545:127.0.0.1:54545 -L 1455:127.0.0.1:1455 -L 8085:127.0.0.1:8085 dev@10.10.10.52 -p 22"
+  echo "    ssh -L 54545:127.0.0.1:54545 -L 1455:127.0.0.1:1455 -L 8085:127.0.0.1:8085 user@gateway-host.example -p 22"
 
   echo ""
   echo "=== Docker container ==="

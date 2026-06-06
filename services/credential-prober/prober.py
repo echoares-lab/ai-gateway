@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("credential-prober")
 
 CLIPROXY_URL = os.environ.get("CLIPROXY_URL", "http://cliproxy:8317")
-MGMT_KEY = os.environ.get("CLIPROXY_MANAGEMENT_KEY", "cliproxy-mgmt-H6VXKpUCzmeDuHcGmH8Oqg")
+MGMT_KEY = os.environ.get("CLIPROXY_MANAGEMENT_KEY", "")
 DB_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/postgres")
 POLL_INTERVAL = int(os.environ.get("PROBER_INTERVAL_SEC", "30"))
 DEGRADED_COOLDOWN_SEC = int(os.environ.get("PROBER_DEGRADED_COOLDOWN_SEC", "60"))

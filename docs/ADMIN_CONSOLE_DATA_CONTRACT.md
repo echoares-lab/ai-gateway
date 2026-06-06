@@ -224,7 +224,7 @@ Rules:
     "providers": [
       {
         "name": "claude",
-        "account_label": "firetvstream@gmail.com",
+        "account_label": "oauth-account@example.com",
         "auth_status": "active",
         "token_expires_in_minutes": 268,
         "quota_status": "ok",
@@ -233,7 +233,7 @@ Rules:
       },
       {
         "name": "codex",
-        "account_label": "matthewgraypdx@gmail.com",
+        "account_label": "operator@example.com",
         "auth_status": "active",
         "token_expires_in_minutes": 13972,
         "quota_status": "ok",

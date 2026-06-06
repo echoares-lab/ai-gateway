@@ -137,12 +137,7 @@ jobs:
           PYTHONPATH=services/policy-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
 
       - name: Check for hardcoded API keys
-        run: |
-          if grep -E 'api_key:\s+[a-zA-Z0-9-]{20,}' litellm-config.yaml | grep -v 'os.environ'; then
-            echo "❌ Hardcoded API key detected in litellm-config.yaml"
-            exit 1
-          fi
-          echo "✓ No hardcoded API keys found"
+        run: CHECK_ALL=1 bash .githooks/prevent-hardcoded-keys.sh
 
       - name: Fix workspace permissions (self-hosted)
         if: always()
