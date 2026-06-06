@@ -33,6 +33,7 @@ import httpx
 import redis.asyncio as aioredis
 import websockets
 import yaml
+from admin_api import router as admin_router
 from core.credential_inventory import (
     CredentialInventoryListResponse,
     CredentialInventoryStore,
@@ -132,6 +133,7 @@ async def _lifespan(application: FastAPI):
 
 
 app = FastAPI(lifespan=_lifespan)
+app.include_router(admin_router)
 LITELLM = os.environ.get("LITELLM_URL", "http://litellm:4000")
 MODEL_PREFIX = "AI-Gateway:"
 POLICY_ENGINE_ENABLED = os.environ.get("POLICY_ENGINE_ENABLED", "false").lower() not in (
