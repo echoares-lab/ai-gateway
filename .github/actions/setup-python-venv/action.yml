@@ -34,7 +34,8 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        if [[ ! -x .venv-ci/bin/python ]]; then
+        if [[ ! -x .venv-ci/bin/python ]] || ! .venv-ci/bin/pip --version >/dev/null 2>&1; then
+          rm -rf .venv-ci
           python3 -m venv .venv-ci
         fi
         .venv-ci/bin/pip install --upgrade pip
