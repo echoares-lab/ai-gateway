@@ -51,7 +51,7 @@ Docker builds use [`.github/actions/build-docker-cached`](../.github/actions/bui
 |-------|-----------|--------|
 | Workflow | `ci-CI Suite-<PR number or ref>` | Different PRs (and `main` pushes) run CI concurrently across the dev runner group |
 | Fast jobs | (none) | `lint-and-syntax`, `unit-tests`, `build-translator`, path-filtered jobs fan out to any idle runner |
-| Docker jobs | `ci-docker-host-ports-<runner.name>` | One mock or Gate C stack per physical host; different hosts can run Docker jobs at the same time |
+| Docker jobs | `ci-docker-host-ports` | One mock or Gate C stack at a time globally (port collision guard; `runner.name` is not allowed in job concurrency groups) |
 
 Workflow concurrency is **per ref**: a new push to the same PR cancels the in-progress run for that PR only. Other PRs are unaffected.
 
@@ -59,10 +59,10 @@ Workflow concurrency is **per ref**: a new push to the same PR cancels the in-pr
 
 | Constraint | Reason |
 |------------|--------|
-| Job concurrency `ci-docker-host-ports-<runner.name>` | Mock + Gate C stacks bind fixed host ports 4010, 4011, 18080 on that machine |
+| Job concurrency `ci-docker-host-ports` | Mock + Gate C stacks bind fixed host ports 4010, 4011, 18080 |
 | Stable stack `:4000` / `:8080` | Must not collide with CI mock stack on the same host |
 
-Only **one** `mock-integration` or `real-provider-e2e` stack at a time **per runner host** (ports are per-host, not shared across the group).
+Only **one** `mock-integration` or `real-provider-e2e` stack at a time across the runner group (workflow-level per-PR concurrency still allows fast jobs to run in parallel).
 
 ---
 

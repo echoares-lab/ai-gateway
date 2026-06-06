@@ -324,7 +324,7 @@ jobs:
 
   mock-integration:
     concurrency:
-      group: ci-docker-host-ports-${{ runner.name }}
+      group: ci-docker-host-ports
       cancel-in-progress: false
     needs: [changes, lint-and-syntax, unit-tests, build-translator]
     if: >
@@ -440,7 +440,7 @@ jobs:
   # Gate C paused pending e2e refactor — use run-e2e label or workflow_dispatch
   real-provider-e2e:
     concurrency:
-      group: ci-docker-host-ports-${{ runner.name }}
+      group: ci-docker-host-ports
       cancel-in-progress: false
     needs: [changes, lint-and-syntax, unit-tests]
     if: >
