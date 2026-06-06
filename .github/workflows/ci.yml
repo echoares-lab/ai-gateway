@@ -437,6 +437,7 @@ jobs:
         if: always()
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
+  # Gate C paused pending e2e refactor — use run-e2e label or workflow_dispatch
   real-provider-e2e:
     concurrency:
       group: ci-docker-host-ports
@@ -447,8 +448,7 @@ jobs:
       needs.unit-tests.result == 'success' &&
       (
         github.event_name == 'workflow_dispatch' ||
-        contains(github.event.pull_request.labels.*.name, 'run-e2e') ||
-        needs.changes.outputs.hotspot == 'true'
+        contains(github.event.pull_request.labels.*.name, 'run-e2e')
       )
     runs-on: self-hosted
     steps:

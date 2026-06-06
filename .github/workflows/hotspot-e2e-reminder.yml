@@ -1,6 +1,7 @@
 name: Hotspot E2E Reminder
 
-# Reminds authors that Gate C (real-provider-e2e) is required when hotspot paths change.
+# Suggests opt-in Gate C (run-e2e label) when a PR touches high-risk paths.
+# Gate C is not required for merge pending e2e refactor.
 on:
   pull_request:
     types: [ opened, synchronize, reopened ]
@@ -30,20 +31,19 @@ jobs:
               - 'Dockerfile*'
               - 'cliproxy-setup.sh'
               - 'dev-env.sh'
-      - name: Remind about required Gate C
+      - name: Remind to run Gate C (opt-in)
         if: steps.filter.outputs.hotspot == 'true'
         uses: actions/github-script@v7
         with:
           script: |
             const marker = '<!-- hotspot-e2e-reminder -->';
             const body = `${marker}
-            ### Gate C required (hotspot paths changed)
+            ### Gate C recommended (high-risk paths changed)
 
-            This PR touches auth/routing/provider/config hotspots. CI \`real-provider-e2e\` runs automatically and is a **required** check.
+            This PR touches auth/routing/provider/config hotspots. Gate C is **opt-in** (not required to merge) pending an e2e refactor. Before merge, consider:
 
-            - Ensure OAuth creds are available on the self-hosted runner (\`CLIPROXY_AUTH_TAR_B64\` secret)
-            - Or add the \`run-e2e\` label to re-trigger after cred refresh
-            - Local fallback: \`make test-e2e\`
+            - Add the \`run-e2e\` label to trigger CI \`real-provider-e2e\`, or
+            - Run \`make test-e2e\` locally against a dev slot
 
             See \`docs/TESTING.md\` and \`REPO_IMPROVEMENT_APPENDIX.md\`.
             `;

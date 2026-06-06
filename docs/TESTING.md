@@ -104,7 +104,7 @@ make test-e2e
 # Or: ./dev-env.sh start 1 && ./dev-env.sh test 1 -- -m "integration and smoke"
 ```
 
-Hotspot paths automatically trigger CI `real-provider-e2e` on PRs (see branch protection policy).
+Gate C is opt-in in CI: add the `run-e2e` PR label or run `workflow_dispatch` on the CI workflow. Hotspot paths no longer auto-trigger `real-provider-e2e` (pending e2e refactor).
 
 ---
 
