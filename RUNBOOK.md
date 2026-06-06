@@ -959,3 +959,17 @@ on the policy-engine container and restart. Revert to `0.01` after resolution.
 ## ⚠️ Terms of Service Notice
 
 This setup uses consumer subscriptions (Claude Pro, ChatGPT Plus, Gemini) via automated relay, which **may violate provider Terms of Service**. Use for personal, local access only. High-volume use may trigger account suspension.
+
+## Component Upgrades
+
+### CLIProxyAPI Upgrade
+CLIProxyAPI is upgraded by updating the version tag in `Dockerfile.cliproxy`.
+```dockerfile
+ENV CLIPROXY_VERSION=v7.1.45
+```
+
+### CPA-Manager Upgrade
+cpa-manager is upgraded by updating the image tag in `docker-compose.yml`.
+```yaml
+image: echoares/cpa-manager:v1.5.5
+```
