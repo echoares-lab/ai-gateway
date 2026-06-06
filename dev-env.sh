@@ -42,7 +42,6 @@ slot_ports() {
     TRANSLATOR_PORT=$(( 4000 + slot * 10 ))
     LITELLM_PORT=$(( 4001 + slot * 10 ))
     CLIPROXY_PORT=$(( 8317 + slot * 10 ))
-    POLICY_ENGINE_PORT=$(( 18070 + slot * 10 ))
 }
 
 compose_env() {
@@ -55,7 +54,6 @@ compose_env() {
          "DEV_TRANSLATOR_PORT=${TRANSLATOR_PORT}" \
          "DEV_LITELLM_PORT=${LITELLM_PORT}" \
          "DEV_CLIPROXY_PORT=${CLIPROXY_PORT}" \
-         "DEV_POLICY_ENGINE_PORT=${POLICY_ENGINE_PORT}" \
          $cfg_var
 }
 
@@ -66,10 +64,8 @@ run_compose() {
 
     local op_run_prefix=""
     if [ -f "$HOME/.op-token" ]; then
-        set -a
-        # shellcheck disable=SC1091
-        source "$HOME/.op-token"
-        set +a
+        export OP_SERVICE_ACCOUNT_TOKEN
+        OP_SERVICE_ACCOUNT_TOKEN=$(cat "$HOME/.op-token")
         op_run_prefix="op run --"
     elif grep -q 'op://' "$ENV_FILE" 2>/dev/null; then
         die "Secrets in $ENV_FILE are 1Password references, but ~/.op-token is missing."
@@ -99,54 +95,6 @@ seed_auth_volume() {
         alpine sh -c "cp -r /src/. /dst/ && echo 'seeded $(ls /dst | wc -l) entries'"
 }
 
-wait_for_postgres() {
-    local slot="$1"
-    local pg_container="aidev${slot}-postgres-1"
-    echo "waiting for postgres (${pg_container}) ..."
-    local i
-    for (( i=1; i<=24; i++ )); do
-        if docker exec "$pg_container" pg_isready -U postgres >/dev/null 2>&1; then
-            echo "postgres ready"
-            return 0
-        fi
-        echo "  waiting for postgres (${i}/24) ..."
-        sleep 5
-    done
-    echo "postgres never became ready" >&2
-    return 1
-}
-
-load_mock_litellm_data() {
-    local slot="$1"
-    "${SCRIPT_DIR}/scripts/load-mock-data.sh" "aidev${slot}-postgres-1"
-}
-
-apply_dev_migrations() {
-    local slot="$1"
-    local pg_container="aidev${slot}-postgres-1"
-    echo "applying gateway schema migrations to ${pg_container} ..."
-    "${SCRIPT_DIR}/db/apply-migrations.sh" "$pg_container"
-}
-
-wait_for_http() {
-    local url="$1"
-    local label="$2"
-    local max_attempts="${3:-36}"
-    local sleep_secs="${4:-5}"
-    echo "waiting for ${label} (${url}) ..."
-    local i
-    for (( i=1; i<=max_attempts; i++ )); do
-        if curl -sf "$url" >/dev/null; then
-            echo "${label} ready"
-            return 0
-        fi
-        echo "  waiting for ${label} (${i}/${max_attempts}) ..."
-        sleep "$sleep_secs"
-    done
-    echo "${label} never became ready (${url})" >&2
-    return 1
-}
-
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -157,12 +105,6 @@ cmd_start() {
     slot_ports "$slot"
     echo "starting dev slot ${slot}: translator=:${TRANSLATOR_PORT}  litellm=:${LITELLM_PORT}  cliproxy=:${CLIPROXY_PORT}"
     seed_auth_volume "$slot"
-    # Bootstrap postgres, load pre-migrated LiteLLM schema, apply gateway migrations, then full stack.
-    # LITELLM_MIGRATIONS=None skips proxy_extras (see docker-compose.dev.yml).
-    run_compose "$slot" up -d --build postgres redis
-    wait_for_postgres "$slot"
-    load_mock_litellm_data "$slot"
-    apply_dev_migrations "$slot"
     run_compose "$slot" up -d --build
     echo ""
     echo "dev slot ${slot} is up:"
@@ -236,10 +178,8 @@ cmd_test() {
 
     local op_run_prefix=""
     if [ -f "$HOME/.op-token" ]; then
-        set -a
-        # shellcheck disable=SC1091
-        source "$HOME/.op-token"
-        set +a
+        export OP_SERVICE_ACCOUNT_TOKEN
+        OP_SERVICE_ACCOUNT_TOKEN=$(cat "$HOME/.op-token")
         op_run_prefix="op run --"
     elif grep -q 'op://' "$ENV_FILE" 2>/dev/null; then
         die "Secrets in $ENV_FILE are 1Password references, but ~/.op-token is missing."
@@ -259,11 +199,7 @@ cmd_start_mock() {
     slot_ports "$slot"
     echo "starting MOCK slot ${slot}: translator=:${TRANSLATOR_PORT} (no OAuth, canned upstream)"
     # No seed_auth_volume — the mock upstream needs no credentials.
-    run_compose "$slot" -f "$MOCK_OVERLAY" up -d --build postgres redis
-    wait_for_postgres "$slot"
-    load_mock_litellm_data "$slot"
-    apply_dev_migrations "$slot"
-    run_compose "$slot" -f "$MOCK_OVERLAY" up -d --build cliproxy policy-engine litellm translator credential-prober
+    run_compose "$slot" -f "$MOCK_OVERLAY" up -d --remove-orphans --build postgres cliproxy litellm redis translator credential-prober
     echo ""
     echo "mock slot ${slot} is up: translator http://localhost:${TRANSLATOR_PORT}/health"
 }
@@ -278,11 +214,9 @@ cmd_test_mock() {
     if [[ -f "$ENV_FILE" ]]; then
         master_key="$(grep -E '^LITELLM_MASTER_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' || echo sk-ci-mock)"
     fi
-    local policy_url="http://localhost:${POLICY_ENGINE_PORT}"
     echo "running MOCK-tier tests against ${gateway_url} (ALLOW_MODEL_SKIP=0) ..."
     # shellcheck disable=SC2086
     GATEWAY_URL="$gateway_url" LITELLM_MASTER_KEY="$master_key" ALLOW_MODEL_SKIP=0 \
-        POLICY_ENGINE_URL="$policy_url" \
         python3 -m pytest "${SCRIPT_DIR}/tests/integration/" -m mock -v "$@"
 }
 

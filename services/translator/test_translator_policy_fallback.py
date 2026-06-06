@@ -1,7 +1,7 @@
 """Unit tests for layered fallback evaluator (issue 38-8)."""
 
-from core.policy.fallback import evaluate_fallback_layers, load_yaml_baseline
 from core.policy.evaluate import evaluate
+from core.policy.fallback import evaluate_fallback_layers, load_yaml_baseline
 from core.policy.profile_store import ProfileStore
 from core.policy.schemas import (
     BudgetSnapshot,
@@ -85,9 +85,8 @@ def test_deprioritized_credentials_skip_before_health_scoring():
     assert "gpt-5-4" in result.ordered_deployments
     assert "fallback:rate_limit:cooldown_skip" in result.rules_applied
     if "fallback:health:weighted_order" in result.rules_applied:
-        assert (
-            result.rules_applied.index("fallback:rate_limit:cooldown_skip")
-            < result.rules_applied.index("fallback:health:weighted_order")
+        assert result.rules_applied.index("fallback:rate_limit:cooldown_skip") < result.rules_applied.index(
+            "fallback:health:weighted_order"
         )
 
 

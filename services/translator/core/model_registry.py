@@ -7,11 +7,11 @@ and local unit tests remain fail-open.
 
 from __future__ import annotations
 
-import os
 import json
-from difflib import unified_diff
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
+from difflib import unified_diff
 from typing import Any
 
 import yaml

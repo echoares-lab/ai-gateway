@@ -1,8 +1,8 @@
 """Unit tests for repo affinity evaluator (issue 38-5)."""
 
-from core.policy.repo_affinity import apply_repo_affinity
 from core.policy.evaluate import evaluate
 from core.policy.profile_store import ProfileStore
+from core.policy.repo_affinity import apply_repo_affinity
 from core.policy.schemas import (
     EvaluateRequest,
     PolicyProfile,

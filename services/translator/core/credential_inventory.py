@@ -82,9 +82,7 @@ class CredentialProbeResponse(BaseModel):
 
 
 def _database_url() -> str:
-    return os.environ.get("CREDENTIAL_INVENTORY_DATABASE_URL") or os.environ.get(
-        "DATABASE_URL", ""
-    )
+    return os.environ.get("CREDENTIAL_INVENTORY_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
 
 
 def normalize_provider(cliproxy_provider: str | None) -> str:
@@ -129,12 +127,7 @@ def record_from_auth_file(
     return CredentialInventoryRecord(
         credential_id=str(file_data.get("id") or file_data.get("name") or "unknown"),
         provider=normalize_provider(file_data.get("provider", "unknown")),
-        label=str(
-            file_data.get("label")
-            or file_data.get("account")
-            or file_data.get("email")
-            or "unknown"
-        ),
+        label=str(file_data.get("label") or file_data.get("account") or file_data.get("email") or "unknown"),
         key_fingerprint=str(file_data.get("auth_index") or file_data.get("fingerprint") or "none"),
         status=status,
         cool_down_until=compute_cool_down_until(

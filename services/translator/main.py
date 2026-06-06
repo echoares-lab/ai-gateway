@@ -24,7 +24,7 @@ import re
 import subprocess
 import time
 import uuid
-from contextlib import asynccontextmanager, suppress
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -93,9 +93,22 @@ log = logging.getLogger("translator")
 UPSTREAM_TIMEOUT = float(os.environ.get("UPSTREAM_TIMEOUT", "30.0"))
 
 
-@asynccontextmanager
+class PolicyEvaluator:
+    """Wrapper for in-process policy evaluation to maintain backward compatibility in tests."""
+
+    async def evaluate(self, context: dict) -> dict:
+        from core.policy.evaluate import evaluate_async
+        from core.policy.schemas import EvaluateRequest
+
+        decision = await evaluate_async(EvaluateRequest(context=context))
+        return decision.model_dump()
+
+
+_policy_evaluator: PolicyEvaluator | None = None
+
+
 async def _lifespan(application: FastAPI):
-    global _client, _redis
+    global _client, _redis, _policy_evaluator
     credential_sync_task: asyncio.Task | None = None
     _client = httpx.AsyncClient(
         timeout=httpx.Timeout(UPSTREAM_TIMEOUT, connect=10.0),
@@ -704,30 +717,21 @@ def _build_routing_context(token: str | None, body: dict, *, budget: dict | None
 
 
 async def _evaluate_policy_engine(context: dict) -> dict | None:
-    """POST /v1/evaluate; fail-open on timeout or error."""
-    start = time.monotonic()
-    if _client is None:
-        log.warning("policy-engine evaluate skipped — httpx client not ready")
-        _record_policy_trace(None, (time.monotonic() - start) * 1000, error="client unavailable")
+    """In-process policy evaluation; fail-open on error."""
+    global _policy_evaluator
+    if _policy_evaluator is None:
         return None
-    url = f"{POLICY_ENGINE_URL}/v1/evaluate"
-    timeout = POLICY_ENGINE_TIMEOUT_MS / 1000.0
+    start = time.monotonic()
     try:
-        resp = await _client.post(url, json={"context": context}, timeout=timeout)
+        decision = await _policy_evaluator.evaluate(context)
         elapsed_ms = (time.monotonic() - start) * 1000
-        if resp.status_code != 200:
-            log.warning(
-                "policy-engine evaluate returned %d — fail-open: %s",
-                resp.status_code,
-                resp.text[:200],
-            )
-            _record_policy_trace(None, elapsed_ms, error=f"http {resp.status_code}")
-            return None
-        decision = resp.json().get("decision")
-        if not isinstance(decision, dict):
-            log.warning("policy-engine response missing decision — fail-open")
-            _record_policy_trace(None, elapsed_ms, error="missing decision")
-            return None
+        _record_policy_trace(decision, elapsed_ms)
+        return decision
+    except Exception as exc:
+        elapsed_ms = (time.monotonic() - start) * 1000
+        log.warning("policy-engine evaluate failed (%s) — fail-open", exc)
+        _record_policy_trace(None, elapsed_ms, error=str(exc))
+        return None
         _record_policy_trace(decision, elapsed_ms)
         return decision
     except httpx.TimeoutException:
@@ -2726,10 +2730,11 @@ def _record_policy_trace(
 def _redact_policy_decision_for_admin(decision: dict) -> dict:
     """Bounded, redacted RoutingDecision sample for operator console."""
     sample: dict = {}
-    for key in ("gate", "rules_applied", "policy_version", "quota_aware_mode"):
+    for key in ("gate", "rules_applied", "policy_version"):
         if key in decision:
             sample[key] = decision[key]
     if decision.get("quota_aware_mode"):
+        sample["quota_aware_mode"] = True
         creds = decision.get("deprioritized_credentials")
         if creds:
             sample["deprioritized_credentials"] = list(creds)
@@ -3981,3 +3986,19 @@ async def proxy(path: str, request: Request):
         resp_headers["content-length"] = str(len(resp_body))
 
     return Response(content=resp_body, status_code=resp.status_code, headers=resp_headers)
+
+
+def _build_ws_routing_context(ws: WebSocket, token: str) -> dict:
+    """Build routing context for WebSocket requests (issue 182)."""
+    return {
+        "requested_model": ws.query_params.get("model", "codex"),
+        "tenancy": _tenancy_from_token(token),
+        "protocol": "ws",
+    }
+
+
+@app.post("/v1/events/credential")
+async def handle_policy_credential_event(event: CredentialEvent):
+    """Handle external credential events (cooldowns/prober) in-process (issue 183)."""
+    await process_credential_event_async(event)
+    return {"accepted": True}

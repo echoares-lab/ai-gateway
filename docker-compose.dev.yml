@@ -20,10 +20,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-litellm}
     volumes:
       - dev_pgdata:/var/lib/postgresql/data
-      # Bootstrap + pre-migrated LiteLLM schema (see init-db-bootstrap.sql, db/seed-litellm-mock.sql).
-      # Gateway tables applied via db/apply-migrations.sh after postgres is up (dev-env.sh).
-      - ./init-db-bootstrap.sql:/docker-entrypoint-initdb.d/01-bootstrap.sql:ro
-      - ./db/seed-litellm-mock.sql:/docker-entrypoint-initdb.d/02-seed-litellm-mock.sql:ro
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -49,32 +46,6 @@ services:
       interval: 3s
       timeout: 10s
       retries: 10
-
-  policy-engine:
-    build:
-      context: ./services/policy-engine
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    ports:
-      - "${DEV_POLICY_ENGINE_PORT:-8090}:8080"
-    environment:
-      REDIS_URL: redis://:${REDIS_AUTH:-myredissecret}@redis:6379
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "python - <<'PY'\nimport urllib.request, sys\ntry:\n    r = urllib.request.urlopen('http://127.0.0.1:8080/v1/health', timeout=3)\n    sys.exit(0 if 200 <= r.status < 300 else 1)\nexcept Exception:\n    sys.exit(1)\nPY"
-        ]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 15s
 
   cliproxy:
     build:
@@ -103,10 +74,6 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
       CLIPROXY_API_KEY: ${CLIPROXY_API_KEY}
       DISABLE_CACHE: "true"
-      # Skip proxy_extras Prisma migrations on dev/mock stacks (empty bootstrap DB).
-      # Smoke/integration tests do not need LiteLLM's admin schema; avoids ~15 min startup.
-      LITELLM_MIGRATIONS: ${LITELLM_MIGRATIONS:-None}
-      LITELLM_MIGRATION_DIR: ${LITELLM_MIGRATION_DIR:-/tmp/litellm_migrations}
     volumes:
       - ./litellm-config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]
@@ -119,9 +86,9 @@ services:
         "python - <<'PY'\nimport urllib.request, sys\ntry:\n    r = urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=3)\n    sys.exit(0 if 200 <= r.status < 300 else 1)\nexcept Exception:\n    sys.exit(1)\nPY"
         ]
       interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 60s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
 
   litellm-reloader:
     build:
@@ -143,15 +110,15 @@ services:
     restart: unless-stopped
     environment:
       - CLIPROXY_URL=http://cliproxy:8317
-      - CLIPROXY_MANAGEMENT_KEY=${CLIPROXY_MANAGEMENT_KEY:-dev-management-key}
+      - CLIPROXY_MANAGEMENT_KEY=${CLIPROXY_MANAGEMENT_KEY:-cliproxy-mgmt-H6VXKpUCzmeDuHcGmH8Oqg}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
-      - POLICY_ENGINE_URL=${POLICY_ENGINE_URL:-http://policy-engine:8080}
+      - TRANSLATOR_URL=${TRANSLATOR_URL:-http://translator:4000}
     depends_on:
       postgres:
         condition: service_healthy
       cliproxy:
         condition: service_started
-      policy-engine:
+      translator:
         condition: service_started
 
   translator:
@@ -166,27 +133,16 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      policy-engine:
-        condition: service_healthy
     environment:
       LITELLM_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
       CLIPROXY_API_KEY: ${CLIPROXY_API_KEY}
-      CLIPROXY_URL: http://cliproxy:8317
-      CLIPROXY_MANAGEMENT_KEY: ${CLIPROXY_MANAGEMENT_KEY:-dev-management-key}
       UPSTREAM_TIMEOUT: ${UPSTREAM_TIMEOUT:-30.0}
       LITELLM_CONFIG_PATH: /config/litellm-config.yaml
       DEV_SLOT: ${DEV_SLOT:-1}
       REDIS_URL: redis://:${REDIS_AUTH:-myredissecret}@redis:6379
-      POLICY_ENGINE_URL: ${POLICY_ENGINE_URL:-http://policy-engine:8080}
       POLICY_ENGINE_ENABLED: ${POLICY_ENGINE_ENABLED:-false}
       POLICY_ENGINE_TIMEOUT_MS: ${POLICY_ENGINE_TIMEOUT_MS:-100}
-      TRANSLATOR_ADMIN_KEY: ${TRANSLATOR_ADMIN_KEY:-}
-      TRANSLATOR_CREDENTIAL_SYNC_ENABLED: ${TRANSLATOR_CREDENTIAL_SYNC_ENABLED:-false}
-      TRANSLATOR_CREDENTIAL_SYNC_INTERVAL_SEC: ${TRANSLATOR_CREDENTIAL_SYNC_INTERVAL_SEC:-300}
-      TRANSLATOR_CREDENTIAL_SYNC_INITIAL_DELAY_SEC: ${TRANSLATOR_CREDENTIAL_SYNC_INITIAL_DELAY_SEC:-30}
-      TRANSLATOR_CREDENTIAL_SYNC_DRY_RUN: ${TRANSLATOR_CREDENTIAL_SYNC_DRY_RUN:-false}
     ports:
       - "${DEV_TRANSLATOR_PORT:-4010}:4000"
     volumes:
