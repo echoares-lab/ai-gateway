@@ -343,14 +343,24 @@ Run this whenever CLIProxyAPI releases a new version or you want to sync new mod
 
 This does three things in sequence:
 1. **upgrade** — checks for a newer CLIProxyAPI release; rebuilds the Docker image if found
-2. **sync-models** — probes all models from CLIProxyAPI; adds new working ones, removes dead ones from `litellm-config.yaml`; restarts LiteLLM if changed
+2. **sync-models** — calls translator admin registry APIs to import CLIProxy models, probe model availability, render reconciled `litellm-config.yaml` / Gemini map resources, validate them, and restart LiteLLM if changed
 3. **health** — prints current status
 
 Or run steps individually:
 ```bash
 ./cliproxy-setup.sh upgrade       # check/apply CLIProxyAPI binary update
-./cliproxy-setup.sh sync-models   # probe and update model list
+./cliproxy-setup.sh sync-models   # registry-backed model sync and config reconcile
 ./cliproxy-setup.sh health        # status check
+```
+
+`sync-models` requires `TRANSLATOR_ADMIN_KEY` because it performs registry and
+config apply operations. For a one-release emergency rollback to the old direct
+shell mutation path, run:
+
+```bash
+./cliproxy-setup.sh sync-models --legacy
+# or
+CLIPROXY_SYNC_MODE=legacy ./cliproxy-setup.sh sync-models
 ```
 
 ---
@@ -595,7 +605,7 @@ docker compose logs litellm --tail=20
 ### Model returns 503 ServiceUnavailableError
 The model exists in CLIProxyAPI's list but isn't active. Run:
 ```bash
-./cliproxy-setup.sh sync-models   # removes dead models automatically
+./cliproxy-setup.sh sync-models   # probes via translator and disables dead registry models
 ```
 
 ### Token expired / 401 from a provider
@@ -933,10 +943,10 @@ on the policy-engine container and restart. Revert to `0.01` after resolution.
 | `docker-compose.yml` | Full stack definition |
 | `services/translator/translator.py` | FastAPI proxy — Responses API translation + model prefix |
 | `services/translator/Dockerfile` | Builds the translator container |
-| `services/translator/gemini-model-map.json` | Dotted→dashed Gemini model alias map (auto-managed by sync-models) |
+| `services/translator/gemini-model-map.json` | Dotted→dashed Gemini model alias map (auto-managed by registry-backed sync-models) |
 | `Dockerfile.cliproxy` | Builds the CLIProxyAPI container image |
 | `docs/ARCHITECTURE.md` | Architecture Decision Record (ADR) — MCP Control Plane Hosting |
-| `litellm-config.yaml` | Model routing (auto-managed by sync-models) |
+| `litellm-config.yaml` | Model routing (auto-managed by registry-backed sync-models) |
 | `.env` | Secrets (keys, passwords) — never commit |
 | `cliproxy-setup.sh` | Setup, auth, sync, health CLI |
 | `services/policy-engine/` | Policy evaluator service (Epic #38) |
