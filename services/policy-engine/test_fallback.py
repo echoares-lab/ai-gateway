@@ -184,6 +184,49 @@ def test_registry_traits_override_budget_cost_ordering():
     assert "fallback:budget:cost_tier" in result.rules_applied
 
 
+def test_registry_health_deprioritizes_without_removing_candidate():
+    result = evaluate_fallback_layers(
+        "claude-sonnet-4-6",
+        allowed_models=["claude-sonnet-4-6", "gemini-3-flash", "gpt-5-4"],
+        policy_fallback=["gemini-3-flash", "gpt-5-4"],
+        capabilities=RequestCapabilities(),
+        health_scores={"gemini-3-flash": 0.9, "gpt-5-4": 0.2},
+        registry_traits={
+            "gemini-3-flash": {"status": "CRITICAL", "probe_status": "FAILED"},
+            "gpt-5-4": {"status": "HEALTHY", "probe_status": "OK"},
+        },
+        baseline_path="",
+    )
+    assert result.ordered_deployments == [
+        "claude-sonnet-4-6",
+        "gpt-5-4",
+        "gemini-3-flash",
+    ]
+    assert "gemini-3-flash" in result.ordered_deployments
+    assert "fallback:registry:health_deprioritize" in result.rules_applied
+    assert result.debug["registry_unhealthy_models"]["gemini-3-flash"] == [
+        "status:CRITICAL",
+        "probe:FAILED",
+    ]
+
+
+def test_registry_health_deprioritize_preserves_behavior_without_registry():
+    result = evaluate_fallback_layers(
+        "claude-sonnet-4-6",
+        allowed_models=["claude-sonnet-4-6", "gemini-3-flash", "gpt-5-4"],
+        policy_fallback=["gemini-3-flash", "gpt-5-4"],
+        capabilities=RequestCapabilities(),
+        health_scores={"gemini-3-flash": 0.9, "gpt-5-4": 0.2},
+        baseline_path="",
+    )
+    assert result.ordered_deployments == [
+        "claude-sonnet-4-6",
+        "gemini-3-flash",
+        "gpt-5-4",
+    ]
+    assert "fallback:registry:health_deprioritize" not in result.rules_applied
+
+
 def test_yaml_baseline_safety_net_appended():
     result = evaluate_fallback_layers(
         "claude-sonnet-4-6",
@@ -314,3 +357,41 @@ def test_evaluate_integration_uses_registry_traits_for_fallback_cost():
         "gemini-3-flash",
     ]
     assert "postgres:model_registry_traits_loaded" in decision.rules_applied
+
+
+def test_evaluate_integration_uses_registry_health_for_fallback_ordering():
+    store_profiles = {
+        ("repo", "gateway"): PolicyProfile(
+            profile_id="prof-gateway",
+            scope=PolicyScope.REPO,
+            scope_id="gateway",
+            allowed_models=["claude-sonnet-4-6", "gemini-3-flash", "gpt-5-4"],
+            fallback_chain_override=["gemini-3-flash", "gpt-5-4"],
+        ),
+    }
+    decision = evaluate(
+        EvaluateRequest(
+            context=RoutingContext(
+                requested_model="claude-sonnet-4-6",
+                tenancy=TenancyContext(repo_name="gateway"),
+                metadata={
+                    "health_scores": {"gemini-3-flash": 0.95, "gpt-5-4": 0.1},
+                },
+            )
+        ),
+        profile_store=ProfileStore(None, enabled=False, profiles=store_profiles),
+        model_registry_store=ModelRegistryStore(
+            None,
+            enabled=False,
+            fixtures={
+                "gemini-3-flash": {"status": "DEGRADED", "probe_http_status": 502},
+                "gpt-5-4": {"status": "HEALTHY"},
+            },
+        ),
+    )
+    assert decision.ordered_deployments[:3] == [
+        "claude-sonnet-4-6",
+        "gpt-5-4",
+        "gemini-3-flash",
+    ]
+    assert "fallback:registry:health_deprioritize" in decision.rules_applied

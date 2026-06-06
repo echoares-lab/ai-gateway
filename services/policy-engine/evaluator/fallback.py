@@ -32,6 +32,8 @@ from evaluator.quality import apply_quality_reorder, extract_eval_config, resolv
 logger = logging.getLogger(__name__)
 
 BUDGET_COST_TIER_THRESHOLD_PCT = float(os.environ.get("POLICY_BUDGET_COST_TIER_THRESHOLD_PCT", "80"))
+UNHEALTHY_REGISTRY_STATUSES = frozenset({"DEGRADED", "CRITICAL", "DISABLED"})
+UNHEALTHY_PROBE_STATUSES = frozenset({"FAILED", "ERROR", "UNHEALTHY", "TIMEOUT"})
 
 # Lower cost_tier = cheaper. Unknown models default to tier 2 (mid).
 _MODEL_REGISTRY: dict[str, dict[str, Any]] = {
@@ -124,7 +126,49 @@ def _model_traits_with_registry(
     for key in ("family", "tools", "vision", "cost"):
         if key in registry and registry[key] is not None:
             traits[key] = registry[key]
+    for key in ("status", "probe_status", "probe_http_status"):
+        if key in registry and registry[key] is not None:
+            traits[key] = registry[key]
     return traits
+
+
+def _registry_health_reasons(model: str, registry_traits: dict[str, dict[str, Any]] | None) -> list[str]:
+    registry = (registry_traits or {}).get(model)
+    if not registry:
+        return []
+
+    reasons: list[str] = []
+    status = str(registry.get("status") or "").upper()
+    if status in UNHEALTHY_REGISTRY_STATUSES:
+        reasons.append(f"status:{status}")
+
+    probe_status = str(registry.get("probe_status") or "").upper()
+    if probe_status in UNHEALTHY_PROBE_STATUSES:
+        reasons.append(f"probe:{probe_status}")
+
+    http_status = registry.get("probe_http_status")
+    if isinstance(http_status, int) and http_status >= 400:
+        reasons.append(f"probe_http:{http_status}")
+
+    return reasons
+
+
+def _deprioritize_registry_unhealthy(
+    candidates: list[str],
+    requested_model: str,
+    registry_traits: dict[str, dict[str, Any]] | None,
+) -> tuple[list[str], dict[str, list[str]]]:
+    if len(candidates) <= 1 or not registry_traits:
+        return candidates, {}
+
+    head = candidates[:1] if candidates[0] == requested_model else []
+    tail = candidates[len(head) :]
+    unhealthy = {model: reasons for model in tail if (reasons := _registry_health_reasons(model, registry_traits))}
+    if not unhealthy:
+        return candidates, {}
+
+    tail.sort(key=lambda model: 1 if model in unhealthy else 0)
+    return head + tail, unhealthy
 
 
 def _dedupe_preserve_order(models: list[str]) -> list[str]:
@@ -326,6 +370,16 @@ def evaluate_fallback_layers(
             candidates = head + tail
             rules.append("fallback:budget:cost_tier")
             debug["budget_pct_used"] = budget_pct
+
+    # Layer 6b — registry health deprioritization; never hard-remove solely on probe state.
+    candidates, registry_unhealthy = _deprioritize_registry_unhealthy(
+        candidates,
+        requested_model,
+        registry_traits,
+    )
+    if registry_unhealthy:
+        rules.append("fallback:registry:health_deprioritize")
+        debug["registry_unhealthy_models"] = registry_unhealthy
 
     # Layer 7 — static YAML baseline safety net
     yaml_baseline = load_yaml_baseline(baseline_path or "")

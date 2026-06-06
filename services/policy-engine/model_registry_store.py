@@ -16,6 +16,9 @@ MODEL_REGISTRY_TRAITS_SELECT = """
         r.supports_tools,
         r.supports_vision,
         r.cost_tier,
+        r.status,
+        r.probe_status,
+        r.probe_http_status,
         a.alias
     FROM model_registry r
     LEFT JOIN model_aliases a
@@ -43,6 +46,9 @@ def _trait_from_row(
     supports_tools: bool | None,
     supports_vision: bool | None,
     cost_tier: int | None,
+    status: str | None,
+    probe_status: str | None,
+    probe_http_status: int | None,
 ) -> dict[str, Any]:
     trait: dict[str, Any] = {
         "canonical_model_id": model_id,
@@ -58,6 +64,12 @@ def _trait_from_row(
         trait["vision"] = supports_vision
     if cost_tier is not None:
         trait["cost"] = int(cost_tier)
+    if status:
+        trait["status"] = status
+    if probe_status:
+        trait["probe_status"] = probe_status
+    if probe_http_status is not None:
+        trait["probe_http_status"] = int(probe_http_status)
     return trait
 
 
@@ -120,7 +132,18 @@ class ModelRegistryStore:
                                 (missing, missing, missing),
                             )
                             for row in cur.fetchall():
-                                model_id, provider, family, tools, vision, cost, alias = row
+                                (
+                                    model_id,
+                                    provider,
+                                    family,
+                                    tools,
+                                    vision,
+                                    cost,
+                                    status,
+                                    probe_status,
+                                    probe_http_status,
+                                    alias,
+                                ) = row
                                 trait = _trait_from_row(
                                     model_id,
                                     provider,
@@ -128,6 +151,9 @@ class ModelRegistryStore:
                                     tools,
                                     vision,
                                     cost,
+                                    status,
+                                    probe_status,
+                                    probe_http_status,
                                 )
                                 traits[model_id] = trait
                                 if alias:
