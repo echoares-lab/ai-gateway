@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from core.policy.schemas import PolicyProfile, RateLimitSnapshot, RoutingContext
 
@@ -13,9 +13,7 @@ if TYPE_CHECKING:
     from core.policy.inventory_store import InventoryStore
     from core.policy.redis_store import RedisStateStore
 
-DEFAULT_PREEMPTIVE_429_THRESHOLD = int(
-    os.environ.get("POLICY_PREEMPTIVE_429_THRESHOLD", "3")
-)
+DEFAULT_PREEMPTIVE_429_THRESHOLD = int(os.environ.get("POLICY_PREEMPTIVE_429_THRESHOLD", "3"))
 
 
 @dataclass(frozen=True)
@@ -40,9 +38,7 @@ def _merge_snapshots(
     if existing is None:
         return incoming
     cooldown_until = existing.cooldown_until
-    if incoming.cooldown_until and (
-        cooldown_until is None or incoming.cooldown_until > cooldown_until
-    ):
+    if incoming.cooldown_until and (cooldown_until is None or incoming.cooldown_until > cooldown_until):
         cooldown_until = incoming.cooldown_until
     in_cooldown = existing.in_cooldown or incoming.in_cooldown
     if cooldown_until:
@@ -156,11 +152,7 @@ def evaluate_rate_limits(
 ) -> RateLimitEvaluation:
     """Apply pre-emptive deprioritization and quota-aware mode from merged state."""
     profiles = profiles or []
-    effective_threshold = (
-        threshold
-        if threshold is not None
-        else resolve_preemptive_threshold(profiles)
-    )
+    effective_threshold = threshold if threshold is not None else resolve_preemptive_threshold(profiles)
 
     deprioritized: list[str] = []
     deprioritized_set: set[str] = set()
@@ -182,10 +174,7 @@ def evaluate_rate_limits(
                 deprioritized_set.add(cred_id)
             rules.append("rate_limit:cooldown_skip")
 
-        preemptive = (
-            snap.rolling_429_count_5m >= effective_threshold
-            or snap.pre_emptive_degraded
-        )
+        preemptive = snap.rolling_429_count_5m >= effective_threshold or snap.pre_emptive_degraded
         if preemptive:
             snap = snap.model_copy(update={"pre_emptive_degraded": True})
             snapshots_by_cred[cred_id] = snap

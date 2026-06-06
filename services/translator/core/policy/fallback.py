@@ -30,9 +30,7 @@ from core.policy.schemas import (
 
 logger = logging.getLogger(__name__)
 
-BUDGET_COST_TIER_THRESHOLD_PCT = float(
-    os.environ.get("POLICY_BUDGET_COST_TIER_THRESHOLD_PCT", "80")
-)
+BUDGET_COST_TIER_THRESHOLD_PCT = float(os.environ.get("POLICY_BUDGET_COST_TIER_THRESHOLD_PCT", "80"))
 
 # Lower cost_tier = cheaper. Unknown models default to tier 2 (mid).
 _MODEL_REGISTRY: dict[str, dict[str, Any]] = {
@@ -258,9 +256,7 @@ def evaluate_fallback_layers(
                 locked_family = raw
         if locked_family and not _policy_allows_cross_family(profiles):
             before = len(candidates)
-            candidates = [
-                m for m in candidates if model_traits(m)["family"] == locked_family
-            ]
+            candidates = [m for m in candidates if model_traits(m)["family"] == locked_family]
             rules.append("fallback:affinity:family_lock")
             lock_family = True
             debug["locked_model_family"] = locked_family
@@ -269,11 +265,7 @@ def evaluate_fallback_layers(
     unavailable = _unavailable_credentials(rate_limits, deprioritized)
     if unavailable and deployment_credentials:
         before = len(candidates)
-        candidates = [
-            m
-            for m in candidates
-            if not _deployment_unavailable(m, deployment_credentials, unavailable)
-        ]
+        candidates = [m for m in candidates if not _deployment_unavailable(m, deployment_credentials, unavailable)]
         if len(candidates) < before:
             rules.append("fallback:rate_limit:cooldown_skip")
         debug["unavailable_credentials"] = sorted(unavailable)
