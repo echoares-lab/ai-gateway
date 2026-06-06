@@ -5,6 +5,8 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
+from credential_probe import build_policy_engine_event_payload
+
 log = logging.getLogger("credential-prober.notifier")
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
@@ -61,17 +63,14 @@ def notify_policy_engine(
     if not policy_url:
         return False
 
-    payload: dict[str, str] = {
-        "credential_id": credential_id,
-        "provider": provider,
-        "previous_status": previous_status,
-        "new_status": new_status,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    if reason:
-        payload["reason"] = reason
-    if cool_down_until is not None:
-        payload["cool_down_until"] = cool_down_until.isoformat()
+    payload = build_policy_engine_event_payload(
+        credential_id,
+        provider,
+        previous_status,
+        new_status,
+        reason=reason,
+        cool_down_until=cool_down_until,
+    )
 
     try:
         req = urllib.request.Request(

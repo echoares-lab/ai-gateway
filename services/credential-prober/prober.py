@@ -3,11 +3,22 @@ import logging
 import os
 import time
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import psycopg2
+from credential_probe import (
+    ROUTING_EXCLUDED,
+    build_inventory_payload,
+    build_transition_payload,
+    compute_cool_down_until,
+    map_auth_file_status,
+    normalize_provider,
+    should_emit_transition,
+)
 from notifier import notify_policy_engine, send_slack_alert
 from psycopg2.extras import Json
+
+__all__ = ["compute_cool_down_until", "map_status", "normalize_provider", "sync_inventory"]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("credential-prober")
@@ -19,20 +30,9 @@ POLL_INTERVAL = int(os.environ.get("PROBER_INTERVAL_SEC", "30"))
 DEGRADED_COOLDOWN_SEC = int(os.environ.get("PROBER_DEGRADED_COOLDOWN_SEC", "60"))
 CRITICAL_COOLDOWN_SEC = int(os.environ.get("PROBER_CRITICAL_COOLDOWN_SEC", "604800"))
 
-ROUTING_EXCLUDED = frozenset({"DEGRADED", "CRITICAL", "SUSPENDED", "EXPIRED"})
 
-# CLIProxy auth-file provider names → credential_inventory CHECK enum
-_CLIPROXY_PROVIDER_MAP = {
-    "antigravity": "gemini",
-    "claude": "anthropic",
-    "codex": "openai",
-    "gemini-cli": "gemini",
-}
-
-
-def normalize_provider(cliproxy_provider: str) -> str:
-    p = (cliproxy_provider or "unknown").lower()
-    return _CLIPROXY_PROVIDER_MAP.get(p, p)
+def map_status(file_data):
+    return map_auth_file_status(file_data)
 
 
 def get_cliproxy_auth_files():
@@ -44,26 +44,6 @@ def get_cliproxy_auth_files():
     except Exception as e:
         log.error(f"Failed to fetch auth files: {e}")
         return []
-
-
-def map_status(file_data):
-    if file_data.get("disabled"):
-        return "SUSPENDED"
-    status = file_data.get("status")
-    if status == "active":
-        return "HEALTHY"
-    if status == "error":
-        return "CRITICAL"
-    return "DEGRADED"
-
-
-def compute_cool_down_until(status: str, *, now: datetime | None = None) -> datetime | None:
-    now = now or datetime.now(timezone.utc)
-    if status == "DEGRADED":
-        return now + timedelta(seconds=DEGRADED_COOLDOWN_SEC)
-    if status in {"CRITICAL", "SUSPENDED", "EXPIRED"}:
-        return now + timedelta(seconds=CRITICAL_COOLDOWN_SEC)
-    return None
 
 
 def _emit_transition(
@@ -100,27 +80,35 @@ def sync_inventory():
         now = datetime.now(timezone.utc)
 
         for f in files:
-            cred_id = f.get("id", "unknown")
-            provider = normalize_provider(f.get("provider", "unknown"))
-            label = f.get("label") or f.get("account") or f.get("email") or "unknown"
-            status = map_status(f)
-            fingerprint = f.get("auth_index") or "none"
-            failures = f.get("failed", 0)
-            status_msg = f.get("status_message") or ""
-            cool_down_until = compute_cool_down_until(status, now=now)
-            metadata = {
-                "recent_requests": f.get("recent_requests", []),
-                "status_message": status_msg,
-                "updated_at": f.get("updated_at", ""),
-            }
+            payload = build_inventory_payload(
+                f,
+                now=now,
+                degraded_cooldown_sec=DEGRADED_COOLDOWN_SEC,
+                critical_cooldown_sec=CRITICAL_COOLDOWN_SEC,
+            )
+            cred_id = payload["credential_id"]
+            provider = payload["provider"]
+            status = payload["status"]
+            cool_down_until = payload["cool_down_until"]
 
             old_status = existing_statuses.get(cred_id)
-            if old_status is not None and old_status != status:
-                reason = status_msg if status_msg else f"Status changed from {old_status} to {status}"
-                _emit_transition(cred_id, provider, old_status, status, reason, cool_down_until)
-            elif old_status is None and status in ROUTING_EXCLUDED:
-                reason = status_msg if status_msg else f"Initial import status: {status}"
-                _emit_transition(cred_id, provider, None, status, reason, cool_down_until)
+            if should_emit_transition(old_status, status):
+                transition = build_transition_payload(
+                    credential_id=cred_id,
+                    provider=provider,
+                    old_status=old_status,
+                    new_status=status,
+                    status_message=payload["metadata"]["status_message"],
+                    cool_down_until=cool_down_until,
+                )
+                _emit_transition(
+                    transition["credential_id"],
+                    transition["provider"],
+                    old_status,
+                    transition["new_status"],
+                    transition["reason"],
+                    transition["cool_down_until"],
+                )
 
             cur.execute(
                 """
@@ -137,7 +125,16 @@ def sync_inventory():
                 consecutive_failures = EXCLUDED.consecutive_failures,
                 metadata = EXCLUDED.metadata;
             """,
-                (cred_id, provider, label, fingerprint, status, cool_down_until, failures, Json(metadata)),
+                (
+                    payload["credential_id"],
+                    payload["provider"],
+                    payload["label"],
+                    payload["key_fingerprint"],
+                    payload["status"],
+                    payload["cool_down_until"],
+                    payload["consecutive_failures"],
+                    Json(payload["metadata"]),
+                ),
             )
 
         conn.commit()

@@ -35,6 +35,15 @@ class TestPolicyEngineNotifier(unittest.TestCase):
         cooldown = datetime(2026, 6, 5, 13, 0, tzinfo=timezone.utc)
         self.assertTrue(notify_policy_engine("cred-1", "anthropic", "HEALTHY", "CRITICAL", cool_down_until=cooldown))
 
+        request = mock_urlopen.call_args[0][0]
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(payload["credential_id"], "cred-1")
+        self.assertEqual(payload["provider"], "anthropic")
+        self.assertEqual(payload["previous_status"], "HEALTHY")
+        self.assertEqual(payload["new_status"], "CRITICAL")
+        self.assertEqual(payload["cool_down_until"], "2026-06-05T13:00:00+00:00")
+        self.assertIn("timestamp", payload)
+
 
 class TestProberSync(unittest.TestCase):
     @patch("prober.notify_policy_engine")
