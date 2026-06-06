@@ -2,7 +2,7 @@
 # Free host ports used by Gate B mock-integration on self-hosted runners.
 # Called before/after mock stack compose up/down. Intentionally omits `down -v` by
 # default so aidevmock Postgres volume (dev_pgdata) persists across CI jobs.
-# Set CI_MOCK_DOWN_VOLUMES=1 to run `docker compose down -v` (full reset).
+# Set CI_MOCK_DOWN_VOLUMES=1 or CI_MOCK_FRESH_DB=1 to run `docker compose down -v` (full reset).
 set -euo pipefail
 
 ROOT="${1:-.}"
@@ -12,7 +12,7 @@ COMPOSE=(docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p 
 MOCK_PORTS=(18080 4010 4011 8327)
 
 "${COMPOSE[@]}" down --remove-orphans || true
-if [[ "${CI_MOCK_DOWN_VOLUMES:-}" == "1" ]]; then
+if [[ "${CI_MOCK_DOWN_VOLUMES:-}" == "1" || "${CI_MOCK_FRESH_DB:-}" == "1" ]]; then
   "${COMPOSE[@]}" down -v --remove-orphans || true
 fi
 

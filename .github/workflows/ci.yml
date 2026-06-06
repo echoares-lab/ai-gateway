@@ -1,21 +1,17 @@
 name: CI Suite
 
 env:
-  # Prevent root-owned __pycache__ files on self-hosted runners
   PYTHONDONTWRITEBYTECODE: "1"
+  CI_MOCK_FRESH_DB: "1"
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-    # 'labeled' lets adding the run-e2e label trigger the gated E2E job
-    # without needing a new commit.
     types: [ opened, synchronize, reopened, labeled ]
   workflow_dispatch: {}
 
-# Single self-hosted runner: host ports (4010/4011/18080, stable :8080) cannot serve
-# parallel mock-integration stacks. Serialize the whole workflow (all refs).
 concurrency:
   group: ci-${{ github.workflow }}-self-hosted
   cancel-in-progress: true
@@ -31,16 +27,41 @@ jobs:
       runtime: ${{ steps.filter.outputs.runtime }}
       isolation: ${{ steps.filter.outputs.isolation }}
       credential_prober: ${{ steps.filter.outputs.credential_prober }}
+      policy_engine: ${{ steps.filter.outputs.policy_engine }}
+      litellm_reloader: ${{ steps.filter.outputs.litellm_reloader }}
+      hotspot: ${{ steps.filter.outputs.hotspot }}
+      translator: ${{ steps.filter.outputs.translator }}
+      cliproxy: ${{ steps.filter.outputs.cliproxy }}
+      litellm_config: ${{ steps.filter.outputs.litellm_config }}
+      compose: ${{ steps.filter.outputs.compose }}
     steps:
       - name: Pre-clean workspace (self-hosted)
         run: |
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
           sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
+          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
+          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
         with:
           filters: |
+            translator:
+              - 'services/translator/**'
+            policy_engine:
+              - 'services/policy-engine/**'
+            litellm_reloader:
+              - 'services/litellm-reloader/**'
+            litellm_config:
+              - 'litellm-config.yaml'
+              - 'tests/litellm-config-mock.yaml'
+            compose:
+              - 'docker-compose*.yml'
+              - 'Dockerfile*'
+            cliproxy:
+              - 'Dockerfile.cliproxy'
+              - 'tests/mock-upstream/**'
+              - 'tests/cliproxy-config-ci.yaml'
             runtime:
               - 'services/**'
               - 'tests/**'
@@ -60,7 +81,13 @@ jobs:
               - 'gen-client-config.sh'
             credential_prober:
               - 'services/credential-prober/**'
-
+            hotspot:
+              - 'services/translator/**'
+              - 'litellm-config.yaml'
+              - 'docker-compose*.yml'
+              - 'Dockerfile*'
+              - 'cliproxy-setup.sh'
+              - 'dev-env.sh'
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: |
@@ -74,15 +101,12 @@ jobs:
         run: |
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
           sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
+          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
+          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
-      - name: Ensure Python venv (PEP 668 / self-hosted)
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
-      - name: Install dependencies
-        run: |
-          python3 -m venv .venv-ci
-          .venv-ci/bin/pip install ruff pyyaml pydantic
+      - uses: ./.github/actions/setup-python-venv
+        with:
+          extra-packages: ruff pyyaml pydantic
       - name: Lint with ruff
         run: .venv-ci/bin/ruff check services/translator/main.py tests/mock-upstream/app.py
       - name: Format check with ruff
@@ -100,18 +124,11 @@ jobs:
         run: |
           python3 - <<'PY'
           import sys, yaml
-
           with open("litellm-config.yaml") as f:
-              try:
-                  data = yaml.safe_load(f)
-              except yaml.YAMLError as e:
-                  print(f"YAML syntax error: {e}", file=sys.stderr)
-                  sys.exit(1)
-
+              data = yaml.safe_load(f)
           if not isinstance(data, dict):
               print("Config root must be a YAML mapping", file=sys.stderr)
               sys.exit(1)
-
           errors = []
           for idx, entry in enumerate(data.get("model_list") or []):
               if not isinstance(entry, dict):
@@ -122,49 +139,124 @@ jobs:
               if "litellm_params" not in entry:
                   name = entry.get("model_name", "?")
                   errors.append(f"model_list[{idx}] ({name!r}) missing 'litellm_params'")
-
           if errors:
-              print(f"Schema validation failed — {len(errors)} error(s):", file=sys.stderr)
               for e in errors:
                   print(f"  • {e}", file=sys.stderr)
               sys.exit(1)
-
-          print(f"✓ litellm-config.yaml: YAML syntax OK, {len(data.get('model_list') or [])} models validated")
+          print(f"✓ litellm-config.yaml: {len(data.get('model_list') or [])} models validated")
           PY
-
       - name: Validate policy-profiles.yaml
-        run: |
-          PYTHONPATH=services/policy-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
-
+        run: PYTHONPATH=services/policy-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
       - name: Check for hardcoded API keys
+<<<<<<< HEAD
         run: CHECK_ALL=1 bash .githooks/prevent-hardcoded-keys.sh
 
+=======
+        run: |
+          if grep -E 'api_key:\s+[a-zA-Z0-9-]{20,}' litellm-config.yaml | grep -v 'os.environ'; then
+            echo "❌ Hardcoded API key detected in litellm-config.yaml"
+            exit 1
+          fi
+          echo "✓ No hardcoded API keys found"
+>>>>>>> cfa9533 (feat(test,ci): implement Epics 4–6 testing refactor, CI optimization, tiered gates)
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: |
           sudo rm -rf services/translator/__pycache__ || true
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
-  unit-tests:
+  build-translator:
     runs-on: self-hosted
     steps:
       - name: Pre-clean workspace (self-hosted)
         run: |
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
           sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
+          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
+          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
-      - name: Build translator image locally
-        run: |
-          docker build -t ai-translator-test:latest ./services/translator
-      - name: Run unit tests inside container (parallel)
-        run: |
-          docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
-
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build translator image (shared cache)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/translator
+          load: true
+          tags: ai-translator-test:latest
+          cache-from: |
+            type=gha
+            type=local,src=/var/cache/ai-gateway/buildkit
+          cache-to: |
+            type=gha,mode=max
+            type=local,dest=/var/cache/ai-gateway/buildkit,mode=max
       - name: Fix workspace permissions (self-hosted)
         if: always()
+        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+
+  unit-tests:
+    needs: build-translator
+    runs-on: self-hosted
+    steps:
+      - name: Pre-clean workspace (self-hosted)
         run: |
-          sudo rm -rf services/translator/__pycache__ || true
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
+          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
+          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
+      - uses: actions/checkout@v4
+      - name: Run translator unit tests (parallel)
+        run: docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
+      - name: Fix workspace permissions (self-hosted)
+        if: always()
+        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+
+  policy-engine-tests:
+    needs: changes
+    if: >
+      needs.changes.outputs.policy_engine == 'true' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: self-hosted
+    steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
+          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
+          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-venv
+        with:
+          requirements-files: |
+            services/policy-engine/requirements.txt
+            services/policy-engine/requirements-test.txt
+      - name: Run policy-engine unit tests
+        run: |
+          cd services/policy-engine
+          PYTHONPATH=. "${GITHUB_WORKSPACE}/.venv-ci/bin/pytest" test_*.py -v
+      - name: Fix workspace permissions (self-hosted)
+        if: always()
+        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+
+  litellm-reloader-tests:
+    needs: changes
+    if: >
+      needs.changes.outputs.litellm_reloader == 'true' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: self-hosted
+    steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
+          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
+          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-venv
+      - name: Run litellm-reloader unit tests
+        run: .venv-ci/bin/python -m unittest discover -s services/litellm-reloader -p 'test_*.py' -v
+      - name: Fix workspace permissions (self-hosted)
+        if: always()
+        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   credential-prober:
     needs: changes
@@ -177,24 +269,17 @@ jobs:
         run: |
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
           sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
+          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
+          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
-      - name: Ensure Python venv (PEP 668 / self-hosted)
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
-      - name: Install credential-prober test dependencies
-        run: |
-          python3 -m venv .venv-ci
-          .venv-ci/bin/pip install -r services/credential-prober/requirements-test.txt
+      - uses: ./.github/actions/setup-python-venv
+        with:
+          requirements-files: services/credential-prober/requirements-test.txt
       - name: Run credential-prober unit tests
-        run: |
-          .venv-ci/bin/python -m unittest discover -s services/credential-prober -p 'test_*.py' -v
-
+        run: .venv-ci/bin/python -m unittest discover -s services/credential-prober -p 'test_*.py' -v
       - name: Fix workspace permissions (self-hosted)
         if: always()
-        run: |
-          sudo rm -rf services/translator/__pycache__ || true
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   multi-repo-isolation:
     needs: changes
@@ -207,6 +292,8 @@ jobs:
         run: |
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
           sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
+          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
+          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
       - name: Install direnv
         run: sudo apt-get update && sudo apt-get install -y direnv
@@ -219,14 +306,12 @@ jobs:
               echo 'dotenv' > "/tmp/mock-repos/$repo/.envrc"
               echo "export CODEX_HOME=\"\$HOME/.codex-repos/$repo\"" >> "/tmp/mock-repos/$repo/.envrc"
               direnv allow "/tmp/mock-repos/$repo"
-
               if [[ "$repo" == "ai-gateway" || "$repo" == "homelab-gitops" ]]; then
                   mkdir -p "$HOME/.codex-repos/$repo"
                   echo 'openai_base_url = "http://localhost:4000"' > "$HOME/.codex-repos/$repo/config.toml"
                   echo 'approval_policy = "always"' >> "$HOME/.codex-repos/$repo/config.toml"
               fi
           done
-
           for repo in ai-gateway homelab-gitops amazon_returns cloudflare_access_automation; do
               echo "OPENAI_API_KEY=mock-key-openai" > "/tmp/mock-repos/$repo/.env"
               echo "ANTHROPIC_API_KEY=mock-key-anthropic" >> "/tmp/mock-repos/$repo/.env"
@@ -236,72 +321,60 @@ jobs:
         run: |
           eval "$(direnv hook bash)"
           REPOS_BASE=/tmp/mock-repos bash tests/test-multi-repo-isolation.sh
-
       - name: Fix workspace permissions (self-hosted)
         if: always()
-        run: |
-          sudo rm -rf services/translator/__pycache__ || true
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
-  # Gate B: real translator + litellm + canned mock upstream (no OAuth, no real LLM).
   mock-integration:
     concurrency:
       group: ci-docker-host-ports
       cancel-in-progress: false
-    needs: changes
+    needs: [changes, lint-and-syntax, unit-tests, build-translator]
     if: >
-      needs.changes.outputs.runtime == 'true' ||
-      github.event_name == 'workflow_dispatch'
+      needs.lint-and-syntax.result == 'success' &&
+      needs.unit-tests.result == 'success' &&
+      (needs.changes.outputs.runtime == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: self-hosted
     steps:
       - name: Pre-clean workspace (self-hosted)
         run: |
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
           sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
+          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
+          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
-      - name: Teardown stale mock stacks (self-hosted)
+      - name: Teardown stale mock stacks (fresh DB)
+        env:
+          CI_MOCK_FRESH_DB: "1"
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y psmisc
           bash scripts/ci-free-mock-host-ports.sh "$GITHUB_WORKSPACE"
-      - name: Ensure Python venv (PEP 668 / self-hosted)
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
-      - name: Install pytest dependencies
-        run: |
-          python3 -m venv .venv-ci
-          .venv-ci/bin/pip install -r tests/integration/requirements.txt
+      - uses: ./.github/actions/setup-python-venv
+        with:
+          requirements-files: tests/integration/requirements.txt
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Build translator image (reuse in compose, skip rebuild)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./services/translator
-          load: true
-          tags: ai-translator-test:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
       - name: Setup environment file
         run: |
           cp .env.example .env
           echo "LITELLM_MASTER_KEY=sk-ci-mock" >> .env
           echo "CLIPROXY_API_KEY=mock-key" >> .env
-      - name: Start mock stack (translator + litellm + postgres + MOCK cliproxy + policy-engine)
+      - name: Build compose services (path-filtered, Buildx cache)
+        env:
+          BUILD_CLIPROXY: ${{ needs.changes.outputs.cliproxy == 'true' || github.event_name == 'workflow_dispatch' }}
+          BUILD_POLICY: ${{ needs.changes.outputs.policy_engine == 'true' || github.event_name == 'workflow_dispatch' }}
+        run: bash scripts/ci-build-mock-services.sh
+      - name: Start mock stack
         env:
           TRANSLATOR_IMAGE: ai-translator-test:latest
           CLIPROXY_DEV_CONFIG: ${{ github.workspace }}/tests/cliproxy-config-ci.yaml
           DEV_TRANSLATOR_PORT: "4010"
           DEV_POLICY_ENGINE_PORT: "18080"
           LITELLM_MIGRATIONS: "None"
+          CI_MOCK_FRESH_DB: "1"
         run: |
-          # Reuse aidevmock Postgres volume on self-hosted runners. Fresh volumes get
-          # pre-migrated LiteLLM schema from db/seed-litellm-mock.sql (no proxy_extras run).
           bash scripts/ci-free-mock-host-ports.sh "$GITHUB_WORKSPACE"
-          docker compose \
-            -f docker-compose.dev.yml -f docker-compose.mock.yml \
-            -p aidevmock \
-            build postgres cliproxy litellm policy-engine
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
@@ -325,21 +398,13 @@ jobs:
             fi
             LITELLM_CID="$(docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock ps -q litellm || true)"
             if [ -n "$LITELLM_CID" ] && [ "$(docker inspect -f '{{.State.Status}}' "$LITELLM_CID" 2>/dev/null || true)" = "exited" ]; then
-              echo "LiteLLM container exited early (cid=$LITELLM_CID). Dumping recent logs:"
-              docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs --no-color --tail 200 litellm || true
-              exit 1
-            fi
-            if docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs --no-color --tail 200 litellm 2>/dev/null | grep -Eq 'P3005|Prisma.*(panic|fatal|error)|database schema is not empty'; then
-              echo "Detected Prisma/LiteLLM fatal error during startup. Dumping recent logs:"
               docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs --no-color --tail 200 litellm || true
               exit 1
             fi
             if [ "$i" -eq 36 ]; then
-              echo "LiteLLM never became ready"
               docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs litellm || true
               exit 1
             fi
-            echo "waiting for litellm ($i/36)..."
             sleep 5
           done
           docker compose \
@@ -349,54 +414,53 @@ jobs:
       - name: Wait for translator health
         run: |
           for i in {1..30}; do
-            curl -sf http://localhost:4010/health >/dev/null && { echo "ready"; exit 0; }
-            echo "waiting for translator ($i/30)..."
+            curl -sf http://localhost:4010/health >/dev/null && exit 0
             sleep 2
           done
-          echo "translator never became healthy"; exit 1
+          exit 1
       - name: Run mock-tier pytest
         run: |
           GATEWAY_URL=http://localhost:4010 LITELLM_MASTER_KEY=sk-ci-mock ALLOW_MODEL_SKIP=0 \
             POLICY_ENGINE_URL=http://localhost:18080 \
             .venv-ci/bin/python -m pytest tests/integration/ -m mock -v
       - name: Run shell E2E smoke (CI mock mode)
-        run: |
-          GATEWAY_E2E_CI=1 GATEWAY_URL=http://localhost:4010 bash tests/test-gateway-e2e.sh
+        run: GATEWAY_E2E_CI=1 GATEWAY_URL=http://localhost:4010 bash tests/test-gateway-e2e.sh
       - name: Dump logs and tear down
         if: always()
+        env:
+          CI_MOCK_FRESH_DB: "1"
         run: |
           docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs || true
           bash scripts/ci-free-mock-host-ports.sh "$GITHUB_WORKSPACE"
-
       - name: Fix workspace permissions (self-hosted)
         if: always()
-        run: |
-          sudo rm -rf services/translator/__pycache__ || true
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
-  # Gate C: builds the CLIProxy fork and hits REAL providers. Not a required check.
   real-provider-e2e:
     concurrency:
       group: ci-docker-host-ports
       cancel-in-progress: false
+    needs: [changes, lint-and-syntax, unit-tests]
     if: >
-      github.event_name == 'workflow_dispatch' ||
-      contains(github.event.pull_request.labels.*.name, 'run-e2e')
+      needs.lint-and-syntax.result == 'success' &&
+      needs.unit-tests.result == 'success' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        contains(github.event.pull_request.labels.*.name, 'run-e2e') ||
+        needs.changes.outputs.hotspot == 'true'
+      )
     runs-on: self-hosted
     steps:
       - name: Pre-clean workspace (self-hosted)
         run: |
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
           sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
+          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
+          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
-      - name: Ensure Python venv (PEP 668 / self-hosted)
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
-      - name: Install pytest dependencies
-        run: |
-          python3 -m venv .venv-ci
-          .venv-ci/bin/pip install -r tests/integration/requirements.txt
+      - uses: ./.github/actions/setup-python-venv
+        with:
+          requirements-files: tests/integration/requirements.txt
       - name: Setup environment file
         run: cp .env.example .env
       - name: Seed real OAuth creds
@@ -408,6 +472,8 @@ jobs:
           else
             echo "::warning::No CLIPROXY_AUTH_TAR_B64 secret; real-provider tests will skip."
           fi
+      - name: Teardown stale dev slot 1
+        run: ./dev-env.sh stop 1 || true
       - name: Build and Start Gateway Stack
         run: |
           export CLIPROXY_DEV_CONFIG="$PWD/tests/cliproxy-config-ci.yaml"
@@ -417,27 +483,18 @@ jobs:
       - name: Wait for translator health
         run: |
           for i in {1..36}; do
-            if curl -sf http://localhost:4010/health >/dev/null; then
-              echo "✓ Translator is ready"
-              exit 0
-            fi
-            echo "Waiting for translator (retry $i/36)..."
+            curl -sf http://localhost:4010/health >/dev/null && exit 0
             sleep 5
           done
-          echo "translator never became healthy"
           docker compose -f docker-compose.dev.yml -p aidev1 logs --no-color --tail 200 translator || true
           exit 1
       - name: Run real-provider smoke E2E
-        run: |
-          ./dev-env.sh test 1 -- -m "integration and smoke"
+        run: ./dev-env.sh test 1 -- -m "integration and smoke"
       - name: Stop services
         if: always()
         run: |
           docker compose -f docker-compose.dev.yml -p aidev1 logs || true
           ./dev-env.sh stop 1
-
       - name: Fix workspace permissions (self-hosted)
         if: always()
-        run: |
-          sudo rm -rf services/translator/__pycache__ || true
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true

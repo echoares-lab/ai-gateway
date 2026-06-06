@@ -1,0 +1,13 @@
+name: Pre-clean workspace (self-hosted)
+description: Fix permissions and clean checkout without removing persistent cache dirs
+
+runs:
+  using: composite
+  steps:
+    - name: Fix ownership and clean workspace
+      shell: bash
+      run: |
+        sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+        sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
+        sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
+        sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true

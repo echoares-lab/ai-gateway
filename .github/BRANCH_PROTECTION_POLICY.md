@@ -11,18 +11,45 @@ Recommended:
 - Require status checks to pass before merging
 - Require branches to be up to date before merging
 - Required checks (must match [`.github/workflows/ci.yml`](workflows/ci.yml) job names exactly):
-  - `lint-and-syntax`
-  - `unit-tests`
-  - `multi-repo-isolation`
-  - `mock-integration`
+  - `lint-and-syntax` — **Required — Fast (Gate A)**
+  - `unit-tests` — **Required — Fast (Gate A)**
+  - `build-translator` — builds shared translator image (required dependency)
+  - `multi-repo-isolation` — **Required — Conditional** (isolation script paths)
+  - `mock-integration` — **Required — Conditional (Gate B)** (runtime paths)
+  - `real-provider-e2e` — **Required — Hotspot (Gate C)** (hotspot paths; skipped = pass when not applicable)
 - Require conversation resolution before merging
 - Restrict direct pushes
 - Allow auto-merge only when all checks pass
 - Do not allow force pushes
 - Do not allow deletions
 
-**Not required (Gate C — hybrid):**
-- `real-provider-e2e` — runs on `workflow_dispatch`, PR label `run-e2e`, or [nightly schedule](workflows/nightly-integration.yml)
+### Conditionally required (path-filtered; skipped counts as pass)
+
+| Job | Gate | Triggers when |
+|-----|------|---------------|
+| `credential-prober` | A | `services/credential-prober/**` changes |
+| `policy-engine-tests` | A | `services/policy-engine/**` changes |
+| `litellm-reloader-tests` | A | `services/litellm-reloader/**` changes |
+| `multi-repo-isolation` | A | isolation script paths change |
+| `mock-integration` | B | runtime paths change |
+| `real-provider-e2e` | C | hotspot paths change, `run-e2e` label, or dispatch |
+
+### Docs-only PRs
+
+When a PR touches only documentation and non-runtime paths, `mock-integration` and other conditional jobs may **skip**. GitHub treats skipped required checks as passing. Maintainers may use a `docs-only` label for audit visibility (optional ruleset bypass).
+
+### Advisory (not required for merge)
+
+- `nightly-integration` — scheduled Gate C matrix (report-only)
+- `hotspot-e2e-reminder` — PR comment bot
+- `post-merge-gate-d` — post-merge stable smoke on `main` (advisory)
+
+## GitHub rulesets (optional)
+
+For orgs using rulesets instead of classic branch protection:
+
+- Create a **required** ruleset on `main` listing the checks above.
+- Consider a separate ruleset or bypass for trusted `docs-only` automation.
 
 ## Notes
 
@@ -31,4 +58,4 @@ Use this file as the source of truth when re-creating repo settings.
 
 This repo uses **`main` only** (no long-lived integration branch). Feature worktrees branch from `main` and merge back via PR.
 
-See [`TESTING_AND_PROMOTION_POLICY.md`](../TESTING_AND_PROMOTION_POLICY.md) and [`REPO_IMPROVEMENT_APPENDIX.md`](../REPO_IMPROVEMENT_APPENDIX.md) for gate commands.
+See [`TESTING_AND_PROMOTION_POLICY.md`](../TESTING_AND_PROMOTION_POLICY.md), [`docs/TESTING.md`](../docs/TESTING.md), and [`REPO_IMPROVEMENT_APPENDIX.md`](../REPO_IMPROVEMENT_APPENDIX.md) for gate commands.

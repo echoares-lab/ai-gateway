@@ -334,11 +334,11 @@ Never leave uncommitted changes in the stable worktree; they block pulls and Gat
 
 | Gate | Command | When |
 |------|---------|------|
-| A — unit | `make test-unit` or `docker exec aidev1-translator-1 pytest test_translator*.py -v` | After each significant change |
+| A — unit | `make test-unit` (translator `-n auto` + policy-engine) | After each significant change |
 | A — lint | `make lint` | Before commit / push |
 | B — mock integration | `make test-mock` or `make test-fast` | Before PR; required CI parity |
-| C — real providers | `make test-e2e` or label `run-e2e` | High-risk changes only |
-| D — stable smoke | `./cliproxy-setup.sh test <model>` + `health` | After merge to main |
+| C — real providers | `make test-e2e` or label `run-e2e` | Hotspot paths (required in CI) or high-risk |
+| D — stable smoke | `./cliproxy-setup.sh test <model>` + `health` | After merge to main (+ advisory `post-merge-gate-d` workflow) |
 | Full integration | `./dev-env.sh test <slot>` | When Gate C needs broader coverage |
 | YAML validation | `python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"` | After editing litellm-config.yaml |
 
@@ -405,11 +405,14 @@ cover ruff, YAML validation, and hardcoded API key detection automatically.
 Optional pre-push hook (Gate A fast checks): `git config core.hooksPath .githooks`
 runs `make lint && make test-unit` before each push.
 
-CI (GitHub Actions `.github/workflows/ci.yml`) runs Gate A + B on every push and PR to `main`:
-`lint-and-syntax`, `unit-tests`, `multi-repo-isolation`, `mock-integration`.
-Gate C (`real-provider-e2e`) runs on label `run-e2e`, manual dispatch, or nightly schedule — not required to merge.
+CI (GitHub Actions `.github/workflows/ci.yml`) uses tiered gates on every push/PR to `main`:
 
-See `TESTING_AND_PROMOTION_POLICY.md` and `REPO_IMPROVEMENT_APPENDIX.md` for full gate mapping.
+- **Required — Fast (A):** `lint-and-syntax`, `unit-tests`, `build-translator`
+- **Required — Conditional:** `mock-integration`, `multi-repo-isolation`, path-filtered service tests
+- **Required — Hotspot (C):** `real-provider-e2e` when hotspot paths change (also `run-e2e` label / dispatch)
+- **Advisory:** `nightly-integration`, `post-merge-gate-d`, `hotspot-e2e-reminder`
+
+See `docs/TESTING.md`, `TESTING_AND_PROMOTION_POLICY.md`, and `REPO_IMPROVEMENT_APPENDIX.md` for full gate mapping.
 
 ---
 
@@ -423,8 +426,8 @@ See `TESTING_AND_PROMOTION_POLICY.md` and `REPO_IMPROVEMENT_APPENDIX.md` for ful
 | Translator logic broken | Unit tests (`test_translator*.py`) in CI |
 | Multi-repo isolation broken | `multi-repo-isolation` job in CI |
 | Wire-format / routing broken | `mock-integration` job (0 skips) |
-| Real provider regressions | Gate C: `run-e2e` label + nightly schedule |
-| Live models stop responding | Gate D: 3 model smokes on stable after merge |
+| Real provider regressions | Gate C: required on hotspot paths; `run-e2e` label; nightly schedule |
+| Post-merge production drift | Gate D: stable smokes + advisory `post-merge-gate-d` workflow |
 | Stable stack taken down | Worktree isolation (step 1) |
 | Direct push bypasses review | Branch protection + PR requirement |
 | Image version drift | Pinned in docker-compose files; upgrade via PR + test |

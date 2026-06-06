@@ -1,7 +1,7 @@
 # Repo Improvement Appendix: AI Gateway
 
 Repo-specific operating details for `REPO_IMPROVEMENT_WORKFLOW.md`.
-Gate definitions: `TESTING_AND_PROMOTION_POLICY.md`.
+Gate definitions: `TESTING_AND_PROMOTION_POLICY.md`. Testing guide: `docs/TESTING.md`. CI runner: `docs/CI_SELF_HOSTED.md`.
 
 ## Branch and worktree policy
 
@@ -30,12 +30,12 @@ main -> feat/* worktree/branch -> PR -> main
 
 | Gate | Purpose | Local command | CI job |
 |------|---------|---------------|--------|
-| **A** | Lint, schema, unit | `make lint` / `make test-unit` | `lint-and-syntax`, `unit-tests`, `credential-prober` |
+| **A** | Lint, schema, unit | `make lint` / `make test-unit` | `lint-and-syntax`, `unit-tests`, `build-translator`, path-filtered service tests |
 | **B** | Mock integration (0 skips) | `make test-mock` | `mock-integration` |
-| **C** | Real providers (smoke) | `make test-e2e` or PR label `run-e2e` | `real-provider-e2e` (not required) |
-| **D** | Post-merge stable | `./cliproxy-setup.sh health` + model smokes on :4000 | n/a (manual) |
+| **C** | Real providers (smoke) | `make test-e2e` or PR label `run-e2e` | `real-provider-e2e` (**required on hotspot paths**) |
+| **D** | Post-merge stable | `./cliproxy-setup.sh health` + model smokes on :4000 | `post-merge-gate-d` (advisory) |
 
-**Agent loop (before push):** `make test-fast` (Gate A + B locally, ~5 min).
+**Agent loop (before push):** `make test-fast` (Gate A + B locally, ~5 min). Does **not** run `multi-repo-isolation` — run `bash tests/test-multi-repo-isolation.sh` when touching isolation scripts.
 
 **Optional pre-push hook:** `make lint && make test-unit` (see `.githooks/pre-push`).
 
@@ -45,24 +45,39 @@ main -> feat/* worktree/branch -> PR -> main
 |------|--------|--------|--------|--------|
 | Low (docs, templates) | yes | optional | no | no |
 | Medium (translator logic, tests) | yes | yes | no | no |
-| High (auth, litellm-config, compose, cliproxy) | yes | yes | smoke (`run-e2e` label) | post-merge on stable |
+| High (auth, litellm-config, compose, cliproxy) | yes | yes | **required on hotspot paths** | post-merge on stable |
+
+### CI check tiers (Required vs Advisory)
+
+| Tier | Jobs | Blocks merge? |
+|------|------|---------------|
+| **Required — Fast (A)** | `lint-and-syntax`, `unit-tests`, `build-translator` | Yes, every PR |
+| **Required — Conditional** | `mock-integration`, `multi-repo-isolation`, `credential-prober`, `policy-engine-tests`, `litellm-reloader-tests` | Yes, when paths match (skipped = pass) |
+| **Required — Hotspot (C)** | `real-provider-e2e` | Yes, when hotspot paths change |
+| **Advisory** | `nightly-integration`, `hotspot-e2e-reminder`, `post-merge-gate-d` | No |
+
+### Docs-only PRs
+
+When only docs/templates change, conditional jobs (`mock-integration`, etc.) **skip**. GitHub treats skipped required checks as passing. Optional `docs-only` label for maintainer audit.
 
 ### CI job → gate mapping (branch protection)
 
 Required on `main` PRs:
-- `lint-and-syntax` → Gate A
-- `unit-tests` → Gate A
-- `multi-repo-isolation` → Gate A (environment isolation)
-- `mock-integration` → Gate B
-- `credential-prober` → Gate A (when `services/credential-prober/` changes)
+- `lint-and-syntax`, `unit-tests`, `build-translator` → Gate A
+- `multi-repo-isolation` → Gate A (isolation paths)
+- `mock-integration` → Gate B (runtime paths)
+- `real-provider-e2e` → Gate C (**hotspot paths**; skipped when not applicable)
 
-Not required:
-- `real-provider-e2e` → Gate C
-- `nightly-integration` → Gate C (scheduled, report-only)
+Path-filtered (required when triggered):
+- `credential-prober`, `policy-engine-tests`, `litellm-reloader-tests` → Gate A
+
+Advisory:
+- `nightly-integration`, `post-merge-gate-d` → Gate C/D signal
 
 ## Required checks (copy-paste)
 
-- Translator unit tests: `docker run --rm ai-translator-test:latest pytest test_translator*.py -v`
+- Translator unit tests: `docker run --rm ai-translator-test:latest pytest test_translator*.py -n auto -v`
+- Policy-engine unit tests: `PYTHONPATH=services/policy-engine pytest services/policy-engine/test_*.py -v`
 - Mock integration: `make test-mock`
 - Multi-repo isolation: `bash tests/test-multi-repo-isolation.sh` (CI only; needs direnv setup)
 - YAML validation: `python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"`
@@ -70,9 +85,10 @@ Not required:
 
 ## Manual E2E verification (Gate C + D)
 
-**Gate C (pre-merge, high-risk):**
-- `./dev-env.sh test <slot>` or `make test-e2e`
-- PR label `run-e2e` triggers CI `real-provider-e2e`
+**Gate C (pre-merge, hotspot / high-risk):**
+- Auto-triggered on hotspot paths (see below)
+- PR label `run-e2e` re-triggers CI `real-provider-e2e`
+- Local: `./dev-env.sh test <slot>` or `make test-e2e`
 
 **Gate D (post-merge on stable, port 4000):**
 - `./cliproxy-setup.sh health`
@@ -82,10 +98,10 @@ Not required:
 
 ## Hotspot files and areas
 
-Gate C recommended when PR touches:
-- `services/translator/translator.py`
+Gate C **required** when PR touches:
+- `services/translator/**` (includes `main.py`)
 - `litellm-config.yaml`
-- `docker-compose.yml`, `docker-compose.dev.yml`, `Dockerfile.cliproxy`
+- `docker-compose*.yml`, `Dockerfile*`
 - `cliproxy-setup.sh`, `dev-env.sh`
 
 ## Versioning and promotion
@@ -134,7 +150,7 @@ git push --force-with-lease origin feat/<feature>
 
 Poll dependencies: `gh issue view <n> --json state,closed` and `gh pr view <n> --json state,mergedAt`.
 
-Hotspot files (`translator.py`, `litellm-config.yaml`, compose files) require serialized
+Hotspot files (`services/translator/**`, `litellm-config.yaml`, compose files) require serialized
 issues or explicit stack order — see `REPO_IMPROVEMENT_WORKFLOW.md` §9.
 
 ## Worktree cleanup (post-merge)
@@ -167,8 +183,8 @@ Dev and mock stacks avoid ~15 min LiteLLM `proxy_extras` migrations on fresh Pos
 4. **`LITELLM_MIGRATIONS=None`** — LiteLLM skips Prisma migrations (schema already present).
 
 Regenerate seed after LiteLLM image bump: `scripts/generate-litellm-mock-seed.sh` (requires stable
-`ai-postgres-1` with migrations applied). CI `mock-integration` reuses the `aidevmock` Postgres
-volume when possible (`scripts/ci-free-mock-host-ports.sh` omits `down -v` by default).
+`ai-postgres-1` with migrations applied). CI `mock-integration` uses `CI_MOCK_FRESH_DB=1` on PRs
+to drop the `aidevmock` Postgres volume (`scripts/ci-free-mock-host-ports.sh`).
 
 **CI flake:** If `mock-integration` fails in CI but `make test-mock` passes locally, note it in the PR and retry.
 

@@ -5,10 +5,13 @@ lint:
 	ruff check services/translator/main.py tests/mock-upstream/app.py
 	ruff format --check services/translator/main.py tests/mock-upstream/app.py
 
-# Unit tests: build the translator image and run the fully-mocked suite.
+# Unit tests: build the translator image and run the fully-mocked suite (parallel, CI parity).
 test-unit:
 	docker build -t ai-translator-test:latest services/translator
-	docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -v'
+	docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
+	python3 -m venv .venv-policy-engine 2>/dev/null || python3 -m venv .venv-policy-engine
+	.venv-policy-engine/bin/pip install -q -r services/policy-engine/requirements.txt -r services/policy-engine/requirements-test.txt
+	PYTHONPATH=services/policy-engine .venv-policy-engine/bin/pytest services/policy-engine/test_*.py -v
 
 # Mock tier: translator + litellm + canned upstream (slot 9 -> :4090), no OAuth.
 # Tears the stack down afterward even if tests fail.
@@ -22,7 +25,9 @@ test-mock:
 validate-policy-profiles:
 	python3 scripts/validate_policy_profiles.py
 
-# Fast tier = what CI runs on every push/PR (no OAuth, no real LLM).
+# Fast tier = Gate A + B locally (no OAuth, no real LLM).
+# Note: multi-repo-isolation is CI path-filtered only — run manually when touching dev-env.sh / cliproxy-setup.sh:
+#   bash tests/test-multi-repo-isolation.sh
 test-fast: lint test-unit validate-policy-profiles test-mock
 
 # Full real-provider E2E. Needs real OAuth in ~/.cli-proxy-api (slot 1 -> :4010).

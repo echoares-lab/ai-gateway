@@ -6,20 +6,33 @@ with `REPO_IMPROVEMENT_WORKFLOW.md` (process) and `REPO_IMPROVEMENT_APPENDIX.md`
 
 ---
 
-## 1. Four promotion gates
+## 1. Four promotion gates and CI tiers
+
+### Gate definitions
 
 | Gate | Purpose | Typical timing | Blocks PR merge? |
 |------|---------|----------------|------------------|
 | **A** | Lint, schema/config validation, fast unit tests (no external providers) | Every commit / PR | Yes |
-| **B** | Deterministic integration against canned or mock dependencies; skips must be disabled | Every PR touching runtime code | Yes |
-| **C** | Real external dependencies (OAuth, live APIs, staging); smoke on PR, full matrix on schedule | Label, schedule, or maintainer trigger | No (unless repo policy says otherwise for high-risk paths) |
+| **B** | Deterministic integration against canned or mock dependencies; skips must be disabled | PR touching runtime code | Yes (when paths match) |
+| **C** | Real external dependencies (OAuth, live APIs); smoke on hotspot PRs | Hotspot paths, label, or dispatch | Yes (when hotspot paths match) |
 | **D** | Post-merge verification on the stable/production channel | After merge to trunk | Manual; recorded in closeout |
+
+### CI check tiers (Required vs Advisory)
+
+| Tier | CI jobs | Blocks merge? | When |
+|------|---------|---------------|------|
+| **Required — Fast (A)** | `lint-and-syntax`, `unit-tests` | Yes | Every PR |
+| **Required — Conditional (A/B)** | `multi-repo-isolation`, `credential-prober`, `mock-integration`, `policy-engine-tests`, `litellm-reloader-tests` | Yes | When matching paths change (skipped = pass) |
+| **Required — Hotspot (C)** | `real-provider-e2e` | Yes | When hotspot paths change, `run-e2e` label, or dispatch |
+| **Advisory** | `nightly-integration`, `hotspot-e2e-reminder`, `post-merge-gate-d` | No | Signal, schedule, or post-merge |
 
 **Rules**
 
 - Gate C passing is **necessary but not sufficient** for high-risk changes (`type:security`, auth, routing, provider config, deployment).
+- Hotspot path changes **automatically** trigger required Gate C (`real-provider-e2e`) on PRs.
 - Gate D is required before closing issues whose target is production behavior.
 - Failed gates must be recorded in the PR or issue (`status:ci-failed` or equivalent), with the command and environment used.
+- Docs-only PRs may skip conditional jobs; GitHub treats skipped required checks as passing when path filters do not match.
 
 ---
 
@@ -31,7 +44,7 @@ PR checklists should match risk, not run everything on every change.
 |------|----------|--------|--------|--------|--------|
 | **Low** | docs, templates, non-runtime tooling | required | optional | no | no |
 | **Medium** | internal logic, test refactors, scripts | required | required | no | no |
-| **High** | auth, routing, provider config, compose/infra | required | required | smoke (label or maintainer) | post-merge smoke on stable |
+| **High** | auth, routing, provider config, compose/infra | required | required | **required on hotspot paths** | post-merge smoke on stable |
 
 Declare risk level in every PR (`Risk / rollback` section).
 

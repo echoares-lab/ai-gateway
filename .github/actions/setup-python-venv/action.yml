@@ -1,0 +1,49 @@
+name: Setup Python venv (self-hosted)
+description: Create or restore a cached Python venv on self-hosted runners
+
+inputs:
+  extra-packages:
+    description: Space-separated pip packages to install after venv creation
+    required: false
+    default: 'ruff pyyaml pydantic'
+  requirements-files:
+    description: Newline-separated requirements file paths (optional)
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Cache pip and venv
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/pip
+          .venv-ci
+        key: venv-${{ runner.os }}-${{ hashFiles('**/requirements*.txt', 'services/translator/Dockerfile', '.github/actions/setup-python-venv/action.yml') }}
+        restore-keys: |
+          venv-${{ runner.os }}-
+
+    - name: Ensure python3-venv
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
+
+    - name: Create venv and install packages
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ ! -x .venv-ci/bin/python ]]; then
+          python3 -m venv .venv-ci
+        fi
+        .venv-ci/bin/pip install --upgrade pip
+        if [[ -n "${{ inputs.extra-packages }}" ]]; then
+          .venv-ci/bin/pip install ${{ inputs.extra-packages }}
+        fi
+        if [[ -n "${{ inputs.requirements-files }}" ]]; then
+          while IFS= read -r req; do
+            [[ -z "$req" ]] && continue
+            .venv-ci/bin/pip install -r "$req"
+          done <<< "${{ inputs.requirements-files }}"
+        fi
