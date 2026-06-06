@@ -61,10 +61,13 @@ from core.model_registry import (
     ModelRegistryListResponse,
     ModelRegistryMutationResponse,
     ModelRegistryPatchRequest,
+    ModelRegistryReconcileRequest,
+    ModelRegistryReconcileResponse,
     ModelRegistryStore,
     ModelRegistrySyncRequest,
     ModelRegistrySyncResponse,
     ModelRegistryWriteRequest,
+    build_reconcile_resources,
     diff_discovered_models,
     load_models_from_litellm_config,
     merge_discovered_model,
@@ -2146,6 +2149,7 @@ async def health():
 
 ADMIN_SCHEMA_VERSION = "admin-console.v1"
 LITELLM_CONFIG_PATH = os.environ.get("LITELLM_CONFIG_PATH", "/config/litellm-config.yaml")
+GEMINI_MODEL_MAP_PATH = os.environ.get("GEMINI_MODEL_MAP_PATH", "/app/gemini-model-map.json")
 ADMIN_ERROR_MAXLEN = 400
 TRANSLATOR_ADMIN_KEY = os.environ.get("TRANSLATOR_ADMIN_KEY", "")
 CLIPROXY_URL = os.environ.get("CLIPROXY_URL", "http://cliproxy:8317").rstrip("/")
@@ -2243,6 +2247,16 @@ def _admin_load_litellm_config() -> tuple[dict | None, list[dict]]:
                 "repo:litellm-config.yaml",
             )
         ]
+
+
+def _read_text_file_for_reconcile(path: str, source: str) -> tuple[str | None, list[dict]]:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read(), []
+    except FileNotFoundError:
+        return None, [_admin_error("file_not_found", f"{path} not found", source)]
+    except Exception as exc:
+        return None, [_admin_error("file_read_error", f"{type(exc).__name__}: {exc}", source)]
 
 
 def _model_registry_store() -> ModelRegistryStore:
@@ -3400,6 +3414,38 @@ async def admin_model_probe(model_id: str, request: Request):
         probe_http_status=probe_http_status,
         probe_checked_at=checked_at,
         model=model or current,
+        errors=errors,
+    )
+
+
+@app.post("/admin/models/reconcile", response_model=ModelRegistryReconcileResponse)
+async def admin_models_reconcile(request: Request, body: ModelRegistryReconcileRequest):
+    """Render registry-driven LiteLLM/Gemini config changes without writing files."""
+    auth_error = _require_admin_key(request)
+    if auth_error is not None:
+        return auth_error
+
+    loaded = _load_model_registry_with_config_fallback()
+    litellm_text, litellm_errors = _read_text_file_for_reconcile(
+        LITELLM_CONFIG_PATH,
+        "repo:litellm-config.yaml",
+    )
+    gemini_text, gemini_errors = _read_text_file_for_reconcile(
+        GEMINI_MODEL_MAP_PATH,
+        "repo:gemini-model-map.json",
+    )
+    errors = [*loaded.errors, *litellm_errors, *gemini_errors]
+    resources = build_reconcile_resources(
+        loaded.models,
+        current_litellm_config=litellm_text,
+        current_gemini_map=gemini_text,
+        include_disabled=body.include_disabled,
+    )
+    return ModelRegistryReconcileResponse(
+        dry_run=True,
+        source=loaded.source,
+        registry_available=loaded.registry_available,
+        resources=resources,
         errors=errors,
     )
 

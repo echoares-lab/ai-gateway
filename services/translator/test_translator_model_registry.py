@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
 import httpx
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(__file__))
 import main as t
-from core.model_registry import ModelRegistryRecord, RegistryLoadResult, load_models_from_litellm_config
+from core.model_registry import (
+    ModelRegistryRecord,
+    RegistryLoadResult,
+    build_reconcile_resources,
+    load_models_from_litellm_config,
+)
 
 
 class _FakeRegistryStore:
@@ -149,6 +156,67 @@ def _registry_model(model_id: str = "gpt-5-4") -> ModelRegistryRecord:
     )
 
 
+def _gemini_registry_model() -> ModelRegistryRecord:
+    return ModelRegistryRecord(
+        model_id="gemini-3-flash",
+        provider="gemini",
+        family="gemini",
+        upstream_model="gemini-3.flash",
+        litellm_model="openai/gemini-3.flash",
+        enabled=True,
+        status="HEALTHY",
+        supports_tools=True,
+        supports_vision=True,
+        max_input_tokens=1048576,
+        policy_metadata={
+            "api_base": "http://cliproxy:8317/v1",
+            "fallbacks": ["gpt-5-4"],
+        },
+        aliases=[
+            {
+                "alias": "gemini-3.flash-preview",
+                "target": "gemini-3-flash",
+                "alias_kind": "compat",
+            }
+        ],
+    )
+
+
+def test_reconcile_renderer_outputs_valid_yaml_json_and_diffs():
+    resources = build_reconcile_resources([_registry_model(), _gemini_registry_model()])
+    by_name = {resource.name: resource for resource in resources}
+
+    litellm = yaml.safe_load(by_name["litellm-config.yaml"].content)
+    gemini_map = json.loads(by_name["gemini-model-map.json"].content)
+
+    assert [entry["model_name"] for entry in litellm["model_list"]] == [
+        "gemini-3-flash",
+        "gpt-5-4",
+    ]
+    assert litellm["model_list"][0]["model_info"]["supports_vision"] is True
+    assert litellm["litellm_settings"]["fallbacks"] == [{"gemini-3-flash": ["gpt-5-4"]}]
+    assert gemini_map == {
+        "gemini-3.flash": "gemini-3-flash",
+        "gemini-3.flash-preview": "gemini-3-flash",
+    }
+    assert by_name["litellm-config.yaml"].changed is True
+    assert "--- current/litellm-config.yaml" in by_name["litellm-config.yaml"].diff
+
+
+def test_reconcile_renderer_marks_unchanged_when_current_matches():
+    first = build_reconcile_resources([_registry_model(), _gemini_registry_model()])
+    by_name = {resource.name: resource for resource in first}
+
+    second = build_reconcile_resources(
+        [_registry_model(), _gemini_registry_model()],
+        current_litellm_config=by_name["litellm-config.yaml"].content,
+        current_gemini_map=by_name["gemini-model-map.json"].content,
+    )
+
+    assert all(resource.changed is False for resource in second)
+    assert all(resource.diff == "" for resource in second)
+
+
 def test_load_models_from_litellm_config(tmp_path):
     config = tmp_path / "litellm-config.yaml"
     _write_config(config)
@@ -210,6 +278,52 @@ def test_admin_models_sync_requires_admin_key(monkeypatch, tmp_path):
 
     assert resp.status_code == 503
     assert resp.json()["error"]["code"] == "admin_key_required"
+
+
+def test_admin_models_reconcile_requires_admin_key(monkeypatch):
+    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "")
+    monkeypatch.delenv("TRANSLATOR_ADMIN_KEY", raising=False)
+
+    client = TestClient(t.app)
+    resp = client.post("/admin/models/reconcile", json={"dry_run": True})
+
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "admin_key_required"
+
+
+def test_admin_models_reconcile_dry_run_does_not_write_files(monkeypatch, tmp_path):
+    store = _FakeRegistryStore()
+    store.models["gpt-5-4"] = _registry_model()
+    store.models["gemini-3-flash"] = _gemini_registry_model()
+    litellm_config = tmp_path / "litellm-config.yaml"
+    gemini_map = tmp_path / "gemini-model-map.json"
+    litellm_config.write_text("model_list: []\n", encoding="utf-8")
+    gemini_map.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "LITELLM_CONFIG_PATH", str(litellm_config))
+    monkeypatch.setattr(t, "GEMINI_MODEL_MAP_PATH", str(gemini_map))
+
+    client = TestClient(t.app)
+    resp = client.post(
+        "/admin/models/reconcile",
+        headers={"x-admin-key": "test-admin"},
+        json={},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dry_run"] is True
+    assert body["source"] == "postgres:model_registry"
+    assert [resource["name"] for resource in body["resources"]] == [
+        "litellm-config.yaml",
+        "gemini-model-map.json",
+    ]
+    assert all(resource["changed"] is True for resource in body["resources"])
+    assert yaml.safe_load(body["resources"][0]["content"])["model_list"][0]["model_name"] == "gemini-3-flash"
+    assert json.loads(body["resources"][1]["content"])["gemini-3.flash"] == "gemini-3-flash"
+    assert litellm_config.read_text(encoding="utf-8") == "model_list: []\n"
+    assert gemini_map.read_text(encoding="utf-8") == "{}\n"
 
 
 def test_admin_models_sync_dry_run(monkeypatch, tmp_path):

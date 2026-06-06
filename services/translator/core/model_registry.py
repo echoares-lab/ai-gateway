@@ -8,6 +8,8 @@ and local unit tests remain fail-open.
 from __future__ import annotations
 
 import os
+import json
+from difflib import unified_diff
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -65,6 +67,28 @@ class ModelRegistrySyncResponse(BaseModel):
     skipped_count: int = 0
     models: list[ModelRegistryRecord] = Field(default_factory=list)
     diffs: list[dict[str, Any]] = Field(default_factory=list)
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ModelRegistryReconcileRequest(BaseModel):
+    dry_run: bool = True
+    include_disabled: bool = False
+
+
+class ModelRegistryReconcileResource(BaseModel):
+    name: str
+    kind: str
+    changed: bool
+    content: str
+    diff: str = ""
+
+
+class ModelRegistryReconcileResponse(BaseModel):
+    accepted: bool = True
+    dry_run: bool = True
+    source: str
+    registry_available: bool
+    resources: list[ModelRegistryReconcileResource] = Field(default_factory=list)
     errors: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -294,6 +318,121 @@ def diff_discovered_models(
                 }
             )
     return diffs
+
+
+def _litellm_model_info(model: ModelRegistryRecord) -> dict[str, Any]:
+    info: dict[str, Any] = {}
+    if model.supports_tools is not None:
+        info["supports_function_calling"] = model.supports_tools
+    if model.supports_vision is not None:
+        info["supports_vision"] = model.supports_vision
+    if model.max_input_tokens is not None:
+        info["max_input_tokens"] = model.max_input_tokens
+    if model.max_output_tokens is not None:
+        info["max_output_tokens"] = model.max_output_tokens
+    if model.policy_metadata.get("disable_background_health_check") is not None:
+        info["disable_background_health_check"] = bool(model.policy_metadata["disable_background_health_check"])
+    return info
+
+
+def render_litellm_config_from_registry(models: list[ModelRegistryRecord]) -> str:
+    active = sorted((model for model in models if model.enabled), key=lambda item: item.model_id)
+    model_list = []
+    for model in active:
+        params = {
+            "model": model.litellm_model,
+            "api_base": model.policy_metadata.get("api_base", "http://cliproxy:8317/v1"),
+            "api_key": "os.environ/CLIPROXY_API_KEY",
+        }
+        entry: dict[str, Any] = {
+            "model_name": model.model_id,
+            "litellm_params": params,
+        }
+        info = _litellm_model_info(model)
+        if info:
+            entry["model_info"] = info
+        model_list.append(entry)
+
+    fallbacks = []
+    by_id = {model.model_id: model for model in active}
+    for model in active:
+        explicit = model.policy_metadata.get("fallbacks")
+        if isinstance(explicit, list):
+            fallback_ids = [str(item) for item in explicit if str(item) in by_id and str(item) != model.model_id]
+        else:
+            fallback_ids = [
+                candidate.model_id
+                for candidate in active
+                if candidate.model_id != model.model_id and candidate.family == model.family
+            ]
+        if fallback_ids:
+            fallbacks.append({model.model_id: sorted(fallback_ids)})
+
+    rendered: dict[str, Any] = {"model_list": model_list}
+    if fallbacks:
+        rendered["litellm_settings"] = {"fallbacks": fallbacks}
+    return yaml.safe_dump(rendered, sort_keys=False)
+
+
+def render_gemini_map_from_registry(models: list[ModelRegistryRecord]) -> str:
+    mapping: dict[str, str] = {}
+    for model in sorted(models, key=lambda item: item.model_id):
+        if not model.enabled:
+            continue
+        if model.upstream_model.startswith("gemini-") and model.upstream_model != model.model_id:
+            mapping[model.upstream_model] = model.model_id
+        for alias in model.aliases:
+            if not isinstance(alias, dict):
+                continue
+            alias_name = str(alias.get("alias") or "")
+            target = str(alias.get("target") or model.model_id)
+            if alias_name.startswith("gemini-") and alias_name != target:
+                mapping[alias_name] = target
+    return json.dumps(dict(sorted(mapping.items())), indent=2) + "\n"
+
+
+def _resource_diff(name: str, current: str | None, desired: str) -> tuple[bool, str]:
+    current_text = current or ""
+    if current_text == desired:
+        return False, ""
+    diff = unified_diff(
+        current_text.splitlines(),
+        desired.splitlines(),
+        fromfile=f"current/{name}",
+        tofile=f"desired/{name}",
+        lineterm="",
+    )
+    return True, "\n".join(diff)
+
+
+def build_reconcile_resources(
+    models: list[ModelRegistryRecord],
+    *,
+    current_litellm_config: str | None = None,
+    current_gemini_map: str | None = None,
+    include_disabled: bool = False,
+) -> list[ModelRegistryReconcileResource]:
+    source_models = models if include_disabled else [model for model in models if model.enabled]
+    litellm_content = render_litellm_config_from_registry(source_models)
+    gemini_content = render_gemini_map_from_registry(source_models)
+    litellm_changed, litellm_diff = _resource_diff("litellm-config.yaml", current_litellm_config, litellm_content)
+    gemini_changed, gemini_diff = _resource_diff("gemini-model-map.json", current_gemini_map, gemini_content)
+    return [
+        ModelRegistryReconcileResource(
+            name="litellm-config.yaml",
+            kind="yaml",
+            changed=litellm_changed,
+            content=litellm_content,
+            diff=litellm_diff,
+        ),
+        ModelRegistryReconcileResource(
+            name="gemini-model-map.json",
+            kind="json",
+            changed=gemini_changed,
+            content=gemini_content,
+            diff=gemini_diff,
+        ),
+    ]
 
 
 def load_models_from_litellm_config(path: str) -> RegistryLoadResult:
