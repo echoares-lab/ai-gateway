@@ -121,6 +121,30 @@ class TestCredentialProbeHelpers(unittest.TestCase):
             },
         )
 
+    def test_degraded_cooldown_preserves_credential_inventory(self):
+        """429/cooldown transitions set cool_down_until but keep the credential row."""
+        now = datetime(2026, 6, 6, 13, 0, tzinfo=timezone.utc)
+        payload = build_inventory_payload(
+            {
+                "id": "file-429.json",
+                "provider": "claude",
+                "account": "acct",
+                "auth_index": "fp429",
+                "status": "unknown",
+                "failed": 1,
+                "status_message": "429 Too Many Requests — quota cooldown",
+                "recent_requests": [{"status": 429}],
+                "updated_at": "2026-06-06T12:59:00Z",
+            },
+            now=now,
+            degraded_cooldown_sec=60,
+        )
+
+        self.assertEqual(payload["status"], "DEGRADED")
+        self.assertIsNotNone(payload["cool_down_until"])
+        self.assertEqual(payload["cool_down_until"], now + timedelta(seconds=60))
+        self.assertEqual(payload["credential_id"], "file-429.json")
+
 
 if __name__ == "__main__":
     unittest.main()

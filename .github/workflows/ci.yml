@@ -129,6 +129,11 @@ jobs:
           bash -n scripts/ci-free-mock-host-ports.sh
           bash -n tests/test-multi-repo-isolation.sh
           bash -n tests/test-gateway-e2e.sh
+          bash -n tests/test-sync-models-probe.sh
+      - name: sync-models probe regression tests
+        run: |
+          python3 -m pytest tests/test_sync_models_probe_classify.py -v
+          bash tests/test-sync-models-probe.sh
       - name: Validate litellm-config.yaml
         run: |
           python3 - <<'PY'

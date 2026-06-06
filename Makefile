@@ -1,9 +1,14 @@
-.PHONY: lint test-unit test-mock test-fast test-e2e validate-policy-profiles
+.PHONY: lint test-unit test-mock test-fast test-e2e validate-policy-profiles test-sync-models-probe
 
 # Lint the translator + the mock upstream app (mirrors the CI fast tier).
 lint:
 	ruff check services/translator/main.py tests/mock-upstream/app.py
 	ruff format --check services/translator/main.py tests/mock-upstream/app.py
+
+# Regression tests for sync-models probe classification (429 must preserve catalog).
+test-sync-models-probe:
+	python3 -m pytest tests/test_sync_models_probe_classify.py -v
+	bash tests/test-sync-models-probe.sh
 
 # Unit tests: build the translator image and run the fully-mocked suite (parallel, CI parity).
 test-unit:
@@ -28,7 +33,7 @@ validate-policy-profiles:
 # Fast tier = Gate A + B locally (no OAuth, no real LLM).
 # Note: multi-repo-isolation is CI path-filtered only — run manually when touching dev-env.sh / cliproxy-setup.sh:
 #   bash tests/test-multi-repo-isolation.sh
-test-fast: lint test-unit validate-policy-profiles test-mock
+test-fast: lint test-unit validate-policy-profiles test-sync-models-probe test-mock
 
 # Full real-provider E2E. Needs real OAuth in ~/.cli-proxy-api (slot 1 -> :4010).
 # Runs only the slim `smoke` subset.
