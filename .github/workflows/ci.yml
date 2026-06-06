@@ -114,7 +114,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-venv
         with:
-          extra-packages: ruff pyyaml pydantic
+          extra-packages: ruff pyyaml pydantic pytest
       - name: Lint with ruff
         run: .venv-ci/bin/ruff check services/translator/main.py tests/mock-upstream/app.py
       - name: Format check with ruff
@@ -129,6 +129,11 @@ jobs:
           bash -n scripts/ci-free-mock-host-ports.sh
           bash -n tests/test-multi-repo-isolation.sh
           bash -n tests/test-gateway-e2e.sh
+          bash -n tests/test-sync-models-probe.sh
+      - name: sync-models probe regression tests
+        run: |
+          .venv-ci/bin/python -m pytest tests/test_sync_models_probe_classify.py -v
+          bash tests/test-sync-models-probe.sh
       - name: Validate litellm-config.yaml
         run: |
           python3 - <<'PY'
