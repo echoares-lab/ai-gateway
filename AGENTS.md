@@ -87,7 +87,7 @@ Dev slots map to ports:
 
 ### Step 3 — Make changes (hot-reload is automatic)
 
-- `translator.py` edits → uvicorn reloads in ~1 second (no action needed)
+- `services/translator/main.py` edits → uvicorn reloads in ~1 second (no action needed)
 - `litellm-config.yaml` edits → litellm-reloader detects and restarts in ~10 seconds
 - `Dockerfile` or pip dependency changes → `./dev-env.sh rebuild <slot>`
 
@@ -296,7 +296,7 @@ Re-run `make test-fast` after any conflict resolution. Example: Epic 1.2 rebased
 
 ### Hotspot serialization
 
-If two issues touch the same hotspot (e.g. `services/translator/translator.py`,
+If two issues touch the same hotspot (e.g. `services/translator/**`,
 `litellm-config.yaml`), **serialize** them:
 
 - Declare `Depends on: #N` in the issue, or
@@ -377,7 +377,7 @@ docs: update stale AGENTS/WORKTREES/RUNBOOK to reflect current state
 - ❌ **Do not push directly to `main`** — always via PR with CI passing
 - ❌ **Do not edit files in the stable worktree** (`/home/dev/repos/ai-gateway`) during development
 - ❌ **Do not create feature worktrees under `/home/dev/repos/` or inside the repo** (use `/home/dev/worktrees/ai-gateway-<feature>` — see `WORKTREES.md`)
-- ❌ **Do not skip unit tests** after changes to `translator.py`
+- ❌ **Do not skip unit tests** after changes to `services/translator/main.py`
 - ❌ **Do not hardcode API keys** in `litellm-config.yaml` — use `os.environ/CLIPROXY_API_KEY`
 - ❌ **Do not set `CACHE_ENABLED=true`** in production — LiteLLM's auth-aware cache is preferred
 - ❌ **Do not force-push** to `main`
@@ -393,8 +393,8 @@ docs: update stale AGENTS/WORKTREES/RUNBOOK to reflect current state
 
 ```bash
 pip install ruff                                                   # one-time install
-ruff check services/translator/translator.py                      # lint
-ruff format --check services/translator/translator.py             # format check
+ruff check services/translator/main.py                            # lint
+ruff format --check services/translator/main.py                   # format check
 bash -n cliproxy-setup.sh                                         # shell syntax
 python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"  # YAML
 ```
@@ -431,7 +431,7 @@ See `docs/TESTING.md`, `TESTING_AND_PROMOTION_POLICY.md`, and `REPO_IMPROVEMENT_
 | Stable stack taken down | Worktree isolation (step 1) |
 | Direct push bypasses review | Branch protection + PR requirement |
 | Image version drift | Pinned in docker-compose files; upgrade via PR + test |
-| Cross-user cache hits | `CACHE_ENABLED=false` default in translator.py |
+| Cross-user cache hits | `CACHE_ENABLED=false` default in translator |
 | Two agents on same slot | Slot registry in claim comments; `./dev-env.sh list` |
 | Orphaned worktrees / occupied slots | Post-merge cleanup checklist (Step 9); coordinator verifies `git worktree list` |
 | Dirty stable worktree blocks Gate D | Never edit stable checkout; `git status` before `git pull` |

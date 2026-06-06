@@ -34,13 +34,9 @@ jobs:
       cliproxy: ${{ steps.filter.outputs.cliproxy }}
       litellm_config: ${{ steps.filter.outputs.litellm_config }}
       compose: ${{ steps.filter.outputs.compose }}
+      integration_tests: ${{ steps.filter.outputs.integration_tests }}
     steps:
-      - name: Pre-clean workspace (self-hosted)
-        run: |
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
-          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
-          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
+      - uses: ./.github/actions/pre-clean-self-hosted
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
@@ -81,6 +77,13 @@ jobs:
               - 'gen-client-config.sh'
             credential_prober:
               - 'services/credential-prober/**'
+            integration_tests:
+              - 'tests/integration/**'
+              - 'tests/test-gateway-e2e.sh'
+              - 'tests/litellm-config-mock.yaml'
+              - 'docker-compose.mock.yml'
+              - 'tests/mock-upstream/**'
+              - 'tests/mock-policy-engine/**'
             hotspot:
               - 'services/translator/**'
               - 'litellm-config.yaml'
@@ -148,17 +151,7 @@ jobs:
       - name: Validate policy-profiles.yaml
         run: PYTHONPATH=services/policy-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
       - name: Check for hardcoded API keys
-<<<<<<< HEAD
         run: CHECK_ALL=1 bash .githooks/prevent-hardcoded-keys.sh
-
-=======
-        run: |
-          if grep -E 'api_key:\s+[a-zA-Z0-9-]{20,}' litellm-config.yaml | grep -v 'os.environ'; then
-            echo "❌ Hardcoded API key detected in litellm-config.yaml"
-            exit 1
-          fi
-          echo "✓ No hardcoded API keys found"
->>>>>>> cfa9533 (feat(test,ci): implement Epics 4–6 testing refactor, CI optimization, tiered gates)
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: |
@@ -474,6 +467,10 @@ jobs:
           fi
       - name: Teardown stale dev slot 1
         run: ./dev-env.sh stop 1 || true
+      - name: Free dev slot ports (avoid stable :8080 collision)
+        run: |
+          ./dev-env.sh stop 1 || true
+          bash scripts/ci-free-mock-host-ports.sh "$GITHUB_WORKSPACE" || true
       - name: Build and Start Gateway Stack
         run: |
           export CLIPROXY_DEV_CONFIG="$PWD/tests/cliproxy-config-ci.yaml"
