@@ -36,7 +36,12 @@ jobs:
       compose: ${{ steps.filter.outputs.compose }}
       integration_tests: ${{ steps.filter.outputs.integration_tests }}
     steps:
-      - uses: ./.github/actions/pre-clean-self-hosted
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
+          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
+          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
