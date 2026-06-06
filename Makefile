@@ -1,9 +1,9 @@
 .PHONY: lint test-unit test-mock test-fast test-e2e validate-policy-profiles test-sync-models-probe
 
-# Lint the translator + the mock upstream app (mirrors the CI fast tier).
+# Lint the translator (mirrors the CI fast tier).
 lint:
-	ruff check services/translator/main.py tests/mock-upstream/app.py
-	ruff format --check services/translator/main.py tests/mock-upstream/app.py
+	ruff check services/translator/main.py
+	ruff format --check services/translator/main.py
 
 # Regression tests for sync-models probe classification (429 must preserve catalog).
 test-sync-models-probe:
@@ -15,13 +15,9 @@ test-unit:
 	docker build -t ai-translator-test:latest services/translator
 	docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
 
-# Mock tier: translator + litellm + canned upstream (slot 9 -> :4090), no OAuth.
-# Tears the stack down afterward even if tests fail.
+# Mock tier: in-memory ASGI integration tests (no OAuth, canned upstream).
 test-mock:
-	./dev-env.sh start-mock 9
-	@for i in $$(seq 1 30); do curl -sf http://localhost:4090/health >/dev/null && break; sleep 2; done
-	-./dev-env.sh test-mock 9
-	./dev-env.sh stop-mock 9
+	python3 -m pytest tests/integration/ -m mock -v
 
 # Offline schema check for git-tracked policy profile promotion (P0-7).
 validate-policy-profiles:

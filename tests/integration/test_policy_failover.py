@@ -1,4 +1,4 @@
-\"\"\"Policy × failover integration tests (issue 38-17, Gate B).\"\"\"
+"""Policy × failover integration tests (issue 38-17, Gate B)."""
 
 from __future__ import annotations
 
@@ -27,13 +27,13 @@ _DEFAULT_TENANCY = {
 
 @pytest.fixture
 async def client(asgi_client):
-    \"\"\"Alias for asgi_client to minimize test changes.\"\"\"
+    """Alias for asgi_client to minimize test changes."""
     return asgi_client
 
 
 @pytest.fixture
 async def policy_debug(asgi_client):
-    \"\"\"In-process mock scenario debug endpoints on the translator.\"\"\"
+    """In-process mock scenario debug endpoints on the translator."""
     return asgi_client
 
 
