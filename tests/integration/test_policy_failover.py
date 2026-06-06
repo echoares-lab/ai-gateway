@@ -7,7 +7,6 @@ import uuid
 
 import httpx
 import pytest
-
 from conftest import MASTER_KEY
 
 pytestmark = [pytest.mark.mock]
@@ -167,9 +166,9 @@ def test_quota_429_preemptive_from_translator_rate_limit_signals(client, policy_
 
     context = _last_context(policy_engine)
     rate_limits = context.get("rate_limits") or []
-    assert any(
-        isinstance(rl, dict) and rl.get("pre_emptive_degraded") for rl in rate_limits
-    ), f"expected pre_emptive_degraded rate_limits in context, got {rate_limits}"
+    assert any(isinstance(rl, dict) and rl.get("pre_emptive_degraded") for rl in rate_limits), (
+        f"expected pre_emptive_degraded rate_limits in context, got {rate_limits}"
+    )
 
     decision = _last_decision(policy_engine)
     assert decision.get("quota_aware_mode") is True

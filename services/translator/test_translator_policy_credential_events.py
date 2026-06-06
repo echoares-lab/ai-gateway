@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 
 import fakeredis
 import pytest
-
 from core.policy.credential_events import handle_credential_event
 from core.policy.evaluate import evaluate
 from core.policy.redis_store import RedisStateStore, rate_limit_key
@@ -93,9 +92,7 @@ def test_evaluate_reflects_event_cooldown(fake_store: RedisStateStore):
         EvaluateRequest(
             context=RoutingContext(
                 requested_model="gemini-3-flash",
-                rate_limits=[
-                    RateLimitSnapshot(provider="gemini", credential_id="cred-hot")
-                ],
+                rate_limits=[RateLimitSnapshot(provider="gemini", credential_id="cred-hot")],
             )
         ),
         store=fake_store,

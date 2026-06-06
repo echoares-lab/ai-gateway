@@ -18,7 +18,9 @@ class TestSlackNotifier(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status = 200
         mock_urlopen.return_value.__enter__.return_value = mock_response
-        self.assertTrue(send_slack_alert("credential_critical", "cred-1", "anthropic", "401", timestamp="2026-06-02T13:45:00Z"))
+        self.assertTrue(
+            send_slack_alert("credential_critical", "cred-1", "anthropic", "401", timestamp="2026-06-02T13:45:00Z")
+        )
 
     @patch.dict(os.environ, {}, clear=True)
     def test_send_slack_alert_missing_webhook_url(self):
@@ -51,10 +53,18 @@ class TestProberSync(unittest.TestCase):
     @patch("psycopg2.connect")
     @patch("prober.get_cliproxy_auth_files")
     def test_sync_inventory_critical_sets_cooldown(self, mock_get_files, mock_connect, _slack, mock_policy):
-        mock_get_files.return_value = [{
-            "id": "file-1.json", "provider": "anthropic", "label": "acct", "auth_index": "fp",
-            "status": "error", "failed": 3, "status_message": "401 Unauthorized", "recent_requests": [],
-        }]
+        mock_get_files.return_value = [
+            {
+                "id": "file-1.json",
+                "provider": "anthropic",
+                "label": "acct",
+                "auth_index": "fp",
+                "status": "error",
+                "failed": 3,
+                "status_message": "401 Unauthorized",
+                "recent_requests": [],
+            }
+        ]
         mock_conn = MagicMock()
         mock_cur = MagicMock()
         mock_conn.cursor.return_value = mock_cur

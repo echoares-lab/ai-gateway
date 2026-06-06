@@ -5,7 +5,6 @@ import logging
 import uuid
 
 import httpx
-
 from providers.base import ResolveModelFn
 
 log = logging.getLogger("translator")

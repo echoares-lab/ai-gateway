@@ -1,14 +1,14 @@
 """Unit tests for eval-quality reorder layer (issue 38-19 Phase 5b)."""
 
+from core.policy.evaluate import evaluate
 from core.policy.fallback import evaluate_fallback_layers
+from core.policy.profile_store import ProfileStore
 from core.policy.quality import (
     RULE_TAG,
     apply_quality_reorder,
     extract_eval_config,
     resolve_task_category,
 )
-from core.policy.evaluate import evaluate
-from core.policy.profile_store import ProfileStore
 from core.policy.schemas import (
     EvaluateRequest,
     PolicyProfile,

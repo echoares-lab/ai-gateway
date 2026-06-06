@@ -565,18 +565,14 @@ def test_regression_quota_cooldown_429_keeps_model_in_catalog(monkeypatch):
     """Registry probe must not disable models on provider quota cooldown (429)."""
     store = _FakeRegistryStore()
     store.models["gemini-3-flash"] = _registry_model(model_id="gemini-3-flash")
-    fake_client = _FakeProbeClient(
-        response=httpx.Response(429, json={"error": {"message": "quota cooldown"}})
-    )
+    fake_client = _FakeProbeClient(response=httpx.Response(429, json={"error": {"message": "quota cooldown"}}))
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
     monkeypatch.setattr(t, "_client", fake_client)
     monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
     monkeypatch.setenv("LITELLM_MASTER_KEY", "litellm-key")
 
     client = TestClient(t.app)
-    resp = client.post(
-        "/admin/models/gemini-3-flash/probe", headers={"x-admin-key": "test-admin"}
-    )
+    resp = client.post("/admin/models/gemini-3-flash/probe", headers={"x-admin-key": "test-admin"})
 
     assert resp.status_code == 200
     body = resp.json()

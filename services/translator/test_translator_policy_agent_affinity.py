@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 
 import fakeredis
 import pytest
-
 from core.policy.agent_affinity import (
     apply_agent_affinity,
     build_session_key,
@@ -202,9 +201,7 @@ def test_evaluate_429_rebind_sets_cache_cold_start(fake_store: RedisStateStore):
                 requested_model="gemini-3-flash",
                 agent_id="rebind-agent",
                 metadata={"credential_id": "cred-new"},
-                rate_limits=[
-                    RateLimitSnapshot(provider="gemini", credential_id="cred-old")
-                ],
+                rate_limits=[RateLimitSnapshot(provider="gemini", credential_id="cred-old")],
             )
         ),
         store=fake_store,

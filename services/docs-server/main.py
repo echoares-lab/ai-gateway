@@ -8,6 +8,7 @@ app = FastAPI(title="AI Gateway Admin UI (Docs Server)")
 # Base directory for OpenAPI specs - adjust based on environment
 OPENAPI_DIR = os.getenv("OPENAPI_DIR", "/app/docs/openapi")
 
+
 def get_openapi_dir():
     if os.path.exists(OPENAPI_DIR):
         return OPENAPI_DIR
@@ -17,6 +18,7 @@ def get_openapi_dir():
         if os.path.exists(fb):
             return fb
     return None
+
 
 def get_scalar_html(spec_name: str):
     return f"""
@@ -40,6 +42,7 @@ def get_scalar_html(spec_name: str):
 </html>
 """
 
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     directory = get_openapi_dir()
@@ -49,10 +52,12 @@ async def index():
     files = [f for f in os.listdir(directory) if f.endswith(".yaml") or f.endswith(".json")]
     files.sort()
 
-    links = "".join([
-        f'<li><a href="/docs/{f}" style="font-family: sans-serif; line-height: 2;">{f.replace(".yaml", "").replace(".json", "").replace("-", " ").title()}</a></li>'
-        for f in files
-    ])
+    links = "".join(
+        [
+            f'<li><a href="/docs/{f}" style="font-family: sans-serif; line-height: 2;">{f.replace(".yaml", "").replace(".json", "").replace("-", " ").title()}</a></li>'
+            for f in files
+        ]
+    )
 
     return f"""
 <!doctype html>
@@ -75,6 +80,7 @@ async def index():
 </html>
 """
 
+
 @app.get("/docs/{spec_name}", response_class=HTMLResponse)
 async def get_docs(spec_name: str):
     directory = get_openapi_dir()
@@ -85,6 +91,7 @@ async def get_docs(spec_name: str):
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Specification not found")
     return HTMLResponse(get_scalar_html(spec_name))
+
 
 @app.get("/openapi/{filename}")
 async def get_openapi(filename: str):
@@ -101,6 +108,8 @@ async def get_openapi(filename: str):
         media_type = "application/json" if filename.endswith(".json") else "text/yaml"
         return HTMLResponse(content=content, media_type=media_type)
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

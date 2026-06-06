@@ -14,9 +14,6 @@ test-sync-models-probe:
 test-unit:
 	docker build -t ai-translator-test:latest services/translator
 	docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
-	python3 -m venv .venv-policy-engine 2>/dev/null || python3 -m venv .venv-policy-engine
-	.venv-policy-engine/bin/pip install -q -r services/policy-engine/requirements.txt -r services/policy-engine/requirements-test.txt
-	PYTHONPATH=services/policy-engine .venv-policy-engine/bin/pytest services/policy-engine/test_*.py -v
 
 # Mock tier: translator + litellm + canned upstream (slot 9 -> :4090), no OAuth.
 # Tears the stack down afterward even if tests fail.

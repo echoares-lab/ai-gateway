@@ -132,11 +132,13 @@ async def test_admin_status_includes_policy_engine_trace():
     async def fake_connectivity():
         return True, "v0-stub"
 
-    with patch.object(t, "_admin_load_litellm_config", return_value=({"model_list": []}, [])), patch.object(
-        t, "_admin_fetch_visible_models", fake_visible
-    ), patch.object(t, "_admin_fetch_metrics_text", fake_metrics), patch.object(
-        t, "_admin_policy_engine_connectivity", fake_connectivity
-    ), patch.object(t, "_admin_run_readonly_command", lambda *a, **k: ("", [])):
+    with (
+        patch.object(t, "_admin_load_litellm_config", return_value=({"model_list": []}, [])),
+        patch.object(t, "_admin_fetch_visible_models", fake_visible),
+        patch.object(t, "_admin_fetch_metrics_text", fake_metrics),
+        patch.object(t, "_admin_policy_engine_connectivity", fake_connectivity),
+        patch.object(t, "_admin_run_readonly_command", lambda *a, **k: ("", [])),
+    ):
         client = TestClient(t.app)
         resp = client.get("/admin/status")
 
