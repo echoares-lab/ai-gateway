@@ -45,6 +45,16 @@ from core.metrics import (
     TOKEN_REQUESTS,
     UPSTREAM_ERRORS,
 )
+from core.model_registry import (
+    ModelRegistryListResponse,
+    ModelRegistryMutationResponse,
+    ModelRegistryPatchRequest,
+    ModelRegistryStore,
+    ModelRegistrySyncRequest,
+    ModelRegistrySyncResponse,
+    ModelRegistryWriteRequest,
+    load_models_from_litellm_config,
+)
 from core.state import _policy_trace
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
@@ -122,7 +132,11 @@ _client: httpx.AsyncClient | None = None
 # LiteLLM's cache includes Authorization header in its cache key, preventing cross-user responses.
 # Translator caching layer is redundant when multi-team virtual keys are in use.
 # Set CACHE_ENABLED=true only if LiteLLM's cache is unavailable or disabled.
-CACHE_ENABLED = os.environ.get("CACHE_ENABLED", "false").lower() not in ("0", "false", "no")
+CACHE_ENABLED = os.environ.get("CACHE_ENABLED", "false").lower() not in (
+    "0",
+    "false",
+    "no",
+)
 CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "60"))
 _redis: aioredis.Redis | None = None
 
@@ -174,7 +188,10 @@ async def _limit_request_size(request: Request, call_next):
             content_length = int(request.headers["content-length"])
             if content_length > max_bytes:
                 log.warning("Request too large: %d bytes (limit: %d)", content_length, max_bytes)
-                return JSONResponse({"error": {"message": "request too large", "code": 413}}, status_code=413)
+                return JSONResponse(
+                    {"error": {"message": "request too large", "code": 413}},
+                    status_code=413,
+                )
         except (ValueError, TypeError):
             pass
     return await call_next(request)
@@ -339,7 +356,13 @@ def _build_rate_limit_hints(model: str) -> list[dict]:
     rl_count = int(_prom_counter_value(PROVIDER_RATE_LIMITS, provider=provider, model=label_model))
     if rl_count <= 0:
         return []
-    return [{"provider": provider, "rolling_429_count_5m": rl_count, "pre_emptive_degraded": True}]
+    return [
+        {
+            "provider": provider,
+            "rolling_429_count_5m": rl_count,
+            "pre_emptive_degraded": True,
+        }
+    ]
 
 
 def _load_quota_headroom_hints() -> list[dict]:
@@ -357,7 +380,11 @@ def _load_quota_headroom_hints() -> list[dict]:
 
 
 def _team_slug_from_tenancy(tenancy: dict) -> str | None:
-    parts = [tenancy.get("tenant_id"), tenancy.get("workspace_id"), tenancy.get("team_id")]
+    parts = [
+        tenancy.get("tenant_id"),
+        tenancy.get("workspace_id"),
+        tenancy.get("team_id"),
+    ]
     if not all(parts):
         return None
     return "-".join(parts)
@@ -377,7 +404,10 @@ def _parse_team_info_to_budget(team_info: dict) -> dict:
         "team_spend_usd": spend if max_budget is not None else None,
         "team_budget_pct_used": _budget_pct_used(spend, max_budget),
     }
-    for src, dst in (("rpm_limit_remaining", "rpm_remaining"), ("tpm_limit_remaining", "tpm_remaining")):
+    for src, dst in (
+        ("rpm_limit_remaining", "rpm_remaining"),
+        ("tpm_limit_remaining", "tpm_remaining"),
+    ):
         if team_info.get(src) is not None:
             snapshot[dst] = team_info[src]
     return snapshot
@@ -534,7 +564,11 @@ async def _evaluate_policy_engine(context: dict) -> dict | None:
         resp = await _client.post(url, json={"context": context}, timeout=timeout)
         elapsed_ms = (time.monotonic() - start) * 1000
         if resp.status_code != 200:
-            log.warning("policy-engine evaluate returned %d — fail-open: %s", resp.status_code, resp.text[:200])
+            log.warning(
+                "policy-engine evaluate returned %d — fail-open: %s",
+                resp.status_code,
+                resp.text[:200],
+            )
             _record_policy_trace(None, elapsed_ms, error=f"http {resp.status_code}")
             return None
         decision = resp.json().get("decision")
@@ -546,7 +580,10 @@ async def _evaluate_policy_engine(context: dict) -> dict | None:
         return decision
     except httpx.TimeoutException:
         elapsed_ms = (time.monotonic() - start) * 1000
-        log.warning("policy-engine evaluate timed out after %dms — fail-open", POLICY_ENGINE_TIMEOUT_MS)
+        log.warning(
+            "policy-engine evaluate timed out after %dms — fail-open",
+            POLICY_ENGINE_TIMEOUT_MS,
+        )
         _record_policy_trace(None, elapsed_ms, error="timeout")
         return None
     except Exception as exc:
@@ -632,16 +669,25 @@ def _normalize_content_item(c: dict) -> dict | None:
                 img = {"url": img, "detail": detail}
             return {"type": "image_url", "image_url": img}
         if "url" in c:
-            return {"type": "image_url", "image_url": {"url": c["url"], "detail": detail}}
+            return {
+                "type": "image_url",
+                "image_url": {"url": c["url"], "detail": detail},
+            }
         if "source" in c:
             src = c["source"]
             if src.get("type") == "url":
-                return {"type": "image_url", "image_url": {"url": src["url"], "detail": detail}}
+                return {
+                    "type": "image_url",
+                    "image_url": {"url": src["url"], "detail": detail},
+                }
             if src.get("type") == "base64":
                 media = src.get("media_type", "image/jpeg")
                 return {
                     "type": "image_url",
-                    "image_url": {"url": f"data:{media};base64,{src['data']}", "detail": detail},
+                    "image_url": {
+                        "url": f"data:{media};base64,{src['data']}",
+                        "detail": detail,
+                    },
                 }
         return None
     if ct == "input_file":
@@ -871,7 +917,11 @@ def _resolve_model(
         if "." in effective:
             effective = _normalize_model(effective)
             reason = "dotted_to_dashed"
-        if ("preview" in effective or "exp" in effective) and endpoint in ("responses", "chat", "claude"):
+        if ("preview" in effective or "exp" in effective) and endpoint in (
+            "responses",
+            "chat",
+            "claude",
+        ):
             # Warn for drift even when unchanged for non-Gemini paths.
             severity = "warn"
             reason = "preview_passthrough"
@@ -920,10 +970,17 @@ def _patch_body(path: str, body: bytes) -> tuple[bytes, bool]:
     if "messages" not in data and "input" in data:
         inp = data.pop("input")
         if isinstance(inp, list):
-            log.info("Input item types: %s", [i.get("type") if isinstance(i, dict) else type(i).__name__ for i in inp])
+            log.info(
+                "Input item types: %s",
+                [i.get("type") if isinstance(i, dict) else type(i).__name__ for i in inp],
+            )
         data["messages"] = _responses_input_to_messages(inp)
         n = len(inp) if isinstance(inp, list) else 1
-        log.info("Translated Responses API input (%d items) → %d messages", n, len(data["messages"]))
+        log.info(
+            "Translated Responses API input (%d items) → %d messages",
+            n,
+            len(data["messages"]),
+        )
         changed = True
     elif "messages" in data:
         data["messages"], msg_changed = _normalize_messages(data["messages"])
@@ -974,10 +1031,14 @@ async def gemini_proxy(model_action: str, request: Request):
     if request.method == "GET":
         # Pass through to LiteLLM (e.g. model info requests)
         resp = await _client.get(
-            f"{LITELLM}/v1beta/models/{model_action}", params=dict(request.query_params), timeout=30
+            f"{LITELLM}/v1beta/models/{model_action}",
+            params=dict(request.query_params),
+            timeout=30,
         )
         return Response(
-            content=resp.content, status_code=resp.status_code, headers={"content-type": "application/json"}
+            content=resp.content,
+            status_code=resp.status_code,
+            headers={"content-type": "application/json"},
         )
 
     if ":" not in model_action:
@@ -1022,7 +1083,11 @@ async def gemini_proxy(model_action: str, request: Request):
 
     ck = _cache_key(oai_body.get("model", ""), oai_body.get("messages", []), oai_body.get("tools"))
     log.info(
-        "Gemini %s → model=%s tools=%d stream=%s", action, oai_body["model"], len(oai_body.get("tools", [])), streaming
+        "Gemini %s → model=%s tools=%d stream=%s",
+        action,
+        oai_body["model"],
+        len(oai_body.get("tools", [])),
+        streaming,
     )
 
     if streaming:
@@ -1030,18 +1095,38 @@ async def gemini_proxy(model_action: str, request: Request):
         try:
             _sig_start = time.monotonic()
             resp = await _client.send(req, stream=True)
-            _record_provider_signal(oai_body.get("model", "-"), resp.status_code, time.monotonic() - _sig_start)
+            _record_provider_signal(
+                oai_body.get("model", "-"),
+                resp.status_code,
+                time.monotonic() - _sig_start,
+            )
         except Exception as exc:
-            log.error("Gemini stream connection failed model=%s: %s", oai_body.get("model"), exc)
-            gemini_err = {"error": {"code": 502, "message": f"Connection failed: {exc}", "status": "INTERNAL"}}
+            log.error(
+                "Gemini stream connection failed model=%s: %s",
+                oai_body.get("model"),
+                exc,
+            )
+            gemini_err = {
+                "error": {
+                    "code": 502,
+                    "message": f"Connection failed: {exc}",
+                    "status": "INTERNAL",
+                }
+            }
             return Response(
-                content=json.dumps(gemini_err), status_code=502, headers={"content-type": "application/json"}
+                content=json.dumps(gemini_err),
+                status_code=502,
+                headers={"content-type": "application/json"},
             )
 
         if resp.status_code >= 400:
             err_content = await resp.aread()
             await resp.aclose()
-            log.warning("Gemini upstream stream error %d: %s", resp.status_code, err_content[:300])
+            log.warning(
+                "Gemini upstream stream error %d: %s",
+                resp.status_code,
+                err_content[:300],
+            )
             try:
                 err_json = json.loads(err_content)
                 err_msg = err_json.get("error", {}).get("message", err_content.decode(errors="ignore"))
@@ -1075,7 +1160,10 @@ async def gemini_proxy(model_action: str, request: Request):
                     yield chunk
             except Exception as exc:
                 log.error(
-                    "Gemini stream upstream error model=%s: %s: %s", oai_body.get("model"), type(exc).__name__, exc
+                    "Gemini stream upstream error model=%s: %s: %s",
+                    oai_body.get("model"),
+                    type(exc).__name__,
+                    exc,
                 )
             finally:
                 await resp.aclose()
@@ -1102,7 +1190,9 @@ async def gemini_proxy(model_action: str, request: Request):
     if resp.status_code >= 400:
         log.warning("Gemini upstream %d: %s", resp.status_code, resp.text[:300])
         return Response(
-            content=resp.content, status_code=resp.status_code, headers={"content-type": "application/json"}
+            content=resp.content,
+            status_code=resp.status_code,
+            headers={"content-type": "application/json"},
         )
 
     try:
@@ -1113,7 +1203,9 @@ async def gemini_proxy(model_action: str, request: Request):
         _record_token_usage(model, resp_json)
         gemini_resp = _oai_to_gemini_resp(resp_json, model)
         return Response(
-            content=json.dumps(gemini_resp).encode(), status_code=200, headers={"content-type": "application/json"}
+            content=json.dumps(gemini_resp).encode(),
+            status_code=200,
+            headers={"content-type": "application/json"},
         )
     except Exception as e:
         log.error("Gemini response conversion error: %s", e)
@@ -1129,7 +1221,11 @@ def _policy_engine_enabled() -> bool:
 
 
 def _policy_engine_ws_evaluate_enabled() -> bool:
-    return os.environ.get("POLICY_ENGINE_WS_EVALUATE", "").lower() in ("1", "true", "yes")
+    return os.environ.get("POLICY_ENGINE_WS_EVALUATE", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def codex_ws_policy_bypass() -> bool:
@@ -1278,7 +1374,12 @@ async def _oai_to_responses_stream(oai_lines):
         "response.created",
         {
             "type": "response.created",
-            "response": {"id": resp_id, "object": "response", "status": "in_progress", "output": []},
+            "response": {
+                "id": resp_id,
+                "object": "response",
+                "status": "in_progress",
+                "output": [],
+            },
         },
     )
     yield _sse(
@@ -1333,7 +1434,11 @@ async def _oai_to_responses_stream(oai_lines):
                             "item_id": msg_id,
                             "output_index": 0,
                             "content_index": 0,
-                            "part": {"type": "output_text", "text": "", "annotations": []},
+                            "part": {
+                                "type": "output_text",
+                                "text": "",
+                                "annotations": [],
+                            },
                         },
                     )
                 text_buffer += text
@@ -1490,7 +1595,10 @@ async def responses_websocket(ws: WebSocket):
             is_authorized = False
 
     if not is_authorized:
-        log.warning("Unauthorized Codex WebSocket connection attempt with token: %s", client_auth)
+        log.warning(
+            "Unauthorized Codex WebSocket connection attempt with token: %s",
+            client_auth,
+        )
         try:
             await ws.close(code=1008, reason="Unauthorized")
         except Exception:
@@ -1512,7 +1620,11 @@ async def responses_websocket(ws: WebSocket):
 
     headers = _codex_ws_upstream_headers(dict(ws.headers), routing_decision)
 
-    log.info("Proxying Codex WebSocket to upstream: %s (policy_bypass=%s)", cliproxy_ws_url, ws_bypass)
+    log.info(
+        "Proxying Codex WebSocket to upstream: %s (policy_bypass=%s)",
+        cliproxy_ws_url,
+        ws_bypass,
+    )
     try:
         # Determine whether to use additional_headers or extra_headers
         import inspect
@@ -1578,7 +1690,11 @@ async def responses_websocket(ws: WebSocket):
             for task in pending:
                 task.cancel()
     except Exception as exc:
-        log.error("Failed to connect or proxy Codex WebSocket to upstream %s: %s", cliproxy_ws_url, exc)
+        log.error(
+            "Failed to connect or proxy Codex WebSocket to upstream %s: %s",
+            cliproxy_ws_url,
+            exc,
+        )
         try:
             await ws.close(code=1011, reason=f"Upstream connection failed: {exc}")
         except Exception:
@@ -1592,7 +1708,9 @@ async def responses_proxy(request: Request):
         body = json.loads(raw)
     except Exception:
         return Response(
-            content=json.dumps({"error": "Invalid JSON"}), status_code=400, headers={"content-type": "application/json"}
+            content=json.dumps({"error": "Invalid JSON"}),
+            status_code=400,
+            headers={"content-type": "application/json"},
         )
 
     streaming = body.get("stream", False)
@@ -1625,7 +1743,11 @@ async def responses_proxy(request: Request):
         try:
             _sig_start = time.monotonic()
             resp = await _client.send(req, stream=True)
-            _record_provider_signal(oai_body.get("model", "-"), resp.status_code, time.monotonic() - _sig_start)
+            _record_provider_signal(
+                oai_body.get("model", "-"),
+                resp.status_code,
+                time.monotonic() - _sig_start,
+            )
         except httpx.TimeoutException as exc:
             log.error("Responses stream upstream timed out: %s", exc)
             err_msg = f"Upstream request timed out after {UPSTREAM_TIMEOUT} seconds. Please check LiteLLM readiness."
@@ -1635,7 +1757,11 @@ async def responses_proxy(request: Request):
                 headers={"content-type": "application/json"},
             )
         except Exception as exc:
-            log.error("Responses stream upstream error model=%s: %s", oai_body.get("model"), exc)
+            log.error(
+                "Responses stream upstream error model=%s: %s",
+                oai_body.get("model"),
+                exc,
+            )
             err_msg = f"Upstream connection failed: {exc}"
             return Response(
                 content=json.dumps({"error": {"message": err_msg, "type": "connection_error"}}),
@@ -1646,9 +1772,15 @@ async def responses_proxy(request: Request):
         if resp.status_code >= 400:
             err_content = await resp.aread()
             await resp.aclose()
-            log.warning("Responses upstream stream error %d: %s", resp.status_code, err_content[:300])
+            log.warning(
+                "Responses upstream stream error %d: %s",
+                resp.status_code,
+                err_content[:300],
+            )
             return Response(
-                content=err_content, status_code=resp.status_code, headers={"content-type": "application/json"}
+                content=err_content,
+                status_code=resp.status_code,
+                headers={"content-type": "application/json"},
             )
 
         async def generate():
@@ -1670,26 +1802,49 @@ async def responses_proxy(request: Request):
                 err_msg = (
                     f"Upstream request timed out after {UPSTREAM_TIMEOUT} seconds. Please check LiteLLM readiness."
                 )
-                yield _sse("error", {"type": "error", "error": {"message": err_msg, "type": "timeout_error"}})
+                yield _sse(
+                    "error",
+                    {
+                        "type": "error",
+                        "error": {"message": err_msg, "type": "timeout_error"},
+                    },
+                )
                 yield _sse(
                     "response.completed",
                     {
                         "type": "response.completed",
-                        "response": {"id": err_id, "object": "response", "status": "failed"},
+                        "response": {
+                            "id": err_id,
+                            "object": "response",
+                            "status": "failed",
+                        },
                     },
                 )
             except Exception as exc:
                 log.error(
-                    "Responses stream upstream error model=%s: %s: %s", oai_body.get("model"), type(exc).__name__, exc
+                    "Responses stream upstream error model=%s: %s: %s",
+                    oai_body.get("model"),
+                    type(exc).__name__,
+                    exc,
                 )
                 err_id = f"resp_{uuid.uuid4().hex[:24]}"
                 err_msg = f"Upstream connection failed: {exc}"
-                yield _sse("error", {"type": "error", "error": {"message": err_msg, "type": "connection_error"}})
+                yield _sse(
+                    "error",
+                    {
+                        "type": "error",
+                        "error": {"message": err_msg, "type": "connection_error"},
+                    },
+                )
                 yield _sse(
                     "response.completed",
                     {
                         "type": "response.completed",
-                        "response": {"id": err_id, "object": "response", "status": "failed"},
+                        "response": {
+                            "id": err_id,
+                            "object": "response",
+                            "status": "failed",
+                        },
                     },
                 )
             finally:
@@ -1734,7 +1889,9 @@ async def responses_proxy(request: Request):
     if resp.status_code >= 400:
         log.warning("Codex upstream %d: %s", resp.status_code, resp.text[:300])
         return Response(
-            content=resp.content, status_code=resp.status_code, headers={"content-type": "application/json"}
+            content=resp.content,
+            status_code=resp.status_code,
+            headers={"content-type": "application/json"},
         )
 
     try:
@@ -1745,7 +1902,9 @@ async def responses_proxy(request: Request):
         _record_token_usage(oai_body.get("model", "-"), resp_json)
         responses_resp = _oai_to_responses_resp(resp_json)
         return Response(
-            content=json.dumps(responses_resp).encode(), status_code=200, headers={"content-type": "application/json"}
+            content=json.dumps(responses_resp).encode(),
+            status_code=200,
+            headers={"content-type": "application/json"},
         )
     except Exception as e:
         log.error("Codex response conversion error: %s", e)
@@ -1806,18 +1965,38 @@ async def claude_proxy(request: Request):
 
     model = oai_body.get("model", "")
     ck = _cache_key(model, oai_body.get("messages", []), oai_body.get("tools"))
-    log.info("Claude Messages API → model=%s tools=%d stream=%s", model, len(oai_body.get("tools", [])), streaming)
+    log.info(
+        "Claude Messages API → model=%s tools=%d stream=%s",
+        model,
+        len(oai_body.get("tools", [])),
+        streaming,
+    )
 
     if streaming:
         req = _client.build_request("POST", f"{LITELLM}/v1/chat/completions", headers=headers, content=oai_bytes)
         try:
             _sig_start = time.monotonic()
             resp = await _client.send(req, stream=True)
-            _record_provider_signal(oai_body.get("model", "-"), resp.status_code, time.monotonic() - _sig_start)
+            _record_provider_signal(
+                oai_body.get("model", "-"),
+                resp.status_code,
+                time.monotonic() - _sig_start,
+            )
         except Exception as exc:
-            log.error("Claude stream connection failed model=%s: %s", oai_body.get("model"), exc)
+            log.error(
+                "Claude stream connection failed model=%s: %s",
+                oai_body.get("model"),
+                exc,
+            )
             return Response(
-                content=json.dumps({"error": {"type": "api_error", "message": f"Connection failed: {exc}"}}),
+                content=json.dumps(
+                    {
+                        "error": {
+                            "type": "api_error",
+                            "message": f"Connection failed: {exc}",
+                        }
+                    }
+                ),
                 status_code=502,
                 headers={"content-type": "application/json"},
             )
@@ -1825,9 +2004,15 @@ async def claude_proxy(request: Request):
         if resp.status_code >= 400:
             err_content = await resp.aread()
             await resp.aclose()
-            log.warning("Claude upstream stream error %d: %s", resp.status_code, err_content[:300])
+            log.warning(
+                "Claude upstream stream error %d: %s",
+                resp.status_code,
+                err_content[:300],
+            )
             return Response(
-                content=err_content, status_code=resp.status_code, headers={"content-type": "application/json"}
+                content=err_content,
+                status_code=resp.status_code,
+                headers={"content-type": "application/json"},
             )
 
         async def generate():
@@ -1845,7 +2030,10 @@ async def claude_proxy(request: Request):
                     yield event
             except Exception as exc:
                 log.error(
-                    "Claude stream upstream error model=%s: %s: %s", oai_body.get("model"), type(exc).__name__, exc
+                    "Claude stream upstream error model=%s: %s: %s",
+                    oai_body.get("model"),
+                    type(exc).__name__,
+                    exc,
                 )
                 msg_id = f"msg_{uuid.uuid4().hex[:24]}"
                 yield f"event: message_start\ndata: {json.dumps({'type': 'message_start', 'message': {'id': msg_id, 'type': 'message', 'role': 'assistant', 'content': [], 'model': model, 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}})}\n\n"
@@ -1875,7 +2063,9 @@ async def claude_proxy(request: Request):
     if resp.status_code >= 400:
         log.warning("Claude upstream %d: %s", resp.status_code, resp.text[:300])
         return Response(
-            content=resp.content, status_code=resp.status_code, headers={"content-type": "application/json"}
+            content=resp.content,
+            status_code=resp.status_code,
+            headers={"content-type": "application/json"},
         )
 
     try:
@@ -1886,7 +2076,9 @@ async def claude_proxy(request: Request):
         _record_token_usage(model, resp_json)
         claude_resp = _oai_to_claude_resp(resp_json)
         return Response(
-            content=json.dumps(claude_resp).encode(), status_code=200, headers={"content-type": "application/json"}
+            content=json.dumps(claude_resp).encode(),
+            status_code=200,
+            headers={"content-type": "application/json"},
         )
     except Exception as e:
         log.error("Claude response conversion error: %s", e)
@@ -1907,6 +2099,7 @@ async def health():
 ADMIN_SCHEMA_VERSION = "admin-console.v1"
 LITELLM_CONFIG_PATH = os.environ.get("LITELLM_CONFIG_PATH", "/config/litellm-config.yaml")
 ADMIN_ERROR_MAXLEN = 400
+TRANSLATOR_ADMIN_KEY = os.environ.get("TRANSLATOR_ADMIN_KEY", "")
 
 _SECRET_PATTERNS = [
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]{12,}"),
@@ -1955,15 +2148,74 @@ def _admin_panel(status: str, source: str, freshness_seconds, errors: list, data
     }
 
 
+def _admin_key_valid(request: Request) -> bool:
+    """Return true when mutating translator admin APIs are enabled and authorized."""
+    configured = TRANSLATOR_ADMIN_KEY or os.environ.get("TRANSLATOR_ADMIN_KEY", "")
+    if not configured:
+        return False
+    return request.headers.get("x-admin-key", "") == configured
+
+
+def _require_admin_key(request: Request) -> JSONResponse | None:
+    if _admin_key_valid(request):
+        return None
+    status = 403 if (TRANSLATOR_ADMIN_KEY or os.environ.get("TRANSLATOR_ADMIN_KEY", "")) else 503
+    return JSONResponse(
+        {
+            "error": {
+                "message": "translator admin mutations are disabled or unauthorized",
+                "code": "admin_key_required",
+            }
+        },
+        status_code=status,
+    )
+
+
 def _admin_load_litellm_config() -> tuple[dict | None, list[dict]]:
     """Load litellm-config.yaml. Returns (config_or_None, errors)."""
     try:
         with open(LITELLM_CONFIG_PATH) as fh:
             return yaml.safe_load(fh) or {}, []
     except FileNotFoundError:
-        return None, [_admin_error("config_not_found", f"{LITELLM_CONFIG_PATH} not found", "repo:litellm-config.yaml")]
+        return None, [
+            _admin_error(
+                "config_not_found",
+                f"{LITELLM_CONFIG_PATH} not found",
+                "repo:litellm-config.yaml",
+            )
+        ]
     except Exception as exc:
-        return None, [_admin_error("config_parse_error", f"{type(exc).__name__}: {exc}", "repo:litellm-config.yaml")]
+        return None, [
+            _admin_error(
+                "config_parse_error",
+                f"{type(exc).__name__}: {exc}",
+                "repo:litellm-config.yaml",
+            )
+        ]
+
+
+def _model_registry_store() -> ModelRegistryStore:
+    return ModelRegistryStore()
+
+
+def _load_model_registry_with_config_fallback() -> ModelRegistryListResponse:
+    store = _model_registry_store()
+    registry = store.list_models()
+    if registry.registry_available and registry.models:
+        return ModelRegistryListResponse(
+            source=registry.source,
+            registry_available=True,
+            models=registry.models,
+            errors=registry.errors,
+        )
+
+    fallback = load_models_from_litellm_config(LITELLM_CONFIG_PATH)
+    return ModelRegistryListResponse(
+        source="litellm-config:fallback",
+        registry_available=registry.registry_available,
+        models=fallback.models,
+        errors=[*registry.errors, *fallback.errors],
+    )
 
 
 def _admin_parse_provider_metrics(text: str) -> list[dict]:
@@ -2004,14 +2256,22 @@ def _admin_run_readonly_command(args: list[str], timeout: float = 3.0) -> tuple[
         if proc.returncode != 0:
             return proc.stdout or "", [
                 _admin_error(
-                    "command_nonzero_exit", f"{' '.join(args)} exited {proc.returncode}: {proc.stderr}", "subprocess"
+                    "command_nonzero_exit",
+                    f"{' '.join(args)} exited {proc.returncode}: {proc.stderr}",
+                    "subprocess",
                 )
             ]
         return proc.stdout or "", []
     except FileNotFoundError:
         return "", [_admin_error("command_not_found", f"{args[0]} not found", "subprocess")]
     except subprocess.TimeoutExpired:
-        return "", [_admin_error("command_timeout", f"{' '.join(args)} timed out after {timeout}s", "subprocess")]
+        return "", [
+            _admin_error(
+                "command_timeout",
+                f"{' '.join(args)} timed out after {timeout}s",
+                "subprocess",
+            )
+        ]
     except Exception as exc:
         return "", [_admin_error("command_error", f"{type(exc).__name__}: {exc}", "subprocess")]
 
@@ -2034,37 +2294,63 @@ def _admin_health_panel() -> dict:
     services = [
         {"name": "translator", "status": "ok", "endpoint": env["translator_base_url"]},
         {"name": "litellm", "status": "unknown", "endpoint": env["litellm_ui_url"]},
-        {"name": "cliproxy", "status": "unknown", "endpoint": env["cliproxy_management_url"]},
-        {"name": "cpa-manager", "status": "unknown", "endpoint": env["cpa_manager_url"]},
+        {
+            "name": "cliproxy",
+            "status": "unknown",
+            "endpoint": env["cliproxy_management_url"],
+        },
+        {
+            "name": "cpa-manager",
+            "status": "unknown",
+            "endpoint": env["cpa_manager_url"],
+        },
     ]
     return _admin_panel("ok", "translator:self", 0, [], {"services": services})
 
 
-def _admin_models_panel(config: dict | None, visible_ids: list[str] | None, errors: list[dict]) -> dict:
+def _admin_models_panel(
+    config: dict | None,
+    visible_ids: list[str] | None,
+    errors: list[dict],
+    registry: ModelRegistryListResponse | None = None,
+) -> dict:
     configured = []
     if config:
         for entry in config.get("model_list", []) or []:
             name = entry.get("model_name") if isinstance(entry, dict) else None
             if name:
                 configured.append(name)
+    registry_models = registry.models if registry is not None else []
+    if registry_models:
+        configured = [model.model_id for model in registry_models]
     visible = visible_ids or []
     visible_aliases = {v[len(MODEL_PREFIX) :] if v.startswith(MODEL_PREFIX) else v for v in visible}
     models = []
     drift = []
+    registry_by_id = {model.model_id: model for model in registry_models}
     for alias in sorted(set(configured)):
         is_visible = alias in visible_aliases
+        registry_record = registry_by_id.get(alias)
         models.append(
             {
                 "id": f"{MODEL_PREFIX}{alias}",
                 "config_alias": alias,
-                "provider_family": _provider_of(alias),
+                "provider_family": registry_record.family if registry_record else _provider_of(alias),
                 "visible": is_visible,
-                "configured": True,
+                "configured": alias in set(configured),
+                "registry_status": registry_record.status if registry_record else None,
+                "registry_source": registry_record.source if registry_record else None,
                 "notes": [],
             }
         )
         if not is_visible and visible_ids is not None:
-            drift.append({"model": alias, "kind": "configured_not_visible", "severity": "warning"})
+            drift.append(
+                {
+                    "model": alias,
+                    "kind": "configured_not_visible",
+                    "severity": "warning",
+                }
+            )
     configured_set = set(configured)
     for alias in sorted(visible_aliases - configured_set):
         models.append(
@@ -2078,20 +2364,30 @@ def _admin_models_panel(config: dict | None, visible_ids: list[str] | None, erro
             }
         )
         if visible_ids is not None:
-            drift.append({"model": alias, "kind": "visible_not_configured", "severity": "warning"})
+            drift.append(
+                {
+                    "model": alias,
+                    "kind": "visible_not_configured",
+                    "severity": "warning",
+                }
+            )
     status = "ok"
-    if errors or visible_ids is None:
+    panel_errors = list(errors)
+    if registry is not None:
+        panel_errors.extend(registry.errors)
+    if panel_errors or visible_ids is None:
         status = "warning"
     if drift:
         status = "warning"
     return _admin_panel(
         status,
-        "translator:/v1/models + repo:litellm-config.yaml",
+        (registry.source if registry is not None else "translator:/v1/models + repo:litellm-config.yaml"),
         0,
-        errors,
+        panel_errors,
         {
             "visible_count": len(visible),
             "configured_count": len(configured),
+            "registry_available": registry.registry_available if registry is not None else False,
             "prefix": MODEL_PREFIX,
             "models": models,
             "drift": drift,
@@ -2260,7 +2556,12 @@ def _admin_providers_panel() -> dict:
 def _admin_config_drift_panel(config: dict | None, config_errors: list[dict]) -> dict:
     checks = []
     errors = list(config_errors)
-    checks.append({"name": "litellm_yaml_parse", "status": "ok" if config is not None else "error"})
+    checks.append(
+        {
+            "name": "litellm_yaml_parse",
+            "status": "ok" if config is not None else "error",
+        }
+    )
     # hardcoded API key scan mirrors CI: api_key: <literal> not using os.environ
     hardcoded = "unknown"
     try:
@@ -2306,7 +2607,12 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
             )
             if not m:
                 continue
-            kind, provider, model, raw_val = m.group(1), m.group(2), m.group(3), m.group(4)
+            kind, provider, model, raw_val = (
+                m.group(1),
+                m.group(2),
+                m.group(3),
+                m.group(4),
+            )
             try:
                 val = int(float(raw_val))
             except ValueError:
@@ -2314,14 +2620,27 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
 
             # Aggregate by provider
             if provider not in by_provider:
-                by_provider[provider] = {"provider": provider, "input_tokens": 0, "output_tokens": 0, "models": set()}
+                by_provider[provider] = {
+                    "provider": provider,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "models": set(),
+                }
             by_provider[provider][f"{kind}_tokens"] += val
             by_provider[provider]["models"].add(model)
 
             # Per-model entry
-            existing = next((e for e in by_model if e["model"] == model and e["provider"] == provider), None)
+            existing = next(
+                (e for e in by_model if e["model"] == model and e["provider"] == provider),
+                None,
+            )
             if not existing:
-                existing = {"model": model, "provider": provider, "input_tokens": 0, "output_tokens": 0}
+                existing = {
+                    "model": model,
+                    "provider": provider,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                }
                 by_model.append(existing)
             existing[f"{kind}_tokens"] += val
 
@@ -2352,7 +2671,11 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
                 "total_tokens": total_input + total_output,
             },
             "by_provider": provider_summary,
-            "by_model": sorted(by_model, key=lambda e: e["input_tokens"] + e["output_tokens"], reverse=True),
+            "by_model": sorted(
+                by_model,
+                key=lambda e: e["input_tokens"] + e["output_tokens"],
+                reverse=True,
+            ),
         },
     )
 
@@ -2360,21 +2683,37 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
 async def _admin_fetch_visible_models() -> tuple[list[str] | None, list[dict]]:
     """Fetch client-visible model ids from LiteLLM, server-side. Bounded; never raises."""
     if _client is None:
-        return None, [_admin_error("client_unavailable", "http client not initialized", "translator:/v1/models")]
+        return None, [
+            _admin_error(
+                "client_unavailable",
+                "http client not initialized",
+                "translator:/v1/models",
+            )
+        ]
     master_key = os.environ.get("LITELLM_MASTER_KEY", "")
     headers = {"authorization": f"Bearer {master_key}"} if master_key else {}
     try:
         resp = await _client.get(f"{LITELLM}/v1/models", headers=headers, timeout=2.0)
         if resp.status_code != 200:
             return None, [
-                _admin_error("models_http_error", f"/v1/models returned {resp.status_code}", "litellm:/v1/models")
+                _admin_error(
+                    "models_http_error",
+                    f"/v1/models returned {resp.status_code}",
+                    "litellm:/v1/models",
+                )
             ]
         data = resp.json().get("data", [])
         ids = [m.get("id") for m in data if isinstance(m, dict) and m.get("id")]
         # The aggregator reads LiteLLM directly (no prefix); compare on bare aliases.
         return ids, []
     except Exception as exc:
-        return None, [_admin_error("models_fetch_error", f"{type(exc).__name__}: {exc}", "litellm:/v1/models")]
+        return None, [
+            _admin_error(
+                "models_fetch_error",
+                f"{type(exc).__name__}: {exc}",
+                "litellm:/v1/models",
+            )
+        ]
 
 
 async def _admin_fetch_metrics_text() -> tuple[str | None, list[dict]]:
@@ -2392,10 +2731,215 @@ async def admin_token_analytics():
     return _admin_token_analytics_panel(metrics_text, errors)
 
 
+@app.get("/admin/models", response_model=ModelRegistryListResponse)
+async def admin_models():
+    """List translator-owned model registry records, falling back to LiteLLM config."""
+    return _load_model_registry_with_config_fallback()
+
+
+@app.post("/admin/models", response_model=ModelRegistryMutationResponse)
+async def admin_model_create(request: Request, body: ModelRegistryWriteRequest):
+    """Create or replace one model registry record."""
+    auth_error = _require_admin_key(request)
+    if auth_error is not None:
+        return auth_error
+    store = _model_registry_store()
+    if not store.enabled:
+        return ModelRegistryMutationResponse(
+            accepted=False,
+            registry_available=False,
+            errors=[
+                _admin_error(
+                    "registry_unavailable",
+                    "DATABASE_URL or psycopg2 unavailable",
+                    "postgres:model_registry",
+                )
+            ],
+        )
+    try:
+        model = store.upsert_model(body.to_record())
+    except Exception as exc:
+        return ModelRegistryMutationResponse(
+            accepted=False,
+            registry_available=store.enabled,
+            errors=[
+                _admin_error(
+                    "registry_write_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "postgres:model_registry",
+                )
+            ],
+        )
+    return ModelRegistryMutationResponse(registry_available=True, model=model)
+
+
+@app.get("/admin/models/{model_id}", response_model=ModelRegistryListResponse)
+async def admin_model(model_id: str):
+    """Read one model registry record by id, with config fallback."""
+    loaded = _load_model_registry_with_config_fallback()
+    matches = [model for model in loaded.models if model.model_id == model_id]
+    if not matches:
+        return JSONResponse(
+            {
+                "source": loaded.source,
+                "registry_available": loaded.registry_available,
+                "models": [],
+                "errors": loaded.errors,
+            },
+            status_code=404,
+        )
+    return ModelRegistryListResponse(
+        source=loaded.source,
+        registry_available=loaded.registry_available,
+        models=matches,
+        errors=loaded.errors,
+    )
+
+
+@app.patch("/admin/models/{model_id}", response_model=ModelRegistryMutationResponse)
+async def admin_model_patch(
+    model_id: str,
+    request: Request,
+    body: ModelRegistryPatchRequest,
+):
+    """Patch one model registry record."""
+    auth_error = _require_admin_key(request)
+    if auth_error is not None:
+        return auth_error
+    store = _model_registry_store()
+    current = store.get_model(model_id)
+    if current is None:
+        return JSONResponse(
+            {
+                "accepted": False,
+                "registry_available": store.enabled,
+                "model": None,
+                "errors": [
+                    _admin_error(
+                        "model_not_found",
+                        f"{model_id} not found",
+                        "postgres:model_registry",
+                    )
+                ],
+            },
+            status_code=404,
+        )
+    try:
+        model = store.upsert_model(body.apply(current))
+    except Exception as exc:
+        return ModelRegistryMutationResponse(
+            accepted=False,
+            registry_available=store.enabled,
+            errors=[
+                _admin_error(
+                    "registry_write_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "postgres:model_registry",
+                )
+            ],
+        )
+    return ModelRegistryMutationResponse(registry_available=store.enabled, model=model)
+
+
+@app.delete("/admin/models/{model_id}", response_model=ModelRegistryMutationResponse)
+async def admin_model_delete(model_id: str, request: Request, hard: bool = False):
+    """Disable one model by default; hard delete only when hard=true."""
+    auth_error = _require_admin_key(request)
+    if auth_error is not None:
+        return auth_error
+    store = _model_registry_store()
+    try:
+        if hard:
+            deleted = store.hard_delete_model(model_id)
+            if not deleted:
+                return JSONResponse(
+                    {
+                        "accepted": False,
+                        "registry_available": store.enabled,
+                        "model": None,
+                        "errors": [
+                            _admin_error(
+                                "model_not_found",
+                                f"{model_id} not found",
+                                "postgres:model_registry",
+                            )
+                        ],
+                    },
+                    status_code=404,
+                )
+            return ModelRegistryMutationResponse(registry_available=store.enabled)
+        model = store.disable_model(model_id)
+    except Exception as exc:
+        return ModelRegistryMutationResponse(
+            accepted=False,
+            registry_available=store.enabled,
+            errors=[
+                _admin_error(
+                    "registry_write_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "postgres:model_registry",
+                )
+            ],
+        )
+    if model is None:
+        return JSONResponse(
+            {
+                "accepted": False,
+                "registry_available": store.enabled,
+                "model": None,
+                "errors": [
+                    _admin_error(
+                        "model_not_found",
+                        f"{model_id} not found",
+                        "postgres:model_registry",
+                    )
+                ],
+            },
+            status_code=404,
+        )
+    return ModelRegistryMutationResponse(registry_available=store.enabled, model=model)
+
+
+@app.post("/admin/models/sync", response_model=ModelRegistrySyncResponse)
+async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
+    """Import current LiteLLM config into the Postgres model registry."""
+    auth_error = _require_admin_key(request)
+    if auth_error is not None:
+        return auth_error
+
+    loaded = load_models_from_litellm_config(LITELLM_CONFIG_PATH)
+    store = _model_registry_store()
+    errors = list(loaded.errors)
+    imported = 0
+    if not body.dry_run:
+        try:
+            imported = store.upsert_models(loaded.models)
+        except Exception as exc:
+            errors.append(
+                _admin_error(
+                    "registry_write_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "postgres:model_registry",
+                )
+            )
+    else:
+        imported = len(loaded.models)
+    return ModelRegistrySyncResponse(
+        dry_run=body.dry_run,
+        source=body.source,
+        registry_available=store.enabled,
+        imported_count=imported,
+        skipped_count=0,
+        models=loaded.models,
+        errors=errors,
+    )
+
+
 @app.get("/admin/status")
 async def admin_status():
     """Read-only operator status aggregator (admin-console.v1)."""
     config, config_errors = _admin_load_litellm_config()
+    registry = _load_model_registry_with_config_fallback()
     visible_ids, model_errors = await _admin_fetch_visible_models()
     metrics_text, metrics_errors = await _admin_fetch_metrics_text()
     redis_ok, policy_version = await _admin_policy_engine_connectivity()
@@ -2406,7 +2950,7 @@ async def admin_status():
 
     panels = {
         "health": _admin_health_panel(),
-        "models": _admin_models_panel(config, visible_ids, model_errors),
+        "models": _admin_models_panel(config, visible_ids, model_errors, registry),
         "providers": _admin_providers_panel(),
         "routing": _admin_routing_panel(
             config,
@@ -2512,7 +3056,10 @@ async def proxy(path: str, request: Request):
     changed = prefix_stripped or fmt_changed
 
     # Intercept /responses/compact for non-OpenAI models: map to gpt-5-5 for CLIProxy compatibility
-    is_responses_compact = path.rstrip("/") in ("v1/responses/compact", "responses/compact")
+    is_responses_compact = path.rstrip("/") in (
+        "v1/responses/compact",
+        "responses/compact",
+    )
     if is_responses_compact and request.method == "POST":
         try:
             bd = json.loads(body)
@@ -2520,7 +3067,8 @@ async def proxy(path: str, request: Request):
             # Map non-OpenAI models (Claude, Gemini, etc.) to gpt-5-5 for native /responses/compact support
             if model and not model.startswith("gpt-") and not model.startswith("o1-") and not model.startswith("o3-"):
                 log.info(
-                    "Responses/compact interception: mapping model %s to gpt-5-5 for CLIProxy compatibility", model
+                    "Responses/compact interception: mapping model %s to gpt-5-5 for CLIProxy compatibility",
+                    model,
                 )
                 bd["model"] = "gpt-5-5"
                 body = json.dumps(bd).encode()
@@ -2543,7 +3091,9 @@ async def proxy(path: str, request: Request):
     headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
     _normalize_upstream_authorization(headers)
     log.info(
-        "Proxy request path: %s headers: %s", path, {k: v for k, v in headers.items() if k.lower() != "authorization"}
+        "Proxy request path: %s headers: %s",
+        path,
+        {k: v for k, v in headers.items() if k.lower() != "authorization"},
     )
     if changed:
         headers["content-length"] = str(len(body))
@@ -2600,7 +3150,12 @@ async def proxy(path: str, request: Request):
                 yield ("data: " + json.dumps(err) + "\n\n").encode()
             except Exception as exc:
                 log.error("Proxy stream upstream error for %s: %s", path, exc)
-                err = {"error": {"message": f"Upstream connection failed: {exc}", "type": "connection_error"}}
+                err = {
+                    "error": {
+                        "message": f"Upstream connection failed: {exc}",
+                        "type": "connection_error",
+                    }
+                }
                 yield ("data: " + json.dumps(err) + "\n\n").encode()
             if ck and buf:
                 await _cache_set(ck, buf)
@@ -2612,7 +3167,9 @@ async def proxy(path: str, request: Request):
         if cached_json is not None:
             log.info("cache hit (proxy) key=%s", ck[:16])
             return Response(
-                content=cached_json[0].encode(), status_code=200, headers={"content-type": "application/json"}
+                content=cached_json[0].encode(),
+                status_code=200,
+                headers={"content-type": "application/json"},
             )
 
     _proxy_start = time.monotonic()
@@ -2636,7 +3193,12 @@ async def proxy(path: str, request: Request):
         log.error("Proxy upstream connection failed for %s: %s", path, exc)
         return Response(
             content=json.dumps(
-                {"error": {"message": f"Upstream connection failed: {exc}", "type": "connection_error"}}
+                {
+                    "error": {
+                        "message": f"Upstream connection failed: {exc}",
+                        "type": "connection_error",
+                    }
+                }
             ).encode(),
             status_code=502,
             headers={"content-type": "application/json"},
@@ -2645,7 +3207,12 @@ async def proxy(path: str, request: Request):
         _record_provider_signal(signal_model, resp.status_code, time.monotonic() - _proxy_start)
 
     if resp.status_code >= 400:
-        log.warning("Upstream %d for %s — raw: %s", resp.status_code, path, raw[:600].decode(errors="replace"))
+        log.warning(
+            "Upstream %d for %s — raw: %s",
+            resp.status_code,
+            path,
+            raw[:600].decode(errors="replace"),
+        )
 
     if ck and resp.status_code == 200 and is_chat:
         await _cache_set(ck + ":json", [resp.text])

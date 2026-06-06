@@ -112,6 +112,130 @@ paths:
                       provider: "anthropic"
                       input_tokens: 350000
                       output_tokens: 85000
+  /admin/models:
+    get:
+      summary: List translator-owned model registry records
+      responses:
+        '200':
+          description: Registry models, falling back to parsed LiteLLM config when Postgres is unavailable
+          content:
+            application/json:
+              example:
+                source: "postgres:model_registry"
+                registry_available: true
+                models:
+                  - model_id: "claude-sonnet-4-6"
+                    provider: "anthropic"
+                    family: "anthropic"
+                    upstream_model: "claude-sonnet-4.6"
+                    litellm_model: "openai/claude-sonnet-4.6"
+                    enabled: true
+                    status: "UNKNOWN"
+                errors: []
+    post:
+      summary: Create or replace a model registry record
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            example:
+              model_id: "gpt-5-4"
+              upstream_model: "gpt-5.4"
+              supports_tools: true
+      responses:
+        '200':
+          description: Model upserted
+        '403':
+          description: Invalid admin key
+        '503':
+          description: Admin mutations disabled or registry unavailable
+  /admin/models/{model_id}:
+    get:
+      summary: Read one model registry record
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Matching model record
+        '404':
+          description: Model not found
+    patch:
+      summary: Update one model registry record
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            example:
+              enabled: true
+              status: "HEALTHY"
+              cost_tier: 2
+      responses:
+        '200':
+          description: Model updated
+        '404':
+          description: Model not found
+    delete:
+      summary: Disable one model registry record
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: hard
+          in: query
+          required: false
+          schema: {type: boolean, default: false}
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Model disabled or deleted
+        '404':
+          description: Model not found
+  /admin/models/sync:
+    post:
+      summary: Import current LiteLLM config into the translator model registry
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run:
+                  type: boolean
+                  default: true
+                source:
+                  type: string
+                  default: litellm-config
+            example:
+              dry_run: true
+      responses:
+        '200':
+          description: Import result
+        '503':
+          description: Admin mutations disabled when TRANSLATOR_ADMIN_KEY is unset
   /admin/dashboard:
     get:
       summary: Admin console HTML dashboard
