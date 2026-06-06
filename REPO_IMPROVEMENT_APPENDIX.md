@@ -155,6 +155,21 @@ git worktree list
 On removal failure: stash/commit in feature worktree, stop stack, retry, `git worktree prune`.
 Coordinator agents verify cleanup before closing parent epics.
 
+## Mock data seeding (Gate B / dev stacks)
+
+Dev and mock stacks avoid ~15 min LiteLLM `proxy_extras` migrations on fresh Postgres volumes:
+
+1. **`init-db-bootstrap.sql`** — creates `litellm` / `langfuse` databases only (no tables).
+2. **`db/seed-litellm-mock.sql`** — pre-migrated LiteLLM schema + `_prisma_migrations` rows (~150 KB).
+   Loaded at first volume init (`docker-entrypoint-initdb.d/02`) or via `scripts/load-mock-data.sh`
+   when reusing an older empty volume.
+3. **`db/apply-migrations.sh`** — gateway tables (`credential_inventory`, policy profiles).
+4. **`LITELLM_MIGRATIONS=None`** — LiteLLM skips Prisma migrations (schema already present).
+
+Regenerate seed after LiteLLM image bump: `scripts/generate-litellm-mock-seed.sh` (requires stable
+`ai-postgres-1` with migrations applied). CI `mock-integration` reuses the `aidevmock` Postgres
+volume when possible (`scripts/ci-free-mock-host-ports.sh` omits `down -v` by default).
+
 **CI flake:** If `mock-integration` fails in CI but `make test-mock` passes locally, note it in the PR and retry.
 
 **Manual merge:** If `gh pr merge --auto` is unavailable, use `gh pr merge <num> --merge` after green checks.

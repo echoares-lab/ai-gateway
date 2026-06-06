@@ -3,7 +3,8 @@ services:
   postgres:
     volumes:
       - dev_pgdata:/var/lib/postgresql/data
-      - ./tests/init-db-mock-ci.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - ./init-db-bootstrap.sql:/docker-entrypoint-initdb.d/01-bootstrap.sql:ro
+      - ./db/seed-litellm-mock.sql:/docker-entrypoint-initdb.d/02-seed-litellm-mock.sql:ro
 
   cliproxy:
     build:
@@ -25,7 +26,6 @@ services:
       # the DB schema isn't empty (Prisma P3005). The default migration path can
       # be read-only inside the container image; force a writable directory.
       LITELLM_MIGRATION_DIR: ${LITELLM_MIGRATION_DIR:-/tmp/litellm_migrations}
-    # Fresh Postgres + LiteLLM proxy_extras migrations can exceed dev defaults (~70s).
     healthcheck:
       test:
         [
@@ -39,10 +39,10 @@ except Exception:
     sys.exit(1)
 PY"
         ]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 24
-      start_period: 120s
+      retries: 12
+      start_period: 60s
 
   policy-engine:
     build:

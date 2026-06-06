@@ -300,7 +300,8 @@ jobs:
           DEV_POLICY_ENGINE_PORT: "18080"
           LITELLM_MIGRATIONS: "None"
         run: |
-          # Reuse aidevmock Postgres volume on self-hosted runners (avoid ~7m Prisma migrations each job).
+          # Reuse aidevmock Postgres volume on self-hosted runners. Fresh volumes get
+          # pre-migrated LiteLLM schema from db/seed-litellm-mock.sql (no proxy_extras run).
           bash scripts/ci-free-mock-host-ports.sh "$GITHUB_WORKSPACE"
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
@@ -309,10 +310,20 @@ jobs:
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
-            up -d postgres cliproxy litellm policy-engine
-          echo "Waiting for LiteLLM readiness (fresh Postgres migrations)..."
-          # proxy_extras baseline + 123 migrations on a fresh CI Postgres volume can exceed 7.5m.
-          for i in {1..180}; do
+            up -d postgres redis
+          for i in {1..24}; do
+            docker exec aidevmock-postgres-1 pg_isready -U postgres >/dev/null 2>&1 && break
+            [ "$i" -eq 24 ] && { echo "postgres never ready"; exit 1; }
+            sleep 5
+          done
+          bash scripts/load-mock-data.sh aidevmock-postgres-1
+          bash db/apply-migrations.sh aidevmock-postgres-1
+          docker compose \
+            -f docker-compose.dev.yml -f docker-compose.mock.yml \
+            -p aidevmock \
+            up -d cliproxy litellm policy-engine
+          echo "Waiting for LiteLLM readiness..."
+          for i in {1..36}; do
             if curl -sf http://localhost:4011/health/readiness >/dev/null; then
               echo "LiteLLM ready"
               break
@@ -328,12 +339,12 @@ jobs:
               docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs --no-color --tail 200 litellm || true
               exit 1
             fi
-            if [ "$i" -eq 180 ]; then
+            if [ "$i" -eq 36 ]; then
               echo "LiteLLM never became ready"
               docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock logs litellm || true
               exit 1
             fi
-            echo "waiting for litellm ($i/180)..."
+            echo "waiting for litellm ($i/36)..."
             sleep 5
           done
           docker compose \
@@ -408,16 +419,19 @@ jobs:
           export CLIPROXY_BUILD_CONTEXT="$PWD"
           export CLIPROXY_DOCKERFILE="Dockerfile.cliproxy"
           ./dev-env.sh start 1
-      - name: Wait for services to be ready
+      - name: Wait for translator health
         run: |
-          for i in {1..30}; do
+          for i in {1..36}; do
             if curl -sf http://localhost:4010/health >/dev/null; then
               echo "✓ Translator is ready"
-              break
+              exit 0
             fi
-            echo "Waiting for translator (retry $i/30)..."
-            sleep 3
+            echo "Waiting for translator (retry $i/36)..."
+            sleep 5
           done
+          echo "translator never became healthy"
+          docker compose -f docker-compose.dev.yml -p aidev1 logs --no-color --tail 200 translator || true
+          exit 1
       - name: Run real-provider smoke E2E
         run: |
           ./dev-env.sh test 1 -- -m "integration and smoke"
