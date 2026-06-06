@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(__file__))
 import main as t
+from core.model_registry import ModelRegistryRecord
 
 
 @pytest.fixture
@@ -119,6 +120,58 @@ def test_parse_team_info_to_budget_pct():
 def test_build_routing_context_includes_budget():
     ctx = t._build_routing_context(None, {"model": "x", "messages": []}, budget={"team_budget_pct_used": 100.0})
     assert ctx["budget"]["team_budget_pct_used"] == 100.0
+
+
+def test_build_routing_context_includes_registry_model_metadata(monkeypatch):
+    record = ModelRegistryRecord(
+        model_id="claude-sonnet-4-6",
+        provider="anthropic",
+        family="claude",
+        upstream_model="claude-sonnet-4.6",
+        litellm_model="openai/claude-sonnet-4.6",
+        enabled=True,
+        status="ACTIVE",
+        supports_tools=True,
+        supports_vision=False,
+        cost_tier=2,
+        policy_metadata={
+            "fallbacks": ["gpt-5-4", "gemini-3-flash"],
+            "deployment_credentials": [f"cred-{idx}" for idx in range(20)],
+        },
+        source="test",
+        probe_status="success",
+        probe_http_status=200,
+    )
+    monkeypatch.setattr(
+        t,
+        "_load_model_registry_with_config_fallback",
+        lambda: t.ModelRegistryListResponse(
+            source="test",
+            registry_available=True,
+            models=[record],
+        ),
+    )
+
+    ctx = t._build_routing_context(None, {"model": "claude-sonnet-4-6", "messages": []})
+
+    registry = ctx["metadata"]["model_registry"]
+    assert registry["canonical_model_id"] == "claude-sonnet-4-6"
+    assert registry["provider"] == "anthropic"
+    assert registry["capabilities"] == {"tools": True, "vision": False}
+    assert registry["fallbacks"] == ["gpt-5-4", "gemini-3-flash"]
+    assert len(registry["deployment_credentials"]) == 16
+    assert registry["probe_status"] == "success"
+
+
+def test_build_routing_context_registry_metadata_fail_open(monkeypatch):
+    def fail():
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(t, "_load_model_registry_with_config_fallback", fail)
+
+    ctx = t._build_routing_context(None, {"model": "claude-sonnet-4-6", "messages": []})
+
+    assert ctx["metadata"] == {}
 
 
 @pytest.mark.asyncio

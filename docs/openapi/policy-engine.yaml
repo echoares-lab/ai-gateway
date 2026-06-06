@@ -261,7 +261,53 @@ components:
           enum: [fill-first, quota-aware, round-robin]
         metadata:
           type: object
+          description: Additive request metadata supplied by translator. Policy-engine must ignore unknown keys.
           additionalProperties: true
+          properties:
+            model_registry:
+              type: object
+              description: Compact translator registry metadata for the requested model. Omitted when registry lookup fails.
+              additionalProperties: true
+              properties:
+                canonical_model_id:
+                  type: string
+                provider:
+                  type: string
+                family:
+                  type: string
+                upstream_model:
+                  type: string
+                litellm_model:
+                  type: string
+                enabled:
+                  type: boolean
+                status:
+                  type: string
+                cost_tier:
+                  type: integer
+                  nullable: true
+                capabilities:
+                  type: object
+                  additionalProperties:
+                    type: boolean
+                probe_status:
+                  type: string
+                  nullable: true
+                probe_http_status:
+                  type: integer
+                  nullable: true
+                fallbacks:
+                  type: array
+                  items:
+                    type: string
+                aliases:
+                  type: array
+                  items:
+                    type: string
+                deployment_credentials:
+                  type: array
+                  items:
+                    type: string
         dry_run:
           type: boolean
           default: false

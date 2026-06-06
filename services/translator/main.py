@@ -63,6 +63,7 @@ from core.model_registry import (
     ModelRegistryPatchRequest,
     ModelRegistryReconcileRequest,
     ModelRegistryReconcileResponse,
+    ModelRegistryRecord,
     ModelRegistryStore,
     ModelRegistrySyncRequest,
     ModelRegistrySyncResponse,
@@ -584,9 +585,85 @@ def _request_capabilities(body: dict) -> dict:
     }
 
 
+def _compact_string_list(value, *, limit: int = 8) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        if item is None:
+            continue
+        text = str(item)
+        if text and text not in out:
+            out.append(text[:128])
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _policy_registry_metadata_from_record(record: ModelRegistryRecord) -> dict:
+    policy_metadata = record.policy_metadata if isinstance(record.policy_metadata, dict) else {}
+    capabilities = {
+        key: value
+        for key, value in {
+            "tools": record.supports_tools,
+            "vision": record.supports_vision,
+        }.items()
+        if value is not None
+    }
+    payload = {
+        "canonical_model_id": record.model_id,
+        "provider": record.provider,
+        "family": record.family,
+        "upstream_model": record.upstream_model,
+        "litellm_model": record.litellm_model,
+        "enabled": record.enabled,
+        "status": record.status,
+        "cost_tier": record.cost_tier,
+        "capabilities": capabilities,
+        "probe_status": record.probe_status,
+        "probe_http_status": record.probe_http_status,
+    }
+    fallbacks = _compact_string_list(policy_metadata.get("fallbacks"))
+    aliases = _compact_string_list(policy_metadata.get("aliases"))
+    backing_credentials = _compact_string_list(
+        policy_metadata.get("deployment_credentials") or policy_metadata.get("backing_credentials"),
+        limit=16,
+    )
+    if fallbacks:
+        payload["fallbacks"] = fallbacks
+    if aliases:
+        payload["aliases"] = aliases
+    if backing_credentials:
+        payload["deployment_credentials"] = backing_credentials
+    return {key: value for key, value in payload.items() if value is not None}
+
+
+def _model_registry_metadata_for_policy(model: str) -> dict | None:
+    requested = model[len("AI-Gateway:") :] if model.startswith("AI-Gateway:") else model
+    if not requested:
+        return None
+    candidates = {requested, requested.replace(".", "-")}
+    if requested.startswith("openai/"):
+        stripped = requested[len("openai/") :]
+        candidates.update({stripped, stripped.replace(".", "-")})
+    try:
+        loaded = _load_model_registry_with_config_fallback()
+    except Exception as exc:
+        log.warning("model registry metadata lookup failed (%s) — fail-open", exc)
+        return None
+    for record in loaded.models:
+        if record.model_id in candidates or record.upstream_model in candidates or record.litellm_model in candidates:
+            return _policy_registry_metadata_from_record(record)
+    return None
+
+
 def _build_routing_context(token: str | None, body: dict, *, budget: dict | None = None) -> dict:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
     model = body.get("model", "")
+    context_metadata = {}
+    registry_metadata = _model_registry_metadata_for_policy(model)
+    if registry_metadata:
+        context_metadata["model_registry"] = registry_metadata
     ctx = {
         "requested_model": model,
         "tenancy": _tenancy_from_token(token),
@@ -595,7 +672,7 @@ def _build_routing_context(token: str | None, body: dict, *, budget: dict | None
         "session_id": metadata.get("session_id") or metadata.get("litellm_session_id"),
         "rate_limits": _build_rate_limit_hints(model),
         "quota_headroom": _load_quota_headroom_hints(),
-        "metadata": {},
+        "metadata": context_metadata,
     }
     if budget is not None:
         ctx["budget"] = budget
