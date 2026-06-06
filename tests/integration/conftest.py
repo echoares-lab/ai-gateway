@@ -58,3 +58,35 @@ async def asgi_client(monkeypatch):
         ) as c:
             yield c
 
+
+# --- LiteLLM respx mocks ---
+LITELLM_URL = os.environ.get("LITELLM_URL", "http://litellm:4000")
+
+@pytest.fixture
+def mock_litellm_router():
+    """Provides a base respx router mocking common LiteLLM endpoints.
+    Can be overridden by individual tests."""
+    with respx.mock(base_url=LITELLM_URL, assert_all_called=False) as router:
+        router.get("/health/readiness").mock(return_value=httpx.Response(200, json={"status": "healthy"}))
+        router.get("/health").mock(return_value=httpx.Response(200, json={"status": "healthy"}))
+        
+        router.get("/v1/models").mock(return_value=httpx.Response(200, json={
+            "data": [
+                {"id": "gpt-4", "object": "model", "created": 123456789, "owned_by": "openai"}
+            ]
+        }))
+        
+        router.post("/v1/chat/completions").mock(return_value=httpx.Response(200, json={
+            "id": "chatcmpl-mock",
+            "object": "chat.completion",
+            "created": 123456789,
+            "model": "gpt-4",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "mocked response"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}
+        }))
+        
+        yield router
