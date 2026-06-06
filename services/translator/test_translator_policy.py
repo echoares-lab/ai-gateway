@@ -6,6 +6,7 @@ import sys
 
 import httpx
 import pytest
+import respx
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -13,12 +14,7 @@ import main as t
 
 
 @pytest.fixture
-def policy_client(monkeypatch):
-    monkeypatch.setattr(t, "POLICY_ENGINE_ENABLED", True)
-    monkeypatch.setattr(t, "POLICY_ENGINE_URL", "http://policy-engine:8080")
-    monkeypatch.setattr(t, "POLICY_ENGINE_TIMEOUT_MS", 100)
-    monkeypatch.setattr(t, "_quota_headroom_cache", None)
-
+def policy_client(monkeypatch, policy_engine_env):
     class MockResponse:
         def __init__(self, status_code=200, content=None):
             self.status_code = status_code
@@ -147,3 +143,24 @@ async def test_evaluate_policy_engine_fail_open_on_connection_error(monkeypatch)
     mock_client.post = boom
     monkeypatch.setattr(t, "_client", mock_client)
     assert await t._evaluate_policy_engine({"requested_model": "gpt-5-4"}) is None
+
+
+@pytest.mark.asyncio
+async def test_evaluate_policy_engine_with_respx(monkeypatch, policy_engine_env):
+    """respx-based HTTP mock (preferred over hand-rolled MockResponse)."""
+    monkeypatch.setattr(t, "_client", httpx.AsyncClient())
+    with respx.mock:
+        respx.post("http://policy-engine:8080/v1/evaluate").respond(
+            200,
+            json={
+                "decision": {
+                    "gate": "allow",
+                    "allowed_models": ["claude-sonnet-4-6"],
+                    "policy_version": "v0-stub",
+                    "rules_applied": ["stub:pass_through"],
+                }
+            },
+        )
+        result = await t._evaluate_policy_engine({"requested_model": "claude-sonnet-4-6"})
+    assert result is not None
+    assert result["gate"] == "allow"

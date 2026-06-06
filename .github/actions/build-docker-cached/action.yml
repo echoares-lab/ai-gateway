@@ -1,0 +1,28 @@
+name: Build Docker image (cached)
+description: Build and load a Docker image with GHA + local BuildKit cache
+
+inputs:
+  context:
+    description: Docker build context path
+    required: true
+  tags:
+    description: Image tag(s), comma-separated
+    required: true
+  scope:
+    description: GHA cache scope (isolates layer caches per service)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: docker/build-push-action@v5
+      with:
+        context: ${{ inputs.context }}
+        load: true
+        tags: ${{ inputs.tags }}
+        cache-from: |
+          type=gha,scope=${{ inputs.scope }}
+          type=local,src=/var/cache/ai-gateway/buildkit
+        cache-to: |
+          type=gha,mode=max,scope=${{ inputs.scope }}
+          type=local,dest=/var/cache/ai-gateway/buildkit,mode=max

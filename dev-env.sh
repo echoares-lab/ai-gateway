@@ -42,7 +42,7 @@ slot_ports() {
     TRANSLATOR_PORT=$(( 4000 + slot * 10 ))
     LITELLM_PORT=$(( 4001 + slot * 10 ))
     CLIPROXY_PORT=$(( 8317 + slot * 10 ))
-    POLICY_ENGINE_PORT=$(( 8070 + slot * 10 ))
+    POLICY_ENGINE_PORT=$(( 18070 + slot * 10 ))
 }
 
 compose_env() {

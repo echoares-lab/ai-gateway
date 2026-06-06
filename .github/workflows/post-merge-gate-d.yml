@@ -1,0 +1,35 @@
+name: Post-Merge Gate D Smoke
+
+# Advisory: runs health + model smokes on stable stack after merge to main.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  gate-d-smoke:
+    runs-on: self-hosted
+    continue-on-error: true
+    steps:
+      - name: Pre-clean workspace (self-hosted)
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
+      - uses: actions/checkout@v4
+      - name: Gate D — health check
+        run: ./cliproxy-setup.sh health
+      - name: Gate D — model smokes
+        run: |
+          ./cliproxy-setup.sh test claude-sonnet-4-6
+          ./cliproxy-setup.sh test gemini-3-flash
+          ./cliproxy-setup.sh test gpt-5-4
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Gate D post-merge smoke (advisory)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Commit: ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Record results in issue closeout if any model failed." >> "$GITHUB_STEP_SUMMARY"

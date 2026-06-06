@@ -87,7 +87,7 @@ Dev slots map to ports:
 
 ### Step 3 — Make changes (hot-reload is automatic)
 
-- `translator.py` edits → uvicorn reloads in ~1 second (no action needed)
+- `services/translator/main.py` edits → uvicorn reloads in ~1 second (no action needed)
 - `litellm-config.yaml` edits → litellm-reloader detects and restarts in ~10 seconds
 - `Dockerfile` or pip dependency changes → `./dev-env.sh rebuild <slot>`
 
@@ -296,7 +296,7 @@ Re-run `make test-fast` after any conflict resolution. Example: Epic 1.2 rebased
 
 ### Hotspot serialization
 
-If two issues touch the same hotspot (e.g. `services/translator/translator.py`,
+If two issues touch the same hotspot (e.g. `services/translator/**`,
 `litellm-config.yaml`), **serialize** them:
 
 - Declare `Depends on: #N` in the issue, or
@@ -334,11 +334,11 @@ Never leave uncommitted changes in the stable worktree; they block pulls and Gat
 
 | Gate | Command | When |
 |------|---------|------|
-| A — unit | `make test-unit` or `docker exec aidev1-translator-1 pytest test_translator*.py -v` | After each significant change |
+| A — unit | `make test-unit` (translator `-n auto` + policy-engine) | After each significant change |
 | A — lint | `make lint` | Before commit / push |
 | B — mock integration | `make test-mock` or `make test-fast` | Before PR; required CI parity |
-| C — real providers | `make test-e2e` or label `run-e2e` | High-risk changes only |
-| D — stable smoke | `./cliproxy-setup.sh test <model>` + `health` | After merge to main |
+| C — real providers | `make test-e2e` or label `run-e2e` | Hotspot paths (required in CI) or high-risk |
+| D — stable smoke | `./cliproxy-setup.sh test <model>` + `health` | After merge to main (+ advisory `post-merge-gate-d` workflow) |
 | Full integration | `./dev-env.sh test <slot>` | When Gate C needs broader coverage |
 | YAML validation | `python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"` | After editing litellm-config.yaml |
 
@@ -377,7 +377,7 @@ docs: update stale AGENTS/WORKTREES/RUNBOOK to reflect current state
 - ❌ **Do not push directly to `main`** — always via PR with CI passing
 - ❌ **Do not edit files in the stable worktree** (`/home/dev/repos/ai-gateway`) during development
 - ❌ **Do not create feature worktrees under `/home/dev/repos/` or inside the repo** (use `/home/dev/worktrees/ai-gateway-<feature>` — see `WORKTREES.md`)
-- ❌ **Do not skip unit tests** after changes to `translator.py`
+- ❌ **Do not skip unit tests** after changes to `services/translator/main.py`
 - ❌ **Do not hardcode API keys** in `litellm-config.yaml` — use `os.environ/CLIPROXY_API_KEY`
 - ❌ **Do not set `CACHE_ENABLED=true`** in production — LiteLLM's auth-aware cache is preferred
 - ❌ **Do not force-push** to `main`
@@ -393,8 +393,8 @@ docs: update stale AGENTS/WORKTREES/RUNBOOK to reflect current state
 
 ```bash
 pip install ruff                                                   # one-time install
-ruff check services/translator/translator.py                      # lint
-ruff format --check services/translator/translator.py             # format check
+ruff check services/translator/main.py                            # lint
+ruff format --check services/translator/main.py                   # format check
 bash -n cliproxy-setup.sh                                         # shell syntax
 python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"  # YAML
 ```
@@ -405,11 +405,14 @@ cover ruff, YAML validation, and hardcoded API key detection automatically.
 Optional pre-push hook (Gate A fast checks): `git config core.hooksPath .githooks`
 runs `make lint && make test-unit` before each push.
 
-CI (GitHub Actions `.github/workflows/ci.yml`) runs Gate A + B on every push and PR to `main`:
-`lint-and-syntax`, `unit-tests`, `multi-repo-isolation`, `mock-integration`.
-Gate C (`real-provider-e2e`) runs on label `run-e2e`, manual dispatch, or nightly schedule — not required to merge.
+CI (GitHub Actions `.github/workflows/ci.yml`) uses tiered gates on every push/PR to `main`:
 
-See `TESTING_AND_PROMOTION_POLICY.md` and `REPO_IMPROVEMENT_APPENDIX.md` for full gate mapping.
+- **Required — Fast (A):** `lint-and-syntax`, `unit-tests`, `build-translator`
+- **Required — Conditional:** `mock-integration`, `multi-repo-isolation`, path-filtered service tests
+- **Required — Hotspot (C):** `real-provider-e2e` when hotspot paths change (also `run-e2e` label / dispatch)
+- **Advisory:** `nightly-integration`, `post-merge-gate-d`, `hotspot-e2e-reminder`
+
+See `docs/TESTING.md`, `TESTING_AND_PROMOTION_POLICY.md`, and `REPO_IMPROVEMENT_APPENDIX.md` for full gate mapping.
 
 ---
 
@@ -423,12 +426,12 @@ See `TESTING_AND_PROMOTION_POLICY.md` and `REPO_IMPROVEMENT_APPENDIX.md` for ful
 | Translator logic broken | Unit tests (`test_translator*.py`) in CI |
 | Multi-repo isolation broken | `multi-repo-isolation` job in CI |
 | Wire-format / routing broken | `mock-integration` job (0 skips) |
-| Real provider regressions | Gate C: `run-e2e` label + nightly schedule |
-| Live models stop responding | Gate D: 3 model smokes on stable after merge |
+| Real provider regressions | Gate C: required on hotspot paths; `run-e2e` label; nightly schedule |
+| Post-merge production drift | Gate D: stable smokes + advisory `post-merge-gate-d` workflow |
 | Stable stack taken down | Worktree isolation (step 1) |
 | Direct push bypasses review | Branch protection + PR requirement |
 | Image version drift | Pinned in docker-compose files; upgrade via PR + test |
-| Cross-user cache hits | `CACHE_ENABLED=false` default in translator.py |
+| Cross-user cache hits | `CACHE_ENABLED=false` default in translator |
 | Two agents on same slot | Slot registry in claim comments; `./dev-env.sh list` |
 | Orphaned worktrees / occupied slots | Post-merge cleanup checklist (Step 9); coordinator verifies `git worktree list` |
 | Dirty stable worktree blocks Gate D | Never edit stable checkout; `git status` before `git pull` |

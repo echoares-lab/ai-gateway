@@ -18,36 +18,47 @@
 - Hard dependencies merged? Yes / No
 - Any bundled issues included? List them
 
-## Test plan (gates)
+## Test plan (tiered gates)
 
-Risk level: **low / medium / high** (see `TESTING_AND_PROMOTION_POLICY.md`)
+Risk level: **low / medium / high** (see `TESTING_AND_PROMOTION_POLICY.md` and `docs/TESTING.md`)
 
-### Gate A — lint, schema, unit (required for all PRs)
+### Required — Fast (Gate A) — every PR
 
 - [ ] `make lint` pass
-- [ ] `make test-unit` pass (`pytest test_translator*.py`)
+- [ ] `make test-unit` pass (translator + policy-engine; `-n auto`)
 - [ ] YAML validation pass (if `litellm-config.yaml` changed)
 
-### Gate B — mock integration (required for medium/high; optional for low)
+### Required — Conditional (Gate A/B) — when matching paths change
 
-- [ ] `make test-mock` pass (0 skips; `ALLOW_MODEL_SKIP=0`)
+- [ ] `make test-mock` pass (0 skips; runtime paths)
+- [ ] `bash tests/test-multi-repo-isolation.sh` (isolation script paths)
+- [ ] Policy-engine / litellm-reloader / credential-prober tests (service paths)
 
-### Gate C — real providers (high-risk only)
+### Required — Hotspot (Gate C) — hotspot paths or high-risk
 
-- [ ] `make test-e2e` pass **or** PR label `run-e2e` (CI `real-provider-e2e`)
+- [ ] CI `real-provider-e2e` pass **or** `make test-e2e` locally
 
-Required for changes touching: `translator.py`, `litellm-config.yaml`, compose files, cliproxy.
+Auto-triggers on: `services/translator/**`, `litellm-config.yaml`, compose files, `cliproxy-setup.sh`, `dev-env.sh`.
 
-### Gate D — post-merge stable (record in closeout, not pre-merge)
+Manual trigger: PR label `run-e2e`.
+
+### Advisory — not merge-blocking
+
+- [ ] `nightly-integration` (scheduled)
+- [ ] `post-merge-gate-d` (after merge to `main`)
+
+### Gate D — post-merge stable (record in closeout)
 
 - [ ] `./cliproxy-setup.sh health` on port 4000
 - [ ] `./cliproxy-setup.sh test claude-sonnet-4-6`
 - [ ] `./cliproxy-setup.sh test gemini-3-flash`
 - [ ] `./cliproxy-setup.sh test gpt-5-4`
 
-### CI
+### CI required checks
 
-- [ ] `lint-and-syntax`, `unit-tests`, `multi-repo-isolation`, `mock-integration` passed
+- [ ] `lint-and-syntax`, `unit-tests`, `build-translator`
+- [ ] `mock-integration` (runtime paths; skipped OK on docs-only)
+- [ ] `real-provider-e2e` (hotspot paths; skipped OK when not applicable)
 
 ## Risk / rollback
 
