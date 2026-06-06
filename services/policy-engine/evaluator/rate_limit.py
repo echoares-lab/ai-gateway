@@ -13,9 +13,7 @@ if TYPE_CHECKING:
     from inventory_store import InventoryStore
     from redis_store import RedisStateStore
 
-DEFAULT_PREEMPTIVE_429_THRESHOLD = int(
-    os.environ.get("POLICY_PREEMPTIVE_429_THRESHOLD", "3")
-)
+DEFAULT_PREEMPTIVE_429_THRESHOLD = int(os.environ.get("POLICY_PREEMPTIVE_429_THRESHOLD", "3"))
 
 
 @dataclass(frozen=True)
@@ -40,9 +38,7 @@ def _merge_snapshots(
     if existing is None:
         return incoming
     cooldown_until = existing.cooldown_until
-    if incoming.cooldown_until and (
-        cooldown_until is None or incoming.cooldown_until > cooldown_until
-    ):
+    if incoming.cooldown_until and (cooldown_until is None or incoming.cooldown_until > cooldown_until):
         cooldown_until = incoming.cooldown_until
     in_cooldown = existing.in_cooldown or incoming.in_cooldown
     if cooldown_until:
@@ -69,15 +65,54 @@ def _collect_credential_ids(context: RoutingContext) -> list[str]:
         if snap.credential_id and snap.credential_id not in seen:
             seen.add(snap.credential_id)
             ids.append(snap.credential_id)
-    backing = context.metadata.get("backing_credentials")
-    if isinstance(backing, dict):
-        for creds in backing.values():
-            if isinstance(creds, list):
-                for cred in creds:
-                    if isinstance(cred, str) and cred not in seen:
-                        seen.add(cred)
-                        ids.append(cred)
+    for creds in deployment_credentials_from_metadata(context).values():
+        for cred in creds:
+            if cred not in seen:
+                seen.add(cred)
+                ids.append(cred)
     return ids
+
+
+def _credential_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        if isinstance(item, str) and item and item not in out:
+            out.append(item)
+    return out
+
+
+def _merge_credential_map(target: dict[str, list[str]], source: Any) -> None:
+    if not isinstance(source, dict):
+        return
+    for model, creds in source.items():
+        if not isinstance(model, str) or not model:
+            continue
+        cred_ids = _credential_list(creds)
+        if cred_ids:
+            target[model] = cred_ids
+
+
+def deployment_credentials_from_metadata(context: RoutingContext) -> dict[str, list[str]]:
+    """Return explicit deployment -> credential ids mapping; unknown mapping stays empty."""
+    deployment_credentials: dict[str, list[str]] = {}
+    _merge_credential_map(deployment_credentials, context.metadata.get("backing_credentials"))
+    _merge_credential_map(deployment_credentials, context.metadata.get("deployment_credentials"))
+
+    registry = context.metadata.get("model_registry")
+    if isinstance(registry, dict):
+        registry_creds = _credential_list(registry.get("deployment_credentials") or registry.get("backing_credentials"))
+        if registry_creds:
+            for model in (
+                registry.get("canonical_model_id"),
+                context.requested_model,
+                context.requested_model.replace(".", "-"),
+            ):
+                if isinstance(model, str) and model:
+                    deployment_credentials.setdefault(model, registry_creds)
+
+    return deployment_credentials
 
 
 def merge_rate_limit_sources(
@@ -156,11 +191,7 @@ def evaluate_rate_limits(
 ) -> RateLimitEvaluation:
     """Apply pre-emptive deprioritization and quota-aware mode from merged state."""
     profiles = profiles or []
-    effective_threshold = (
-        threshold
-        if threshold is not None
-        else resolve_preemptive_threshold(profiles)
-    )
+    effective_threshold = threshold if threshold is not None else resolve_preemptive_threshold(profiles)
 
     deprioritized: list[str] = []
     deprioritized_set: set[str] = set()
@@ -182,10 +213,7 @@ def evaluate_rate_limits(
                 deprioritized_set.add(cred_id)
             rules.append("rate_limit:cooldown_skip")
 
-        preemptive = (
-            snap.rolling_429_count_5m >= effective_threshold
-            or snap.pre_emptive_degraded
-        )
+        preemptive = snap.rolling_429_count_5m >= effective_threshold or snap.pre_emptive_degraded
         if preemptive:
             snap = snap.model_copy(update={"pre_emptive_degraded": True})
             snapshots_by_cred[cred_id] = snap
@@ -202,16 +230,12 @@ def evaluate_rate_limits(
         quota_aware = True
 
     skipped_models: list[str] = []
-    backing = context.metadata.get("backing_credentials")
-    if isinstance(backing, dict):
-        for model, creds in backing.items():
-            if not isinstance(model, str) or not isinstance(creds, list):
-                continue
-            cred_ids = [c for c in creds if isinstance(c, str)]
-            if _all_credentials_degraded(cred_ids, deprioritized_set, snapshots_by_cred):
-                skipped_models.append(model)
-        if skipped_models:
-            rules.append("rate_limit:skip_all_cooled_models")
+    backing = deployment_credentials_from_metadata(context)
+    for model, creds in backing.items():
+        if _all_credentials_degraded(creds, deprioritized_set, snapshots_by_cred):
+            skipped_models.append(model)
+    if skipped_models:
+        rules.append("rate_limit:skip_all_cooled_models")
 
     merged = list(snapshots_by_cred.values())
     for snap in context.rate_limits:

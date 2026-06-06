@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 
 import fakeredis
 import pytest
-
 from evaluator.rate_limit import (
     aggregate_and_evaluate,
     evaluate_rate_limits,
@@ -20,7 +19,6 @@ from schemas import (
     EvaluateRequest,
     PolicyProfile,
     PolicyScope,
-    QuotaHeadroom,
     RateLimitSnapshot,
     RoutingContext,
 )
@@ -64,9 +62,7 @@ def test_merge_inventory_cool_down_until():
     )
     ctx = RoutingContext(
         requested_model="gemini-3-flash",
-        rate_limits=[
-            RateLimitSnapshot(provider="gemini", credential_id="cred-inv")
-        ],
+        rate_limits=[RateLimitSnapshot(provider="gemini", credential_id="cred-inv")],
     )
     merged, rules = merge_rate_limit_sources(ctx, inventory_store=inventory)
     assert "rate_limit:inventory_routing_merged" in rules
@@ -162,6 +158,89 @@ def test_skip_models_when_all_backing_credentials_cooled():
     assert "rate_limit:skip_all_cooled_models" in result.rules_applied
 
 
+def test_registry_deployment_credentials_skip_only_when_all_cooled():
+    future = datetime.now(timezone.utc) + timedelta(minutes=2)
+    ctx = RoutingContext(
+        requested_model="claude-sonnet-4-6",
+        rate_limits=[
+            RateLimitSnapshot(
+                provider="anthropic",
+                credential_id="cred-1",
+                in_cooldown=True,
+                cooldown_until=future,
+            ),
+            RateLimitSnapshot(
+                provider="anthropic",
+                credential_id="cred-2",
+                in_cooldown=True,
+                cooldown_until=future,
+            ),
+        ],
+        metadata={
+            "model_registry": {
+                "canonical_model_id": "claude-sonnet-4-6",
+                "deployment_credentials": ["cred-1", "cred-2"],
+            }
+        },
+    )
+
+    result = evaluate_rate_limits(ctx)
+
+    assert result.skipped_models == ["claude-sonnet-4-6"]
+    assert "rate_limit:skip_all_cooled_models" in result.rules_applied
+
+
+def test_registry_deployment_credentials_partial_degradation_fails_open():
+    future = datetime.now(timezone.utc) + timedelta(minutes=2)
+    ctx = RoutingContext(
+        requested_model="claude-sonnet-4-6",
+        rate_limits=[
+            RateLimitSnapshot(
+                provider="anthropic",
+                credential_id="cred-1",
+                in_cooldown=True,
+                cooldown_until=future,
+            ),
+            RateLimitSnapshot(
+                provider="anthropic",
+                credential_id="cred-2",
+                in_cooldown=False,
+            ),
+        ],
+        metadata={
+            "model_registry": {
+                "canonical_model_id": "claude-sonnet-4-6",
+                "deployment_credentials": ["cred-1", "cred-2"],
+            }
+        },
+    )
+
+    result = evaluate_rate_limits(ctx)
+
+    assert result.skipped_models == []
+    assert "rate_limit:skip_all_cooled_models" not in result.rules_applied
+
+
+def test_unknown_deployment_credentials_do_not_skip_model():
+    future = datetime.now(timezone.utc) + timedelta(minutes=2)
+    ctx = RoutingContext(
+        requested_model="claude-sonnet-4-6",
+        rate_limits=[
+            RateLimitSnapshot(
+                provider="anthropic",
+                credential_id="cred-1",
+                in_cooldown=True,
+                cooldown_until=future,
+            )
+        ],
+        metadata={"model_registry": {"canonical_model_id": "claude-sonnet-4-6"}},
+    )
+
+    result = evaluate_rate_limits(ctx)
+
+    assert result.skipped_models == []
+
+
 def test_aggregate_and_evaluate_end_to_end(fake_redis: RedisStateStore):
     cooldown = datetime.now(timezone.utc) + timedelta(seconds=45)
     fake_redis.record_rate_limit_429("openai", "cred-o", cooldown_until=cooldown)
@@ -172,9 +251,7 @@ def test_aggregate_and_evaluate_end_to_end(fake_redis: RedisStateStore):
     )
     ctx = RoutingContext(
         requested_model="gpt-5-4",
-        rate_limits=[
-            RateLimitSnapshot(provider="openai", credential_id="cred-o", rolling_429_count_5m=1)
-        ],
+        rate_limits=[RateLimitSnapshot(provider="openai", credential_id="cred-o", rolling_429_count_5m=1)],
         pool_affinity_mode="quota-aware",
     )
     _, evaluation, merge_rules = aggregate_and_evaluate(
@@ -185,7 +262,6 @@ def test_aggregate_and_evaluate_end_to_end(fake_redis: RedisStateStore):
     assert "rate_limit:translator_signals_merged" in merge_rules
     assert "cred-o" in evaluation.deprioritized_credentials
     assert evaluation.quota_aware_mode is True
-
 
 
 def test_inventory_critical_status_deprioritized():
@@ -211,9 +287,7 @@ def test_evaluate_wires_aggregator_with_inventory_and_redis(fake_redis: RedisSta
         EvaluateRequest(
             context=RoutingContext(
                 requested_model="gemini-3-flash",
-                rate_limits=[
-                    RateLimitSnapshot(provider="gemini", credential_id="cred-hot")
-                ],
+                rate_limits=[RateLimitSnapshot(provider="gemini", credential_id="cred-hot")],
             )
         ),
         store=fake_redis,
@@ -223,4 +297,3 @@ def test_evaluate_wires_aggregator_with_inventory_and_redis(fake_redis: RedisSta
     assert "redis:rate_limits_merged" in decision.rules_applied
     assert "cred-hot" in decision.deprioritized_credentials
     assert "rate_limit:cooldown_skip" in decision.rules_applied
-

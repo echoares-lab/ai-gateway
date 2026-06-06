@@ -641,6 +641,23 @@ def _policy_registry_metadata_from_record(record: ModelRegistryRecord) -> dict:
     return {key: value for key, value in payload.items() if value is not None}
 
 
+def _deployment_credentials_for_policy(model: str, registry_metadata: dict) -> dict[str, list[str]]:
+    credentials = registry_metadata.get("deployment_credentials")
+    if not isinstance(credentials, list):
+        return {}
+    cred_ids = [cred for cred in credentials if isinstance(cred, str) and cred]
+    if not cred_ids:
+        return {}
+
+    requested = model[len("AI-Gateway:") :] if model.startswith("AI-Gateway:") else model
+    canonical = registry_metadata.get("canonical_model_id")
+    deployments = {}
+    for deployment in (canonical, requested, requested.replace(".", "-") if requested else None):
+        if isinstance(deployment, str) and deployment:
+            deployments[deployment] = cred_ids
+    return deployments
+
+
 def _model_registry_metadata_for_policy(model: str) -> dict | None:
     requested = model[len("AI-Gateway:") :] if model.startswith("AI-Gateway:") else model
     if not requested:
@@ -667,6 +684,10 @@ def _build_routing_context(token: str | None, body: dict, *, budget: dict | None
     registry_metadata = _model_registry_metadata_for_policy(model)
     if registry_metadata:
         context_metadata["model_registry"] = registry_metadata
+        deployment_credentials = _deployment_credentials_for_policy(model, registry_metadata)
+        if deployment_credentials:
+            context_metadata["deployment_credentials"] = deployment_credentials
+            context_metadata["backing_credentials"] = deployment_credentials
     ctx = {
         "requested_model": model,
         "tenancy": _tenancy_from_token(token),
