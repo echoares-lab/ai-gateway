@@ -78,6 +78,8 @@ from core.model_registry import (
     merge_discovered_model,
     record_from_cliproxy_model,
 )
+from core.policy import PolicyEvaluator
+from core.policy import policy_version as in_process_policy_version
 from core.policy.evaluate import process_credential_event_async
 from core.policy.schemas import CredentialEvent
 from core.state import _policy_history, _policy_trace, record_policy_history
@@ -92,20 +94,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("translator")
 
 UPSTREAM_TIMEOUT = float(os.environ.get("UPSTREAM_TIMEOUT", "30.0"))
-
-
-class PolicyEvaluator:
-    """Wrapper for in-process policy evaluation to maintain backward compatibility in tests."""
-
-    async def evaluate(self, context: dict) -> dict:
-        from core.policy.evaluate import evaluate_async
-        from core.policy.schemas import EvaluateRequest
-
-        decision = await evaluate_async(EvaluateRequest(context=context))
-        return decision.model_dump()
-
-
-_policy_evaluator: PolicyEvaluator | None = None
 
 
 async def _lifespan(application: FastAPI):
@@ -127,6 +115,16 @@ async def _lifespan(application: FastAPI):
         except Exception as exc:
             log.warning("Redis cache unavailable (%s) — caching disabled", exc)
             _redis = None
+    if POLICY_ENGINE_ENABLED:
+        try:
+            _policy_evaluator = PolicyEvaluator.from_env()
+            log.info(
+                "In-process policy evaluator ready (version=%s)",
+                in_process_policy_version(),
+            )
+        except Exception as exc:
+            log.warning("In-process policy evaluator unavailable (%s)", exc)
+            _policy_evaluator = None
     if TRANSLATOR_CREDENTIAL_SYNC_ENABLED:
         credential_sync_task = asyncio.create_task(_credential_sync_scheduler_loop())
         log.info(
@@ -154,8 +152,6 @@ POLICY_ENGINE_ENABLED = os.environ.get("POLICY_ENGINE_ENABLED", "false").lower()
     "false",
     "no",
 )
-POLICY_ENGINE_URL = os.environ.get("POLICY_ENGINE_URL", "http://policy-engine:8080").rstrip("/")
-POLICY_ENGINE_TIMEOUT_MS = int(os.environ.get("POLICY_ENGINE_TIMEOUT_MS", "100"))
 TEAM_BUDGET_SNAPSHOT_ENABLED = os.environ.get("TEAM_BUDGET_SNAPSHOT_ENABLED", "true").lower() not in (
     "0",
     "false",
@@ -209,6 +205,7 @@ CACHE_ENABLED = os.environ.get("CACHE_ENABLED", "false").lower() not in (
 )
 CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "60"))
 _redis: aioredis.Redis | None = None
+_policy_evaluator: PolicyEvaluator | None = None
 
 
 def _cache_key(model: str, messages: list, tools: list | None = None) -> str | None:
@@ -719,34 +716,23 @@ def _build_routing_context(token: str | None, body: dict, *, budget: dict | None
 
 
 async def _evaluate_policy_engine(context: dict) -> dict | None:
-    """In-process policy evaluation; fail-open on error."""
-    global _policy_evaluator
-    if _policy_evaluator is None:
-        return None
+    """In-process policy evaluate; records admin trace; fail-open on error."""
     start = time.monotonic()
+    if _policy_evaluator is None:
+        log.warning("policy evaluate skipped — in-process evaluator not ready")
+        _record_policy_trace(None, (time.monotonic() - start) * 1000, error="evaluator unavailable")
+        return None
     try:
         decision = await _policy_evaluator.evaluate(context)
         elapsed_ms = (time.monotonic() - start) * 1000
+        if decision is None:
+            _record_policy_trace(None, elapsed_ms, error="evaluate failed")
+            return None
         _record_policy_trace(decision, elapsed_ms)
         return decision
     except Exception as exc:
         elapsed_ms = (time.monotonic() - start) * 1000
-        log.warning("policy-engine evaluate failed (%s) — fail-open", exc)
-        _record_policy_trace(None, elapsed_ms, error=str(exc))
-        return None
-        _record_policy_trace(decision, elapsed_ms)
-        return decision
-    except httpx.TimeoutException:
-        elapsed_ms = (time.monotonic() - start) * 1000
-        log.warning(
-            "policy-engine evaluate timed out after %dms — fail-open",
-            POLICY_ENGINE_TIMEOUT_MS,
-        )
-        _record_policy_trace(None, elapsed_ms, error="timeout")
-        return None
-    except Exception as exc:
-        elapsed_ms = (time.monotonic() - start) * 1000
-        log.warning("policy-engine evaluate failed (%s) — fail-open", exc)
+        log.warning("policy evaluate failed (%s) — fail-open", exc)
         _record_policy_trace(None, elapsed_ms, error=str(exc))
         return None
 
@@ -1765,6 +1751,7 @@ async def responses_websocket(ws: WebSocket):
 
     expected_master_key = os.environ.get("LITELLM_MASTER_KEY", "")
     is_authorized = True
+    auth_token: str | None = None
 
     if client_auth:
         auth_token = client_auth
@@ -1800,7 +1787,13 @@ async def responses_websocket(ws: WebSocket):
             "set POLICY_ENGINE_WS_EVALUATE=true with POLICY_ENGINE_ENABLED for optional evaluate"
         )
     else:
-        log.info("Codex WebSocket policy evaluate requested — awaiting 38-04 translator wiring")
+        policy_token = auth_token if client_auth else None
+        ctx = _build_ws_routing_context(ws, policy_token)
+        routing_decision = await _evaluate_policy_engine(ctx)
+        log.info(
+            "Codex WebSocket in-process policy evaluate completed (gate=%s)",
+            routing_decision.get("gate") if routing_decision else "none",
+        )
 
     headers = _codex_ws_upstream_headers(dict(ws.headers), routing_decision)
 
@@ -2272,6 +2265,30 @@ async def claude_proxy(request: Request):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+def _policy_mock_scenarios_enabled() -> bool:
+    return os.environ.get("POLICY_MOCK_SCENARIOS", "").lower() in ("1", "true", "yes")
+
+
+@app.get("/debug/policy/last")
+async def debug_policy_last():
+    """Gate B: last in-process mock evaluate payload (mock tier only)."""
+    if not _policy_mock_scenarios_enabled():
+        return JSONResponse(status_code=404, content={"detail": "not available"})
+    from core.policy.mock_scenarios import last_evaluate_payload
+
+    return last_evaluate_payload() or {}
+
+
+@app.post("/debug/policy/reset")
+async def debug_policy_reset():
+    if not _policy_mock_scenarios_enabled():
+        return JSONResponse(status_code=404, content={"detail": "not available"})
+    from core.policy.mock_scenarios import reset_mock_scenarios
+
+    reset_mock_scenarios()
+    return {"ok": True}
 
 
 # ── Read-only admin status aggregator (issue #69) ─────────────────────────────
@@ -2770,7 +2787,7 @@ def _build_admin_policy_engine_data(
 
 
 async def _admin_policy_engine_connectivity() -> tuple[bool | None, str | None]:
-    """Best-effort Redis ping and policy-engine health for admin trace."""
+    """Best-effort Redis ping and in-process policy version for admin trace."""
     redis_connected: bool | None = None
     if _redis is not None:
         try:
@@ -2778,16 +2795,7 @@ async def _admin_policy_engine_connectivity() -> tuple[bool | None, str | None]:
             redis_connected = True
         except Exception:
             redis_connected = False
-    policy_version = _policy_version_hint
-    if _client is not None:
-        try:
-            resp = await _client.get(f"{POLICY_ENGINE_URL}/v1/health", timeout=1.0)
-            if resp.status_code == 200:
-                body = resp.json()
-                if isinstance(body, dict) and body.get("policy_version"):
-                    policy_version = str(body["policy_version"])
-        except Exception:
-            pass
+    policy_version = _policy_version_hint or in_process_policy_version()
     return redis_connected, policy_version
 
 

@@ -39,12 +39,11 @@ def policy_engine_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(t, "POLICY_ENGINE_ENABLED", True)
     monkeypatch.setenv("POLICY_ENGINE_ENABLED", "true")
-    monkeypatch.setattr(t, "POLICY_ENGINE_TIMEOUT_MS", 100)
     monkeypatch.setattr(t, "_quota_headroom_cache", None)
 
     # Initialize in-process evaluator if not already done
     if t._policy_evaluator is None:
-        from main import PolicyEvaluator
+        from core.policy import PolicyEvaluator
 
         monkeypatch.setattr(t, "_policy_evaluator", PolicyEvaluator())
 

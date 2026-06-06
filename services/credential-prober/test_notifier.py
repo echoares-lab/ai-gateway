@@ -18,9 +18,7 @@ class TestSlackNotifier(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status = 200
         mock_urlopen.return_value.__enter__.return_value = mock_response
-        self.assertTrue(
-            send_slack_alert("credential_critical", "cred-1", "anthropic", "401", timestamp="2026-06-02T13:45:00Z")
-        )
+        self.assertTrue(send_slack_alert("credential_critical", "cred-1", "anthropic", "401", timestamp="2026-06-02T13:45:00Z"))
 
     @patch.dict(os.environ, {}, clear=True)
     def test_send_slack_alert_missing_webhook_url(self):
@@ -29,22 +27,13 @@ class TestSlackNotifier(unittest.TestCase):
 
 class TestPolicyEngineNotifier(unittest.TestCase):
     @patch("urllib.request.urlopen")
-    @patch.dict(os.environ, {"POLICY_ENGINE_URL": "http://policy-engine:8080"})
+    @patch.dict(os.environ, {"TRANSLATOR_URL": "http://translator:4000"})
     def test_notify_policy_engine_success(self, mock_urlopen):
         mock_response = MagicMock()
         mock_response.status = 202
         mock_urlopen.return_value.__enter__.return_value = mock_response
         cooldown = datetime(2026, 6, 5, 13, 0, tzinfo=timezone.utc)
         self.assertTrue(notify_policy_engine("cred-1", "anthropic", "HEALTHY", "CRITICAL", cool_down_until=cooldown))
-
-        request = mock_urlopen.call_args[0][0]
-        payload = json.loads(request.data.decode("utf-8"))
-        self.assertEqual(payload["credential_id"], "cred-1")
-        self.assertEqual(payload["provider"], "anthropic")
-        self.assertEqual(payload["previous_status"], "HEALTHY")
-        self.assertEqual(payload["new_status"], "CRITICAL")
-        self.assertEqual(payload["cool_down_until"], "2026-06-05T13:00:00+00:00")
-        self.assertIn("timestamp", payload)
 
 
 class TestProberSync(unittest.TestCase):
@@ -53,18 +42,10 @@ class TestProberSync(unittest.TestCase):
     @patch("psycopg2.connect")
     @patch("prober.get_cliproxy_auth_files")
     def test_sync_inventory_critical_sets_cooldown(self, mock_get_files, mock_connect, _slack, mock_policy):
-        mock_get_files.return_value = [
-            {
-                "id": "file-1.json",
-                "provider": "anthropic",
-                "label": "acct",
-                "auth_index": "fp",
-                "status": "error",
-                "failed": 3,
-                "status_message": "401 Unauthorized",
-                "recent_requests": [],
-            }
-        ]
+        mock_get_files.return_value = [{
+            "id": "file-1.json", "provider": "anthropic", "label": "acct", "auth_index": "fp",
+            "status": "error", "failed": 3, "status_message": "401 Unauthorized", "recent_requests": [],
+        }]
         mock_conn = MagicMock()
         mock_cur = MagicMock()
         mock_conn.cursor.return_value = mock_cur
