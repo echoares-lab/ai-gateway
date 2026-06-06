@@ -2,7 +2,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY main.py schemas.py audit.py redis_store.py profile_store.py inventory_store.py ./
+COPY main.py schemas.py audit.py redis_store.py profile_store.py inventory_store.py model_registry_store.py ./
 COPY evaluator ./evaluator
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

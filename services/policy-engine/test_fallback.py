@@ -2,6 +2,7 @@
 
 from evaluator.fallback import evaluate_fallback_layers, load_yaml_baseline
 from main import evaluate
+from model_registry_store import ModelRegistryStore
 from profile_store import ProfileStore
 from schemas import (
     BudgetSnapshot,
@@ -85,9 +86,8 @@ def test_deprioritized_credentials_skip_before_health_scoring():
     assert "gpt-5-4" in result.ordered_deployments
     assert "fallback:rate_limit:cooldown_skip" in result.rules_applied
     if "fallback:health:weighted_order" in result.rules_applied:
-        assert (
-            result.rules_applied.index("fallback:rate_limit:cooldown_skip")
-            < result.rules_applied.index("fallback:health:weighted_order")
+        assert result.rules_applied.index("fallback:rate_limit:cooldown_skip") < result.rules_applied.index(
+            "fallback:health:weighted_order"
         )
 
 
@@ -148,6 +148,39 @@ def test_cost_tier_when_budget_over_80_percent():
     )
     assert result.ordered_deployments[0] == "claude-sonnet-4-6"
     assert result.ordered_deployments[1:] == ["gemini-3-flash", "gpt-5-4"]
+    assert "fallback:budget:cost_tier" in result.rules_applied
+
+
+def test_registry_traits_override_capability_filter():
+    result = evaluate_fallback_layers(
+        "claude-sonnet-4-6",
+        allowed_models=["claude-sonnet-4-6", "gemini-3-flash", "gpt-5-4"],
+        policy_fallback=["gemini-3-flash", "gpt-5-4"],
+        capabilities=RequestCapabilities(has_tools=True),
+        registry_traits={"gemini-3-flash": {"tools": False}},
+        baseline_path="",
+    )
+    assert "gemini-3-flash" not in result.ordered_deployments
+    assert "gpt-5-4" in result.ordered_deployments
+    assert "fallback:registry:traits" in result.rules_applied
+    assert "fallback:capability:filter_tools" in result.rules_applied
+
+
+def test_registry_traits_override_budget_cost_ordering():
+    result = evaluate_fallback_layers(
+        "claude-sonnet-4-6",
+        allowed_models=["claude-sonnet-4-6", "gemini-3-flash", "gpt-5-4"],
+        policy_fallback=["gemini-3-flash", "gpt-5-4"],
+        capabilities=RequestCapabilities(),
+        budget=BudgetSnapshot(team_budget_pct_used=85.0),
+        registry_traits={
+            "gemini-3-flash": {"cost": 3},
+            "gpt-5-4": {"cost": 1},
+        },
+        baseline_path="",
+    )
+    assert result.ordered_deployments[0] == "claude-sonnet-4-6"
+    assert result.ordered_deployments[1:] == ["gpt-5-4", "gemini-3-flash"]
     assert "fallback:budget:cost_tier" in result.rules_applied
 
 
@@ -220,3 +253,64 @@ def test_evaluate_integration_emits_fallback_layer_tags():
     assert any(r.startswith("fallback:") for r in decision.rules_applied)
     assert decision.ordered_deployments[0] == "claude-sonnet-4-6"
     assert "gemini-3-flash" in decision.ordered_deployments
+
+
+def test_evaluate_integration_loads_registry_traits_fail_open():
+    class BrokenRegistryStore:
+        enabled = True
+
+        def traits_for_models(self, _models):
+            raise RuntimeError("db down")
+
+    decision = evaluate(
+        EvaluateRequest(
+            context=RoutingContext(
+                requested_model="claude-sonnet-4-6",
+                capabilities=RequestCapabilities(has_tools=True),
+            )
+        ),
+        profile_store=ProfileStore(None, enabled=False, profiles={}),
+        model_registry_store=BrokenRegistryStore(),
+    )
+    assert decision.gate.value == "allow"
+    assert decision.ordered_deployments[0] == "claude-sonnet-4-6"
+
+
+def test_evaluate_integration_uses_registry_traits_for_fallback_cost():
+    store_profiles = {
+        ("repo", "gateway"): PolicyProfile(
+            profile_id="prof-gateway",
+            scope=PolicyScope.REPO,
+            scope_id="gateway",
+            allowed_models=["claude-sonnet-4-6", "gemini-3-flash", "gpt-5-4"],
+            fallback_chain_override=["gemini-3-flash", "gpt-5-4"],
+        ),
+    }
+    decision = evaluate(
+        EvaluateRequest(
+            context=RoutingContext(
+                requested_model="claude-sonnet-4-6",
+                tenancy=TenancyContext(repo_name="gateway"),
+                capabilities=RequestCapabilities(),
+                budget=BudgetSnapshot(team_budget_pct_used=90.0),
+                metadata={
+                    "health_scores": {"gemini-3-flash": 0.1, "gpt-5-4": 0.1},
+                },
+            )
+        ),
+        profile_store=ProfileStore(None, enabled=False, profiles=store_profiles),
+        model_registry_store=ModelRegistryStore(
+            None,
+            enabled=False,
+            fixtures={
+                "gemini-3-flash": {"cost": 3},
+                "gpt-5-4": {"cost": 1},
+            },
+        ),
+    )
+    assert decision.ordered_deployments[:3] == [
+        "claude-sonnet-4-6",
+        "gpt-5-4",
+        "gemini-3-flash",
+    ]
+    assert "postgres:model_registry_traits_loaded" in decision.rules_applied
