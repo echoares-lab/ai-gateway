@@ -6,8 +6,8 @@ This file documents the GitHub branch protection settings that should be applied
 
 Recommended:
 - Require a pull request before merging
-- Require at least 1 approval
-- Dismiss stale pull request approvals when new commits are pushed
+- **No approving review required** (solo-dev / self-merge workflow — GitHub does not allow authors to approve their own PRs; use PR + CI instead of external review)
+- Dismiss stale pull request approvals when new commits are pushed (applies if reviews are added voluntarily)
 - Require status checks to pass before merging
 - Require branches to be up to date before merging
 - Required checks (must match [`.github/workflows/ci.yml`](workflows/ci.yml) job names exactly):
