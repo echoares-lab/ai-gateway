@@ -178,7 +178,7 @@ Re-authenticate if you see 401s from a provider:
 
 On a remote server, open SSH port forwards first (run locally):
 ```bash
-ssh -L 54545:127.0.0.1:54545 -L 1455:127.0.0.1:1455 -L 8085:127.0.0.1:8085 dev@10.10.10.52 -p 22
+ssh -L 54545:127.0.0.1:54545 -L 1455:127.0.0.1:1455 -L 8085:127.0.0.1:8085 user@gateway-host.example -p 22
 ```
 
 ---
