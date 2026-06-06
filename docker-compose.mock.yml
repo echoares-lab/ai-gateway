@@ -84,8 +84,7 @@ PY",
         condition: service_healthy
     environment:
       POLICY_ENGINE_ENABLED: "true"
-      POLICY_ENGINE_URL: http://policy-engine:8080
-      POLICY_ENGINE_TIMEOUT_MS: "500"
+      POLICY_MOCK_SCENARIOS: "true"
 
 
   cpa-manager:

@@ -1,9 +1,4 @@
-"""Gate A integration tests: policy-engine mock → chat evaluate → /admin/status trace.
-
-Exercises the wired path beyond unit helpers in test_translator_admin_policy_trace.py:
-mocked policy-engine HTTP responses drive _evaluate_policy_engine, _record_policy_trace,
-and the live /admin/status routing.policy_engine panel.
-"""
+"""Gate A integration tests: in-process policy evaluate → chat → /admin/status trace."""
 
 from __future__ import annotations
 
@@ -11,7 +6,7 @@ import json
 import os
 import sys
 from contextlib import contextmanager
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -67,17 +62,14 @@ def _routing_policy_engine(client: TestClient) -> dict:
 
 @pytest.fixture
 def policy_admin_client(monkeypatch):
-    """Mock policy-engine + LiteLLM HTTP; policy trace enabled."""
+    """Mock in-process evaluator + LiteLLM HTTP; policy trace enabled."""
     _reset_policy_trace()
     monkeypatch.setattr(t, "POLICY_ENGINE_ENABLED", True)
     monkeypatch.setenv("POLICY_ENGINE_ENABLED", "true")
     monkeypatch.setattr(t, "ADMIN_POLICY_TRACE_ENABLED", True)
-    monkeypatch.setattr(t, "POLICY_ENGINE_URL", "http://policy-engine:8080")
-    monkeypatch.setattr(t, "POLICY_ENGINE_TIMEOUT_MS", 100)
 
     state: dict = {
         "evaluate_calls": 0,
-        "health_calls": 0,
         "evaluate_decision": {
             "gate": "allow",
             "policy_version": "mock-integration-v1",
@@ -86,44 +78,34 @@ def policy_admin_client(monkeypatch):
             "session_key": "sess-integration-secret",
             "rules_applied": ["quota:deprioritize", "repo:affinity"],
         },
-        "health_body": {"policy_version": "mock-health-v2"},
         "evaluate_error": None,
-        "evaluate_status": 200,
     }
 
+    async def mock_evaluate(context):
+        state["evaluate_calls"] += 1
+        if state["evaluate_error"] == "failed":
+            return None
+        return dict(state["evaluate_decision"])
+
+    mock_evaluator = MagicMock()
+    mock_evaluator.evaluate = AsyncMock(side_effect=mock_evaluate)
+    monkeypatch.setattr(t, "_policy_evaluator", mock_evaluator)
+
     async def mock_request(method, url, **kwargs):
-        url_s = str(url)
-        if "policy-engine" in url_s and url_s.endswith("/v1/evaluate"):
-            state["evaluate_calls"] += 1
-            if state["evaluate_error"] == "timeout":
-                raise httpx.TimeoutException("timed out")
-            if state["evaluate_error"] == "connect":
-                raise httpx.ConnectError("connection refused")
-            if state["evaluate_status"] != 200:
-                return _MockResponse(
-                    status_code=state["evaluate_status"],
-                    content=b'{"error": "policy unavailable"}',
-                )
-            return _MockResponse(
-                content=json.dumps({"decision": state["evaluate_decision"]}).encode(),
-            )
-        if "policy-engine" in url_s and url_s.endswith("/v1/health"):
-            state["health_calls"] += 1
-            return _MockResponse(content=json.dumps(state["health_body"]).encode())
-        if "litellm" in url_s:
+        if "litellm" in str(url):
             return _MockResponse()
-        raise AssertionError(f"unexpected HTTP call: {method} {url_s}")
+        raise AssertionError(f"unexpected HTTP call: {method} {url}")
 
     t._client = httpx.AsyncClient()
     t._client.request = mock_request
     client = TestClient(t.app)
     yield client, state
     t._client = None
+    monkeypatch.setattr(t, "_policy_evaluator", None)
     _reset_policy_trace()
 
 
 def test_chat_evaluate_populates_admin_policy_trace(policy_admin_client):
-    """Chat completion triggers mocked evaluate; /admin/status exposes redacted trace."""
     client, state = policy_admin_client
     with _admin_status_patches():
         chat = client.post(
@@ -143,8 +125,7 @@ def test_chat_evaluate_populates_admin_policy_trace(policy_admin_client):
     assert trace["trace_enabled"] is True
     assert trace["last_evaluate_ms"] is not None
     assert trace["last_evaluate_ms"] >= 0
-    assert trace["policy_version"] == "mock-health-v2"
-    assert state["health_calls"] >= 1
+    assert trace["policy_version"] == "mock-integration-v1"
 
     decision = trace["last_decision"]
     assert decision["gate"] == "allow"
@@ -155,10 +136,8 @@ def test_chat_evaluate_populates_admin_policy_trace(policy_admin_client):
     assert "sess-integration-secret" not in json.dumps(trace)
 
 
-def test_admin_status_uses_decision_policy_version_when_health_missing(policy_admin_client):
-    """When /v1/health has no version, trace falls back to last decision policy_version."""
+def test_admin_status_uses_decision_policy_version(policy_admin_client):
     client, state = policy_admin_client
-    state["health_body"] = {}
     state["evaluate_decision"]["policy_version"] = "mock-from-decision"
 
     with _admin_status_patches():
@@ -171,9 +150,9 @@ def test_admin_status_uses_decision_policy_version_when_health_missing(policy_ad
     assert trace["policy_version"] == "mock-from-decision"
 
 
-def test_admin_status_surfaces_evaluate_timeout(policy_admin_client):
+def test_admin_status_surfaces_evaluate_failure(policy_admin_client):
     client, state = policy_admin_client
-    state["evaluate_error"] = "timeout"
+    state["evaluate_error"] = "failed"
 
     with _admin_status_patches():
         client.post(
@@ -182,22 +161,7 @@ def test_admin_status_surfaces_evaluate_timeout(policy_admin_client):
         )
         trace = _routing_policy_engine(client)
 
-    assert trace["last_error"] == "timeout"
-    assert "last_decision" not in trace
-
-
-def test_admin_status_surfaces_evaluate_http_error(policy_admin_client):
-    client, state = policy_admin_client
-    state["evaluate_status"] = 503
-
-    with _admin_status_patches():
-        client.post(
-            "/v1/chat/completions",
-            json={"model": "claude-sonnet-4-6", "messages": [{"role": "user", "content": "hi"}]},
-        )
-        trace = _routing_policy_engine(client)
-
-    assert trace["last_error"] == "http 503"
+    assert trace["last_error"] == "evaluate failed"
     assert "last_decision" not in trace
 
 
