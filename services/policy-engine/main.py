@@ -7,6 +7,7 @@ agent affinity (38-6), fallback layers (38-8).
 
 from __future__ import annotations
 
+import logging
 import os
 from functools import lru_cache
 
@@ -14,12 +15,13 @@ from audit import RoutingAuditWriter
 from evaluator.agent_affinity import apply_agent_affinity
 from evaluator.budget import apply_budget_gates
 from evaluator.credential_events import handle_credential_event
-from evaluator.fallback import evaluate_fallback_layers
+from evaluator.fallback import evaluate_fallback_layers, load_yaml_baseline
 from evaluator.mcp_visibility import resolve_mcp_visibility
 from evaluator.rate_limit import aggregate_and_evaluate
 from evaluator.repo_affinity import apply_repo_affinity
 from fastapi import Depends, FastAPI, HTTPException
 from inventory_store import InventoryStore
+from model_registry_store import ModelRegistryStore
 from profile_store import ProfileStore
 from redis_store import RedisStateStore
 from schemas import (
@@ -34,6 +36,7 @@ from schemas import (
 )
 
 app = FastAPI(title="Policy Engine", version="0.1.0")
+logger = logging.getLogger(__name__)
 
 POLICY_VERSION = os.environ.get("POLICY_VERSION", "v0-stub")
 DEFAULT_FALLBACK_BASELINE = os.environ.get(
@@ -55,6 +58,11 @@ def get_profile_store() -> ProfileStore:
 @lru_cache
 def get_inventory_store() -> InventoryStore:
     return InventoryStore.from_env()
+
+
+@lru_cache
+def get_model_registry_store() -> ModelRegistryStore:
+    return ModelRegistryStore.from_env()
 
 
 @lru_cache
@@ -87,17 +95,48 @@ def _merge_deprioritized(
     return merged
 
 
+def _models_for_registry_traits(
+    requested_model: str,
+    allowed_models: list[str],
+    policy_fallback: list[str],
+) -> list[str]:
+    baseline = load_yaml_baseline(DEFAULT_FALLBACK_BASELINE)
+    models = [requested_model, *allowed_models, *policy_fallback]
+    models.extend(baseline.get(requested_model, []))
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for model in models:
+        if model and model not in seen:
+            seen.add(model)
+            ordered.append(model)
+    return ordered
+
+
+def _load_registry_traits_fail_open(
+    store: ModelRegistryStore,
+    models: list[str],
+) -> dict[str, dict]:
+    try:
+        return store.traits_for_models(models)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Model registry trait load failed: %s", exc)
+        return {}
+
+
 def evaluate(
     context: EvaluateRequest,
     *,
     store: RedisStateStore | None = None,
     profile_store: ProfileStore | None = None,
     inventory_store: InventoryStore | None = None,
+    model_registry_store: ModelRegistryStore | None = None,
 ) -> RoutingDecision:
     """Evaluator — rate limits, repo affinity, budget, agent affinity, fallback."""
     redis_store = store if store is not None else get_redis_store()
     profiles_db = profile_store if profile_store is not None else get_profile_store()
     inventory = inventory_store if inventory_store is not None else get_inventory_store()
+    model_registry = model_registry_store if model_registry_store is not None else get_model_registry_store()
 
     model = context.context.requested_model
     rules: list[str] = []
@@ -176,6 +215,12 @@ def evaluate(
     if not isinstance(deployment_credentials, dict):
         deployment_credentials = {}
 
+    registry_traits = _load_registry_traits_fail_open(
+        model_registry, _models_for_registry_traits(model, allowed, fallback)
+    )
+    if registry_traits:
+        rules.append("postgres:model_registry_traits_loaded")
+
     fallback_result = evaluate_fallback_layers(
         model,
         allowed_models=allowed,
@@ -191,6 +236,7 @@ def evaluate(
         baseline_path=DEFAULT_FALLBACK_BASELINE,
         tier_preference=tier_pref,
         request_metadata=merged_context.metadata,
+        registry_traits=registry_traits,
     )
     rules.extend(fallback_result.rules_applied)
 

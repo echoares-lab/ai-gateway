@@ -20,7 +20,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from evaluator.quality import apply_quality_reorder, extract_eval_config, resolve_task_category
 from schemas import (
     BudgetSnapshot,
     PolicyProfile,
@@ -28,11 +27,11 @@ from schemas import (
     RequestCapabilities,
 )
 
+from evaluator.quality import apply_quality_reorder, extract_eval_config, resolve_task_category
+
 logger = logging.getLogger(__name__)
 
-BUDGET_COST_TIER_THRESHOLD_PCT = float(
-    os.environ.get("POLICY_BUDGET_COST_TIER_THRESHOLD_PCT", "80")
-)
+BUDGET_COST_TIER_THRESHOLD_PCT = float(os.environ.get("POLICY_BUDGET_COST_TIER_THRESHOLD_PCT", "80"))
 
 # Lower cost_tier = cheaper. Unknown models default to tier 2 (mid).
 _MODEL_REGISTRY: dict[str, dict[str, Any]] = {
@@ -99,7 +98,7 @@ def _infer_family(model: str) -> str:
 
 
 def model_traits(model: str) -> dict[str, Any]:
-    """Return capability traits for a model (registry + inference)."""
+    """Return embedded capability traits for a model."""
     if model in _MODEL_REGISTRY:
         return dict(_MODEL_REGISTRY[model])
     family = _infer_family(model)
@@ -112,6 +111,20 @@ def model_traits(model: str) -> dict[str, Any]:
         "vision": "image" in model,
         "cost": cost,
     }
+
+
+def _model_traits_with_registry(
+    model: str,
+    registry_traits: dict[str, dict[str, Any]] | None,
+) -> dict[str, Any]:
+    traits = model_traits(model)
+    registry = (registry_traits or {}).get(model)
+    if not registry:
+        return traits
+    for key in ("family", "tools", "vision", "cost"):
+        if key in registry and registry[key] is not None:
+            traits[key] = registry[key]
+    return traits
 
 
 def _dedupe_preserve_order(models: list[str]) -> list[str]:
@@ -214,6 +227,7 @@ def evaluate_fallback_layers(
     baseline_path: str | None = None,
     tier_preference: str | None = None,
     request_metadata: dict[str, Any] | None = None,
+    registry_traits: dict[str, dict[str, Any]] | None = None,
 ) -> FallbackResult:
     """Apply §5.5 fallback layers and return ordered deployments."""
     profiles = policy_profiles or []
@@ -223,6 +237,9 @@ def evaluate_fallback_layers(
     deployment_credentials = deployment_credentials or {}
     rules: list[str] = []
     debug: dict[str, Any] = {}
+    if registry_traits:
+        rules.append("fallback:registry:traits")
+        debug["registry_traits_models"] = sorted(registry_traits)
 
     candidates = _baseline_chain(requested_model, policy_fallback, baseline_path)
     allowed_set = set(allowed_models) if allowed_models else {requested_model}
@@ -233,13 +250,13 @@ def evaluate_fallback_layers(
     # Layer 1 — capability hard filter
     if capabilities.has_tools:
         before = len(candidates)
-        candidates = [m for m in candidates if model_traits(m)["tools"]]
+        candidates = [m for m in candidates if _model_traits_with_registry(m, registry_traits)["tools"]]
         rules.append("fallback:capability:filter_tools")
         if len(candidates) == before and before:
             debug["capability_tools_noop"] = True
     if capabilities.has_vision:
         before = len(candidates)
-        candidates = [m for m in candidates if model_traits(m)["vision"]]
+        candidates = [m for m in candidates if _model_traits_with_registry(m, registry_traits)["vision"]]
         rules.append("fallback:capability:filter_vision")
 
     # Layer 2 — policy allowlist
@@ -259,7 +276,7 @@ def evaluate_fallback_layers(
         if locked_family and not _policy_allows_cross_family(profiles):
             before = len(candidates)
             candidates = [
-                m for m in candidates if model_traits(m)["family"] == locked_family
+                m for m in candidates if _model_traits_with_registry(m, registry_traits)["family"] == locked_family
             ]
             rules.append("fallback:affinity:family_lock")
             lock_family = True
@@ -269,11 +286,7 @@ def evaluate_fallback_layers(
     unavailable = _unavailable_credentials(rate_limits, deprioritized)
     if unavailable and deployment_credentials:
         before = len(candidates)
-        candidates = [
-            m
-            for m in candidates
-            if not _deployment_unavailable(m, deployment_credentials, unavailable)
-        ]
+        candidates = [m for m in candidates if not _deployment_unavailable(m, deployment_credentials, unavailable)]
         if len(candidates) < before:
             rules.append("fallback:rate_limit:cooldown_skip")
         debug["unavailable_credentials"] = sorted(unavailable)
@@ -309,7 +322,7 @@ def evaluate_fallback_layers(
         head = candidates[:1] if candidates[0] == requested_model else []
         tail = candidates[len(head) :]
         if tail:
-            tail.sort(key=lambda m: (model_traits(m)["cost"], m))
+            tail.sort(key=lambda m: (_model_traits_with_registry(m, registry_traits)["cost"], m))
             candidates = head + tail
             rules.append("fallback:budget:cost_tier")
             debug["budget_pct_used"] = budget_pct
@@ -322,7 +335,7 @@ def evaluate_fallback_layers(
         for model in yaml_chain:
             if model in existing or model not in allowed_set:
                 continue
-            traits = model_traits(model)
+            traits = _model_traits_with_registry(model, registry_traits)
             if capabilities.has_tools and not traits["tools"]:
                 continue
             if capabilities.has_vision and not traits["vision"]:
