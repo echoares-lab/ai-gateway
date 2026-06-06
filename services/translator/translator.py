@@ -27,13 +27,28 @@ import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
+import core.metrics  # noqa: F401 — register cache hit/miss counters
 import httpx
 import redis.asyncio as aioredis
 import websockets
 import yaml
+from core.metrics import (
+    FORMAT_REQUESTS,
+    IN_FLIGHT,
+    PROVIDER_LATENCY,
+    PROVIDER_RATE_LIMITS,
+    PROVIDER_REQUESTS,
+    REQUEST_COUNT,
+    REQUEST_LATENCY,
+    TOKEN_INPUT,
+    TOKEN_OUTPUT,
+    TOKEN_REQUESTS,
+    UPSTREAM_ERRORS,
+)
+from core.state import _policy_trace
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("translator")
@@ -91,87 +106,7 @@ ADMIN_POLICY_TRACE_ENABLED = os.environ.get("ADMIN_POLICY_TRACE_ENABLED", "true"
 )
 
 
-@dataclass
-class _PolicyTraceState:
-    evaluate_ms: float | None = None
-    evaluated_at: str | None = None
-    decision: dict | None = None
-    error: str | None = None
-
-
-_policy_trace = _PolicyTraceState()
 _policy_version_hint: str | None = None
-
-REQUEST_COUNT = Counter(
-    "translator_requests_total",
-    "Total translator HTTP requests",
-    ["method", "path", "status"],
-)
-REQUEST_LATENCY = Histogram(
-    "translator_request_duration_seconds",
-    "Translator request latency in seconds",
-    ["method", "path"],
-)
-UPSTREAM_ERRORS = Counter(
-    "translator_upstream_errors_total",
-    "Translator upstream errors by path and status",
-    ["path", "status"],
-)
-CACHE_HITS = Counter(
-    "translator_cache_hits_total",
-    "Translator cache hits",
-    ["path", "kind"],
-)
-CACHE_MISSES = Counter(
-    "translator_cache_misses_total",
-    "Translator cache misses",
-    ["path", "kind"],
-)
-FORMAT_REQUESTS = Counter(
-    "translator_format_requests_total",
-    "Requests by translated API format",
-    ["format"],
-)
-IN_FLIGHT = Counter(
-    "translator_in_flight_total",
-    "Total requests entering translator middleware",
-)
-
-# ── Per-provider / per-model routing signals (issue #59) ──────────────────────
-# Passive, in-traffic signals for adaptive routing (see docs/ADAPTIVE_ROUTING.md).
-# Captured on every upstream LiteLLM call; never via active background probing.
-PROVIDER_LATENCY = Histogram(
-    "translator_provider_request_duration_seconds",
-    "Upstream LiteLLM request latency by provider and model",
-    ["provider", "model"],
-)
-PROVIDER_REQUESTS = Counter(
-    "translator_provider_requests_total",
-    "Upstream LiteLLM requests by provider, model, and outcome",
-    ["provider", "model", "outcome"],
-)
-PROVIDER_RATE_LIMITS = Counter(
-    "translator_provider_rate_limits_total",
-    "Upstream 429 rate-limit responses by provider and model",
-    ["provider", "model"],
-)
-
-# --- Token usage analytics (issue #117) ---
-TOKEN_INPUT = Counter(
-    "translator_token_input_total",
-    "Total input tokens processed by provider and model",
-    ["provider", "model"],
-)
-TOKEN_OUTPUT = Counter(
-    "translator_token_output_total",
-    "Total output tokens processed by provider and model",
-    ["provider", "model"],
-)
-TOKEN_REQUESTS = Counter(
-    "translator_token_requests_total",
-    "Total requests with token data by provider and model",
-    ["provider", "model"],
-)
 
 
 @app.get("/metrics")
