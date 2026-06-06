@@ -42,7 +42,6 @@ slot_ports() {
     TRANSLATOR_PORT=$(( 4000 + slot * 10 ))
     LITELLM_PORT=$(( 4001 + slot * 10 ))
     CLIPROXY_PORT=$(( 8317 + slot * 10 ))
-    POLICY_ENGINE_PORT=$(( 8070 + slot * 10 ))
 }
 
 compose_env() {
@@ -55,7 +54,6 @@ compose_env() {
          "DEV_TRANSLATOR_PORT=${TRANSLATOR_PORT}" \
          "DEV_LITELLM_PORT=${LITELLM_PORT}" \
          "DEV_CLIPROXY_PORT=${CLIPROXY_PORT}" \
-         "DEV_POLICY_ENGINE_PORT=${POLICY_ENGINE_PORT}" \
          $cfg_var
 }
 
@@ -201,7 +199,7 @@ cmd_start_mock() {
     slot_ports "$slot"
     echo "starting MOCK slot ${slot}: translator=:${TRANSLATOR_PORT} (no OAuth, canned upstream)"
     # No seed_auth_volume — the mock upstream needs no credentials.
-    run_compose "$slot" -f "$MOCK_OVERLAY" up -d --build postgres cliproxy policy-engine litellm translator credential-prober
+    run_compose "$slot" -f "$MOCK_OVERLAY" up -d --remove-orphans --build postgres cliproxy litellm redis translator credential-prober
     echo ""
     echo "mock slot ${slot} is up: translator http://localhost:${TRANSLATOR_PORT}/health"
 }
@@ -216,11 +214,9 @@ cmd_test_mock() {
     if [[ -f "$ENV_FILE" ]]; then
         master_key="$(grep -E '^LITELLM_MASTER_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' || echo sk-ci-mock)"
     fi
-    local policy_url="http://localhost:${POLICY_ENGINE_PORT}"
     echo "running MOCK-tier tests against ${gateway_url} (ALLOW_MODEL_SKIP=0) ..."
     # shellcheck disable=SC2086
     GATEWAY_URL="$gateway_url" LITELLM_MASTER_KEY="$master_key" ALLOW_MODEL_SKIP=0 \
-        POLICY_ENGINE_URL="$policy_url" \
         python3 -m pytest "${SCRIPT_DIR}/tests/integration/" -m mock -v "$@"
 }
 
