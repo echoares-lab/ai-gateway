@@ -17,7 +17,7 @@ from evaluator.budget import apply_budget_gates
 from evaluator.credential_events import handle_credential_event
 from evaluator.fallback import evaluate_fallback_layers, load_yaml_baseline
 from evaluator.mcp_visibility import resolve_mcp_visibility
-from evaluator.rate_limit import aggregate_and_evaluate
+from evaluator.rate_limit import aggregate_and_evaluate, deployment_credentials_from_metadata
 from evaluator.repo_affinity import apply_repo_affinity
 from fastapi import Depends, FastAPI, HTTPException
 from inventory_store import InventoryStore
@@ -209,11 +209,7 @@ def evaluate(
     if not isinstance(health_scores, dict):
         health_scores = {}
 
-    deployment_credentials = merged_context.metadata.get("deployment_credentials")
-    if not isinstance(deployment_credentials, dict):
-        deployment_credentials = merged_context.metadata.get("backing_credentials")
-    if not isinstance(deployment_credentials, dict):
-        deployment_credentials = {}
+    deployment_credentials = deployment_credentials_from_metadata(merged_context)
 
     registry_traits = _load_registry_traits_fail_open(
         model_registry, _models_for_registry_traits(model, allowed, fallback)
