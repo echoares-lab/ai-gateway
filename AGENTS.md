@@ -169,10 +169,13 @@ EOF
 Wait for required CI checks to pass:
 - `lint-and-syntax`, `unit-tests`, `multi-repo-isolation`, `mock-integration`
 
+If `main` moved since your last green CI (e.g. a dependency PR merged), rebase first —
+see [Parallel agents, rebase, and stacking](#parallel-agents-rebase-and-stacking).
+
 Then merge:
 
 ```bash
-gh pr merge --merge   # or --squash for a single clean commit
+gh pr merge --merge --auto   # or --squash; use manual --merge if auto-merge is disabled
 git checkout main
 git pull origin main
 ```
@@ -192,14 +195,138 @@ git pull origin main
 All three model tests must return a valid response. Record results in the issue closeout.
 If any fail, investigate and fix before the session ends.
 
-### Step 9 — Clean up
+### Step 9 — Clean up (after PR merge only)
+
+**When:** Run cleanup only after the PR is merged to `main` and Gate D passes (Step 8).
+Do not tear down the worktree or dev stack while the PR is still open — you may need
+to push fixes or rebase.
+
+**Closeout checklist:**
 
 ```bash
-./dev-env.sh stop 1
+# 1. Stop the isolated dev stack (use your claimed slot, not 0)
+./dev-env.sh stop <slot>
+
+# 2. Remove the feature worktree from the main repo checkout
 cd /home/dev/repos/ai-gateway
 git worktree remove /home/dev/worktrees/ai-gateway-<feature>
+
+# 3. Delete the local feature branch (only after merge)
 git branch -d feat/<feature>
+
+# 4. Verify nothing is left behind
+git worktree list
+./dev-env.sh list
 ```
+
+**If `git worktree remove` fails** (dirty tree, uncommitted changes, or running containers):
+
+```bash
+# Commit or stash changes in the feature worktree first
+cd /home/dev/worktrees/ai-gateway-<feature>
+git status
+git stash push -m "cleanup-stash"   # or commit and push if still needed for the PR
+
+# Force-stop the dev stack if containers are still running
+./dev-env.sh stop <slot>
+
+# Retry removal; use --force only when the directory is clean but metadata is stale
+cd /home/dev/repos/ai-gateway
+git worktree remove /home/dev/worktrees/ai-gateway-<feature>
+# git worktree remove --force /home/dev/worktrees/ai-gateway-<feature>  # last resort
+
+git worktree prune
+```
+
+**Coordinator / parent agent:** When dispatching subagents, verify cleanup before
+closing the parent epic or session: `git worktree list` shows only the stable checkout,
+`./dev-env.sh list` shows no orphaned slot for the claim, and the issue closeout
+comment records the cleanup.
+
+---
+
+## Parallel agents, rebase, and stacking
+
+When multiple agents work the same repo concurrently, enforce **one issue = one agent
+= one slot = one worktree**. See `REPO_IMPROVEMENT_WORKFLOW.md` §8–10 and
+`AGENT_DISPATCH.md` for claim conventions.
+
+### Slot and claim rules
+
+- Run `./dev-env.sh list` **before** `./dev-env.sh start <slot>` — never use slot 0.
+- Record slot, worktree path, branch, and a unique `Claim-ID` in the issue claim comment.
+- `Claim-ID` must identify the **agent session**, not just the GitHub account
+  (e.g. `Claim-ID: cursor-epic1-2-20260606T143000Z`).
+
+### Branching with dependencies
+
+| Situation | Branch from |
+|-----------|-------------|
+| No open dependency, or dependency already merged to `main` | `main` |
+| Dependency PR is open and stable; your issue explicitly stacks on it | The dependency feature branch (e.g. `feat/epic-1-1`) |
+
+**Before claiming:** Poll dependency state — issue closed, or `gh pr view <num> --json state,mergedAt`.
+
+```bash
+gh issue view <dep-issue> --json state,closed
+gh pr list --repo echoares-lab/ai-gateway --head feat/<dep-branch> --json state,mergedAt
+```
+
+Do not start implementation on a stacked branch until the dependency PR is reviewable
+and CI-green unless the issue explicitly allows parallel draft work.
+
+### Rebase after a dependency merges
+
+When your branch was stacked on a dependency that has since merged to `main`, rebase
+onto current `main` **before** enabling merge (and after CI on the dependency PR completes):
+
+```bash
+cd /home/dev/worktrees/ai-gateway-<feature>
+git fetch origin
+git rebase origin/main
+# resolve conflicts, then:
+git add <resolved-files>
+git rebase --continue
+make test-fast    # re-verify after conflict resolution
+git push --force-with-lease origin feat/<feature>
+```
+
+Re-run `make test-fast` after any conflict resolution. Example: Epic 1.2 rebased onto
+`main` after Epic 1.1 merged, then force-pushed with `--force-with-lease`.
+
+### Hotspot serialization
+
+If two issues touch the same hotspot (e.g. `services/translator/translator.py`,
+`litellm-config.yaml`), **serialize** them:
+
+- Declare `Depends on: #N` in the issue, or
+- Stack the second PR on the first branch until the first merges, then rebase onto `main`.
+
+Do not let two agents edit the same hotspot without an explicit dependency or stack order.
+
+### CI flakes and merge fallback
+
+- If CI `mock-integration` fails on infra (timeouts, runner issues) but local Gate B passes,
+  run `make test-mock` in the feature worktree and note the result in the PR thread.
+- Auto-merge may be disabled on the repo. If `gh pr merge --auto` does nothing, merge
+  manually once required checks are green:
+
+```bash
+gh pr checks <num> --watch
+gh pr merge <num> --merge
+```
+
+### Stable worktree hygiene
+
+Gate D runs from `/home/dev/repos/ai-gateway` on `main`. Before `git pull origin main`:
+
+```bash
+cd /home/dev/repos/ai-gateway
+git status    # must be clean — no local edits on stable
+git pull origin main
+```
+
+Never leave uncommitted changes in the stable worktree; they block pulls and Gate D.
 
 ---
 
@@ -256,6 +383,9 @@ docs: update stale AGENTS/WORKTREES/RUNBOOK to reflect current state
 - ❌ **Do not force-push** to `main`
 - ❌ **Do not merge with uncommitted changes** in the worktree
 - ❌ **Do not touch `~/.cli-proxy-api/` directly** — dev stacks seed their own isolated auth volume
+- ❌ **Do not remove a worktree or stop its dev stack before the PR merges** — keep the environment for fixes and rebase
+- ❌ **Do not share a dev slot** between concurrent agents without an explicit handoff in the issue thread
+- ❌ **Do not leave the stable worktree dirty** — it blocks `git pull` and Gate D verification
 
 ---
 
@@ -300,6 +430,9 @@ See `TESTING_AND_PROMOTION_POLICY.md` and `REPO_IMPROVEMENT_APPENDIX.md` for ful
 | Image version drift | Pinned in docker-compose files; upgrade via PR + test |
 | Cross-user cache hits | `CACHE_ENABLED=false` default in translator.py |
 | Two agents on same slot | Slot registry in claim comments; `./dev-env.sh list` |
+| Orphaned worktrees / occupied slots | Post-merge cleanup checklist (Step 9); coordinator verifies `git worktree list` |
+| Dirty stable worktree blocks Gate D | Never edit stable checkout; `git status` before `git pull` |
+| Stacked PR conflicts after dependency merge | Rebase onto `origin/main`, `make test-fast`, `--force-with-lease` push |
 
 ---
 

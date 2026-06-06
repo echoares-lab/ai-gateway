@@ -335,6 +335,40 @@ then they must be:
 
 Do not let two agents work the same hotspot without declaring it.
 
+### One agent, one isolation unit
+
+For repos with dev slots (see appendix):
+
+- **One issue = one agent = one worktree + one branch + one slot**
+- Check the slot registry (`./dev-env.sh list`) before starting a stack; never use the stable slot (0)
+- `Claim-ID` in the start-work comment must be unique per agent session, not per GitHub user
+
+### Rebase and PR stacking
+
+When issues share a subsystem or hotspot, prefer a **shallow dependency graph**:
+
+1. **Independent work** — branch from `main`, PR base `main`.
+2. **Open dependency, stable PR** — branch from the dependency feature branch; PR base that branch (stacked PR). Implement only after confirming the dependency issue is claimed and its PR is CI-green.
+3. **Dependency merged** — in the dependent worktree:
+   ```bash
+   git fetch origin
+   git rebase origin/main
+   # resolve conflicts, make test-fast (or repo equivalent), then:
+   git push --force-with-lease
+   ```
+   Update the PR base to `main` if GitHub still shows the old base branch.
+
+**Dependency polling before claim or implementation:**
+
+```bash
+gh issue view <dep> --json state,closed
+gh pr view <dep-pr> --json state,mergedAt,statusCheckRollup
+```
+
+Do not merge a dependent PR until its `Depends on` issues are closed/merged unless the issue explicitly allows otherwise.
+
+**CI flake handling:** If required CI fails on infrastructure (runner timeout, transient mock stack failure) but local Gate B passes, record local `make test-mock` (or appendix equivalent) in the PR comment before retrying CI or requesting merge.
+
 ---
 
 ## 10. Branch, worktree, and environment workflow
@@ -365,6 +399,33 @@ Never develop directly in a live or stable worktree if the repo has a production
 Repos that use a separate integration branch should document that repo-specific policy in the appendix.
 
 Parallel-agent isolation (worktree + branch + slot): see `TESTING_AND_PROMOTION_POLICY.md` section 3.
+
+### Worktree cleanup (required closeout)
+
+Cleanup happens **after** the PR merges to the target branch and post-merge verification
+(Gate D or appendix equivalent) — not when the PR is opened and not before rebase/fix
+pushes are finished.
+
+**Standard sequence** (paths from repo appendix):
+
+```bash
+./dev-env.sh stop <slot>
+cd <stable-repo-path>
+git worktree remove <worktrees-root>/ai-gateway-<feature>
+git branch -d feat/<feature>
+git worktree list    # verify only stable checkout remains
+```
+
+**If removal fails:** commit or stash uncommitted work in the feature worktree, ensure
+the dev stack is stopped, retry `git worktree remove`; use `git worktree prune` for stale
+metadata. `--force` is a last resort when the directory is intentionally discarded.
+
+**Coordinator responsibility:** Parent or dispatching agents must confirm cleanup before
+marking an epic or multi-issue session done — no orphaned worktrees, no occupied slots,
+closeout comment posted on each issue.
+
+**Stable checkout hygiene:** The stable worktree must stay clean for `git pull` and
+post-merge smoke tests. Do not use it for feature edits.
 
 ---
 
@@ -469,6 +530,19 @@ Every mergeable change should flow through a PR template.
 - deployment/infrastructure
 - caching
 
+### Manual merge fallback
+
+Auto-merge may be disabled by branch protection or repository settings. When
+`gh pr merge --auto` does not queue a merge despite green required checks:
+
+1. Confirm no blocking review comments remain.
+2. Rebase onto latest `main` if the base branch moved since the last CI run.
+3. Merge explicitly: `gh pr merge <num> --merge` (or squash if repo policy prefers).
+4. Record in the PR or issue thread that merge was manual.
+
+Rebase before merge when `main` has advanced since the PR last passed CI — especially
+for stacked PRs whose dependency just landed.
+
 ### Rule
 
 Healthy CI is necessary but not sufficient for high-risk production promotion.
@@ -493,6 +567,7 @@ An issue should close only when the target outcome is actually achieved.
 - tests run
 - any follow-up issues created
 - whether the change is verified on staging only or on production too
+- worktree/slot cleanup confirmed (`git worktree list`, slot released)
 
 ### Rule
 
@@ -613,6 +688,9 @@ Do **not** allow:
 - long-lived drifting feature branches
 - vague issues like “clean up translator”
 - hidden follow-up work not broken into new issues
+- removing worktrees or stopping dev stacks before PR merge
+- dirty stable checkout blocking post-merge `git pull`
+- two agents sharing a dev slot without documented handoff
 
 ---
 

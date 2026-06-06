@@ -75,9 +75,33 @@ Run `git worktree list` for the live state.
 feat/<name>  →  (PR)  →  main
 ```
 
-- All feature work branches off `main` (no long-lived `dev` branch)
+- All feature work branches off `main` when there is no open dependency (no long-lived `dev` branch)
 - `feat/<name>` → `main` via PR (Gate A + B CI must pass; never direct push)
 - `main` is the production branch — only tested, reviewed code lands here
+
+### Stacked branches (parallel agents)
+
+When issue B depends on issue A and A's PR is still open:
+
+```bash
+# Branch B from A's feature branch (only while A's PR is open and CI-green)
+git worktree add /home/dev/worktrees/ai-gateway-<b> -b feat/<b> feat/<a>
+# Open PR with base feat/<a>
+```
+
+After A merges to `main`, rebase B:
+
+```bash
+cd /home/dev/worktrees/ai-gateway-<b>
+git fetch origin && git rebase origin/main
+make test-fast
+git push --force-with-lease origin feat/<b>
+# PR base should be main
+```
+
+Poll before claiming: `gh issue view <dep> --json state,closed` and `gh pr view <pr> --json state,mergedAt`.
+
+Issues touching the same hotspot (e.g. `translator.py`) must serialize via `Depends on:` or this stack-then-rebase pattern.
 
 ---
 
@@ -109,15 +133,36 @@ Do not share slots between concurrent claims without an explicit handoff.
 
 ## Cleanup
 
-```bash
-# Stop the dev stack
-./dev-env.sh stop 1
+**When:** After the PR merges to `main` and Gate D passes — not while the PR is open.
 
-# Remove the worktree
+```bash
+# Stop the dev stack (use your claimed slot)
+./dev-env.sh stop <slot>
+
+# Remove the worktree and local branch
 cd /home/dev/repos/ai-gateway
 git worktree remove /home/dev/worktrees/ai-gateway-<feature>
 git branch -d feat/<feature>
+
+# Verify
+git worktree list
+./dev-env.sh list
 ```
+
+**If removal fails** (uncommitted changes or running containers):
+
+```bash
+cd /home/dev/worktrees/ai-gateway-<feature>
+git stash push -m "pre-cleanup"   # or commit if still needed
+./dev-env.sh stop <slot>
+cd /home/dev/repos/ai-gateway
+git worktree remove /home/dev/worktrees/ai-gateway-<feature>
+git worktree prune
+```
+
+Parent/coordinator agents should confirm no orphaned worktrees or occupied slots before
+closing epics. Keep the stable checkout at `/home/dev/repos/ai-gateway` clean — do not
+use it for feature edits; a dirty stable tree blocks `git pull` for Gate D.
 
 ---
 

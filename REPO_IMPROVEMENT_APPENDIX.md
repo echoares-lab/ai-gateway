@@ -115,3 +115,46 @@ Do not share a slot between concurrent claims without an explicit handoff in the
 | 0 | Stable production-like stack (:4000) — **never use for feature work** |
 | 1–8 | Real OAuth dev stacks (Gate C) |
 | 9 | Mock stack (Gate B) — default for `make test-mock` |
+
+## Parallel agents: rebase and stacking
+
+| Situation | Branch from | PR base |
+|-----------|-------------|---------|
+| No dependency / dependency merged | `main` | `main` |
+| Dependency PR open and stable | `feat/<dep>` | `feat/<dep>` |
+
+After dependency merges:
+
+```bash
+cd /home/dev/worktrees/ai-gateway-<feature>
+git fetch origin && git rebase origin/main
+make test-fast
+git push --force-with-lease origin feat/<feature>
+```
+
+Poll dependencies: `gh issue view <n> --json state,closed` and `gh pr view <n> --json state,mergedAt`.
+
+Hotspot files (`translator.py`, `litellm-config.yaml`, compose files) require serialized
+issues or explicit stack order — see `REPO_IMPROVEMENT_WORKFLOW.md` §9.
+
+## Worktree cleanup (post-merge)
+
+Only after PR merge + Gate D:
+
+```bash
+./dev-env.sh stop <slot>
+cd /home/dev/repos/ai-gateway
+git status    # stable must be clean before Gate D pull
+git pull origin main
+git worktree remove /home/dev/worktrees/ai-gateway-<feature>
+git branch -d feat/<feature>
+git worktree list
+./dev-env.sh list
+```
+
+On removal failure: stash/commit in feature worktree, stop stack, retry, `git worktree prune`.
+Coordinator agents verify cleanup before closing parent epics.
+
+**CI flake:** If `mock-integration` fails in CI but `make test-mock` passes locally, note it in the PR and retry.
+
+**Manual merge:** If `gh pr merge --auto` is unavailable, use `gh pr merge <num> --merge` after green checks.

@@ -105,25 +105,48 @@ because it uses the same GitHub account.
 
 ## Step 3 — Set up your isolated worktree and dev stack
 
+**Branch choice (read issue `Depends on:` first):**
+
+| Dependency state | Branch from | PR base |
+|------------------|-------------|---------|
+| None, or dependency merged to `main` | `main` | `main` |
+| Dependency PR open and CI-green | `feat/<dep-short-name>` | `feat/<dep-short-name>` (stacked) |
+
+Poll before setup:
+
+```bash
+gh issue view <dep-issue> --json state,closed
+gh pr view <dep-pr> --json state,mergedAt,statusCheckRollup
+```
+
 ```bash
 cd /home/dev/repos/ai-gateway
 
-# Check which dev slots are free
+# Check which dev slots are free — pick an unclaimed slot
 ./dev-env.sh list
 
-# Create a worktree branching off main (outside repos/ — see WORKTREES.md)
+# Create a worktree (outside repos/ — see WORKTREES.md)
 mkdir -p /home/dev/worktrees
+git fetch origin
+
+# Independent work (most issues):
 git checkout main
+git pull origin main
 git worktree add /home/dev/worktrees/ai-gateway-<short-name> -b feat/<short-name>
+
+# Stacked work (only when dependency PR is open and stable):
+# git worktree add /home/dev/worktrees/ai-gateway-<short-name> -b feat/<short-name> feat/<dep-short-name>
+
 ln -s /home/dev/repos/ai-gateway/.env /home/dev/worktrees/ai-gateway-<short-name>/.env
 cd /home/dev/worktrees/ai-gateway-<short-name>
 
-# Start an isolated dev stack on a free slot (e.g. slot 1)
+# Start an isolated dev stack on the slot you declared in the claim comment
 ./dev-env.sh start <slot>
 ```
 
 **Never edit files in `/home/dev/repos/ai-gateway` directly — that is the stable stack.**
 **Never use slot 0 — that is the stable production stack on port 4000.**
+**One issue = one agent = one slot = one worktree.**
 
 ---
 
@@ -182,9 +205,21 @@ All tests must pass. Fix any failures before proceeding.
 
 ---
 
-## Step 6 — Open a PR to main
+## Step 6 — Rebase (if needed) and open a PR
+
+**If your issue depended on another PR that has since merged**, rebase onto `main` before opening or updating the PR:
+
+```bash
+cd /home/dev/worktrees/ai-gateway-<short-name>
+git fetch origin
+git rebase origin/main
+# resolve conflicts → git add … → git rebase --continue
+make test-fast
+git push --force-with-lease origin feat/<short-name>
+```
 
 **Never push directly to main.** Open a PR so CI runs and leaves a review trail.
+Use `--base main` unless you are intentionally stacking on an open dependency branch.
 
 ```bash
 gh pr create \
@@ -227,6 +262,15 @@ EOF
 
 ## Step 7 — Wait for CI and merge
 
+**Before merge:** If `main` advanced since your last green CI run (e.g. a dependency PR just merged), rebase again:
+
+```bash
+cd /home/dev/worktrees/ai-gateway-<short-name>
+git fetch origin && git rebase origin/main
+make test-fast
+git push --force-with-lease origin feat/<short-name>
+```
+
 ```bash
 PR_NUMBER=$(gh pr list --repo echoares-lab/ai-gateway --head feat/<short-name> --json number --jq '.[0].number')
 
@@ -245,12 +289,20 @@ gh pr merge $PR_NUMBER \
 gh pr checks $PR_NUMBER --repo echoares-lab/ai-gateway --watch
 ```
 
+**If auto-merge is disabled or does not trigger**, merge manually once checks are green:
+
+```bash
+gh pr merge $PR_NUMBER --repo echoares-lab/ai-gateway --merge
+```
+
 **If CI fails:**
 1. Read the failure output
 2. Fix the issue in your worktree
 3. Push the fix to your PR branch
 4. CI will re-run automatically
-5. The auto-merge will proceed once all required fast-tier checks are green
+5. Auto-merge (or manual merge) proceeds once all required fast-tier checks are green
+
+**If CI `mock-integration` fails on infra** but local Gate B passes, run `make test-mock` in your worktree, paste the result in the PR comment, and re-run failed jobs or push an empty commit to retry.
 
 **Required fast-tier CI checks that must pass:**
 - `lint-and-syntax` — ruff check + format, shell syntax, YAML syntax, no hardcoded keys
@@ -269,6 +321,7 @@ After the PR merges, from the **stable worktree** on `main`:
 
 ```bash
 cd /home/dev/repos/ai-gateway
+git status    # must be clean — stash or discard any local edits first
 git pull origin main
 
 # Gate D — production-like stack on port 4000
@@ -279,10 +332,14 @@ git pull origin main
 ```
 
 All three model tests must return a valid response. Record results in the closeout comment.
+**Do not leave uncommitted changes in the stable worktree** — they block `git pull` and Gate D.
 
 ---
 
-## Step 9 — Close the issue and clean up
+## Step 9 — Close the issue and clean up (after merge only)
+
+Run this **only after** the PR is merged and Gate D passes. Keep the worktree and dev
+stack alive while the PR is open for fixes and rebase.
 
 ```bash
 # Post completion summary on the issue
@@ -297,6 +354,7 @@ gh issue comment $ISSUE --repo echoares-lab/ai-gateway --body "$(cat <<'EOF'
   - Gate C: real-provider-e2e (if high-risk / run-e2e label)
   - Gate D: cliproxy-setup health + 3 model smokes on stable (:4000)
 - Verified on: main (production)
+- Cleanup: slot <slot> stopped, worktree removed, branch deleted
 - Follow-up issues: none / #NNN
 EOF
 )"
@@ -309,7 +367,17 @@ gh issue close $ISSUE --repo echoares-lab/ai-gateway
 cd /home/dev/repos/ai-gateway
 git worktree remove /home/dev/worktrees/ai-gateway-<short-name>
 git branch -d feat/<short-name>
+
+# Verify cleanup
+git worktree list
+./dev-env.sh list
 ```
+
+**If `git worktree remove` fails:** stash or commit remaining changes in the feature
+worktree, ensure `./dev-env.sh stop <slot>` succeeded, retry removal, then `git worktree prune`.
+
+**Parent / coordinator agents:** Confirm subagent cleanup (`git worktree list`, `./dev-env.sh list`)
+before closing epics or ending a multi-agent session.
 
 ---
 
@@ -340,12 +408,18 @@ git branch -d feat/<short-name>
 
 ---
 
-## Conflict avoidance
+## Conflict avoidance and multi-agent rules
 
 If two agents are running simultaneously:
 - Each agent works a **different issue** (enforced by the assignee check in Step 2)
-- Each agent uses a **different dev slot** (check `./dev-env.sh list` before starting)
+- Each agent uses a **different dev slot** (check `./dev-env.sh list` before starting; never slot 0)
 - Each agent uses a **different worktree** (different directory and branch name)
-- Issues touching the same files are serialized by the dependency graph — check `Depends on:` in the issue body
+- Each claim uses a **unique `Claim-ID`** per session (not just per GitHub account)
+- Issues touching the same hotspot (`translator.py`, `litellm-config.yaml`, etc.) are **serialized** — use `Depends on:` or stacked PRs + rebase after the first merges
+- Poll dependency state with `gh issue view` / `gh pr view` before claiming or implementing
+- After a dependency merges: `git fetch origin && git rebase origin/main`, resolve conflicts, `make test-fast`, `git push --force-with-lease`
+- CI `mock-integration` infra flakes: confirm with local `make test-mock` before retrying merge
+- Auto-merge may be off — use `gh pr merge <num> --merge` when `--auto` does not queue
+- Stable worktree stays **read-only** for feature work; keep it clean for Gate D `git pull`
 
 The stable stack on port 4000 is never touched by any agent.
