@@ -489,7 +489,14 @@ jobs:
           docker compose -f docker-compose.dev.yml -p aidev1 logs --no-color --tail 200 translator || true
           exit 1
       - name: Run real-provider smoke E2E
-        run: PATH="${GITHUB_WORKSPACE}/.venv-ci/bin:$PATH" ./dev-env.sh test 1 -- -m "integration and smoke"
+        run: |
+          set -a
+          . ./.env
+          set +a
+          PATH="${GITHUB_WORKSPACE}/.venv-ci/bin:$PATH" \
+            GATEWAY_URL=http://localhost:4010 \
+            LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY}" \
+            python3 -m pytest tests/integration/ -m "integration and smoke" -v
       - name: Stop services
         if: always()
         run: |
