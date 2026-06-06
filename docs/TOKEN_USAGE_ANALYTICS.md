@@ -54,6 +54,17 @@ This document outlines the implementation of granular token usage analytics for 
         "percentage_of_total": 28.5
       }
     ],
+    "by_canonical_model": [
+      {
+        "canonical_model_id": "claude-sonnet-4-6",
+        "canonical_provider": "anthropic",
+        "canonical_family": "claude",
+        "requested_models": ["claude-sonnet-4-6", "sonnet"],
+        "input_tokens": 350000,
+        "output_tokens": 85000,
+        "total_tokens": 435000
+      }
+    ],
     "time_series": [
       {
         "date": "2026-06-01",
@@ -74,6 +85,12 @@ This document outlines the implementation of granular token usage analytics for 
   }
 }
 ```
+
+`by_model` and `by_provider` remain backwards compatible and continue to
+reflect the model/provider labels seen in traffic. When the translator-owned
+model registry can resolve an alias or LiteLLM model name, `by_canonical_model`
+adds a registry-aware rollup keyed by `canonical_model_id`, with provider/family
+labels and the request model labels that contributed to the rollup.
 
 ## Implementation Phases
 1. **Phase 1**: Add token tracking to translator and metrics aggregation

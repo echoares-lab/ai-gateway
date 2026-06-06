@@ -112,6 +112,14 @@ paths:
                       provider: "anthropic"
                       input_tokens: 350000
                       output_tokens: 85000
+                  by_canonical_model:
+                    - canonical_model_id: "claude-sonnet-4-6"
+                      canonical_provider: "anthropic"
+                      canonical_family: "claude"
+                      requested_models: ["claude-sonnet-4-6", "sonnet"]
+                      input_tokens: 350000
+                      output_tokens: 85000
+                      total_tokens: 435000
   /admin/credentials:
     get:
       summary: List redacted translator credential inventory records
