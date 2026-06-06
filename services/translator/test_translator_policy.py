@@ -14,12 +14,7 @@ import main as t
 
 
 @pytest.fixture
-def policy_client(monkeypatch):
-    monkeypatch.setattr(t, "POLICY_ENGINE_ENABLED", True)
-    monkeypatch.setattr(t, "POLICY_ENGINE_URL", "http://policy-engine:8080")
-    monkeypatch.setattr(t, "POLICY_ENGINE_TIMEOUT_MS", 100)
-    monkeypatch.setattr(t, "_quota_headroom_cache", None)
-
+def policy_client(monkeypatch, policy_engine_env):
     class MockResponse:
         def __init__(self, status_code=200, content=None):
             self.status_code = status_code

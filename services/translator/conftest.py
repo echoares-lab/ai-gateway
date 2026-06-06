@@ -10,11 +10,19 @@ from unittest.mock import patch
 import fakeredis
 import pytest
 
+from core.policy.redis_store import RedisStateStore
+
 
 @pytest.fixture
 def fake_redis() -> fakeredis.FakeRedis:
     """In-memory Redis for rate-limit, affinity, and state-store tests."""
     return fakeredis.FakeRedis(decode_responses=True)
+
+
+@pytest.fixture
+def redis_state_store(fake_redis: fakeredis.FakeRedis) -> RedisStateStore:
+    """RedisStateStore backed by fakeredis (rate-limit aggregator tests)."""
+    return RedisStateStore(fake_redis)
 
 
 @pytest.fixture

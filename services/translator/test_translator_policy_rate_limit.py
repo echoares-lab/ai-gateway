@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-import fakeredis
 import pytest
 
 from core.policy.rate_limit import (
@@ -26,16 +25,11 @@ from core.policy.schemas import (
 )
 
 
-@pytest.fixture
-def fake_redis() -> RedisStateStore:
-    return RedisStateStore(fakeredis.FakeRedis(decode_responses=True))
-
-
-def test_merge_translator_and_redis_rolling_counts(fake_redis: RedisStateStore):
+def test_merge_translator_and_redis_rolling_counts(redis_state_store: RedisStateStore):
     cooldown = datetime.now(timezone.utc) + timedelta(seconds=60)
-    fake_redis.record_rate_limit_429("anthropic", "cred-x", cooldown_until=cooldown)
-    fake_redis.record_rate_limit_429("anthropic", "cred-x", cooldown_until=cooldown)
-    fake_redis.record_rate_limit_429("anthropic", "cred-x", cooldown_until=cooldown)
+    redis_state_store.record_rate_limit_429("anthropic", "cred-x", cooldown_until=cooldown)
+    redis_state_store.record_rate_limit_429("anthropic", "cred-x", cooldown_until=cooldown)
+    redis_state_store.record_rate_limit_429("anthropic", "cred-x", cooldown_until=cooldown)
 
     ctx = RoutingContext(
         requested_model="claude-sonnet-4-6",
@@ -47,7 +41,7 @@ def test_merge_translator_and_redis_rolling_counts(fake_redis: RedisStateStore):
             )
         ],
     )
-    merged, rules = merge_rate_limit_sources(ctx, redis_store=fake_redis)
+    merged, rules = merge_rate_limit_sources(ctx, redis_store=redis_state_store)
     assert "rate_limit:translator_signals_merged" in rules
     assert "redis:rate_limits_merged" in rules
     snap = merged.rate_limits[0]
@@ -162,9 +156,9 @@ def test_skip_models_when_all_backing_credentials_cooled():
     assert "rate_limit:skip_all_cooled_models" in result.rules_applied
 
 
-def test_aggregate_and_evaluate_end_to_end(fake_redis: RedisStateStore):
+def test_aggregate_and_evaluate_end_to_end(redis_state_store: RedisStateStore):
     cooldown = datetime.now(timezone.utc) + timedelta(seconds=45)
-    fake_redis.record_rate_limit_429("openai", "cred-o", cooldown_until=cooldown)
+    redis_state_store.record_rate_limit_429("openai", "cred-o", cooldown_until=cooldown)
     inventory = InventoryStore(
         None,
         enabled=False,
@@ -179,7 +173,7 @@ def test_aggregate_and_evaluate_end_to_end(fake_redis: RedisStateStore):
     )
     _, evaluation, merge_rules = aggregate_and_evaluate(
         ctx,
-        redis_store=fake_redis,
+        redis_store=redis_state_store,
         inventory_store=inventory,
     )
     assert "rate_limit:translator_signals_merged" in merge_rules
@@ -199,9 +193,9 @@ def test_inventory_critical_status_deprioritized():
     assert "cred-critical" in evaluation.deprioritized_credentials
 
 
-def test_evaluate_wires_aggregator_with_inventory_and_redis(fake_redis: RedisStateStore):
+def test_evaluate_wires_aggregator_with_inventory_and_redis(redis_state_store: RedisStateStore):
     cooldown = datetime.now(timezone.utc) + timedelta(seconds=30)
-    fake_redis.record_rate_limit_429("gemini", "cred-hot", cooldown_until=cooldown)
+    redis_state_store.record_rate_limit_429("gemini", "cred-hot", cooldown_until=cooldown)
     inventory = InventoryStore(
         None,
         enabled=False,
@@ -216,7 +210,7 @@ def test_evaluate_wires_aggregator_with_inventory_and_redis(fake_redis: RedisSta
                 ],
             )
         ),
-        store=fake_redis,
+        store=redis_state_store,
         inventory_store=inventory,
     )
     assert "rate_limit:inventory_routing_merged" in decision.rules_applied
