@@ -1,6 +1,6 @@
 # Self-Hosted CI Runner Guide
 
-AI Gateway CI runs on a **single self-hosted runner** with persistent disk. Behavior differs from GitHub-hosted runners: caches survive between jobs, host ports are fixed, and workspace pre-clean is targeted (not full wipe).
+AI Gateway CI runs on a **self-hosted runner group** (multiple physical hosts in the dev pool) with persistent disk on each machine. Behavior differs from GitHub-hosted runners: caches survive between jobs, host ports are fixed per machine, and workspace pre-clean is targeted (not full wipe).
 
 See [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) and [`TESTING.md`](TESTING.md).
 
@@ -45,13 +45,24 @@ Docker builds use [`.github/actions/build-docker-cached`](../.github/actions/bui
 
 ## Concurrency and ports
 
+### What runs in parallel
+
+| Layer | Group key | Effect |
+|-------|-----------|--------|
+| Workflow | `ci-CI Suite-<PR number or ref>` | Different PRs (and `main` pushes) run CI concurrently across the dev runner group |
+| Fast jobs | (none) | `lint-and-syntax`, `unit-tests`, `build-translator`, path-filtered jobs fan out to any idle runner |
+| Docker jobs | `ci-docker-host-ports-<runner.name>` | One mock or Gate C stack per physical host; different hosts can run Docker jobs at the same time |
+
+Workflow concurrency is **per ref**: a new push to the same PR cancels the in-progress run for that PR only. Other PRs are unaffected.
+
+### What stays serialized
+
 | Constraint | Reason |
 |------------|--------|
-| Workflow concurrency `ci-CI Suite-self-hosted` | Single runner; cancel in-progress on new push |
-| Job concurrency `ci-docker-host-ports` | Mock + Gate C stacks bind host ports 4010, 4011, 18080 |
-| Stable stack `:4000` / `:8080` | Must not collide with CI mock stack |
+| Job concurrency `ci-docker-host-ports-<runner.name>` | Mock + Gate C stacks bind fixed host ports 4010, 4011, 18080 on that machine |
+| Stable stack `:4000` / `:8080` | Must not collide with CI mock stack on the same host |
 
-Only **one** mock-integration or real-provider-e2e stack at a time per runner.
+Only **one** `mock-integration` or `real-provider-e2e` stack at a time **per runner host** (ports are per-host, not shared across the group).
 
 ---
 
