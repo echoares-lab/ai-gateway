@@ -331,6 +331,57 @@ paths:
           description: Model not found in registry
         '503':
           description: Admin mutations disabled when TRANSLATOR_ADMIN_KEY is unset
+  /admin/models/reconcile:
+    post:
+      summary: Render registry-driven LiteLLM and Gemini map changes without writing files
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run:
+                  type: boolean
+                  default: true
+                  description: Reserved for apply-mode expansion; this endpoint currently renders only.
+                include_disabled:
+                  type: boolean
+                  default: false
+                  description: Include disabled registry models in rendered resources.
+            example:
+              dry_run: true
+              include_disabled: false
+      responses:
+        '200':
+          description: Dry-run rendered resources and diffs
+          content:
+            application/json:
+              example:
+                accepted: true
+                dry_run: true
+                source: "postgres:model_registry"
+                registry_available: true
+                resources:
+                  - name: "litellm-config.yaml"
+                    kind: "yaml"
+                    changed: true
+                    content: "model_list:\n- model_name: gpt-5-4\n"
+                    diff: "--- current/litellm-config.yaml\n+++ desired/litellm-config.yaml\n"
+                  - name: "gemini-model-map.json"
+                    kind: "json"
+                    changed: true
+                    content: "{\n  \"gemini-3.flash\": \"gemini-3-flash\"\n}\n"
+                    diff: "--- current/gemini-model-map.json\n+++ desired/gemini-model-map.json\n"
+                errors: []
+        '403':
+          description: Invalid admin key
+        '503':
+          description: Admin mutations disabled when TRANSLATOR_ADMIN_KEY is unset
   /admin/models/sync:
     post:
       summary: Import LiteLLM config or CLIProxy discovery into the translator model registry
