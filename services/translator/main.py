@@ -32,6 +32,16 @@ import httpx
 import redis.asyncio as aioredis
 import websockets
 import yaml
+from core.credential_inventory import (
+    CredentialInventoryListResponse,
+    CredentialInventoryStore,
+    CredentialInventorySyncRequest,
+    CredentialInventorySyncResponse,
+    CredentialProbeResponse,
+    CredentialTransition,
+    record_from_auth_file,
+    transition_for_record,
+)
 from core.metrics import (
     FORMAT_REQUESTS,
     IN_FLIGHT,
@@ -55,6 +65,8 @@ from core.model_registry import (
     ModelRegistryWriteRequest,
     load_models_from_litellm_config,
 )
+from core.policy.evaluate import process_credential_event_async
+from core.policy.schemas import CredentialEvent
 from core.state import _policy_trace
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
@@ -2100,6 +2112,8 @@ ADMIN_SCHEMA_VERSION = "admin-console.v1"
 LITELLM_CONFIG_PATH = os.environ.get("LITELLM_CONFIG_PATH", "/config/litellm-config.yaml")
 ADMIN_ERROR_MAXLEN = 400
 TRANSLATOR_ADMIN_KEY = os.environ.get("TRANSLATOR_ADMIN_KEY", "")
+CLIPROXY_URL = os.environ.get("CLIPROXY_URL", "http://cliproxy:8317").rstrip("/")
+CLIPROXY_MANAGEMENT_KEY = os.environ.get("CLIPROXY_MANAGEMENT_KEY", "")
 
 _SECRET_PATTERNS = [
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]{12,}"),
@@ -2196,6 +2210,29 @@ def _admin_load_litellm_config() -> tuple[dict | None, list[dict]]:
 
 def _model_registry_store() -> ModelRegistryStore:
     return ModelRegistryStore()
+
+
+def _credential_inventory_store() -> CredentialInventoryStore:
+    return CredentialInventoryStore()
+
+
+def _redact_credential_record(record):
+    metadata = record.metadata if isinstance(record.metadata, dict) else {}
+    status_message = str(metadata.get("status_message") or "")
+    return record.model_copy(
+        update={
+            "label": "[redacted]",
+            "key_fingerprint": "[redacted]",
+            "metadata": {
+                "status_message": _admin_redact(status_message)[0],
+                "updated_at": metadata.get("updated_at", ""),
+            },
+        }
+    )
+
+
+def _redact_credential_records(records):
+    return [_redact_credential_record(record) for record in records]
 
 
 def _load_model_registry_with_config_fallback() -> ModelRegistryListResponse:
@@ -2724,11 +2761,192 @@ async def _admin_fetch_metrics_text() -> tuple[str | None, list[dict]]:
         return None, [_admin_error("metrics_error", f"{type(exc).__name__}: {exc}", "translator:/metrics")]
 
 
+async def _fetch_cliproxy_auth_files() -> tuple[list[dict], list[dict]]:
+    if _client is None:
+        return [], [
+            _admin_error(
+                "client_unavailable",
+                "http client not initialized",
+                "cliproxy:/v0/management/auth-files",
+            )
+        ]
+    management_key = CLIPROXY_MANAGEMENT_KEY or os.environ.get("CLIPROXY_MANAGEMENT_KEY", "")
+    if not management_key:
+        return [], [
+            _admin_error(
+                "management_key_missing",
+                "CLIPROXY_MANAGEMENT_KEY is required",
+                "cliproxy:/v0/management/auth-files",
+            )
+        ]
+    try:
+        resp = await _client.get(
+            f"{CLIPROXY_URL}/v0/management/auth-files",
+            headers={"x-management-key": management_key},
+            timeout=5.0,
+        )
+        if resp.status_code != 200:
+            return [], [
+                _admin_error(
+                    "cliproxy_http_error",
+                    f"/v0/management/auth-files returned {resp.status_code}",
+                    "cliproxy:/v0/management/auth-files",
+                )
+            ]
+        body = resp.json()
+        files = body.get("files") if isinstance(body, dict) else None
+        if not isinstance(files, list):
+            return [], [
+                _admin_error(
+                    "cliproxy_bad_response",
+                    "response missing files array",
+                    "cliproxy:/v0/management/auth-files",
+                )
+            ]
+        return [item for item in files if isinstance(item, dict)], []
+    except Exception as exc:
+        return [], [
+            _admin_error(
+                "cliproxy_fetch_error",
+                f"{type(exc).__name__}: {exc}",
+                "cliproxy:/v0/management/auth-files",
+            )
+        ]
+
+
+async def _emit_credential_transition_to_policy(transition: CredentialTransition) -> bool:
+    event = CredentialEvent(
+        credential_id=transition.credential_id,
+        provider=transition.provider,
+        previous_status=transition.previous_status,
+        new_status=transition.new_status,
+        cool_down_until=transition.cool_down_until,
+        reason=transition.reason,
+    )
+    return await process_credential_event_async(event)
+
+
 @app.get("/admin/analytics/tokens")
 async def admin_token_analytics():
     """Granular token usage analytics by provider and model (#117)."""
     metrics_text, errors = await _admin_fetch_metrics_text()
     return _admin_token_analytics_panel(metrics_text, errors)
+
+
+@app.get("/admin/credentials", response_model=CredentialInventoryListResponse)
+async def admin_credentials():
+    """List redacted translator credential inventory records."""
+    loaded = _credential_inventory_store().list_credentials()
+    return loaded.model_copy(update={"credentials": _redact_credential_records(loaded.credentials)})
+
+
+@app.post("/admin/credentials/sync", response_model=CredentialInventorySyncResponse)
+async def admin_credentials_sync(request: Request, body: CredentialInventorySyncRequest):
+    """Sync CLIProxy auth-file state into credential_inventory."""
+    auth_error = _require_admin_key(request)
+    if auth_error is not None:
+        return auth_error
+
+    store = _credential_inventory_store()
+    files, errors = await _fetch_cliproxy_auth_files()
+    credentials = [record_from_auth_file(item) for item in files]
+    transitions: list[CredentialTransition] = []
+    imported = 0
+
+    if errors:
+        return CredentialInventorySyncResponse(
+            accepted=False,
+            dry_run=body.dry_run,
+            registry_available=store.enabled,
+            discovered_count=len(credentials),
+            imported_count=0,
+            credentials=_redact_credential_records(credentials),
+            errors=errors,
+        )
+
+    old_statuses: dict[str, str] = {}
+    if store.enabled:
+        try:
+            old_statuses = store.existing_statuses()
+        except Exception as exc:
+            errors.append(
+                _admin_error(
+                    "registry_read_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "postgres:credential_inventory",
+                )
+            )
+    else:
+        errors.append(
+            _admin_error(
+                "registry_unavailable",
+                "DATABASE_URL or psycopg2 unavailable",
+                "postgres:credential_inventory",
+            )
+        )
+
+    for credential in credentials:
+        transition = transition_for_record(credential, old_statuses.get(credential.credential_id))
+        if transition is not None:
+            transitions.append(transition)
+
+    if not body.dry_run and store.enabled and not errors:
+        try:
+            imported = store.upsert_credentials(credentials)
+        except Exception as exc:
+            errors.append(
+                _admin_error(
+                    "registry_write_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "postgres:credential_inventory",
+                )
+            )
+        else:
+            for transition in transitions:
+                try:
+                    await _emit_credential_transition_to_policy(transition)
+                except Exception as exc:
+                    errors.append(
+                        _admin_error(
+                            "policy_event_error",
+                            f"{type(exc).__name__}: {exc}",
+                            "translator:policy-event",
+                        )
+                    )
+    elif body.dry_run:
+        imported = len(credentials)
+
+    return CredentialInventorySyncResponse(
+        accepted=not errors,
+        dry_run=body.dry_run,
+        registry_available=store.enabled,
+        discovered_count=len(credentials),
+        imported_count=imported,
+        credentials=_redact_credential_records(credentials),
+        transitions=transitions,
+        errors=errors,
+    )
+
+
+@app.post("/admin/credentials/{credential_id}/probe", response_model=CredentialProbeResponse)
+async def admin_credential_probe(credential_id: str, request: Request):
+    """Targeted credential probing is reserved until CLIProxy exposes a probe API."""
+    auth_error = _require_admin_key(request)
+    if auth_error is not None:
+        return auth_error
+    return JSONResponse(
+        CredentialProbeResponse(
+            credential_id=credential_id,
+            errors=[
+                _admin_error(
+                    "targeted_probe_unsupported",
+                    "CLIProxy management API does not expose targeted credential probe",
+                    "cliproxy:/v0/management",
+                )
+            ],
+        ).model_dump(mode="json"),
+        status_code=501,
+    )
 
 
 @app.get("/admin/models", response_model=ModelRegistryListResponse)
