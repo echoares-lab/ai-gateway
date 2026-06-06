@@ -39,6 +39,8 @@ CI uses **GitHub Actions cache** (`type=gha`) for Docker layers plus optional lo
 
 The composite action [`.github/actions/setup-python-venv`](../.github/actions/setup-python-venv/action.yml) caches `~/.cache/pip` and `.venv-ci` keyed on requirements files.
 
+Docker builds use [`.github/actions/build-docker-cached`](../.github/actions/build-docker-cached/action.yml) with scoped GHA cache (`translator`, `cliproxy-mock`, `policy-engine-mock`). Mock-stack compose images are built via [`scripts/ci-build-mock-services.sh`](../scripts/ci-build-mock-services.sh) with path-filtered skip when the tagged image already exists locally.
+
 ---
 
 ## Concurrency and ports
@@ -66,12 +68,13 @@ Fresh volumes are slower (re-seed from `db/seed-litellm-mock.sql`) but prevent c
 
 ## Workspace pre-clean
 
-Jobs use [`.github/actions/pre-clean-self-hosted`](../.github/actions/pre-clean-self-hosted/action.yml) to:
+Jobs use inline pre-clean **before** `actions/checkout` (local composite actions are unavailable until the repo is checked out). The clean removes checkout contents only — it preserves `/var/cache/ai-gateway`:
 
 1. Fix ownership on `$GITHUB_WORKSPACE`
-2. Remove checkout contents **without** deleting `/var/cache/ai-gateway`
+2. Remove prior checkout files (not cache dirs)
+3. Ensure `/var/cache/ai-gateway/{pip,buildkit}` exists
 
-Avoid full `rm -rf` of cache paths between jobs in the same workflow.
+See [`.github/actions/pre-clean-self-hosted`](../.github/actions/pre-clean-self-hosted/action.yml) for the canonical script (reference for runner setup docs).
 
 ---
 

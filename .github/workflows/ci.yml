@@ -125,6 +125,7 @@ jobs:
           bash -n db/apply-migrations.sh
           bash -n dev-env.sh
           bash -n gen-client-config.sh
+          bash -n scripts/ci-build-mock-services.sh
           bash -n scripts/ci-free-mock-host-ports.sh
           bash -n tests/test-multi-repo-isolation.sh
           bash -n tests/test-gateway-e2e.sh
@@ -175,18 +176,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Build translator image (shared cache)
-        uses: docker/build-push-action@v5
+      - uses: ./.github/actions/build-docker-cached
         with:
           context: ./services/translator
-          load: true
           tags: ai-translator-test:latest
-          cache-from: |
-            type=gha
-            type=local,src=/var/cache/ai-gateway/buildkit
-          cache-to: |
-            type=gha,mode=max
-            type=local,dest=/var/cache/ai-gateway/buildkit,mode=max
+          scope: translator
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
@@ -331,7 +325,11 @@ jobs:
     if: >
       needs.lint-and-syntax.result == 'success' &&
       needs.unit-tests.result == 'success' &&
-      (needs.changes.outputs.runtime == 'true' || github.event_name == 'workflow_dispatch')
+      (
+        needs.changes.outputs.runtime == 'true' ||
+        needs.changes.outputs.integration_tests == 'true' ||
+        github.event_name == 'workflow_dispatch'
+      )
     runs-on: self-hosted
     steps:
       - name: Pre-clean workspace (self-hosted)
