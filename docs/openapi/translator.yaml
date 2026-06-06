@@ -209,6 +209,42 @@ paths:
           description: Model disabled or deleted
         '404':
           description: Model not found
+  /admin/models/{model_id}/probe:
+    post:
+      summary: Probe one model and persist normalized probe status
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Probe completed and registry probe fields updated
+          content:
+            application/json:
+              example:
+                accepted: true
+                registry_available: true
+                model_id: "gpt-5-4"
+                probe_status: "success"
+                probe_http_status: 200
+                probe_checked_at: "2026-06-06T00:00:00Z"
+                model:
+                  model_id: "gpt-5-4"
+                  provider: "openai"
+                  probe_status: "success"
+                  probe_http_status: 200
+                errors: []
+        '403':
+          description: Invalid admin key
+        '404':
+          description: Model not found in registry
+        '503':
+          description: Admin mutations disabled when TRANSLATOR_ADMIN_KEY is unset
   /admin/models/sync:
     post:
       summary: Import current LiteLLM config into the translator model registry

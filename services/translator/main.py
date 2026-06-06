@@ -26,6 +26,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import core.metrics  # noqa: F401 — register cache hit/miss counters
 import httpx
@@ -46,6 +47,7 @@ from core.metrics import (
     UPSTREAM_ERRORS,
 )
 from core.model_registry import (
+    ModelProbeResponse,
     ModelRegistryListResponse,
     ModelRegistryMutationResponse,
     ModelRegistryPatchRequest,
@@ -2100,6 +2102,7 @@ ADMIN_SCHEMA_VERSION = "admin-console.v1"
 LITELLM_CONFIG_PATH = os.environ.get("LITELLM_CONFIG_PATH", "/config/litellm-config.yaml")
 ADMIN_ERROR_MAXLEN = 400
 TRANSLATOR_ADMIN_KEY = os.environ.get("TRANSLATOR_ADMIN_KEY", "")
+MODEL_PROBE_TIMEOUT = float(os.environ.get("MODEL_PROBE_TIMEOUT", "8.0"))
 
 _SECRET_PATTERNS = [
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]{12,}"),
@@ -2216,6 +2219,97 @@ def _load_model_registry_with_config_fallback() -> ModelRegistryListResponse:
         models=fallback.models,
         errors=[*registry.errors, *fallback.errors],
     )
+
+
+def _probe_result_status(resp: httpx.Response) -> tuple[str, list[dict]]:
+    if resp.status_code in (401, 403):
+        return "auth_failure", []
+    if resp.status_code == 404:
+        return "missing_model", []
+    if resp.status_code == 429:
+        return "rate_limited", []
+    if resp.status_code in (408, 425, 500, 502, 503, 504):
+        return "temporarily_unavailable", []
+    if resp.status_code < 200 or resp.status_code >= 300:
+        return "error", []
+    try:
+        body = resp.json()
+    except Exception as exc:
+        return "malformed_response", [
+            _admin_error(
+                "probe_malformed_response",
+                f"{type(exc).__name__}: {exc}",
+                "litellm:/v1/chat/completions",
+            )
+        ]
+    choices = body.get("choices") if isinstance(body, dict) else None
+    if not isinstance(choices, list) or not choices:
+        return "malformed_response", [
+            _admin_error(
+                "probe_malformed_response",
+                "response did not contain a non-empty choices list",
+                "litellm:/v1/chat/completions",
+            )
+        ]
+    return "success", []
+
+
+async def _probe_model_via_litellm(model_id: str) -> tuple[str, int | None, list[dict]]:
+    if _client is None:
+        return (
+            "error",
+            None,
+            [
+                _admin_error(
+                    "client_unavailable",
+                    "http client not initialized",
+                    "litellm:/v1/chat/completions",
+                )
+            ],
+        )
+    master_key = os.environ.get("LITELLM_MASTER_KEY", "")
+    headers = {"authorization": f"Bearer {master_key}"} if master_key else {}
+    payload = {
+        "model": model_id,
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 1,
+        "stream": False,
+    }
+    try:
+        resp = await _client.post(
+            f"{LITELLM}/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=MODEL_PROBE_TIMEOUT,
+        )
+    except httpx.TimeoutException:
+        return "timeout", None, []
+    except httpx.HTTPError as exc:
+        return (
+            "error",
+            None,
+            [
+                _admin_error(
+                    "probe_http_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "litellm:/v1/chat/completions",
+                )
+            ],
+        )
+    except Exception as exc:
+        return (
+            "error",
+            None,
+            [
+                _admin_error(
+                    "probe_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "litellm:/v1/chat/completions",
+                )
+            ],
+        )
+    status, errors = _probe_result_status(resp)
+    return status, resp.status_code, errors
 
 
 def _admin_parse_provider_metrics(text: str) -> list[dict]:
@@ -2898,6 +2992,75 @@ async def admin_model_delete(model_id: str, request: Request, hard: bool = False
             status_code=404,
         )
     return ModelRegistryMutationResponse(registry_available=store.enabled, model=model)
+
+
+@app.post("/admin/models/{model_id}/probe", response_model=ModelProbeResponse)
+async def admin_model_probe(model_id: str, request: Request):
+    """Probe one model through LiteLLM and persist the normalized probe result."""
+    auth_error = _require_admin_key(request)
+    if auth_error is not None:
+        return auth_error
+
+    store = _model_registry_store()
+    current = store.get_model(model_id)
+    if current is None:
+        return JSONResponse(
+            {
+                "accepted": False,
+                "registry_available": store.enabled,
+                "model_id": model_id,
+                "probe_status": "missing_model",
+                "probe_http_status": None,
+                "probe_checked_at": datetime.now(timezone.utc).isoformat(),
+                "model": None,
+                "errors": [
+                    _admin_error(
+                        "model_not_found",
+                        f"{model_id} not found",
+                        "postgres:model_registry",
+                    )
+                ],
+            },
+            status_code=404,
+        )
+
+    probe_status, probe_http_status, errors = await _probe_model_via_litellm(model_id)
+    checked_at = datetime.now(timezone.utc)
+    try:
+        model = store.update_probe_result(
+            model_id,
+            probe_status=probe_status,
+            probe_http_status=probe_http_status,
+            probe_checked_at=checked_at,
+        )
+    except Exception as exc:
+        return ModelProbeResponse(
+            accepted=False,
+            registry_available=store.enabled,
+            model_id=model_id,
+            probe_status=probe_status,
+            probe_http_status=probe_http_status,
+            probe_checked_at=checked_at,
+            model=current,
+            errors=[
+                *errors,
+                _admin_error(
+                    "registry_write_error",
+                    f"{type(exc).__name__}: {exc}",
+                    "postgres:model_registry",
+                ),
+            ],
+        )
+
+    return ModelProbeResponse(
+        registry_available=store.enabled,
+        model_id=model_id,
+        probe_status=probe_status,
+        probe_http_status=probe_http_status,
+        probe_checked_at=checked_at,
+        model=model or current,
+        errors=errors,
+    )
 
 
 @app.post("/admin/models/sync", response_model=ModelRegistrySyncResponse)

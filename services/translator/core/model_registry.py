@@ -75,6 +75,17 @@ class ModelRegistryMutationResponse(BaseModel):
     errors: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class ModelProbeResponse(BaseModel):
+    accepted: bool = True
+    registry_available: bool
+    model_id: str
+    probe_status: str
+    probe_http_status: int | None = None
+    probe_checked_at: datetime
+    model: ModelRegistryRecord | None = None
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class ModelRegistryWriteRequest(BaseModel):
     model_id: str
     provider: str | None = None
@@ -96,8 +107,7 @@ class ModelRegistryWriteRequest(BaseModel):
         return ModelRegistryRecord(
             model_id=self.model_id,
             provider=provider,
-            family=self.family
-            or (provider if provider != "unknown" else family_of(self.model_id)),
+            family=self.family or (provider if provider != "unknown" else family_of(self.model_id)),
             upstream_model=self.upstream_model,
             litellm_model=self.litellm_model or f"openai/{self.upstream_model}",
             enabled=self.enabled,
@@ -106,9 +116,7 @@ class ModelRegistryWriteRequest(BaseModel):
             supports_vision=self.supports_vision,
             max_input_tokens=self.max_input_tokens,
             max_output_tokens=self.max_output_tokens,
-            cost_tier=self.cost_tier
-            if self.cost_tier is not None
-            else cost_tier_of(self.model_id),
+            cost_tier=self.cost_tier if self.cost_tier is not None else cost_tier_of(self.model_id),
             policy_metadata=self.policy_metadata,
             source=self.source,
         )
@@ -182,19 +190,11 @@ def _entry_model_info(entry: dict[str, Any]) -> dict[str, Any]:
 
 def record_from_litellm_entry(entry: dict[str, Any]) -> ModelRegistryRecord | None:
     model_id = entry.get("model_name")
-    params = (
-        entry.get("litellm_params")
-        if isinstance(entry.get("litellm_params"), dict)
-        else {}
-    )
+    params = entry.get("litellm_params") if isinstance(entry.get("litellm_params"), dict) else {}
     litellm_model = params.get("model")
     if not model_id or not litellm_model:
         return None
-    upstream = (
-        str(litellm_model).split("/", 1)[1]
-        if "/" in str(litellm_model)
-        else str(litellm_model)
-    )
+    upstream = str(litellm_model).split("/", 1)[1] if "/" in str(litellm_model) else str(litellm_model)
     info = _entry_model_info(entry)
     provider = provider_of(str(model_id))
     return ModelRegistryRecord(
@@ -212,9 +212,7 @@ def record_from_litellm_entry(entry: dict[str, Any]) -> ModelRegistryRecord | No
         cost_tier=cost_tier_of(str(model_id)),
         policy_metadata={
             "api_base": params.get("api_base"),
-            "disable_background_health_check": info.get(
-                "disable_background_health_check"
-            ),
+            "disable_background_health_check": info.get("disable_background_health_check"),
         },
         source="litellm-config",
         aliases=[],
@@ -229,11 +227,7 @@ def load_models_from_litellm_config(path: str) -> RegistryLoadResult:
         return RegistryLoadResult(
             source="litellm-config",
             registry_available=False,
-            errors=[
-                _error(
-                    "config_not_found", f"{path} not found", "repo:litellm-config.yaml"
-                )
-            ],
+            errors=[_error("config_not_found", f"{path} not found", "repo:litellm-config.yaml")],
         )
     except Exception as exc:
         return RegistryLoadResult(
@@ -255,22 +249,16 @@ def load_models_from_litellm_config(path: str) -> RegistryLoadResult:
         record = record_from_litellm_entry(entry)
         if record is not None:
             models.append(record)
-    return RegistryLoadResult(
-        source="litellm-config", registry_available=False, models=models
-    )
+    return RegistryLoadResult(source="litellm-config", registry_available=False, models=models)
 
 
 def _database_url() -> str:
-    return os.environ.get("MODEL_REGISTRY_DATABASE_URL") or os.environ.get(
-        "DATABASE_URL", ""
-    )
+    return os.environ.get("MODEL_REGISTRY_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
 
 
 class ModelRegistryStore:
     def __init__(self, database_url: str | None = None):
-        self.database_url = (
-            database_url if database_url is not None else _database_url()
-        )
+        self.database_url = database_url if database_url is not None else _database_url()
 
     @property
     def enabled(self) -> bool:
@@ -414,3 +402,30 @@ class ModelRegistryStore:
             deleted = cur.rowcount > 0
             conn.commit()
         return deleted
+
+    def update_probe_result(
+        self,
+        model_id: str,
+        *,
+        probe_status: str,
+        probe_http_status: int | None,
+        probe_checked_at: datetime,
+    ) -> ModelRegistryRecord | None:
+        if not self.enabled:
+            raise RuntimeError("model registry database is not configured")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE model_registry
+                SET probe_status = %s,
+                    probe_http_status = %s,
+                    probe_checked_at = %s
+                WHERE model_id = %s
+                """,
+                (probe_status, probe_http_status, probe_checked_at, model_id),
+            )
+            if cur.rowcount == 0:
+                conn.commit()
+                return None
+            conn.commit()
+        return self.get_model(model_id)
