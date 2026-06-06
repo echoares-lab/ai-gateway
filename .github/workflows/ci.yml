@@ -157,7 +157,7 @@ jobs:
           print(f"✓ litellm-config.yaml: {len(data.get('model_list') or [])} models validated")
           PY
       - name: Validate policy-profiles.yaml
-        run: PYTHONPATH=services/policy-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
+        run: PYTHONPATH=services/translator .venv-ci/bin/python3 scripts/validate_policy_profiles.py
       - name: Check for hardcoded API keys
         run: CHECK_ALL=1 bash .githooks/prevent-hardcoded-keys.sh
       - name: Fix workspace permissions (self-hosted)
@@ -360,7 +360,7 @@ jobs:
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
-            up -d cliproxy litellm policy-engine
+            up -d cliproxy litellm
           echo "Waiting for LiteLLM readiness..."
           for i in {1..36}; do
             if curl -sf http://localhost:4011/health/readiness >/dev/null; then
@@ -392,7 +392,6 @@ jobs:
       - name: Run mock-tier pytest
         run: |
           GATEWAY_URL=http://localhost:4010 LITELLM_MASTER_KEY=sk-ci-mock ALLOW_MODEL_SKIP=0 \
-            POLICY_ENGINE_URL=http://localhost:18080 \
             .venv-ci/bin/python -m pytest tests/integration/ -m mock -v
       - name: Run shell E2E smoke (CI mock mode)
         run: GATEWAY_E2E_CI=1 GATEWAY_URL=http://localhost:4010 bash tests/test-gateway-e2e.sh
