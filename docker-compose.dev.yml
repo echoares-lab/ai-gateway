@@ -100,6 +100,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
       CLIPROXY_API_KEY: ${CLIPROXY_API_KEY}
       DISABLE_CACHE: "true"
+      # Writable migration dir avoids Prisma P3005 on fresh dev Postgres volumes.
+      LITELLM_MIGRATION_DIR: ${LITELLM_MIGRATION_DIR:-/tmp/litellm_migrations}
     volumes:
       - ./litellm-config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]
@@ -111,10 +113,12 @@ services:
         "CMD-SHELL",
         "python - <<'PY'\nimport urllib.request, sys\ntry:\n    r = urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=3)\n    sys.exit(0 if 200 <= r.status < 300 else 1)\nexcept Exception:\n    sys.exit(1)\nPY"
         ]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 20s
+      # Align with production (docker-compose.yml). Fresh Postgres + proxy_extras
+      # migrations can exceed the old dev defaults (~70s) on CI and first slot start.
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
 
   litellm-reloader:
     build:

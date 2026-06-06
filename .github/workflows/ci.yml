@@ -408,16 +408,19 @@ jobs:
           export CLIPROXY_BUILD_CONTEXT="$PWD"
           export CLIPROXY_DOCKERFILE="Dockerfile.cliproxy"
           ./dev-env.sh start 1
-      - name: Wait for services to be ready
+      - name: Wait for translator health
         run: |
-          for i in {1..30}; do
+          for i in {1..60}; do
             if curl -sf http://localhost:4010/health >/dev/null; then
               echo "✓ Translator is ready"
-              break
+              exit 0
             fi
-            echo "Waiting for translator (retry $i/30)..."
+            echo "Waiting for translator (retry $i/60)..."
             sleep 3
           done
+          echo "translator never became healthy"
+          docker compose -f docker-compose.dev.yml -p aidev1 logs --no-color --tail 200 translator || true
+          exit 1
       - name: Run real-provider smoke E2E
         run: |
           ./dev-env.sh test 1 -- -m "integration and smoke"
