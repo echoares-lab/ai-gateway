@@ -65,7 +65,10 @@ from core.model_registry import (
     ModelRegistrySyncRequest,
     ModelRegistrySyncResponse,
     ModelRegistryWriteRequest,
+    diff_discovered_models,
     load_models_from_litellm_config,
+    merge_discovered_model,
+    record_from_cliproxy_model,
 )
 from core.policy.evaluate import process_credential_event_async
 from core.policy.schemas import CredentialEvent
@@ -2908,6 +2911,59 @@ async def _fetch_cliproxy_auth_files() -> tuple[list[dict], list[dict]]:
         ]
 
 
+async def _fetch_cliproxy_models_for_registry() -> tuple[list[dict], list[dict]]:
+    if _client is None:
+        return [], [
+            _admin_error(
+                "client_unavailable",
+                "http client not initialized",
+                "cliproxy:/v1/models",
+            )
+        ]
+    api_key = os.environ.get("CLIPROXY_API_KEY", "").strip()
+    if not api_key:
+        return [], [
+            _admin_error(
+                "cliproxy_api_key_missing",
+                "CLIPROXY_API_KEY is required",
+                "cliproxy:/v1/models",
+            )
+        ]
+    try:
+        resp = await _client.get(
+            f"{CLIPROXY_URL}/v1/models",
+            headers={"authorization": f"Bearer {api_key}"},
+            timeout=5.0,
+        )
+        if resp.status_code != 200:
+            return [], [
+                _admin_error(
+                    "cliproxy_http_error",
+                    f"/v1/models returned {resp.status_code}",
+                    "cliproxy:/v1/models",
+                )
+            ]
+        body = resp.json()
+        data = body.get("data") if isinstance(body, dict) else None
+        if not isinstance(data, list):
+            return [], [
+                _admin_error(
+                    "cliproxy_bad_response",
+                    "response missing data array",
+                    "cliproxy:/v1/models",
+                )
+            ]
+        return [item for item in data if isinstance(item, dict)], []
+    except Exception as exc:
+        return [], [
+            _admin_error(
+                "cliproxy_fetch_error",
+                f"{type(exc).__name__}: {exc}",
+                "cliproxy:/v1/models",
+            )
+        ]
+
+
 async def _emit_credential_transition_to_policy(transition: CredentialTransition) -> bool:
     event = CredentialEvent(
         credential_id=transition.credential_id,
@@ -3283,18 +3339,36 @@ async def admin_model_probe(model_id: str, request: Request):
 
 @app.post("/admin/models/sync", response_model=ModelRegistrySyncResponse)
 async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
-    """Import current LiteLLM config into the Postgres model registry."""
+    """Import current LiteLLM config or CLIProxy discovery into the model registry."""
     auth_error = _require_admin_key(request)
     if auth_error is not None:
         return auth_error
 
-    loaded = load_models_from_litellm_config(LITELLM_CONFIG_PATH)
     store = _model_registry_store()
-    errors = list(loaded.errors)
+    existing = store.list_models()
+    existing_models = existing.models if existing.registry_available else []
+    errors = list(existing.errors)
+    source = body.source
+
+    if source == "cliproxy":
+        entries, fetch_errors = await _fetch_cliproxy_models_for_registry()
+        discovered = [model for model in (record_from_cliproxy_model(entry) for entry in entries) if model is not None]
+        errors.extend(fetch_errors)
+        diffs = diff_discovered_models(discovered, existing_models)
+        loaded_models = [
+            merge_discovered_model(model, {m.model_id: m for m in existing_models}.get(model.model_id))
+            for model in discovered
+        ]
+    else:
+        loaded = load_models_from_litellm_config(LITELLM_CONFIG_PATH)
+        errors.extend(loaded.errors)
+        loaded_models = loaded.models
+        diffs = diff_discovered_models(loaded_models, existing_models)
+
     imported = 0
-    if not body.dry_run:
+    if not body.dry_run and not errors:
         try:
-            imported = store.upsert_models(loaded.models)
+            imported = store.upsert_models(loaded_models)
         except Exception as exc:
             errors.append(
                 _admin_error(
@@ -3304,14 +3378,15 @@ async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
                 )
             )
     else:
-        imported = len(loaded.models)
+        imported = len(loaded_models) if body.dry_run else 0
     return ModelRegistrySyncResponse(
         dry_run=body.dry_run,
-        source=body.source,
+        source=source,
         registry_available=store.enabled,
         imported_count=imported,
-        skipped_count=0,
-        models=loaded.models,
+        skipped_count=max(0, len(loaded_models) - imported),
+        models=loaded_models,
+        diffs=diffs,
         errors=errors,
     )
 
