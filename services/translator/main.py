@@ -79,7 +79,7 @@ from core.model_registry import (
 )
 from core.policy.evaluate import process_credential_event_async
 from core.policy.schemas import CredentialEvent
-from core.state import _policy_trace
+from core.state import _policy_history, _policy_trace, record_policy_history
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -2722,6 +2722,8 @@ def _record_policy_trace(
     if isinstance(decision, dict) and decision.get("policy_version"):
         _policy_version_hint = str(decision["policy_version"])
 
+    record_policy_history(decision, evaluate_ms, error=error)
+
 
 def _redact_policy_decision_for_admin(decision: dict) -> dict:
     """Bounded, redacted RoutingDecision sample for operator console."""
@@ -3723,6 +3725,21 @@ async def admin_status():
         "environment": _admin_environment(),
         "panels": panels,
     }
+
+
+@app.get("/admin/status/policy")
+async def admin_policy_trace_history():
+    """Expose recent policy routing decisions (issue #184)."""
+    return [
+        {
+            **entry,
+            "decision": _redact_policy_decision_for_admin(entry["decision"])
+            if isinstance(entry.get("decision"), dict)
+            else entry.get("decision"),
+            "error": _admin_redact(entry["error"])[0] if entry.get("error") else None,
+        }
+        for entry in _policy_history
+    ]
 
 
 # Self-contained operator dashboard (issue #70). Read-only: the page fetches
