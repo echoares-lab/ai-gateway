@@ -187,7 +187,7 @@ From the **stable worktree** (`/home/dev/repos/ai-gateway` on `main`):
 ```bash
 git pull origin main
 ./cliproxy-setup.sh health
-./cliproxy-setup.sh test claude-sonnet-4-6
+./cliproxy-setup.sh test claude-sonnet-4-5-20250929
 ./cliproxy-setup.sh test gemini-3-flash
 ./cliproxy-setup.sh test gpt-5-4
 ```
