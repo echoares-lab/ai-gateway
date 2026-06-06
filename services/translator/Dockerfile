@@ -4,5 +4,6 @@ RUN pip install --no-cache-dir fastapi==0.115.12 "uvicorn[standard]==0.34.3" htt
     PyYAML==6.0.2
 WORKDIR /app
 COPY translator.py workspace_rules.py test_translator*.py ./
+COPY core ./core/
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:4000/health')" || exit 1
 CMD uvicorn translator:app --host 0.0.0.0 --port 4000 --workers ${WEB_CONCURRENCY:-1}
