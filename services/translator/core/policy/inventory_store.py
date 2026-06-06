@@ -64,9 +64,7 @@ def _snapshot_from_row(
 ) -> RateLimitSnapshot | None:
     if not _status_excludes_routing(status, cool_down_until, now):
         return None
-    in_cooldown = status in ROUTING_EXCLUDED_STATUSES or (
-        cool_down_until is not None and cool_down_until > now
-    )
+    in_cooldown = status in ROUTING_EXCLUDED_STATUSES or (cool_down_until is not None and cool_down_until > now)
     preemptive = status in {"CRITICAL", "SUSPENDED", "EXPIRED"}
     return RateLimitSnapshot(
         provider=provider,
@@ -85,7 +83,8 @@ class InventoryStore:
         connect: Callable[[], DbConnection] | None,
         *,
         enabled: bool = True,
-        fixtures: dict[str, tuple[str | None, datetime | None] | tuple[str | None, datetime | None, str | None]] | None = None,
+        fixtures: dict[str, tuple[str | None, datetime | None] | tuple[str | None, datetime | None, str | None]]
+        | None = None,
     ) -> None:
         self._connect = connect
         self._enabled = enabled and connect is not None

@@ -5,11 +5,11 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
+from core.policy.evaluate import evaluate
 from core.policy.mcp_visibility import (
     extract_mcp_config,
     resolve_mcp_visibility,
 )
-from core.policy.evaluate import evaluate
 from core.policy.profile_store import ProfileStore
 from core.policy.schemas import (
     EvaluateRequest,

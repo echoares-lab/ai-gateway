@@ -1,39 +1,41 @@
-import pytest
+import json
+
+import httpx
 from fastapi.testclient import TestClient
 from main import app
-import json
-import httpx
+
 
 def test_tenancy_metadata_extraction():
     client = TestClient(app)
-    
+
     import main
-    
+
     class MockResponse:
         status_code = 200
         content = b'{"id": "resp_123", "choices": []}'
         headers = {"content-type": "application/json"}
+
         def json(self):
             return json.loads(self.content.decode())
-    
+
     called_body = None
-    
+
     async def mock_request(method, url, **kwargs):
         nonlocal called_body
         called_body = kwargs.get("content") or kwargs.get("data")
         return MockResponse()
-        
+
     main._client = httpx.AsyncClient()
     main._client.request = mock_request
-    
+
     tenant_key = "Bearer ak-echoares-core-eng-gateway-dev"
-    
+
     try:
         # 1. Test catch-all openai proxy (/v1/chat/completions)
         response = client.post(
             "/v1/chat/completions",
             headers={"Authorization": tenant_key},
-            json={"model": "gpt-5-5", "messages": [{"role": "user", "content": "hi"}]}
+            json={"model": "gpt-5-5", "messages": [{"role": "user", "content": "hi"}]},
         )
         assert response.status_code == 200
         body_data = json.loads(called_body.decode())
@@ -48,7 +50,7 @@ def test_tenancy_metadata_extraction():
         response = client.post(
             "/v1/messages",
             headers={"x-api-key": "ak-echoares-core-eng-gateway-dev"},
-            json={"model": "claude-sonnet-4-6", "messages": [{"role": "user", "content": "hi"}]}
+            json={"model": "claude-sonnet-4-6", "messages": [{"role": "user", "content": "hi"}]},
         )
         assert response.status_code == 200
         body_data = json.loads(called_body.decode())
@@ -61,9 +63,7 @@ def test_tenancy_metadata_extraction():
 
         # 3. Test Codex proxy (/v1/responses)
         response = client.post(
-            "/v1/responses",
-            headers={"Authorization": tenant_key},
-            json={"model": "gpt-5-5", "input": "hi"}
+            "/v1/responses", headers={"Authorization": tenant_key}, json={"model": "gpt-5-5", "input": "hi"}
         )
         assert response.status_code == 200
         body_data = json.loads(called_body.decode())
@@ -78,7 +78,7 @@ def test_tenancy_metadata_extraction():
         response = client.post(
             "/v1beta/models/gemini-3-flash:generateContent",
             headers={"Authorization": tenant_key},
-            json={"contents": [{"parts": [{"text": "hi"}]}]}
+            json={"contents": [{"parts": [{"text": "hi"}]}]},
         )
         assert response.status_code == 200
         body_data = json.loads(called_body.decode())

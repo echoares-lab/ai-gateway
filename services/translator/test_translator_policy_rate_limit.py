@@ -4,22 +4,19 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
+from core.policy.evaluate import evaluate
+from core.policy.inventory_store import InventoryStore
 from core.policy.rate_limit import (
     aggregate_and_evaluate,
     evaluate_rate_limits,
     merge_rate_limit_sources,
     resolve_preemptive_threshold,
 )
-from core.policy.inventory_store import InventoryStore
-from core.policy.evaluate import evaluate
 from core.policy.redis_store import RedisStateStore
 from core.policy.schemas import (
     EvaluateRequest,
     PolicyProfile,
     PolicyScope,
-    QuotaHeadroom,
     RateLimitSnapshot,
     RoutingContext,
 )
@@ -58,9 +55,7 @@ def test_merge_inventory_cool_down_until():
     )
     ctx = RoutingContext(
         requested_model="gemini-3-flash",
-        rate_limits=[
-            RateLimitSnapshot(provider="gemini", credential_id="cred-inv")
-        ],
+        rate_limits=[RateLimitSnapshot(provider="gemini", credential_id="cred-inv")],
     )
     merged, rules = merge_rate_limit_sources(ctx, inventory_store=inventory)
     assert "rate_limit:inventory_routing_merged" in rules
@@ -166,9 +161,7 @@ def test_aggregate_and_evaluate_end_to_end(redis_state_store: RedisStateStore):
     )
     ctx = RoutingContext(
         requested_model="gpt-5-4",
-        rate_limits=[
-            RateLimitSnapshot(provider="openai", credential_id="cred-o", rolling_429_count_5m=1)
-        ],
+        rate_limits=[RateLimitSnapshot(provider="openai", credential_id="cred-o", rolling_429_count_5m=1)],
         pool_affinity_mode="quota-aware",
     )
     _, evaluation, merge_rules = aggregate_and_evaluate(
@@ -179,7 +172,6 @@ def test_aggregate_and_evaluate_end_to_end(redis_state_store: RedisStateStore):
     assert "rate_limit:translator_signals_merged" in merge_rules
     assert "cred-o" in evaluation.deprioritized_credentials
     assert evaluation.quota_aware_mode is True
-
 
 
 def test_inventory_critical_status_deprioritized():
@@ -205,9 +197,7 @@ def test_evaluate_wires_aggregator_with_inventory_and_redis(redis_state_store: R
         EvaluateRequest(
             context=RoutingContext(
                 requested_model="gemini-3-flash",
-                rate_limits=[
-                    RateLimitSnapshot(provider="gemini", credential_id="cred-hot")
-                ],
+                rate_limits=[RateLimitSnapshot(provider="gemini", credential_id="cred-hot")],
             )
         ),
         store=redis_state_store,
@@ -217,4 +207,3 @@ def test_evaluate_wires_aggregator_with_inventory_and_redis(redis_state_store: R
     assert "redis:rate_limits_merged" in decision.rules_applied
     assert "cred-hot" in decision.deprioritized_credentials
     assert "rate_limit:cooldown_skip" in decision.rules_applied
-

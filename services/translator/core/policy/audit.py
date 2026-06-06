@@ -12,7 +12,7 @@ import threading
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 
-from schemas import GateAction, RoutingContext, RoutingDecision
+from .schemas import GateAction, RoutingContext, RoutingDecision
 
 logger = logging.getLogger(__name__)
 
@@ -46,43 +46,15 @@ def build_decision_json(
     decision: RoutingDecision,
     *,
     context_hash: str,
-    model_registry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize audit payload with quota-aware fields required by 38-16."""
-    payload = {
+    return {
         "context_hash": context_hash,
         "rules_applied": list(decision.rules_applied),
         "quota_aware_mode": decision.quota_aware_mode,
         "deprioritized_credentials": list(decision.deprioritized_credentials),
         "decision": decision.model_dump(mode="json"),
     }
-    if model_registry:
-        canonical_model_id = model_registry.get("canonical_model_id")
-        provider = model_registry.get("provider")
-        family = model_registry.get("family")
-        if canonical_model_id:
-            payload["canonical_model_id"] = canonical_model_id
-        if provider:
-            payload["canonical_provider"] = provider
-        if family:
-            payload["canonical_family"] = family
-        payload["model_registry"] = {
-            key: value
-            for key, value in model_registry.items()
-            if key
-            in {
-                "canonical_model_id",
-                "provider",
-                "family",
-                "upstream_model",
-                "litellm_model",
-                "cost_tier",
-                "status",
-                "probe_status",
-                "probe_http_status",
-            }
-        }
-    return payload
 
 
 def should_log_audit(
@@ -181,11 +153,7 @@ class RoutingAuditWriter:
             "agent_id": context.agent_id,
             "requested_model": context.requested_model,
             "gate": decision.gate.value,
-            "decision_json": build_decision_json(
-                decision,
-                context_hash=context_hash,
-                model_registry=_model_registry_metadata(context),
-            ),
+            "decision_json": build_decision_json(decision, context_hash=context_hash),
             "policy_version": decision.policy_version,
             "evaluated_at": decision.evaluated_at,
         }
@@ -254,10 +222,3 @@ class RoutingAuditWriter:
             conn.commit()
         finally:
             conn.close()
-
-
-def _model_registry_metadata(context: RoutingContext) -> dict[str, Any] | None:
-    metadata = context.metadata.get("model_registry")
-    if isinstance(metadata, dict):
-        return metadata
-    return None

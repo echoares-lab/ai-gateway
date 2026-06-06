@@ -27,7 +27,6 @@ jobs:
       runtime: ${{ steps.filter.outputs.runtime }}
       isolation: ${{ steps.filter.outputs.isolation }}
       credential_prober: ${{ steps.filter.outputs.credential_prober }}
-      policy_engine: ${{ steps.filter.outputs.policy_engine }}
       litellm_reloader: ${{ steps.filter.outputs.litellm_reloader }}
       hotspot: ${{ steps.filter.outputs.hotspot }}
       translator: ${{ steps.filter.outputs.translator }}
@@ -49,8 +48,6 @@ jobs:
           filters: |
             translator:
               - 'services/translator/**'
-            policy_engine:
-              - 'services/policy-engine/**'
             litellm_reloader:
               - 'services/litellm-reloader/**'
             litellm_config:
@@ -160,7 +157,7 @@ jobs:
           print(f"✓ litellm-config.yaml: {len(data.get('model_list') or [])} models validated")
           PY
       - name: Validate policy-profiles.yaml
-        run: PYTHONPATH=services/policy-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
+        run: PYTHONPATH=services/translator .venv-ci/bin/python3 scripts/validate_policy_profiles.py
       - name: Check for hardcoded API keys
         run: CHECK_ALL=1 bash .githooks/prevent-hardcoded-keys.sh
       - name: Fix workspace permissions (self-hosted)
@@ -203,33 +200,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run translator unit tests (parallel)
         run: docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
-      - name: Fix workspace permissions (self-hosted)
-        if: always()
-        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-
-  policy-engine-tests:
-    needs: changes
-    if: >
-      needs.changes.outputs.policy_engine == 'true' ||
-      github.event_name == 'workflow_dispatch'
-    runs-on: self-hosted
-    steps:
-      - name: Pre-clean workspace (self-hosted)
-        run: |
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
-          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
-          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-python-venv
-        with:
-          requirements-files: |
-            services/policy-engine/requirements.txt
-            services/policy-engine/requirements-test.txt
-      - name: Run policy-engine unit tests
-        run: |
-          cd services/policy-engine
-          PYTHONPATH=. "${GITHUB_WORKSPACE}/.venv-ci/bin/pytest" test_*.py -v
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
@@ -390,7 +360,7 @@ jobs:
           docker compose \
             -f docker-compose.dev.yml -f docker-compose.mock.yml \
             -p aidevmock \
-            up -d cliproxy litellm policy-engine
+            up -d cliproxy litellm
           echo "Waiting for LiteLLM readiness..."
           for i in {1..36}; do
             if curl -sf http://localhost:4011/health/readiness >/dev/null; then
@@ -422,7 +392,6 @@ jobs:
       - name: Run mock-tier pytest
         run: |
           GATEWAY_URL=http://localhost:4010 LITELLM_MASTER_KEY=sk-ci-mock ALLOW_MODEL_SKIP=0 \
-            POLICY_ENGINE_URL=http://localhost:18080 \
             .venv-ci/bin/python -m pytest tests/integration/ -m mock -v
       - name: Run shell E2E smoke (CI mock mode)
         run: GATEWAY_E2E_CI=1 GATEWAY_URL=http://localhost:4010 bash tests/test-gateway-e2e.sh

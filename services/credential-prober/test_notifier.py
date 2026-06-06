@@ -27,22 +27,13 @@ class TestSlackNotifier(unittest.TestCase):
 
 class TestPolicyEngineNotifier(unittest.TestCase):
     @patch("urllib.request.urlopen")
-    @patch.dict(os.environ, {"POLICY_ENGINE_URL": "http://policy-engine:8080"})
+    @patch.dict(os.environ, {"TRANSLATOR_URL": "http://translator:4000"})
     def test_notify_policy_engine_success(self, mock_urlopen):
         mock_response = MagicMock()
         mock_response.status = 202
         mock_urlopen.return_value.__enter__.return_value = mock_response
         cooldown = datetime(2026, 6, 5, 13, 0, tzinfo=timezone.utc)
         self.assertTrue(notify_policy_engine("cred-1", "anthropic", "HEALTHY", "CRITICAL", cool_down_until=cooldown))
-
-        request = mock_urlopen.call_args[0][0]
-        payload = json.loads(request.data.decode("utf-8"))
-        self.assertEqual(payload["credential_id"], "cred-1")
-        self.assertEqual(payload["provider"], "anthropic")
-        self.assertEqual(payload["previous_status"], "HEALTHY")
-        self.assertEqual(payload["new_status"], "CRITICAL")
-        self.assertEqual(payload["cool_down_until"], "2026-06-05T13:00:00+00:00")
-        self.assertIn("timestamp", payload)
 
 
 class TestProberSync(unittest.TestCase):

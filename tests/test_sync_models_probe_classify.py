@@ -70,9 +70,7 @@ def test_cli_wrapper_matches_direct_call() -> None:
         ("404", '{"error":{"message":"model not found"}}', True),
     ],
 )
-def test_regression_probe_removal_decision(
-    http_code: str, body: str, should_remove: bool
-) -> None:
+def test_regression_probe_removal_decision(http_code: str, body: str, should_remove: bool) -> None:
     """429 quota cooldown must not remove models; 404 may."""
     outcome = classify_probe_response(http_code, body)
     exit_code = probe_exit_code(outcome)
@@ -95,9 +93,7 @@ general_settings:
         encoding="utf-8",
     )
 
-    outcome = classify_probe_response(
-        "429", '{"error":{"message":"quota cooldown — try again later"}}'
-    )
+    outcome = classify_probe_response("429", '{"error":{"message":"quota cooldown — try again later"}}')
     assert outcome == OUTCOME_TRANSIENT
     assert should_remove_model_from_config(probe_exit_code(outcome)) is False
 

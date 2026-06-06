@@ -1,7 +1,12 @@
-"""Unit tests for policy-engine scaffold (issue 38-2)."""
+"""Unit tests for in-process policy evaluator (Epic 2, issue #181)."""
 
-from main import evaluate
-from schemas import (
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+
+from core.policy.evaluate import evaluate
+from core.policy.schemas import (
     EvaluateRequest,
     QuotaHeadroom,
     RateLimitSnapshot,

@@ -141,11 +141,7 @@ class ProfileStore:
             if not row:
                 return None
             profile = _row_to_profile(row)
-            if (
-                redis_store is not None
-                and redis_store.enabled
-                and cache_write
-            ):
+            if redis_store is not None and redis_store.enabled and cache_write:
                 redis_store.set_profile_cache(
                     scope_value,
                     scope_id,

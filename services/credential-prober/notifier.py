@@ -5,12 +5,10 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-from credential_probe import build_policy_engine_event_payload
-
 log = logging.getLogger("credential-prober.notifier")
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
-POLICY_ENGINE_URL = os.environ.get("POLICY_ENGINE_URL", "http://policy-engine:8080").rstrip("/")
+TRANSLATOR_URL = os.environ.get("TRANSLATOR_URL", "http://translator:4000").rstrip("/")
 
 
 def send_slack_alert(
@@ -59,34 +57,41 @@ def notify_policy_engine(
     reason: str | None = None,
     cool_down_until: datetime | None = None,
 ) -> bool:
-    policy_url = os.environ.get("POLICY_ENGINE_URL", "http://policy-engine:8080").strip().rstrip("/")
-    if not policy_url:
+    translator_url = os.environ.get("TRANSLATOR_URL", "http://translator:4000").strip().rstrip("/")
+    if not translator_url:
         return False
 
-    payload = build_policy_engine_event_payload(
-        credential_id,
-        provider,
-        previous_status,
-        new_status,
-        reason=reason,
-        cool_down_until=cool_down_until,
-    )
+    payload: dict[str, str] = {
+        "credential_id": credential_id,
+        "provider": provider,
+        "previous_status": previous_status,
+        "new_status": new_status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if reason:
+        payload["reason"] = reason
+    if cool_down_until is not None:
+        payload["cool_down_until"] = cool_down_until.isoformat()
 
     try:
         req = urllib.request.Request(
-            f"{policy_url}/v1/events/credential",
+            f"{translator_url}/v1/events/credential",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=5) as response:
             if response.status >= 400:
-                log.warning("Policy-engine event returned %s for %s", response.status, credential_id)
+                log.warning(
+                    "Translator credential event returned %s for %s",
+                    response.status,
+                    credential_id,
+                )
                 return False
         return True
     except urllib.error.URLError as exc:
-        log.warning("Policy-engine notify failed for %s: %s", credential_id, exc)
+        log.warning("Translator credential notify failed for %s: %s", credential_id, exc)
         return False
     except Exception as exc:
-        log.error("Policy-engine notify error for %s: %s", credential_id, exc)
+        log.error("Translator credential notify error for %s: %s", credential_id, exc)
         return False

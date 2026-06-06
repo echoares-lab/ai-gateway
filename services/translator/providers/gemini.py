@@ -6,7 +6,6 @@ import logging
 import os
 
 import httpx
-
 from providers.base import ResolveModelFn
 
 log = logging.getLogger("translator")
@@ -90,9 +89,7 @@ def _find_tool_call_id_in_history(history: list, target_name: str, current_index
     return f"call_{h}"
 
 
-def req_to_oai(
-    model: str, body: dict, *, resolve_model: ResolveModelFn, gemini_map: dict | None = None
-) -> dict:
+def req_to_oai(model: str, body: dict, *, resolve_model: ResolveModelFn, gemini_map: dict | None = None) -> dict:
     messages = []
 
     sys_inst = body.get("systemInstruction", {})

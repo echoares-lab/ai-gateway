@@ -1,28 +1,12 @@
 import os
-
-import httpx
 import pytest
+import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
 
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://localhost:4010")
 MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
-POLICY_ENGINE_URL = os.environ.get("POLICY_ENGINE_URL", "http://localhost:18080")
-
-
-@pytest.fixture(autouse=True)
-def reset_mock_policy_engine():
-    """Reset mock policy-engine scenario state before each integration test."""
-    if not POLICY_ENGINE_URL:
-        yield
-        return
-    try:
-        with httpx.Client(base_url=POLICY_ENGINE_URL, timeout=5) as pe:
-            pe.post("/v1/debug/reset")
-    except httpx.ConnectError:
-        pass
-    yield
 
 
 @pytest.fixture(scope="session")
