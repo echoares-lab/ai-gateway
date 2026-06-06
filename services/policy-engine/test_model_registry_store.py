@@ -47,6 +47,9 @@ def test_traits_for_models_reads_canonical_and_alias_rows():
                 True,
                 False,
                 2,
+                "HEALTHY",
+                "FAILED",
+                503,
                 "claude-sonnet",
             )
         ]
@@ -60,6 +63,9 @@ def test_traits_for_models_reads_canonical_and_alias_rows():
     assert traits["claude-sonnet"]["tools"] is True
     assert traits["claude-sonnet"]["vision"] is False
     assert traits["claude-sonnet"]["cost"] == 2
+    assert traits["claude-sonnet"]["status"] == "HEALTHY"
+    assert traits["claude-sonnet"]["probe_status"] == "FAILED"
+    assert traits["claude-sonnet"]["probe_http_status"] == 503
     assert conn.closed is True
 
 
