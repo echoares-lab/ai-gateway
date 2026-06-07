@@ -13,6 +13,8 @@ build_if_needed() {
   docker buildx build \
     --load \
     --tag "$image" \
+    --build-arg GIT_SHA="${GIT_SHA:-unknown}" \
+    --build-arg ENVIRONMENT="${ENVIRONMENT:-ci}" \
     --cache-from "type=gha,scope=${scope}" \
     --cache-from "type=local,src=/var/cache/ai-gateway/buildkit" \
     --cache-to "type=gha,mode=max,scope=${scope}" \
