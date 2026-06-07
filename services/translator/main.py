@@ -85,6 +85,7 @@ from core.policy.schemas import CredentialEvent
 from core.state import _policy_history, _policy_trace, record_policy_history
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from orchestrator import litellm_admin_get
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from providers import claude as claude_provider
 from providers import gemini as gemini_provider
@@ -492,33 +493,11 @@ def _load_budget_snapshot_override() -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-async def _litellm_admin_get(path: str, *, params: dict | None = None) -> dict | None:
-    if _client is None:
-        return None
-    master_key = os.environ.get("LITELLM_MASTER_KEY", "")
-    if not master_key:
-        return None
-    headers = {"Authorization": f"Bearer {master_key}"}
-    try:
-        resp = await _client.get(
-            f"{LITELLM_ADMIN_URL}{path}",
-            headers=headers,
-            params=params,
-            timeout=0.25,
-        )
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        return data if isinstance(data, dict) else None
-    except Exception:
-        return None
-
-
 async def _resolve_litellm_team_id(team_alias: str) -> str | None:
     global _team_alias_index, _team_alias_index_at
     now = time.monotonic()
     if _team_alias_index is None or (now - _team_alias_index_at) > TEAM_BUDGET_CACHE_TTL_SEC:
-        data = await _litellm_admin_get("/team/list")
+        data = await litellm_admin_get("/team/list")
         teams = []
         if isinstance(data, list):
             teams = data
@@ -542,7 +521,7 @@ async def _fetch_litellm_team_budget(team_alias: str) -> dict | None:
     team_id = await _resolve_litellm_team_id(team_alias)
     if not team_id:
         return None
-    data = await _litellm_admin_get("/team/info", params={"team_id": team_id})
+    data = await litellm_admin_get("/team/info", params={"team_id": team_id})
     if not data:
         return None
     team_info = data.get("team_info") if isinstance(data.get("team_info"), dict) else data
