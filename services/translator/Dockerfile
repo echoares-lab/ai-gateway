@@ -6,6 +6,7 @@ RUN pip install --no-cache-dir fastapi==0.115.12 "uvicorn[standard]==0.34.3" htt
 WORKDIR /app
 COPY main.py admin_api.py workspace_rules.py gemini-model-map.json conftest.py test_translator*.py test_translator_admin_api.py ./
 COPY core ./core/
+COPY orchestrator ./orchestrator/
 COPY providers ./providers/
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:4000/health')" || exit 1
 CMD uvicorn main:app --host 0.0.0.0 --port 4000 --workers ${WEB_CONCURRENCY:-1}
