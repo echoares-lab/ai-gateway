@@ -14,6 +14,7 @@ test-sync-models-probe:
 
 # Unit tests: build the translator image and run the fully-mocked suite (parallel, CI parity).
 test-unit:
+	-docker rm -f $(CONTAINER_PREFIX)ai-translator-test 2>/dev/null
 	docker build -t ai-translator-test:latest services/translator
 	docker run --rm --name $(CONTAINER_PREFIX)ai-translator-test ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
 

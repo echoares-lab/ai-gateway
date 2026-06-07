@@ -160,16 +160,8 @@ services:
     container_name: PROD-litellm
     image: ghcr.io/berriai/litellm:v1.87.1@sha256:9de33287d844a164f873479a04eebe065610e131d7e3aaf010f520fb5b4cfd7b
     restart: always
-    depends_on:
-      postgres:
-        condition: service_healthy
-      cliproxy:
-        condition: service_started
-      redis:
-        condition: service_started
-    ports:
-      - "4001:4000"
     environment:
+      - SKIP_MIGRATIONS=true
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - DATABASE_URL=${LITELLM_DATABASE_URL}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_INIT_PROJECT_PUBLIC_KEY}
@@ -183,6 +175,17 @@ services:
       - TAVILY_API_KEY=${TAVILY_API_KEY}
       - EXA_API_KEY=${EXA_API_KEY}
       - SERPER_API_KEY=${SERPER_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cliproxy:
+        condition: service_started
+      redis:
+        condition: service_started
+      litellm-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "4001:4000"
     volumes:
       - ./litellm-config.yaml:/app/config.yaml
     command: [ "--config", "/app/config.yaml", "--port", "4000" ]
@@ -196,6 +199,17 @@ services:
      timeout: 5s
      retries: 30
      start_period: 90s
+
+  litellm-migrate:
+    container_name: PROD-litellm-migrate
+    image: ghcr.io/berriai/litellm:v1.87.1@sha256:9de33287d844a164f873479a04eebe065610e131d7e3aaf010f520fb5b4cfd7b
+    environment:
+      - DATABASE_URL=${LITELLM_DATABASE_URL}
+    entrypoint: [ "prisma" ]
+    command: [ "migrate", "deploy" ]
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   litellm-reloader:
     container_name: PROD-litellm-reloader
