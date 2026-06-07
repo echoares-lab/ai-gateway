@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   hotspot-check:
+    name: "Reminder :: Hotspot Check"
     runs-on: self-hosted
     steps:
       - name: Pre-clean workspace (self-hosted)

@@ -98,6 +98,7 @@ jobs:
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   lint-and-syntax:
+    name: "CI :: Lint and Syntax"
     runs-on: self-hosted
     steps:
       - name: Pre-clean workspace (self-hosted)
@@ -165,6 +166,7 @@ jobs:
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   build-translator:
+    name: "CI :: Build Translator"
     runs-on: self-hosted
     steps:
       - name: Pre-clean workspace (self-hosted)
@@ -291,6 +293,7 @@ jobs:
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   mock-integration:
+    name: "CI :: Mock Integration"
     needs: [changes, lint-and-syntax, unit-tests, build-translator]
     if: >
       needs.lint-and-syntax.result == 'success' &&
