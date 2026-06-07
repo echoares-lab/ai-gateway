@@ -6,3 +6,5 @@ websockets
 respx
 fakeredis
 prometheus-client
+fastapi
+uvicorn[standard]
