@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-log = logging.getLogger("translator.admin_api")
+log = logging.getLogger("gateway-engine.admin_api")
 
 router = APIRouter()
 

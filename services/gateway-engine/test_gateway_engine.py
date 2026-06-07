@@ -2,10 +2,10 @@
 Unit tests for main.py.
 
 Run inside the container:
-  docker compose exec translator pytest test_translator.py -v
+  docker compose exec gateway-engine pytest test_gateway-engine.py -v
 
 Or locally if deps are installed:
-  pytest services/translator/test_translator.py -v
+  pytest services.gateway_engine/test_gateway-engine.py -v
 """
 
 import json
@@ -575,8 +575,8 @@ class TestAdminRedact(unittest.TestCase):
         assert red is True
 
     def test_plain_text_untouched(self):
-        out, red = t._admin_redact("translator /metrics timed out")
-        assert out == "translator /metrics timed out"
+        out, red = t._admin_redact("gateway-engine /metrics timed out")
+        assert out == "gateway-engine /metrics timed out"
         assert red is False
 
     def test_truncates_long(self):
@@ -596,8 +596,8 @@ class TestAdminError(unittest.TestCase):
 class TestAdminParseProviderMetrics(unittest.TestCase):
     def test_parses_requests_and_rate_limits(self):
         text = (
-            'translator_provider_requests_total{model="gpt-5-4",outcome="success",provider="openai"} 3.0\n'
-            'translator_provider_rate_limits_total{model="claude-sonnet-4-6",provider="anthropic"} 1.0\n'
+            'gateway_engine_provider_requests_total{model="gpt-5-4",outcome="success",provider="openai"} 3.0\n'
+            'gateway_engine_provider_rate_limits_total{model="claude-sonnet-4-6",provider="anthropic"} 1.0\n'
             'some_other_metric{x="y"} 9\n'
         )
         signals = t._admin_parse_provider_metrics(text)
@@ -653,8 +653,8 @@ class TestAdminRoutingPanel(unittest.TestCase):
             "litellm_settings": {"fallbacks": [{"gpt-5-4": ["claude-sonnet-4-6"]}]},
         }
         metrics = (
-            'translator_provider_requests_total{model="gpt-5-4",outcome="success",provider="openai"} 2.0\n'
-            'translator_provider_rate_limits_total{model="claude-sonnet-4-6",provider="anthropic"} 1.0\n'
+            'gateway_engine_provider_requests_total{model="gpt-5-4",outcome="success",provider="openai"} 2.0\n'
+            'gateway_engine_provider_rate_limits_total{model="claude-sonnet-4-6",provider="anthropic"} 1.0\n'
         )
         panel = t._admin_routing_panel(config, metrics, [])
         assert panel["status"] == "ok"
@@ -700,7 +700,7 @@ async def test_admin_status_endpoint_shape():
 
     async def fake_metrics():
         return (
-            'translator_provider_requests_total{model="claude-sonnet-4-6",outcome="success",provider="anthropic"} 1.0\n',
+            'gateway_engine_provider_requests_total{model="claude-sonnet-4-6",outcome="success",provider="anthropic"} 1.0\n',
             [],
         )
 

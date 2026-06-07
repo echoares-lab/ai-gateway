@@ -7,7 +7,7 @@ import uuid
 import httpx
 from providers.base import ResolveModelFn
 
-log = logging.getLogger("translator")
+log = logging.getLogger("gateway-engine")
 
 
 def msg_to_oai(msg: dict) -> list[dict]:

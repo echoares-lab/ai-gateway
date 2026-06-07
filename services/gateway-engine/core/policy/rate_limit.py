@@ -1,4 +1,4 @@
-"""Rate-limit state aggregator — merge translator, inventory, Redis (38-7)."""
+"""Rate-limit state aggregator — merge gateway-engine, inventory, Redis (38-7)."""
 
 from __future__ import annotations
 
@@ -82,14 +82,14 @@ def merge_rate_limit_sources(
     redis_store: RedisStateStore | None = None,
     inventory_store: InventoryStore | None = None,
 ) -> tuple[RoutingContext, list[str]]:
-    """Merge translator #59 signals, inventory cooldowns, and Redis rolling counts."""
+    """Merge gateway-engine #59 signals, inventory cooldowns, and Redis rolling counts."""
     rules: list[str] = []
     by_cred: dict[tuple[str | None, str | None], RateLimitSnapshot] = {}
 
     for snap in context.rate_limits:
         by_cred[_cred_key(snap)] = snap
     if context.rate_limits:
-        rules.append("rate_limit:translator_signals_merged")
+        rules.append("rate_limit:gateway_engine_signals_merged")
 
     credential_ids = _collect_credential_ids(context)
     if inventory_store is not None and inventory_store.enabled and credential_ids:

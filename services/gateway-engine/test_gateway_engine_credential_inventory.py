@@ -1,4 +1,4 @@
-"""Unit tests for translator credential inventory admin APIs."""
+"""Unit tests for gateway-engine credential inventory admin APIs."""
 
 from __future__ import annotations
 
@@ -93,8 +93,8 @@ def test_admin_credentials_redacts_inventory(monkeypatch):
 
 
 def test_admin_credentials_sync_requires_admin_key(monkeypatch):
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "")
-    monkeypatch.delenv("TRANSLATOR_ADMIN_KEY", raising=False)
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "")
+    monkeypatch.delenv("GATEWAY_ENGINE_ADMIN_KEY", raising=False)
 
     client = TestClient(t.app)
     resp = client.post("/admin/credentials/sync", json={"dry_run": True})
@@ -108,7 +108,7 @@ def test_admin_credentials_sync_dry_run_fetches_cliproxy_and_redacts(monkeypatch
     fake_client = _FakeHttpClient()
     monkeypatch.setattr(t, "_credential_inventory_store", lambda: store)
     monkeypatch.setattr(t, "_client", fake_client)
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
     monkeypatch.setattr(t, "CLIPROXY_MANAGEMENT_KEY", "mgmt-key")
     monkeypatch.setattr(t, "CLIPROXY_URL", "http://cliproxy:8317")
 
@@ -137,7 +137,7 @@ def test_admin_credentials_sync_apply_writes_and_emits_policy_event(monkeypatch)
     emitted = []
     monkeypatch.setattr(t, "_credential_inventory_store", lambda: store)
     monkeypatch.setattr(t, "_client", _FakeHttpClient())
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
     monkeypatch.setattr(t, "CLIPROXY_MANAGEMENT_KEY", "mgmt-key")
 
     async def fake_emit(transition):
@@ -169,7 +169,7 @@ def test_scheduled_credential_sync_uses_apply_mode_and_bounded_logs(monkeypatch,
     monkeypatch.setattr(t, "_credential_inventory_store", lambda: store)
     monkeypatch.setattr(t, "_client", _FakeHttpClient())
     monkeypatch.setattr(t, "CLIPROXY_MANAGEMENT_KEY", "mgmt-key")
-    monkeypatch.setattr(t, "TRANSLATOR_CREDENTIAL_SYNC_DRY_RUN", False)
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN", False)
 
     async def fake_emit(transition):
         emitted.append(transition)
@@ -177,7 +177,7 @@ def test_scheduled_credential_sync_uses_apply_mode_and_bounded_logs(monkeypatch,
 
     monkeypatch.setattr(t, "_emit_credential_transition_to_policy", fake_emit)
 
-    with caplog.at_level(logging.INFO, logger="translator"):
+    with caplog.at_level(logging.INFO, logger="gateway-engine"):
         response = asyncio.run(t._run_scheduled_credential_sync())
 
     assert response.accepted is True
@@ -194,8 +194,8 @@ def test_scheduled_credential_sync_uses_apply_mode_and_bounded_logs(monkeypatch,
 def test_credential_sync_scheduler_loop_uses_interval_and_cancels(monkeypatch):
     calls = []
     sleeps = []
-    monkeypatch.setattr(t, "TRANSLATOR_CREDENTIAL_SYNC_INITIAL_DELAY_SEC", 0)
-    monkeypatch.setattr(t, "TRANSLATOR_CREDENTIAL_SYNC_INTERVAL_SEC", 7)
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_CREDENTIAL_SYNC_INITIAL_DELAY_SEC", 0)
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC", 7)
 
     async def fake_run():
         calls.append("run")
@@ -217,7 +217,7 @@ def test_credential_sync_scheduler_loop_uses_interval_and_cancels(monkeypatch):
 
 
 def test_admin_credential_probe_is_documented_unsupported(monkeypatch):
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
 
     client = TestClient(t.app)
     resp = client.post(

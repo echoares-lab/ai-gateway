@@ -122,7 +122,7 @@ class GateAction(str, Enum):
 
 
 class RoutingDecision(BaseModel):
-    """Policy output consumed by translator → LiteLLM metadata."""
+    """Policy output consumed by gateway-engine → LiteLLM metadata."""
 
     gate: GateAction = GateAction.ALLOW
     deny_reason: str | None = None

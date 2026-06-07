@@ -2,7 +2,7 @@ import os
 import httpx
 import logging
 
-log = logging.getLogger("translator.orchestrator.litellm_admin")
+log = logging.getLogger("gateway-engine.orchestrator.litellm_admin")
 
 LITELLM_ADMIN_URL = os.environ.get("LITELLM_ADMIN_URL", "http://litellm:4000").rstrip("/")
 _client: httpx.AsyncClient | None = None

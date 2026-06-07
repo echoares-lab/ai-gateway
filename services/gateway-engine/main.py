@@ -24,7 +24,7 @@ import re
 import subprocess
 import time
 import uuid
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -34,6 +34,7 @@ import redis.asyncio as aioredis
 import websockets
 import yaml
 from admin_api import router as admin_router
+from core.config import config
 from core.credential_inventory import (
     CredentialInventoryListResponse,
     CredentialInventoryStore,
@@ -92,11 +93,12 @@ from providers import gemini as gemini_provider
 from providers.gemini import get_gemini_map
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger("translator")
+log = logging.getLogger("gateway-engine")
 
 UPSTREAM_TIMEOUT = float(os.environ.get("UPSTREAM_TIMEOUT", "30.0"))
 
 
+@asynccontextmanager
 async def _lifespan(application: FastAPI):
     global _client, _redis, _policy_evaluator
     credential_sync_task: asyncio.Task | None = None
@@ -126,12 +128,12 @@ async def _lifespan(application: FastAPI):
         except Exception as exc:
             log.warning("In-process policy evaluator unavailable (%s)", exc)
             _policy_evaluator = None
-    if TRANSLATOR_CREDENTIAL_SYNC_ENABLED:
+    if GATEWAY_ENGINE_CREDENTIAL_SYNC_ENABLED:
         credential_sync_task = asyncio.create_task(_credential_sync_scheduler_loop())
         log.info(
-            "translator credential sync scheduler enabled interval=%ss dry_run=%s",
-            TRANSLATOR_CREDENTIAL_SYNC_INTERVAL_SEC,
-            TRANSLATOR_CREDENTIAL_SYNC_DRY_RUN,
+            "gateway-engine credential sync scheduler enabled interval=%ss dry_run=%s",
+            GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC,
+            GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN,
         )
     yield
     if credential_sync_task is not None:
@@ -146,7 +148,7 @@ async def _lifespan(application: FastAPI):
 
 app = FastAPI(lifespan=_lifespan)
 app.include_router(admin_router)
-LITELLM = os.environ.get("LITELLM_URL", "http://litellm:4000")
+LITELLM = config.LITELLM_URL
 MODEL_PREFIX = "AI-Gateway:"
 POLICY_ENGINE_ENABLED = os.environ.get("POLICY_ENGINE_ENABLED", "false").lower() not in (
     "0",
@@ -165,20 +167,24 @@ ADMIN_POLICY_TRACE_ENABLED = os.environ.get("ADMIN_POLICY_TRACE_ENABLED", "true"
     "false",
     "no",
 )
-TRANSLATOR_CREDENTIAL_SYNC_ENABLED = os.environ.get("TRANSLATOR_CREDENTIAL_SYNC_ENABLED", "false").lower() not in (
+GATEWAY_ENGINE_CREDENTIAL_SYNC_ENABLED = os.environ.get(
+    "GATEWAY_ENGINE_CREDENTIAL_SYNC_ENABLED", "false"
+).lower() not in (
     "0",
     "false",
     "no",
 )
-TRANSLATOR_CREDENTIAL_SYNC_INTERVAL_SEC = max(
+GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC = max(
     1,
-    int(os.environ.get("TRANSLATOR_CREDENTIAL_SYNC_INTERVAL_SEC", "300")),
+    int(os.environ.get("GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC", "300")),
 )
-TRANSLATOR_CREDENTIAL_SYNC_INITIAL_DELAY_SEC = max(
+GATEWAY_ENGINE_CREDENTIAL_SYNC_INITIAL_DELAY_SEC = max(
     0,
-    int(os.environ.get("TRANSLATOR_CREDENTIAL_SYNC_INITIAL_DELAY_SEC", "30")),
+    int(os.environ.get("GATEWAY_ENGINE_CREDENTIAL_SYNC_INITIAL_DELAY_SEC", "30")),
 )
-TRANSLATOR_CREDENTIAL_SYNC_DRY_RUN = os.environ.get("TRANSLATOR_CREDENTIAL_SYNC_DRY_RUN", "false").lower() not in (
+GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN = os.environ.get(
+    "GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN", "false"
+).lower() not in (
     "0",
     "false",
     "no",
@@ -231,7 +237,7 @@ async def _cache_get(key: str) -> list[str] | None:
 
 async def _cache_set(key: str, lines: list[str], ttl: int = CACHE_TTL) -> None:
     try:
-        await _redis.setex(key, ttl, json.dumps(lines))
+        await _redis.set(key, json.dumps(lines), ex=ttl)
     except Exception as exc:
         log.debug("cache set error: %s", exc)
 
@@ -1381,7 +1387,7 @@ def codex_ws_policy_bypass() -> bool:
     """True when Codex WS upgrade skips policy-engine evaluate (default).
 
     Optional parity requires both POLICY_ENGINE_ENABLED and POLICY_ENGINE_WS_EVALUATE
-    (translator integration issue 38-04 must ship evaluate wiring first).
+    (gateway-engine integration issue 38-04 must ship evaluate wiring first).
     """
     if _policy_engine_enabled() and _policy_engine_ws_evaluate_enabled():
         return False
@@ -2280,7 +2286,7 @@ ADMIN_SCHEMA_VERSION = "admin-console.v1"
 LITELLM_CONFIG_PATH = os.environ.get("LITELLM_CONFIG_PATH", "/config/litellm-config.yaml")
 GEMINI_MODEL_MAP_PATH = os.environ.get("GEMINI_MODEL_MAP_PATH", "/app/gemini-model-map.json")
 ADMIN_ERROR_MAXLEN = 400
-TRANSLATOR_ADMIN_KEY = os.environ.get("TRANSLATOR_ADMIN_KEY", "")
+GATEWAY_ENGINE_ADMIN_KEY = os.environ.get("GATEWAY_ENGINE_ADMIN_KEY", "")
 CLIPROXY_URL = os.environ.get("CLIPROXY_URL", "http://cliproxy:8317").rstrip("/")
 CLIPROXY_MANAGEMENT_KEY = os.environ.get("CLIPROXY_MANAGEMENT_KEY", "")
 MODEL_PROBE_TIMEOUT = float(os.environ.get("MODEL_PROBE_TIMEOUT", "8.0"))
@@ -2333,8 +2339,8 @@ def _admin_panel(status: str, source: str, freshness_seconds, errors: list, data
 
 
 def _admin_key_valid(request: Request) -> bool:
-    """Return true when mutating translator admin APIs are enabled and authorized."""
-    configured = TRANSLATOR_ADMIN_KEY or os.environ.get("TRANSLATOR_ADMIN_KEY", "")
+    """Return true when mutating gateway-engine admin APIs are enabled and authorized."""
+    configured = GATEWAY_ENGINE_ADMIN_KEY or os.environ.get("GATEWAY_ENGINE_ADMIN_KEY", "")
     if not configured:
         return False
     return request.headers.get("x-admin-key", "") == configured
@@ -2343,11 +2349,11 @@ def _admin_key_valid(request: Request) -> bool:
 def _require_admin_key(request: Request) -> JSONResponse | None:
     if _admin_key_valid(request):
         return None
-    status = 403 if (TRANSLATOR_ADMIN_KEY or os.environ.get("TRANSLATOR_ADMIN_KEY", "")) else 503
+    status = 403 if (GATEWAY_ENGINE_ADMIN_KEY or os.environ.get("GATEWAY_ENGINE_ADMIN_KEY", "")) else 503
     return JSONResponse(
         {
             "error": {
-                "message": "translator admin mutations are disabled or unauthorized",
+                "message": "gateway-engine admin mutations are disabled or unauthorized",
                 "code": "admin_key_required",
             }
         },
@@ -2530,13 +2536,13 @@ def _admin_parse_provider_metrics(text: str) -> list[dict]:
     """Parse the provider signal series from Prometheus exposition text.
 
     Returns a list of {provider, model, outcome?, kind, value} for the
-    translator_provider_requests_total and translator_provider_rate_limits_total series.
+    gateway_engine_provider_requests_total and gateway_engine_provider_rate_limits_total series.
     """
     signals: list[dict] = []
     if not text:
         return signals
     line_re = re.compile(
-        r"^(translator_provider_requests_total|translator_provider_rate_limits_total)\{([^}]*)\}\s+([0-9.eE+]+)"
+        r"^(gateway_engine_provider_requests_total|gateway_engine_provider_rate_limits_total)\{([^}]*)\}\s+([0-9.eE+]+)"
     )
     label_re = re.compile(r'(\w+)="([^"]*)"')
     for line in text.splitlines():
@@ -2588,7 +2594,7 @@ def _admin_environment() -> dict:
     stack = os.environ.get("DEV_SLOT") and "dev" or "stable"
     return {
         "stack": stack,
-        "translator_base_url": os.environ.get("TRANSLATOR_BASE_URL", "http://localhost:4000"),
+        "gateway_engine_base_url": os.environ.get("GATEWAY_ENGINE_BASE_URL", "http://localhost:4000"),
         "litellm_ui_url": os.environ.get("LITELLM_UI_URL", "http://localhost:4001"),
         "cliproxy_management_url": os.environ.get("CLIPROXY_MANAGEMENT_URL", "http://localhost:8317/management.html"),
         "cpa_manager_url": os.environ.get("CPA_MANAGER_URL", "http://localhost:18317/management.html"),
@@ -2600,7 +2606,7 @@ def _admin_health_panel() -> dict:
     # actively probed in v1 (avoids unbounded calls). They are marked unknown.
     env = _admin_environment()
     services = [
-        {"name": "translator", "status": "ok", "endpoint": env["translator_base_url"]},
+        {"name": "gateway-engine", "status": "ok", "endpoint": env["gateway_engine_base_url"]},
         {"name": "litellm", "status": "unknown", "endpoint": env["litellm_ui_url"]},
         {
             "name": "cliproxy",
@@ -2613,7 +2619,7 @@ def _admin_health_panel() -> dict:
             "endpoint": env["cpa_manager_url"],
         },
     ]
-    return _admin_panel("ok", "translator:self", 0, [], {"services": services})
+    return _admin_panel("ok", "gateway-engine:self", 0, [], {"services": services})
 
 
 def _admin_models_panel(
@@ -2689,7 +2695,7 @@ def _admin_models_panel(
         status = "warning"
     return _admin_panel(
         status,
-        (registry.source if registry is not None else "translator:/v1/models + repo:litellm-config.yaml"),
+        (registry.source if registry is not None else "gateway-engine:/v1/models + repo:litellm-config.yaml"),
         0,
         panel_errors,
         {
@@ -2826,7 +2832,7 @@ def _admin_routing_panel(
         data["policy_engine"] = policy_engine
     return _admin_panel(
         status,
-        "repo:litellm-config.yaml + translator:/metrics",
+        "repo:litellm-config.yaml + gateway-engine:/metrics",
         15,
         errors,
         data,
@@ -2903,14 +2909,14 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
         for line in metrics_text.splitlines():
             if line.startswith("#") or not line.strip():
                 continue
-            # Match token counters: translator_token_input_total{provider="...",model="..."} value
+            # Match token counters: gateway_engine_token_input_total{provider="...",model="..."} value
             m = re.match(
-                r'translator_token_(input|output)_total\{provider="([^"]+)",model="([^"]+)"\}\s+([\d.e+]+)',
+                r'gateway_engine_token_(input|output)_total\{provider="([^"]+)",model="([^"]+)"\}\s+([\d.e+]+)',
                 line,
             )
             if not m:
                 canonical_match = re.match(
-                    r"translator_token_canonical_(input|output)_total\{([^}]*)\}\s+([\d.e+]+)",
+                    r"gateway_engine_token_canonical_(input|output)_total\{([^}]*)\}\s+([\d.e+]+)",
                     line,
                 )
                 if not canonical_match:
@@ -2982,7 +2988,7 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
     status = "ok" if metrics_text and not errors else "warning"
     return _admin_panel(
         status,
-        "translator:/metrics (token counters)",
+        "gateway-engine:/metrics (token counters)",
         0,
         errors,
         {
@@ -3049,7 +3055,7 @@ async def _admin_fetch_visible_models() -> tuple[list[str] | None, list[dict]]:
             _admin_error(
                 "client_unavailable",
                 "http client not initialized",
-                "translator:/v1/models",
+                "gateway-engine:/v1/models",
             )
         ]
     master_key = os.environ.get("LITELLM_MASTER_KEY", "")
@@ -3083,7 +3089,7 @@ async def _admin_fetch_metrics_text() -> tuple[str | None, list[dict]]:
     try:
         return generate_latest().decode("utf-8", errors="replace"), []
     except Exception as exc:
-        return None, [_admin_error("metrics_error", f"{type(exc).__name__}: {exc}", "translator:/metrics")]
+        return None, [_admin_error("metrics_error", f"{type(exc).__name__}: {exc}", "gateway-engine:/metrics")]
 
 
 async def _fetch_cliproxy_auth_files() -> tuple[list[dict], list[dict]]:
@@ -3272,7 +3278,7 @@ async def _sync_credentials_from_cliproxy(
                             _admin_error(
                                 "policy_event_error",
                                 f"{type(exc).__name__}: {exc}",
-                                "translator:policy-event",
+                                "gateway-engine:policy-event",
                             )
                         )
         elif body.dry_run:
@@ -3292,7 +3298,7 @@ async def _sync_credentials_from_cliproxy(
 
 async def _run_scheduled_credential_sync() -> CredentialInventorySyncResponse:
     response = await _sync_credentials_from_cliproxy(
-        CredentialInventorySyncRequest(dry_run=TRANSLATOR_CREDENTIAL_SYNC_DRY_RUN)
+        CredentialInventorySyncRequest(dry_run=GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN)
     )
     log.info(
         "credential sync scheduler completed accepted=%s dry_run=%s discovered=%d imported=%d transitions=%d errors=%d",
@@ -3307,8 +3313,8 @@ async def _run_scheduled_credential_sync() -> CredentialInventorySyncResponse:
 
 
 async def _credential_sync_scheduler_loop() -> None:
-    if TRANSLATOR_CREDENTIAL_SYNC_INITIAL_DELAY_SEC:
-        await asyncio.sleep(TRANSLATOR_CREDENTIAL_SYNC_INITIAL_DELAY_SEC)
+    if GATEWAY_ENGINE_CREDENTIAL_SYNC_INITIAL_DELAY_SEC:
+        await asyncio.sleep(GATEWAY_ENGINE_CREDENTIAL_SYNC_INITIAL_DELAY_SEC)
     while True:
         try:
             await _run_scheduled_credential_sync()
@@ -3316,7 +3322,7 @@ async def _credential_sync_scheduler_loop() -> None:
             raise
         except Exception as exc:
             log.warning("credential sync scheduler failed: %s: %s", type(exc).__name__, _admin_redact(str(exc))[0])
-        await asyncio.sleep(TRANSLATOR_CREDENTIAL_SYNC_INTERVAL_SEC)
+        await asyncio.sleep(GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC)
 
 
 @app.get("/admin/analytics/tokens")
@@ -3328,7 +3334,7 @@ async def admin_token_analytics():
 
 @app.get("/admin/credentials", response_model=CredentialInventoryListResponse)
 async def admin_credentials():
-    """List redacted translator credential inventory records."""
+    """List redacted gateway-engine credential inventory records."""
     loaded = _credential_inventory_store().list_credentials()
     return loaded.model_copy(update={"credentials": _redact_credential_records(loaded.credentials)})
 
@@ -3365,7 +3371,7 @@ async def admin_credential_probe(credential_id: str, request: Request):
 
 @app.get("/admin/models", response_model=ModelRegistryListResponse)
 async def admin_models():
-    """List translator-owned model registry records, falling back to LiteLLM config."""
+    """List gateway-engine-owned model registry records, falling back to LiteLLM config."""
     return _load_model_registry_with_config_fallback()
 
 

@@ -1,4 +1,4 @@
-"""Unit tests for translator in-process policy integration (issue 182)."""
+"""Unit tests for gateway-engine in-process policy integration (issue 182)."""
 
 import os
 import sys

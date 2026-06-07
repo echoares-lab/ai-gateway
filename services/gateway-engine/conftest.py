@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for translator unit tests."""
+"""Shared pytest fixtures for gateway-engine unit tests."""
 
 from __future__ import annotations
 

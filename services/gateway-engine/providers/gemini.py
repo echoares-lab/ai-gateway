@@ -8,7 +8,7 @@ import os
 import httpx
 from providers.base import ResolveModelFn
 
-log = logging.getLogger("translator")
+log = logging.getLogger("gateway-engine")
 
 # Legacy Google model names that need redirecting to current equivalents.
 # Managed by hand — these don't change once a generation is deprecated.

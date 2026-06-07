@@ -1,4 +1,4 @@
-"""Unit tests for credential event handler (issue 38-12, ported to translator)."""
+"""Unit tests for credential event handler (issue 38-12, ported to gateway-engine)."""
 
 from __future__ import annotations
 

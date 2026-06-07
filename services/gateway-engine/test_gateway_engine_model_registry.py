@@ -1,4 +1,4 @@
-"""Unit tests for translator-owned model registry admin APIs."""
+"""Unit tests for gateway-engine-owned model registry admin APIs."""
 
 from __future__ import annotations
 
@@ -270,8 +270,8 @@ def test_admin_models_sync_requires_admin_key(monkeypatch, tmp_path):
     config = tmp_path / "litellm-config.yaml"
     _write_config(config)
     monkeypatch.setattr(t, "LITELLM_CONFIG_PATH", str(config))
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "")
-    monkeypatch.delenv("TRANSLATOR_ADMIN_KEY", raising=False)
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "")
+    monkeypatch.delenv("GATEWAY_ENGINE_ADMIN_KEY", raising=False)
 
     client = TestClient(t.app)
     resp = client.post("/admin/models/sync", json={"dry_run": True})
@@ -281,8 +281,8 @@ def test_admin_models_sync_requires_admin_key(monkeypatch, tmp_path):
 
 
 def test_admin_models_reconcile_requires_admin_key(monkeypatch):
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "")
-    monkeypatch.delenv("TRANSLATOR_ADMIN_KEY", raising=False)
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "")
+    monkeypatch.delenv("GATEWAY_ENGINE_ADMIN_KEY", raising=False)
 
     client = TestClient(t.app)
     resp = client.post("/admin/models/reconcile", json={"dry_run": True})
@@ -300,7 +300,7 @@ def test_admin_models_reconcile_dry_run_does_not_write_files(monkeypatch, tmp_pa
     litellm_config.write_text("model_list: []\n", encoding="utf-8")
     gemini_map.write_text("{}\n", encoding="utf-8")
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
     monkeypatch.setattr(t, "LITELLM_CONFIG_PATH", str(litellm_config))
     monkeypatch.setattr(t, "GEMINI_MODEL_MAP_PATH", str(gemini_map))
 
@@ -330,7 +330,7 @@ def test_admin_models_sync_dry_run(monkeypatch, tmp_path):
     config = tmp_path / "litellm-config.yaml"
     _write_config(config)
     monkeypatch.setattr(t, "LITELLM_CONFIG_PATH", str(config))
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
 
     client = TestClient(t.app)
     resp = client.post(
@@ -362,7 +362,7 @@ def test_admin_models_sync_cliproxy_dry_run_normalizes_and_diffs(monkeypatch):
     fake_client = _FakeModelsClient(response=_FakeModelsResponse())
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
     monkeypatch.setattr(t, "_client", fake_client)
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
     monkeypatch.setenv("CLIPROXY_API_KEY", "cliproxy-key")
     monkeypatch.setattr(t, "CLIPROXY_URL", "http://cliproxy:8317")
 
@@ -393,7 +393,7 @@ def test_admin_models_sync_cliproxy_apply_upserts(monkeypatch):
     fake_client = _FakeModelsClient(response=_FakeModelsResponse())
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
     monkeypatch.setattr(t, "_client", fake_client)
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
     monkeypatch.setenv("CLIPROXY_API_KEY", "cliproxy-key")
 
     client = TestClient(t.app)
@@ -415,7 +415,7 @@ def test_admin_models_sync_cliproxy_error_does_not_write(monkeypatch):
     fake_client = _FakeModelsClient(response=_FakeModelsResponse(status_code=502))
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
     monkeypatch.setattr(t, "_client", fake_client)
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
     monkeypatch.setenv("CLIPROXY_API_KEY", "cliproxy-key")
 
     client = TestClient(t.app)
@@ -435,7 +435,7 @@ def test_admin_models_sync_cliproxy_error_does_not_write(monkeypatch):
 def test_admin_model_create_patch_and_disable(monkeypatch):
     store = _FakeRegistryStore()
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
 
     client = TestClient(t.app)
     create = client.post(
@@ -469,7 +469,7 @@ def test_admin_model_create_patch_and_disable(monkeypatch):
 def test_admin_model_patch_missing_returns_404(monkeypatch):
     store = _FakeRegistryStore()
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
 
     client = TestClient(t.app)
     resp = client.patch(
@@ -483,8 +483,8 @@ def test_admin_model_patch_missing_returns_404(monkeypatch):
 
 
 def test_admin_model_probe_requires_admin_key(monkeypatch):
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "")
-    monkeypatch.delenv("TRANSLATOR_ADMIN_KEY", raising=False)
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "")
+    monkeypatch.delenv("GATEWAY_ENGINE_ADMIN_KEY", raising=False)
 
     client = TestClient(t.app)
     resp = client.post("/admin/models/gpt-5-4/probe")
@@ -524,7 +524,7 @@ def test_admin_model_probe_classifies_and_persists(monkeypatch, response, expect
     fake_client = _FakeProbeClient(response=response)
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
     monkeypatch.setattr(t, "_client", fake_client)
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
     monkeypatch.setenv("LITELLM_MASTER_KEY", "litellm-key")
 
     client = TestClient(t.app)
@@ -549,7 +549,7 @@ def test_admin_model_probe_timeout_persists_without_disabling(monkeypatch):
     store.models["gpt-5-4"] = _registry_model()
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
     monkeypatch.setattr(t, "_client", _FakeProbeClient(exc=httpx.TimeoutException("slow")))
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
 
     client = TestClient(t.app)
     resp = client.post("/admin/models/gpt-5-4/probe", headers={"x-admin-key": "test-admin"})
@@ -568,7 +568,7 @@ def test_regression_quota_cooldown_429_keeps_model_in_catalog(monkeypatch):
     fake_client = _FakeProbeClient(response=httpx.Response(429, json={"error": {"message": "quota cooldown"}}))
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
     monkeypatch.setattr(t, "_client", fake_client)
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
     monkeypatch.setenv("LITELLM_MASTER_KEY", "litellm-key")
 
     client = TestClient(t.app)
@@ -587,7 +587,7 @@ def test_regression_quota_cooldown_429_keeps_model_in_catalog(monkeypatch):
 def test_admin_model_probe_missing_model_returns_404(monkeypatch):
     store = _FakeRegistryStore()
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
-    monkeypatch.setattr(t, "TRANSLATOR_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
 
     client = TestClient(t.app)
     resp = client.post("/admin/models/missing/probe", headers={"x-admin-key": "test-admin"})
