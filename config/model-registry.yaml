@@ -1,0 +1,280 @@
+models:
+  - model_id: "claude-haiku-4-5"
+    provider: "anthropic"
+    family: "anthropic"
+    upstream_model: "claude-haiku-4-5"
+    litellm_model: "anthropic/claude-haiku-4-5"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 1
+    policy_metadata:
+      fallbacks: ["gemini-3-flash", "gemini-3-flash-via-gcli", "gpt-5-4-mini"]
+
+  - model_id: "claude-haiku-4-5-20251001"
+    provider: "anthropic"
+    family: "anthropic"
+    upstream_model: "claude-haiku-4-5-20251001"
+    litellm_model: "anthropic/claude-haiku-4-5-20251001"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 1
+
+  - model_id: "claude-sonnet-4-5"
+    provider: "anthropic"
+    family: "anthropic"
+    upstream_model: "claude-sonnet-4-5"
+    litellm_model: "anthropic/claude-sonnet-4-5"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 2
+
+  - model_id: "claude-sonnet-4-5-20250929"
+    provider: "anthropic"
+    family: "anthropic"
+    upstream_model: "claude-sonnet-4-5-20250929"
+    litellm_model: "anthropic/claude-sonnet-4-5-20250929"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 2
+
+  - model_id: "claude-sonnet-4-6"
+    provider: "anthropic"
+    family: "anthropic"
+    upstream_model: "claude-sonnet-4-6"
+    litellm_model: "anthropic/claude-sonnet-4-6"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 2
+    policy_metadata:
+      fallbacks: ["gemini-3-flash", "gemini-3-flash-via-gcli", "gpt-5-4"]
+
+  - model_id: "claude-sonnet-4-6-at-native"
+    provider: "anthropic"
+    family: "anthropic"
+    upstream_model: "claude-sonnet-4-6"
+    litellm_model: "anthropic/claude-sonnet-4-6"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 2
+
+  - model_id: "claude-opus-4-1"
+    provider: "anthropic"
+    family: "anthropic"
+    upstream_model: "claude-opus-4-1"
+    litellm_model: "anthropic/claude-opus-4-1"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 3
+
+  - model_id: "claude-opus-4-1-20250805"
+    provider: "anthropic"
+    family: "anthropic"
+    upstream_model: "claude-opus-4-1-20250805"
+    litellm_model: "anthropic/claude-opus-4-1-20250805"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 3
+
+  - model_id: "claude-opus-4-5"
+    provider: "anthropic"
+    family: "anthropic"
+    upstream_model: "claude-opus-4-5"
+    litellm_model: "anthropic/claude-opus-4-5"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 3
+
+  - model_id: "claude-opus-4-5-20251101"
+    provider: "anthropic"
+    family: "anthropic"
+    upstream_model: "claude-opus-4-5-20251101"
+    litellm_model: "anthropic/claude-opus-4-5-20251101"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 3
+
+  - model_id: "claude-opus-4-6"
+    provider: "anthropic"
+    family: "anthropic"
+    upstream_model: "claude-opus-4-6"
+    litellm_model: "anthropic/claude-opus-4-6"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 3
+
+  - model_id: "claude-opus-4-7"
+    provider: "anthropic"
+    family: "anthropic"
+    upstream_model: "claude-opus-4-7"
+    litellm_model: "anthropic/claude-opus-4-7"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 3
+
+  - model_id: "claude-opus-4-8"
+    provider: "anthropic"
+    family: "anthropic"
+    upstream_model: "claude-opus-4-8"
+    litellm_model: "anthropic/claude-opus-4-8"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 3
+
+  - model_id: "gpt-5-4-mini"
+    provider: "openai"
+    family: "openai"
+    upstream_model: "gpt-5-4-mini"
+    litellm_model: "openai/gpt-5-4-mini"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 1
+    policy_metadata:
+      fallbacks: ["gemini-3-flash", "gemini-3-flash-via-gcli", "claude-haiku-4-5"]
+
+  - model_id: "gpt-5-4"
+    provider: "openai"
+    family: "openai"
+    upstream_model: "gpt-5-4"
+    litellm_model: "openai/gpt-5-4"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 2
+    policy_metadata:
+      fallbacks: ["gemini-3-flash", "gemini-3-flash-via-gcli", "claude-sonnet-4-6"]
+
+  - model_id: "gpt-5-5"
+    provider: "openai"
+    family: "openai"
+    upstream_model: "gpt-5-5"
+    litellm_model: "openai/gpt-5-5"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 3
+
+  - model_id: "gemini-3-flash"
+    provider: "gemini"
+    family: "gemini"
+    upstream_model: "gemini-3-flash"
+    litellm_model: "gemini/gemini-3-flash"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 1
+    policy_metadata:
+      fallbacks: ["gemini-3-flash-via-gcli", "claude-haiku-4-5", "gpt-5-4-mini"]
+
+  - model_id: "gemini-3-flash-preview"
+    provider: "gemini"
+    family: "gemini"
+    upstream_model: "gemini-3-flash-preview"
+    litellm_model: "gemini/gemini-3-flash-preview"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 1
+
+  - model_id: "gemini-3-flash-via-gcli"
+    provider: "gemini"
+    family: "gemini"
+    upstream_model: "gemini-3-flash"
+    litellm_model: "gemini/gemini-3-flash"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 1
+
+  - model_id: "gemini-3-flash-agent"
+    provider: "gemini"
+    family: "gemini"
+    upstream_model: "gemini-3-flash"
+    litellm_model: "gemini/gemini-3-flash"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 1
+
+  - model_id: "gemini-3-1-flash-lite"
+    provider: "gemini"
+    family: "gemini"
+    upstream_model: "gemini-3-1-flash-lite"
+    litellm_model: "gemini/gemini-3-1-flash-lite"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 1
+
+  - model_id: "gemini-3-1-flash-lite-via-gcli"
+    provider: "gemini"
+    family: "gemini"
+    upstream_model: "gemini-3-1-flash-lite"
+    litellm_model: "gemini/gemini-3-1-flash-lite"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 1
+
+  - model_id: "gemini-2-5-flash"
+    provider: "gemini"
+    family: "gemini"
+    upstream_model: "gemini-2-5-flash"
+    litellm_model: "gemini/gemini-2-5-flash"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 1
+
+  - model_id: "gemini-2-5-flash-lite"
+    provider: "gemini"
+    family: "gemini"
+    upstream_model: "gemini-2-5-flash-lite"
+    litellm_model: "gemini/gemini-2-5-flash-lite"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 1
+
+  - model_id: "gemini-3-1-pro"
+    provider: "gemini"
+    family: "gemini"
+    upstream_model: "gemini-3-1-pro"
+    litellm_model: "gemini/gemini-3-1-pro"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 2
+
+  - model_id: "gemini-3-1-pro-via-gcli"
+    provider: "gemini"
+    family: "gemini"
+    upstream_model: "gemini-3-1-pro"
+    litellm_model: "gemini/gemini-3-1-pro"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 2
+
+  - model_id: "gemini-3-pro"
+    provider: "gemini"
+    family: "gemini"
+    upstream_model: "gemini-3-pro"
+    litellm_model: "gemini/gemini-3-pro"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 2
+
+  - model_id: "gemini-3-pro-high"
+    provider: "gemini"
+    family: "gemini"
+    upstream_model: "gemini-3-pro-high"
+    litellm_model: "gemini/gemini-3-pro-high"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 3
+
+  - model_id: "gemini-2-5-pro"
+    provider: "gemini"
+    family: "gemini"
+    upstream_model: "gemini-2-5-pro"
+    litellm_model: "gemini/gemini-2-5-pro"
+    supports_tools: true
+    supports_vision: false
+    cost_tier: 3
+
+  - model_id: "gpt-oss-120b-medium"
+    provider: "openai"
+    family: "openai"
+    upstream_model: "gpt-oss-120b-medium"
+    litellm_model: "openai/gpt-oss-120b-medium"
+    supports_tools: false
+    supports_vision: false
+    cost_tier: 1
