@@ -1,6 +1,7 @@
 name: CI Suite
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   PYTHONDONTWRITEBYTECODE: "1"
   CI_MOCK_FRESH_DB: "1"
 
@@ -97,6 +98,7 @@ jobs:
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   lint-and-syntax:
+    name: "CI :: Lint and Syntax"
     runs-on: self-hosted
     steps:
       - name: Pre-clean workspace (self-hosted)
@@ -164,6 +166,7 @@ jobs:
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   build-translator:
+    name: "CI :: Build Translator"
     runs-on: self-hosted
     steps:
       - name: Pre-clean workspace (self-hosted)
@@ -290,6 +293,7 @@ jobs:
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   mock-integration:
+    name: "CI :: Mock Integration"
     needs: [changes, lint-and-syntax, unit-tests, build-translator]
     if: >
       needs.lint-and-syntax.result == 'success' &&
@@ -321,9 +325,6 @@ jobs:
 
   # Gate C paused pending e2e refactor — use run-e2e label or workflow_dispatch
   real-provider-e2e:
-    concurrency:
-      group: ci-docker-host-ports
-      cancel-in-progress: false
     needs: [changes, lint-and-syntax, unit-tests]
     if: >
       needs.lint-and-syntax.result == 'success' &&

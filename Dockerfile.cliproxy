@@ -1,6 +1,6 @@
 FROM alpine:latest
-ARG CLIPROXY_VERSION=7.1.45
-RUN apk add --no-cache ca-certificates wget && \
+ARG CLIPROXY_VERSION=7.1.50
+RUN apk add --no-cache ca-certificates wget gcompat && \
     wget -O /tmp/cliproxy.tar.gz \
       "https://github.com/router-for-me/CLIProxyAPI/releases/download/v${CLIPROXY_VERSION}/CLIProxyAPI_${CLIPROXY_VERSION}_linux_amd64.tar.gz" && \
     tar -xzf /tmp/cliproxy.tar.gz -C /usr/local/bin cli-proxy-api && \
