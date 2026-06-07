@@ -23,6 +23,7 @@ permissions:
 
 jobs:
   changes:
+    name: "CI :: Changes"
     runs-on: self-hosted
     outputs:
       runtime: ${{ steps.filter.outputs.runtime }}
@@ -181,13 +182,14 @@ jobs:
       - uses: ./.github/actions/build-docker-cached
         with:
           context: ./services/translator
-          tags: ai-translator-test:latest
+          tags: PROD-translator-test:latest
           scope: translator
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   unit-tests:
+    name: "CI :: Unit Tests"
     needs: build-translator
     runs-on: self-hosted
     steps:
@@ -199,12 +201,13 @@ jobs:
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
       - name: Run translator unit tests (parallel)
-        run: docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
+        run: docker run --rm PROD-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   litellm-reloader-tests:
+    name: "CI :: LiteLLM Reloader Tests"
     needs: changes
     if: >
       needs.changes.outputs.litellm_reloader == 'true' ||
@@ -226,6 +229,7 @@ jobs:
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   credential-prober:
+    name: "CI :: Credential Prober Tests"
     needs: changes
     if: >
       needs.changes.outputs.credential_prober == 'true' ||
@@ -249,6 +253,7 @@ jobs:
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   multi-repo-isolation:
+    name: "CI :: Multi Repo Isolation"
     needs: changes
     if: >
       needs.changes.outputs.isolation == 'true' ||
@@ -325,6 +330,7 @@ jobs:
 
   # Gate C paused pending e2e refactor — use run-e2e label or workflow_dispatch
   real-provider-e2e:
+    name: "CI :: Real Provider E2E"
     needs: [changes, lint-and-syntax, unit-tests]
     if: >
       needs.lint-and-syntax.result == 'success' &&
