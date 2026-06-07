@@ -1,0 +1,10 @@
+name: Auto Approve
+on: pull_request_target
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    if: github.actor == 'TheNorthWestPassage'
+    steps:
+      - uses: hmarr/auto-approve-action@v4
+        with:
+          review-message: "Auto-approved by orchestrator workflow."
