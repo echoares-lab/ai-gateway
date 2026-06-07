@@ -2,22 +2,25 @@
 
 # docker-cleanup.sh
 # Cleans up Docker containers associated with this project.
-# Usage: ./scripts/docker-cleanup.sh [--testing-only]
+# Usage: ./scripts/docker-cleanup.sh [--testing-only | --all | --check-non-standard]
 
 set -e
 
-# Identify containers by project label or name prefix if possible.
-# Since we don't have explicit project labels for all, we'll target based on name or known patterns.
-# For now, let's target containers with a name related to this repo.
-# In the future, we could use project labels if added to docker-compose.
-
 cleanup_pattern="TESTING-|PROD-"
+mode="standard"
 
 if [[ "$1" == "--testing-only" ]]; then
     cleanup_pattern="TESTING-"
+elif [[ "$1" == "--all" ]]; then
+    cleanup_pattern="."
+    mode="all"
+elif [[ "$1" == "--check-non-standard" ]]; then
+    echo "Checking for non-standard containers (not PROD- or TESTING-)..."
+    docker ps -a --format "{{.Names}}" | grep -vE "^(PROD-|TESTING-)"
+    exit 0
 fi
 
-echo "Cleaning up containers matching: $cleanup_pattern"
+echo "Cleaning up containers matching: $cleanup_pattern ($mode mode)"
 
 # List containers matching the pattern
 containers=$(docker ps -a --format "{{.Names}}" | grep -E "$cleanup_pattern" || true)
