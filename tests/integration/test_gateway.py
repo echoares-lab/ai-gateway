@@ -1,6 +1,6 @@
-"""Integration tests against a running gateway (translator → litellm → cliproxy).
+"""Integration tests against a running gateway (gateway-engine → litellm → cliproxy).
 
-Set GATEWAY_URL (default: http://localhost:4010) and LITELLM_MASTER_KEY before running:
+Set GATEWAY_ENGINE_URL (default: http://localhost:4000) and LITELLM_MASTER_KEY before running:
     pytest tests/integration/ -m integration
 """
 
@@ -595,7 +595,7 @@ class TestCodexCliFormat:
     @pytest.mark.mock
     @pytest.mark.smoke
     async def test_responses_api_tool_call(self, asgi_client, mock_litellm_router):
-        """Responses API with tools — translator must normalise tool format."""
+        """Responses API with tools — gateway-engine must normalise tool format."""
         resp = await asgi_client.post(
             "/v1/responses",
             json={

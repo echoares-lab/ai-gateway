@@ -1,4 +1,4 @@
-"""Translator-owned model registry helpers.
+"""Gateway-engine-owned model registry helpers.
 
 The registry is Postgres-backed when DATABASE_URL is configured. Callers can
 fall back to parsed LiteLLM config when the DB is unavailable so admin/status
@@ -598,6 +598,38 @@ class ModelRegistryStore:
                 )
             conn.commit()
         return len(models)
+
+    def upsert_aliases(self, aliases: list[dict[str, Any]]) -> int:
+        if not self.enabled:
+            raise RuntimeError("model registry database is not configured")
+        if not aliases:
+            return 0
+        with self._connect() as conn, conn.cursor() as cur:
+            for alias in aliases:
+                cur.execute(
+                    """
+                    INSERT INTO model_aliases (
+                        alias, model_id, provider, alias_kind, target, metadata
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (alias) DO UPDATE SET
+                        model_id = EXCLUDED.model_id,
+                        provider = EXCLUDED.provider,
+                        alias_kind = EXCLUDED.alias_kind,
+                        target = EXCLUDED.target,
+                        metadata = EXCLUDED.metadata
+                    """,
+                    (
+                        alias["alias"],
+                        alias["model_id"],
+                        alias["provider"],
+                        alias.get("alias_kind", "client"),
+                        alias.get("target", alias["model_id"]),
+                        Json(alias.get("metadata", {})),
+                    ),
+                )
+            conn.commit()
+        return len(aliases)
 
     def upsert_model(self, model: ModelRegistryRecord) -> ModelRegistryRecord:
         self.upsert_models([model])

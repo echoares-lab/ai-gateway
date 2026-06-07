@@ -15,17 +15,28 @@ from core.policy.schemas import (
 )
 
 
+from unittest.mock import patch
+from core.policy.fallback import evaluate_fallback_layers, load_yaml_baseline, model_traits
+
 def test_capability_filter_removes_non_tool_models():
-    result = evaluate_fallback_layers(
-        "claude-sonnet-4-6",
-        allowed_models=["claude-sonnet-4-6", "gpt-oss-120b-medium", "gemini-3-flash"],
-        policy_fallback=["gpt-oss-120b-medium", "gemini-3-flash"],
-        capabilities=RequestCapabilities(has_tools=True),
-        baseline_path="",
-    )
-    assert "gpt-oss-120b-medium" not in result.ordered_deployments
-    assert "gemini-3-flash" in result.ordered_deployments
-    assert "fallback:capability:filter_tools" in result.rules_applied
+    # Mock model_traits to explicitly return supports_tools=False for the test model
+    with patch("core.policy.fallback.model_traits") as mock_traits:
+        def side_effect(model):
+            if model == "gpt-oss-120b-medium":
+                return {"family": "openai", "tools": False, "vision": False, "cost": 1}
+            return {"family": "openai", "tools": True, "vision": False, "cost": 2}
+        mock_traits.side_effect = side_effect
+        
+        result = evaluate_fallback_layers(
+            "claude-sonnet-4-6",
+            allowed_models=["claude-sonnet-4-6", "gpt-oss-120b-medium", "gemini-3-flash"],
+            policy_fallback=["gpt-oss-120b-medium", "gemini-3-flash"],
+            capabilities=RequestCapabilities(has_tools=True),
+            baseline_path="",
+        )
+        assert "gpt-oss-120b-medium" not in result.ordered_deployments
+        assert "gemini-3-flash" in result.ordered_deployments
+        assert "fallback:capability:filter_tools" in result.rules_applied
 
 
 def test_policy_allowlist_restricts_candidates():
@@ -164,27 +175,34 @@ def test_yaml_baseline_safety_net_appended():
 
 
 def test_rules_applied_reflect_layer_evaluation_order():
-    result = evaluate_fallback_layers(
-        "claude-sonnet-4-6",
-        allowed_models=[
+    with patch("core.policy.fallback.model_traits") as mock_traits:
+        def side_effect(model):
+            if model == "gpt-oss-120b-medium":
+                return {"family": "openai", "tools": False, "vision": False, "cost": 1}
+            return {"family": "anthropic" if "claude" in model else "gemini", "tools": True, "vision": False, "cost": 2}
+        mock_traits.side_effect = side_effect
+
+        result = evaluate_fallback_layers(
             "claude-sonnet-4-6",
-            "claude-haiku-4-5",
-            "gemini-3-flash",
-            "gpt-oss-120b-medium",
-        ],
-        policy_fallback=["claude-haiku-4-5", "gpt-oss-120b-medium", "gemini-3-flash"],
-        capabilities=RequestCapabilities(has_tools=True, active_tool_chain=True, model_family="anthropic"),
-        budget=BudgetSnapshot(team_budget_pct_used=90.0),
-        health_scores={"claude-haiku-4-5": 0.8},
-        baseline_path="",
-    )
-    tags = result.rules_applied
-    assert tags.index("fallback:capability:filter_tools") < tags.index("fallback:policy:allowlist")
-    assert tags.index("fallback:policy:allowlist") < tags.index("fallback:affinity:family_lock")
-    assert tags.index("fallback:affinity:family_lock") < tags.index("fallback:health:weighted_order")
-    assert tags.index("fallback:health:weighted_order") < tags.index("fallback:budget:cost_tier")
-    assert tags.index("fallback:budget:cost_tier") < tags.index("fallback:baseline:yaml")
-    assert "eval:quality_reorder" not in tags
+            allowed_models=[
+                "claude-sonnet-4-6",
+                "claude-haiku-4-5",
+                "gemini-3-flash",
+                "gpt-oss-120b-medium",
+            ],
+            policy_fallback=["claude-haiku-4-5", "gpt-oss-120b-medium", "gemini-3-flash"],
+            capabilities=RequestCapabilities(has_tools=True, active_tool_chain=True, model_family="anthropic"),
+            budget=BudgetSnapshot(team_budget_pct_used=90.0),
+            health_scores={"claude-haiku-4-5": 0.8},
+            baseline_path="",
+        )
+        tags = result.rules_applied
+        assert tags.index("fallback:capability:filter_tools") < tags.index("fallback:policy:allowlist")
+        assert tags.index("fallback:policy:allowlist") < tags.index("fallback:affinity:family_lock")
+        assert tags.index("fallback:affinity:family_lock") < tags.index("fallback:health:weighted_order")
+        assert tags.index("fallback:health:weighted_order") < tags.index("fallback:budget:cost_tier")
+        assert tags.index("fallback:budget:cost_tier") < tags.index("fallback:baseline:yaml")
+        assert "eval:quality_reorder" not in tags
 
 
 def test_load_yaml_baseline_from_repo_config():

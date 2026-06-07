@@ -27,46 +27,15 @@ from core.policy.schemas import (
     RateLimitSnapshot,
     RequestCapabilities,
 )
+from core.model_registry import ModelRegistryStore
 
 logger = logging.getLogger(__name__)
 
 BUDGET_COST_TIER_THRESHOLD_PCT = float(os.environ.get("POLICY_BUDGET_COST_TIER_THRESHOLD_PCT", "80"))
 
-# Lower cost_tier = cheaper. Unknown models default to tier 2 (mid).
-_MODEL_REGISTRY: dict[str, dict[str, Any]] = {
-    "claude-haiku-4-5": {"family": "anthropic", "tools": True, "vision": False, "cost": 1},
-    "claude-haiku-4-5-20251001": {"family": "anthropic", "tools": True, "vision": False, "cost": 1},
-    "claude-sonnet-4-5": {"family": "anthropic", "tools": True, "vision": False, "cost": 2},
-    "claude-sonnet-4-5-20250929": {"family": "anthropic", "tools": True, "vision": False, "cost": 2},
-    "claude-sonnet-4-6": {"family": "anthropic", "tools": True, "vision": False, "cost": 2},
-    "claude-sonnet-4-6-at-native": {"family": "anthropic", "tools": True, "vision": False, "cost": 2},
-    "claude-opus-4-1": {"family": "anthropic", "tools": True, "vision": False, "cost": 3},
-    "claude-opus-4-1-20250805": {"family": "anthropic", "tools": True, "vision": False, "cost": 3},
-    "claude-opus-4-5": {"family": "anthropic", "tools": True, "vision": False, "cost": 3},
-    "claude-opus-4-5-20251101": {"family": "anthropic", "tools": True, "vision": False, "cost": 3},
-    "claude-opus-4-6": {"family": "anthropic", "tools": True, "vision": False, "cost": 3},
-    "claude-opus-4-7": {"family": "anthropic", "tools": True, "vision": False, "cost": 3},
-    "claude-opus-4-8": {"family": "anthropic", "tools": True, "vision": False, "cost": 3},
-    "gpt-5-4-mini": {"family": "openai", "tools": True, "vision": False, "cost": 1},
-    "gpt-5-4": {"family": "openai", "tools": True, "vision": False, "cost": 2},
-    "gpt-5-5": {"family": "openai", "tools": True, "vision": False, "cost": 3},
-    "gemini-3-flash": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
-    "gemini-3-flash-preview": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
-    "gemini-3-flash-via-gcli": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
-    "gemini-3-flash-agent": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
-    "gemini-3-1-flash-lite": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
-    "gemini-3-1-flash-lite-via-gcli": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
-    "gemini-2-5-flash": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
-    "gemini-2-5-flash-lite": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
-    "gemini-3-1-pro": {"family": "gemini", "tools": True, "vision": False, "cost": 2},
-    "gemini-3-1-pro-via-gcli": {"family": "gemini", "tools": True, "vision": False, "cost": 2},
-    "gemini-3-pro": {"family": "gemini", "tools": True, "vision": False, "cost": 2},
-    "gemini-3-pro-high": {"family": "gemini", "tools": True, "vision": False, "cost": 3},
-    "gemini-2-5-pro": {"family": "gemini", "tools": True, "vision": False, "cost": 3},
-    "gpt-oss-120b-medium": {"family": "openai", "tools": False, "vision": False, "cost": 1},
-}
+_registry_store = ModelRegistryStore()
 
-# Embedded subset of litellm-config.yaml fallbacks for offline/unit-test safety.
+# Minimal safety net if DB is empty and YAML load fails.
 _EMBEDDED_BASELINE: dict[str, list[str]] = {
     "claude-sonnet-4-6": ["gemini-3-flash", "gemini-3-flash-via-gcli", "gpt-5-4"],
     "claude-haiku-4-5": ["gemini-3-flash", "gemini-3-flash-via-gcli", "gpt-5-4-mini"],
@@ -76,8 +45,21 @@ _EMBEDDED_BASELINE: dict[str, list[str]] = {
 }
 
 
+@lru_cache(maxsize=1)
+def _get_cached_registry() -> dict[str, Any]:
+    """Fetch all models from DB registry and cache for policy evaluation."""
+    try:
+        res = _registry_store.list_models()
+        if res.models:
+            return {m.model_id: m for m in res.models}
+    except Exception as exc:
+        logger.warning("Failed to load model registry from DB: %s", exc)
+    return {}
+
+
 @dataclass
 class FallbackResult:
+
     ordered_deployments: list[str]
     fallback_chain: list[str]
     lock_model_family: bool = False
@@ -98,8 +80,15 @@ def _infer_family(model: str) -> str:
 
 def model_traits(model: str) -> dict[str, Any]:
     """Return capability traits for a model (registry + inference)."""
-    if model in _MODEL_REGISTRY:
-        return dict(_MODEL_REGISTRY[model])
+    registry = _get_cached_registry()
+    if model in registry:
+        record = registry[model]
+        return {
+            "family": record.family,
+            "tools": record.supports_tools if record.supports_tools is not None else True,
+            "vision": record.supports_vision if record.supports_vision is not None else False,
+            "cost": record.cost_tier or 2,
+        }
     family = _infer_family(model)
     cost = 1 if any(x in model for x in ("haiku", "mini", "lite", "flash")) else 2
     if any(x in model for x in ("opus", "pro-high", "gpt-5-5")):
@@ -124,7 +113,17 @@ def _dedupe_preserve_order(models: list[str]) -> list[str]:
 
 @lru_cache(maxsize=4)
 def load_yaml_baseline(path: str) -> dict[str, list[str]]:
-    """Load litellm_settings.fallbacks from YAML; fall back to embedded map."""
+    """Load fallbacks from DB; fall back to YAML or embedded map."""
+    registry = _get_cached_registry()
+    baseline: dict[str, list[str]] = {}
+    for model_id, record in registry.items():
+        fallbacks = record.policy_metadata.get("fallbacks")
+        if isinstance(fallbacks, list):
+            baseline[model_id] = [str(m) for m in fallbacks]
+
+    if baseline:
+        return baseline
+
     try:
         import yaml  # type: ignore[import-untyped]
     except ImportError:
@@ -142,8 +141,22 @@ def load_yaml_baseline(path: str) -> dict[str, list[str]]:
         logger.warning("Failed to read fallback baseline %s: %s", path, exc)
         return dict(_EMBEDDED_BASELINE)
 
+    # Try model-registry.yaml format first
+    models_list = doc.get("models") or []
+    if isinstance(models_list, list):
+        for entry in models_list:
+            if not isinstance(entry, dict):
+                continue
+            model_id = entry.get("model_id")
+            fallbacks = entry.get("policy_metadata", {}).get("fallbacks")
+            if model_id and isinstance(fallbacks, list):
+                baseline[str(model_id)] = [str(m) for m in fallbacks]
+
+    if baseline:
+        return baseline
+
+    # Fallback to litellm-config.yaml format
     fallbacks_raw = (doc.get("litellm_settings") or {}).get("fallbacks") or []
-    baseline: dict[str, list[str]] = {}
     for entry in fallbacks_raw:
         if not isinstance(entry, dict):
             continue

@@ -22,7 +22,7 @@ from core.policy.schemas import (
 )
 
 
-def test_merge_translator_and_redis_rolling_counts(redis_state_store: RedisStateStore):
+def test_merge_gateway_engine_and_redis_rolling_counts(redis_state_store: RedisStateStore):
     cooldown = datetime.now(timezone.utc) + timedelta(seconds=60)
     redis_state_store.record_rate_limit_429("anthropic", "cred-x", cooldown_until=cooldown)
     redis_state_store.record_rate_limit_429("anthropic", "cred-x", cooldown_until=cooldown)
@@ -39,7 +39,7 @@ def test_merge_translator_and_redis_rolling_counts(redis_state_store: RedisState
         ],
     )
     merged, rules = merge_rate_limit_sources(ctx, redis_store=redis_state_store)
-    assert "rate_limit:translator_signals_merged" in rules
+    assert "rate_limit:gateway_engine_signals_merged" in rules
     assert "redis:rate_limits_merged" in rules
     snap = merged.rate_limits[0]
     assert snap.rolling_429_count_5m == 3
@@ -169,7 +169,7 @@ def test_aggregate_and_evaluate_end_to_end(redis_state_store: RedisStateStore):
         redis_store=redis_state_store,
         inventory_store=inventory,
     )
-    assert "rate_limit:translator_signals_merged" in merge_rules
+    assert "rate_limit:gateway_engine_signals_merged" in merge_rules
     assert "cred-o" in evaluation.deprioritized_credentials
     assert evaluation.quota_aware_mode is True
 

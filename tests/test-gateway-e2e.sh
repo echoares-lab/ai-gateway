@@ -4,13 +4,28 @@
 # Uses the API key loaded by direnv for each repo.
 #
 # CI mock mode (health + WebSocket only, no direnv/repos required):
-#   GATEWAY_E2E_CI=1 GATEWAY_URL=http://localhost:4010 bash tests/test-gateway-e2e.sh
+#   GATEWAY_E2E_CI=1 GATEWAY_ENGINE_URL=http://localhost:4000 bash tests/test-gateway-e2e.sh
 
 set -euo pipefail
 
 PASS=0; FAIL=0; SKIP=0
-GATEWAY="${GATEWAY_URL:-http://localhost:4000}"
+
+# Unified service discovery for GATEWAY_ENGINE_URL
+# Priority: 1. Env Var, 2. 'http://gateway-engine:4000' (docker), 3. 'http://localhost:4000' (local).
+if [[ -n "${GATEWAY_ENGINE_URL:-}" ]]; then
+    GATEWAY="$GATEWAY_ENGINE_URL"
+elif getent hosts gateway-engine >/dev/null 2>&1; then
+    GATEWAY="http://gateway-engine:4000"
+else
+    GATEWAY="${GATEWAY_URL:-http://localhost:4000}"
+fi
+
 TIMEOUT=30
+
+# Dynamic root detection
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPOS_ROOT="$(dirname "$PROJECT_ROOT")"
 
 pass() { echo "  ✓ $1"; ((PASS++)) || true; }
 fail() { echo "  ✗ $1"; ((FAIL++)) || true; }
@@ -85,7 +100,7 @@ else:
 
 test_repo() {
     local repo="$1"; shift
-    local repo_path="/home/dev/repos/$repo"
+    local repo_path="$REPOS_ROOT/$repo"
     echo ""
     echo "══ $repo ══"
 

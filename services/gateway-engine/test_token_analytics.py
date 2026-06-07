@@ -174,27 +174,27 @@ def test_record_token_usage_zero_tokens():
 def test_admin_token_analytics_rolls_up_canonical_model_ids():
     metrics_text = "\n".join(
         [
-            'translator_token_input_total{provider="unknown",model="sonnet"} 10.0',
-            'translator_token_output_total{provider="unknown",model="sonnet"} 5.0',
-            'translator_token_input_total{provider="anthropic",model="claude-sonnet-4-6"} 3.0',
-            'translator_token_output_total{provider="anthropic",model="claude-sonnet-4-6"} 2.0',
+            'gateway_engine_token_input_total{provider="unknown",model="sonnet"} 10.0',
+            'gateway_engine_token_output_total{provider="unknown",model="sonnet"} 5.0',
+            'gateway_engine_token_input_total{provider="anthropic",model="claude-sonnet-4-6"} 3.0',
+            'gateway_engine_token_output_total{provider="anthropic",model="claude-sonnet-4-6"} 2.0',
             (
-                'translator_token_canonical_input_total{provider="unknown",model="sonnet",'
+                'gateway_engine_token_canonical_input_total{provider="unknown",model="sonnet",'
                 'canonical_model_id="claude-sonnet-4-6",canonical_provider="anthropic",'
                 'canonical_family="claude"} 10.0'
             ),
             (
-                'translator_token_canonical_output_total{provider="unknown",model="sonnet",'
+                'gateway_engine_token_canonical_output_total{provider="unknown",model="sonnet",'
                 'canonical_model_id="claude-sonnet-4-6",canonical_provider="anthropic",'
                 'canonical_family="claude"} 5.0'
             ),
             (
-                'translator_token_canonical_input_total{provider="anthropic",model="claude-sonnet-4-6",'
+                'gateway_engine_token_canonical_input_total{provider="anthropic",model="claude-sonnet-4-6",'
                 'canonical_model_id="claude-sonnet-4-6",canonical_provider="anthropic",'
                 'canonical_family="claude"} 3.0'
             ),
             (
-                'translator_token_canonical_output_total{provider="anthropic",model="claude-sonnet-4-6",'
+                'gateway_engine_token_canonical_output_total{provider="anthropic",model="claude-sonnet-4-6",'
                 'canonical_model_id="claude-sonnet-4-6",canonical_provider="anthropic",'
                 'canonical_family="claude"} 2.0'
             ),

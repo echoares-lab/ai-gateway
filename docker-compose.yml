@@ -90,6 +90,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.cliproxy
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        ENVIRONMENT: ${ENVIRONMENT:-production}
     restart: always
     volumes:
       - ${HOME}/.cliproxy/config.yaml:/config/config.yaml
@@ -123,12 +126,15 @@ services:
       timeout: 3s
       retries: 3
 
-  translator:
-    container_name: PROD-translator
+  gateway-engine:
+    container_name: PROD-gateway-engine
     build:
-      context: ./services/translator
+      context: ./services/gateway-engine
       dockerfile: Dockerfile
-    command: uvicorn main:app --host 0.0.0.0 --port 4000 --reload --workers 1
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        ENVIRONMENT: ${ENVIRONMENT:-production}
+    command: uvicorn main:app --host 0.0.0.0 --port ${GATEWAY_ENGINE_PORT:-4000} --reload --workers ${WEB_CONCURRENCY:-1}
     restart: always
     depends_on:
       litellm:
@@ -136,24 +142,24 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "4000:4000"
+      - "${GATEWAY_ENGINE_PORT:-4000}:${GATEWAY_ENGINE_PORT:-4000}"
     environment:
+      - GATEWAY_ENGINE_PORT=${GATEWAY_ENGINE_PORT:-4000}
       - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
-      - REDIS_URL=redis://:${REDIS_AUTH:-myredissecret}@redis:6379
-      - POLICY_ENGINE_ENABLED=${POLICY_ENGINE_ENABLED:-false}
-      - POLICY_ENGINE_TIMEOUT_MS=${POLICY_ENGINE_TIMEOUT_MS:-100}
-      - TEAM_BUDGET_SNAPSHOT_ENABLED=${TEAM_BUDGET_SNAPSHOT_ENABLED:-true}
-      - LITELLM_ADMIN_URL=${LITELLM_ADMIN_URL:-http://litellm:4000}
-      - CACHE_ENABLED=${CACHE_ENABLED:-false}
-      - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-60}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - CLIPROXY_API_KEY=${CLIPROXY_API_KEY}
-      - UPSTREAM_TIMEOUT=${UPSTREAM_TIMEOUT:-30.0}
-      - LITELLM_CONFIG_PATH=/config/litellm-config.yaml
+      - GATEWAY_ENGINE_REDIS_URL=redis://:${REDIS_AUTH:-myredissecret}@redis:6379
+      - GATEWAY_ENGINE_POLICY_ENGINE_ENABLED=${POLICY_ENGINE_ENABLED:-false}
+      - GATEWAY_ENGINE_TEAM_BUDGET_SNAPSHOT_ENABLED=${TEAM_BUDGET_SNAPSHOT_ENABLED:-true}
+      - GATEWAY_ENGINE_LITELLM_ADMIN_URL=${LITELLM_ADMIN_URL:-http://litellm:4000}
+      - GATEWAY_ENGINE_CACHE_ENABLED=${CACHE_ENABLED:-false}
+      - GATEWAY_ENGINE_CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-60}
+      - GATEWAY_ENGINE_LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - GATEWAY_ENGINE_CLIPROXY_API_KEY=${CLIPROXY_API_KEY}
+      - GATEWAY_ENGINE_UPSTREAM_TIMEOUT=${UPSTREAM_TIMEOUT:-30.0}
+      - GATEWAY_ENGINE_LITELLM_CONFIG_PATH=/config/litellm-config.yaml
     volumes:
-      - ./services/translator:/app
+      - ./services/gateway-engine:/app
       # Read-only mount so the admin status aggregator (/admin/status) can read
-      # configured models, router settings, and fallbacks. Never written by the translator.
+      # configured models, router settings, and fallbacks. Never written by the gateway-engine.
       - ./litellm-config.yaml:/config/litellm-config.yaml:ro
 
   litellm:
@@ -202,9 +208,12 @@ services:
     build:
       context: ./services/litellm-reloader
       dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        ENVIRONMENT: ${ENVIRONMENT:-production}
     restart: always
     environment:
-      - LITELLM_CONTAINER=ai-litellm-1
+      - LITELLM_CONTAINER=${LITELLM_CONTAINER:-PROD-litellm}
       - LITELLM_HEALTH_URL=http://litellm:4000/health/readiness
     volumes:
       - ./litellm-config.yaml:/config/litellm-config.yaml:ro
@@ -306,6 +315,9 @@ services:
     build:
       context: .
       dockerfile: services/docs-server/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        ENVIRONMENT: ${ENVIRONMENT:-production}
     restart: always
     ports:
       - "8002:8000"
@@ -318,18 +330,21 @@ services:
     build:
       context: ./services/credential-prober
       dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        ENVIRONMENT: ${ENVIRONMENT:-production}
     restart: always
     environment:
       - CLIPROXY_URL=http://cliproxy:8317
       - CLIPROXY_MANAGEMENT_KEY=${CLIPROXY_MANAGEMENT_KEY:-cliproxy-mgmt-H6VXKpUCzmeDuHcGmH8Oqg}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
-      - TRANSLATOR_URL=${TRANSLATOR_URL:-http://translator:4000}
+      - GATEWAY_ENGINE_URL=${GATEWAY_ENGINE_URL:-http://gateway-engine:${GATEWAY_ENGINE_PORT:-4000}}
     depends_on:
       postgres:
         condition: service_healthy
       cliproxy:
         condition: service_started
-      translator:
+      gateway-engine:
         condition: service_started
 
 
