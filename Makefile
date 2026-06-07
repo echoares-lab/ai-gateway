@@ -1,5 +1,7 @@
 .PHONY: lint test-unit test-mock test-fast test-e2e validate-policy-profiles test-sync-models-probe
 
+CONTAINER_PREFIX ?= PROD-
+
 # Lint the translator (mirrors the CI fast tier).
 lint:
 	ruff check services/translator/main.py
@@ -13,7 +15,7 @@ test-sync-models-probe:
 # Unit tests: build the translator image and run the fully-mocked suite (parallel, CI parity).
 test-unit:
 	docker build -t ai-translator-test:latest services/translator
-	docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
+	docker run --rm --name $(CONTAINER_PREFIX)ai-translator-test ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
 
 # Mock tier: in-memory ASGI integration tests (no OAuth, canned upstream).
 test-mock:

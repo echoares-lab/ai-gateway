@@ -12,6 +12,7 @@ volumes:
 
 services:
   postgres:
+    container_name: TESTING-postgres-dev
     image: postgres:17
     restart: unless-stopped
     environment:
@@ -28,6 +29,7 @@ services:
       retries: 10
 
   redis:
+    container_name: TESTING-redis-dev
     image: docker.io/redis:7
     restart: unless-stopped
     command: >
@@ -48,6 +50,7 @@ services:
       retries: 10
 
   cliproxy:
+    container_name: TESTING-cliproxy-dev
     build:
       context: ${CLIPROXY_BUILD_CONTEXT:-/home/dev/repos/CLIProxyAPI}
       dockerfile: ${CLIPROXY_DOCKERFILE:-Dockerfile}
@@ -62,6 +65,7 @@ services:
       - "${DEV_CLIPROXY_PORT:-8327}:8317"
 
   litellm:
+    container_name: TESTING-litellm-dev
     image: ghcr.io/berriai/litellm:v1.87.1@sha256:9de33287d844a164f873479a04eebe065610e131d7e3aaf010f520fb5b4cfd7b
     restart: unless-stopped
     depends_on:
@@ -91,6 +95,7 @@ services:
       start_period: 20s
 
   litellm-reloader:
+    container_name: TESTING-litellm-reloader-dev
     build:
       context: ./services/litellm-reloader
       dockerfile: Dockerfile
@@ -104,6 +109,7 @@ services:
       - litellm
 
   credential-prober:
+    container_name: TESTING-credential-prober-dev
     build:
       context: ./services/credential-prober
       dockerfile: Dockerfile
@@ -122,6 +128,7 @@ services:
         condition: service_started
 
   translator:
+    container_name: TESTING-translator-dev
     image: ${TRANSLATOR_IMAGE:-aidev-translator-local}
     build:
       context: ./services/translator
@@ -151,6 +158,7 @@ services:
       - ./litellm-config.yaml:/config/litellm-config.yaml:ro
 
   cpa-manager:
+    container_name: TESTING-cpa-manager-dev
     image: seakee/cpa-manager:1.5.5
     restart: unless-stopped
     depends_on:

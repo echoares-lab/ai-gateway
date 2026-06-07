@@ -1,6 +1,7 @@
 name: ai
 services:
   langfuse-worker:
+    container_name: PROD-langfuse-worker
     image: docker.io/langfuse/langfuse-worker:3
     restart: always
     depends_on: &langfuse-depends-on
@@ -65,6 +66,7 @@ services:
       SMTP_CONNECTION_URL: ${SMTP_CONNECTION_URL:-}
 
   langfuse-web:
+    container_name: PROD-langfuse-web
     image: docker.io/langfuse/langfuse:3
     restart: always
     depends_on: *langfuse-depends-on
@@ -84,6 +86,7 @@ services:
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
 
   cliproxy:
+    container_name: PROD-cliproxy
     build:
       context: .
       dockerfile: Dockerfile.cliproxy
@@ -95,6 +98,7 @@ services:
       - "8317:8317"
 
   cpa-manager:
+    container_name: PROD-cpa-manager
     image: seakee/cpa-manager:1.5.5
     restart: always
     depends_on:
@@ -120,6 +124,7 @@ services:
       retries: 3
 
   translator:
+    container_name: PROD-translator
     build:
       context: ./services/translator
       dockerfile: Dockerfile
@@ -152,6 +157,7 @@ services:
       - ./litellm-config.yaml:/config/litellm-config.yaml:ro
 
   litellm:
+    container_name: PROD-litellm
     image: ghcr.io/berriai/litellm:v1.87.1@sha256:9de33287d844a164f873479a04eebe065610e131d7e3aaf010f520fb5b4cfd7b
     restart: always
     depends_on:
@@ -192,6 +198,7 @@ services:
      start_period: 90s
 
   litellm-reloader:
+    container_name: PROD-litellm-reloader
     build:
       context: ./services/litellm-reloader
       dockerfile: Dockerfile
@@ -206,6 +213,7 @@ services:
       - litellm
 
   clickhouse:
+    container_name: PROD-clickhouse
     image: docker.io/clickhouse/clickhouse-server
     restart: always
     user: "101:101"
@@ -227,6 +235,7 @@ services:
       start_period: 1s
 
   minio:
+    container_name: PROD-minio
     image: cgr.dev/chainguard/minio
     restart: always
     entrypoint: sh
@@ -247,6 +256,7 @@ services:
       start_period: 1s
 
   redis:
+    container_name: PROD-redis
     image: docker.io/redis:7
     restart: always
     command: >
@@ -271,6 +281,7 @@ services:
       retries: 10
 
   postgres:
+    container_name: PROD-postgres
     image: docker.io/postgres:${POSTGRES_VERSION:-17}
     restart: always
     healthcheck:
@@ -291,6 +302,7 @@ services:
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
 
   docs-server:
+    container_name: PROD-docs-server
     build:
       context: .
       dockerfile: services/docs-server/Dockerfile
@@ -302,6 +314,7 @@ services:
 
 
   credential-prober:
+    container_name: PROD-credential-prober
     build:
       context: ./services/credential-prober
       dockerfile: Dockerfile
