@@ -81,6 +81,7 @@ from core.model_registry import (
 )
 from core.policy import PolicyEvaluator
 from core.policy import policy_version as in_process_policy_version
+from core.policy.client_detector import client_detector
 from core.policy.evaluate import process_credential_event_async
 from core.policy.schemas import CredentialEvent
 from core.state import _policy_history, _policy_trace, record_policy_history
@@ -3895,6 +3896,12 @@ async def proxy(path: str, request: Request):
             pass
 
     headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+
+    # Inject headers from client detector
+    profile = client_detector.detect(request)
+    if profile and (inject_headers := profile.get("config", {}).get("inject_headers")):
+        headers.update(inject_headers)
+
     _normalize_upstream_authorization(headers)
     log.info(
         "Proxy request path: %s headers: %s",
