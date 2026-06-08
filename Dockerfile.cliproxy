@@ -1,4 +1,11 @@
 FROM alpine:latest
+ARG GIT_SHA=unknown
+ARG ENVIRONMENT=production
+LABEL org.opencontainers.image.source="https://github.com/echoares-lab/ai-gateway" \
+      org.opencontainers.image.revision=$GIT_SHA \
+      ai-gateway.service="cliproxy" \
+      ai-gateway.environment=$ENVIRONMENT
+
 ARG CLIPROXY_VERSION=7.1.50
 RUN apk add --no-cache ca-certificates wget gcompat && \
     wget -O /tmp/cliproxy.tar.gz \

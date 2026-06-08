@@ -7,7 +7,7 @@ claim_status: done
 acceptance:
   - [x] workspace-rules.yaml defines defaults + per-team RPM/TPM/max_budget
   - [x] setup_litellm_teams.py applies budgets on create and update
-  - [x] translator populates budget in RoutingContext
+  - [x] gateway-engine populates budget in RoutingContext
   - [x] BUDGET_HARD_GATE_ENABLED passed to policy-engine service
   - [x] Unit tests for workspace rules and budget snapshot parsing
 dependencies:

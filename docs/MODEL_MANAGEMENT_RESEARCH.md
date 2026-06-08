@@ -13,7 +13,7 @@ The current model management workflow in `cliproxy-setup.sh sync-models` relies 
 
 ### Option 1: API-Driven Model Management (Recommended)
 Instead of treating `litellm-config.yaml` as the source of truth, treat the LiteLLM/CLIProxy system as a registry.
-* **Mechanism:** Add a thin management service or extend the existing `translator` to handle model CRUD via API.
+* **Mechanism:** Add a thin management service or extend the existing `gateway-engine` to handle model CRUD via API.
 * **Benefits:** Atomic updates, validation of new models *before* they touch configuration, structured metadata storage.
 * **Implementation:** The `sync-models` script would call an API `GET /models/sync` to get the desired state, then update the config file in one atomic operation (or update a dynamic `models.json` file that LiteLLM includes).
 

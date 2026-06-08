@@ -12,7 +12,7 @@ scope: |
   - Soft gate: deprioritize credentials below N% quota headroom (QuotaHeadroom)
   - Budget-aware routing: cheaper tier when team_budget_pct_used > 80%
   - Optional credential reservation token bucket for high-priority repos
-  - Populate budget snapshot in translator → RoutingContext
+  - Populate budget snapshot in gateway-engine → RoutingContext
 non_goals:
   - Full chargeback platform (38-21)
   - Policy-engine-only hard gate without LiteLLM (open question #5 in design doc)
@@ -27,15 +27,15 @@ tests: |
 risks: |
   Double-gating with LiteLLM if both enforce. Coordinate placement per open question #5.
 dependencies:
-  - policy-engine-38-04-translator.md
+  - policy-engine-38-04-gateway-engine.md
   - issues/policy-engine-phase0-prerequisites.md (P0-4 TENANCY-3)
 files:
   - services/policy-engine/evaluator/budget.py
-  - services/translator/translator.py
+  - services/gateway-engine/gateway-engine.py
 claim_status: done
 blocks: []
 blocked_by:
-  - policy-engine-38-04-translator.md
+  - policy-engine-38-04-gateway-engine.md
   - issues/policy-engine-phase0-prerequisites.md
 execution_notes: |
   **Quota-aware:** QuotaHeadroom from credential_inventory.metadata + CLIProxy quota-summary.

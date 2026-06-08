@@ -11,7 +11,7 @@ scope: |
   - Pin cpa-manager image in docker-compose.yml, docker-compose.dev.yml, and docker-compose.mock.yml.
   - Document the upgrade procedure in RUNBOOK.md for future maintainers.
 non_goals:
-  - Changes to the translator logic or LiteLLM configuration.
+  - Changes to the gateway-engine logic or LiteLLM configuration.
   - Changes to the management UI features themselves.
 acceptance:
   - [ ] cliproxy is running v7.1.45.

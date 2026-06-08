@@ -21,16 +21,16 @@ main -> feat/* worktree/branch -> PR -> main
 
 - Stable stack: port 4000 (slot 0).
 - Dev stacks: `./dev-env.sh start <slot>` (slots 1, 2, 3, …).
-- Mock stack (Gate B): `./dev-env.sh start-mock 9` → translator on :4090.
-- Slot 1 maps translator to port 4010; slot 2 maps translator to port 4020.
-- Translator changes hot-reload through uvicorn.
+- Mock stack (Gate B): `./dev-env.sh start-mock 9` → gateway-engine on :4090.
+- Slot 1 maps gateway-engine to port 4010; slot 2 maps gateway-engine to port 4020.
+- Gateway Engine changes hot-reload through uvicorn.
 - `litellm-config.yaml` changes are picked up by the LiteLLM reloader.
 
 ## Test gates
 
 | Gate | Purpose | Local command | CI job |
 |------|---------|---------------|--------|
-| **A** | Lint, schema, unit | `make lint` / `make test-unit` | `lint-and-syntax`, `unit-tests`, `build-translator`, path-filtered service tests |
+| **A** | Lint, schema, unit | `make lint` / `make test-unit` | `lint-and-syntax`, `unit-tests`, `build-gateway-engine`, path-filtered service tests |
 | **B** | Mock integration (0 skips) | `make test-mock` | `mock-integration` |
 | **C** | Real providers (smoke) | `make test-e2e` or PR label `run-e2e` | `real-provider-e2e` (**required on hotspot paths**) |
 | **D** | Post-merge stable | `./cliproxy-setup.sh health` + model smokes on :4000 | `post-merge-gate-d` (advisory) |
@@ -44,14 +44,14 @@ main -> feat/* worktree/branch -> PR -> main
 | Risk | Gate A | Gate B | Gate C | Gate D |
 |------|--------|--------|--------|--------|
 | Low (docs, templates) | yes | optional | no | no |
-| Medium (translator logic, tests) | yes | yes | no | no |
+| Medium (gateway-engine logic, tests) | yes | yes | no | no |
 | High (auth, litellm-config, compose, cliproxy) | yes | yes | **required on hotspot paths** | post-merge on stable |
 
 ### CI check tiers (Required vs Advisory)
 
 | Tier | Jobs | Blocks merge? |
 |------|------|---------------|
-| **Required — Fast (A)** | `lint-and-syntax`, `unit-tests`, `build-translator` | Yes, every PR |
+| **Required — Fast (A)** | `lint-and-syntax`, `unit-tests`, `build-gateway-engine` | Yes, every PR |
 | **Required — Conditional** | `mock-integration`, `multi-repo-isolation`, `credential-prober`, `policy-engine-tests`, `litellm-reloader-tests` | Yes, when paths match (skipped = pass) |
 | **Required — Hotspot (C)** | `real-provider-e2e` | Yes, when hotspot paths change |
 | **Advisory** | `nightly-integration`, `hotspot-e2e-reminder`, `post-merge-gate-d` | No |
@@ -63,7 +63,7 @@ When only docs/templates change, conditional jobs (`mock-integration`, etc.) **s
 ### CI job → gate mapping (branch protection)
 
 Required on `main` PRs:
-- `lint-and-syntax`, `unit-tests`, `build-translator` → Gate A
+- `lint-and-syntax`, `unit-tests`, `build-gateway-engine` → Gate A
 - `multi-repo-isolation` → Gate A (isolation paths)
 - `mock-integration` → Gate B (runtime paths)
 - `real-provider-e2e` → Gate C (**hotspot paths**; skipped when not applicable)
@@ -76,7 +76,7 @@ Advisory:
 
 ## Required checks (copy-paste)
 
-- Translator unit tests: `docker run --rm ai-translator-test:latest pytest test_translator*.py -n auto -v`
+- Gateway Engine unit tests: `docker run --rm ai-gateway-engine-test:latest pytest test_gateway-engine*.py -n auto -v`
 - Policy-engine unit tests: `PYTHONPATH=services/policy-engine pytest services/policy-engine/test_*.py -v`
 - Mock integration: `make test-mock`
 - Multi-repo isolation: `bash tests/test-multi-repo-isolation.sh` (CI only; needs direnv setup)
@@ -99,7 +99,7 @@ Advisory:
 ## Hotspot files and areas
 
 Gate C **required** when PR touches:
-- `services/translator/**` (includes `main.py`)
+- `services/gateway-engine/**` (includes `main.py`)
 - `litellm-config.yaml`
 - `docker-compose*.yml`, `Dockerfile*`
 - `cliproxy-setup.sh`, `dev-env.sh`
@@ -150,7 +150,7 @@ git push --force-with-lease origin feat/<feature>
 
 Poll dependencies: `gh issue view <n> --json state,closed` and `gh pr view <n> --json state,mergedAt`.
 
-Hotspot files (`services/translator/**`, `litellm-config.yaml`, compose files) require serialized
+Hotspot files (`services/gateway-engine/**`, `litellm-config.yaml`, compose files) require serialized
 issues or explicit stack order — see `REPO_IMPROVEMENT_WORKFLOW.md` §9.
 
 ## Worktree cleanup (post-merge)

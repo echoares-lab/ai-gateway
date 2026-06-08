@@ -15,7 +15,7 @@ scope: |
   - TENANCY.md cross-link for child issue #4
 non_goals:
   - LiteLLM tool-list filtering (follow-up 5c)
-  - MCP routing in translator.py
+  - MCP routing in gateway-engine.py
   - Per-argument tool ACL
 acceptance:
   - [x] Workspace-level MCP visibility model documented

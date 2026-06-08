@@ -4,6 +4,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   PYTHONDONTWRITEBYTECODE: "1"
   CI_MOCK_FRESH_DB: "1"
+  DOCKER_REGISTRY: ghcr.io/echoares-lab/ai-gateway
 
 on:
   push:
@@ -20,6 +21,7 @@ concurrency:
 permissions:
   contents: read
   pull-requests: read
+  packages: write
 
 jobs:
   changes:
@@ -30,7 +32,7 @@ jobs:
       credential_prober: ${{ steps.filter.outputs.credential_prober }}
       litellm_reloader: ${{ steps.filter.outputs.litellm_reloader }}
       hotspot: ${{ steps.filter.outputs.hotspot }}
-      translator: ${{ steps.filter.outputs.translator }}
+      gateway_engine: ${{ steps.filter.outputs.gateway_engine }}
       cliproxy: ${{ steps.filter.outputs.cliproxy }}
       litellm_config: ${{ steps.filter.outputs.litellm_config }}
       compose: ${{ steps.filter.outputs.compose }}
@@ -43,12 +45,14 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
       - uses: dorny/paths-filter@v3
         id: filter
         with:
           filters: |
-            translator:
-              - 'services/translator/**'
+            gateway_engine:
+              - 'services/gateway-engine/**'
             litellm_reloader:
               - 'services/litellm-reloader/**'
             litellm_config:
@@ -85,7 +89,7 @@ jobs:
               - 'tests/litellm-config-mock.yaml'
               - 'tests/mock-policy-engine/**'
             hotspot:
-              - 'services/translator/**'
+              - 'services/gateway-engine/**'
               - 'litellm-config.yaml'
               - 'docker-compose*.yml'
               - 'Dockerfile*'
@@ -94,7 +98,7 @@ jobs:
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: |
-          sudo rm -rf services/translator/__pycache__ || true
+          sudo rm -rf services/gateway-engine/__pycache__ || true
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   lint-and-syntax:
@@ -108,13 +112,21 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-python-venv
         with:
           extra-packages: ruff pyyaml pydantic pytest
       - name: Lint with ruff
-        run: .venv-ci/bin/ruff check services/translator/main.py
+        run: .venv-ci/bin/ruff check services/gateway-engine/main.py
       - name: Format check with ruff
-        run: .venv-ci/bin/ruff format --check services/translator/main.py
+        run: .venv-ci/bin/ruff format --check services/gateway-engine/main.py
       - name: Shell syntax check
         run: |
           bash -n cliproxy-setup.sh
@@ -156,39 +168,17 @@ jobs:
           print(f"✓ litellm-config.yaml: {len(data.get('model_list') or [])} models validated")
           PY
       - name: Validate policy-profiles.yaml
-        run: PYTHONPATH=services/translator .venv-ci/bin/python3 scripts/validate_policy_profiles.py
+        run: PYTHONPATH=services/gateway-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
       - name: Check for hardcoded API keys
         run: CHECK_ALL=1 bash .githooks/prevent-hardcoded-keys.sh
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: |
-          sudo rm -rf services/translator/__pycache__ || true
+          sudo rm -rf services/gateway-engine/__pycache__ || true
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-
-  build-translator:
-    name: "CI :: Build Translator"
-    runs-on: self-hosted
-    steps:
-      - name: Pre-clean workspace (self-hosted)
-        run: |
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
-          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
-          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
-      - uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - uses: ./.github/actions/build-docker-cached
-        with:
-          context: ./services/translator
-          tags: ai-translator-test:latest
-          scope: translator
-      - name: Fix workspace permissions (self-hosted)
-        if: always()
-        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   unit-tests:
-    needs: build-translator
+    name: "CI :: Build and Unit Test"
     runs-on: self-hosted
     steps:
       - name: Pre-clean workspace (self-hosted)
@@ -198,8 +188,41 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
-      - name: Run translator unit tests (parallel)
-        run: docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Determine if we should push
+        id: should_push
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ contains(github.event.pull_request.labels.*.name, 'push-images') }}" == "true" ]]; then
+            echo "push=true" >> $GITHUB_OUTPUT
+          else
+            echo "push=false" >> $GITHUB_OUTPUT
+          fi
+      - uses: ./.github/actions/build-docker-cached
+        with:
+          context: ./services/gateway-engine
+          tags: ai-gateway-engine-test:latest
+          scope: gateway-engine
+          push: false
+          build-args: |
+            GIT_SHA=${{ env.GIT_SHA }}
+      - name: Run gateway-engine unit tests (parallel)
+        run: docker run --rm ai-gateway-engine-test:latest sh -c 'pytest test_gateway_engine*.py -n auto -v'
+      - name: Push gateway-engine to GHCR
+        if: steps.should_push.outputs.push == 'true'
+        run: |
+          docker tag ai-gateway-engine-test:latest ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.GIT_SHA }}
+          docker tag ai-gateway-engine-test:latest ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
+          docker push ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.GIT_SHA }}
+          docker push ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
@@ -218,7 +241,17 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-python-venv
+        with:
+          requirements-files: services/litellm-reloader/requirements-test.txt
       - name: Run litellm-reloader unit tests
         run: .venv-ci/bin/python -m unittest discover -s services/litellm-reloader -p 'test_*.py' -v
       - name: Fix workspace permissions (self-hosted)
@@ -239,6 +272,14 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-python-venv
         with:
           requirements-files: services/credential-prober/requirements-test.txt
@@ -294,7 +335,7 @@ jobs:
 
   mock-integration:
     name: "CI :: Mock Integration"
-    needs: [changes, lint-and-syntax, unit-tests, build-translator]
+    needs: [changes, lint-and-syntax, unit-tests]
     if: >
       needs.lint-and-syntax.result == 'success' &&
       needs.unit-tests.result == 'success' &&
@@ -312,6 +353,14 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-python-venv
         with:
           requirements-files: tests/integration/requirements.txt
@@ -331,6 +380,7 @@ jobs:
       needs.unit-tests.result == 'success' &&
       (
         github.event_name == 'workflow_dispatch' ||
+        github.ref == 'refs/heads/main' ||
         contains(github.event.pull_request.labels.*.name, 'run-e2e')
       )
     runs-on: self-hosted
@@ -342,6 +392,14 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-python-venv
         with:
           requirements-files: tests/integration/requirements.txt
@@ -362,19 +420,37 @@ jobs:
         run: |
           ./dev-env.sh stop 1 || true
           bash scripts/ci-free-mock-host-ports.sh "$GITHUB_WORKSPACE" || true
+      - name: Determine if we should push
+        id: should_push
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ contains(github.event.pull_request.labels.*.name, 'push-images') }}" == "true" ]]; then
+            echo "push=true" >> $GITHUB_OUTPUT
+          else
+            echo "push=false" >> $GITHUB_OUTPUT
+          fi
       - name: Build and Start Gateway Stack
         run: |
           export CLIPROXY_DEV_CONFIG="$PWD/tests/cliproxy-config-ci.yaml"
           export CLIPROXY_BUILD_CONTEXT="$PWD"
           export CLIPROXY_DOCKERFILE="Dockerfile.cliproxy"
           ./dev-env.sh start 1
-      - name: Wait for translator health
+      - name: Push images to GHCR
+        if: steps.should_push.outputs.push == 'true'
+        run: |
+          # Push with GIT_SHA tag (already built by dev-env.sh start)
+          docker compose -f docker-compose.dev.yml -p aidev1 push cliproxy gateway-engine litellm-reloader credential-prober
+          
+          # Tag and push latest
+          export GIT_SHA=latest
+          docker compose -f docker-compose.dev.yml -p aidev1 build cliproxy gateway-engine litellm-reloader credential-prober
+          docker compose -f docker-compose.dev.yml -p aidev1 push cliproxy gateway-engine litellm-reloader credential-prober
+      - name: Wait for gateway-engine health
         run: |
           for i in {1..36}; do
             curl -sf http://localhost:4010/health >/dev/null && exit 0
             sleep 5
           done
-          docker compose -f docker-compose.dev.yml -p aidev1 logs --no-color --tail 200 translator || true
+          docker compose -f docker-compose.dev.yml -p aidev1 logs --no-color --tail 200 gateway-engine || true
           exit 1
       - name: Run real-provider smoke E2E
         run: |

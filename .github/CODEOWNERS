@@ -2,7 +2,7 @@
 * @TheNorthWestPassage
 
 # Critical runtime paths
-/services/translator/ @TheNorthWestPassage
+/services/gateway-engine/ @TheNorthWestPassage
 /litellm-config.yaml @TheNorthWestPassage
 /docker-compose.yml @TheNorthWestPassage
 /docker-compose.dev.yml @TheNorthWestPassage

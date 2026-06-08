@@ -6,8 +6,8 @@ This repository uses an automated, containerized documentation system based on [
 The documentation site is hosted within the Docker environment and can be accessed at:
 **`http://localhost:8002`**
 
-By default, it shows the **Translator API**. You can switch to other services by using the `spec` URL parameter:
-- **Translator API**: `http://localhost:8002/?spec=translator.yaml`
+By default, it shows the **Gateway Engine API**. You can switch to other services by using the `spec` URL parameter:
+- **Gateway Engine API**: `http://localhost:8002/?spec=gateway-engine.yaml`
 - **CLIProxy API**: `http://localhost:8002/?spec=cliproxy.yaml`
 - **LiteLLM API**: `http://localhost:8002/?spec=litellm.yaml`
 - **CPA Manager API**: `http://localhost:8002/?spec=cpa-manager.yaml`

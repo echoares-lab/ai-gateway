@@ -10,7 +10,7 @@ See also: [`TESTING_AND_PROMOTION_POLICY.md`](../TESTING_AND_PROMOTION_POLICY.md
 
 | Gate | Local command | Stack | When |
 |------|---------------|-------|------|
-| **A** | `make lint` / `make test-unit` | Translator Docker only | Every change |
+| **A** | `make lint` / `make test-unit` | Gateway Engine Docker only | Every change |
 | **B** | `make test-mock` | Mock stack slot 9 → `:4090` | Runtime / integration changes |
 | **C** | `make test-e2e` or PR label `run-e2e` | Real OAuth slot 1 → `:4010` | Hotspot paths or high-risk |
 | **D** | `./cliproxy-setup.sh test <model>` | Stable `:4000` | Post-merge on `main` |
@@ -21,7 +21,7 @@ Fast pre-push loop: `make test-fast` (Gate A + B locally).
 
 ## Environment slots and ports
 
-| Slot | Translator | LiteLLM UI | cliproxy | policy-engine | Purpose |
+| Slot | Gateway Engine | LiteLLM UI | cliproxy | policy-engine | Purpose |
 |------|------------|------------|----------|---------------|---------|
 | 0 | `:4000` | `:4001` | `:8317` | `:8080` | **Stable — never use for feature work** |
 | 1 | `:4010` | `:4011` | `:8327` | `:18080` | Real OAuth dev (Gate C) |
@@ -36,12 +36,12 @@ CI mock-integration binds slot-1 ports (`:4010`, `:4011`, `:18080`) on the self-
 
 ```bash
 make test-unit
-# Same as CI: docker build + pytest -n auto inside the translator image
+# Same as CI: docker build + pytest -n auto inside the gateway-engine image
 ```
 
 ### Parallelization
 
-CI and local `make test-unit` both use **pytest-xdist** (`-n auto`) for translator tests. Integration tests run **serially** against a single `GATEWAY_URL` — do not add xdist there without port isolation.
+CI and local `make test-unit` both use **pytest-xdist** (`-n auto`) for gateway-engine tests. Integration tests run **serially** against a single `GATEWAY_URL` — do not add xdist there without port isolation.
 
 ### Mocking patterns
 
@@ -54,12 +54,12 @@ CI and local `make test-unit` both use **pytest-xdist** (`-n auto`) for translat
 | **Inventory / profiles** | In-memory `fixtures={}` on `InventoryStore` | No DB in unit tier |
 | **Prometheus counters** | `patch.object` on `.labels()` | Token analytics tests |
 
-Shared fixtures live in [`services/translator/conftest.py`](../services/translator/conftest.py).
+Shared fixtures live in [`services/gateway-engine/conftest.py`](../services/gateway-engine/conftest.py).
 
 ### When to use unit mocks vs mock stack
 
 - **Unit mocks (Gate A):** Pure logic, single-service behavior, HTTP client patching, Redis state. Fast, no Docker compose.
-- **Mock stack (Gate B):** End-to-end wire format, translator + LiteLLM + mock cliproxy + mock policy-engine. Required for integration tests under `tests/integration/`.
+- **Mock stack (Gate B):** End-to-end wire format, gateway-engine + LiteLLM + mock cliproxy + mock policy-engine. Required for integration tests under `tests/integration/`.
 
 ---
 

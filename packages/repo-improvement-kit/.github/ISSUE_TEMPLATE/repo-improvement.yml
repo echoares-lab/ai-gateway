@@ -76,7 +76,7 @@ body:
       label: Required tests
       description: Unit, integration, E2E, or operational checks required
       placeholder: |
-        - translator unit tests
+        - gateway-engine unit tests
         - ./dev-env.sh test <slot>
         - ./cliproxy-setup.sh test <model>
     validations:
@@ -104,7 +104,7 @@ body:
       label: Affected files / areas
       description: Representative files or subsystems likely to change
       placeholder: |
-        - services/translator/translator.py
+        - services/gateway-engine/gateway-engine.py
         - cliproxy-setup.sh
         - .github/workflows/lint.yml
 

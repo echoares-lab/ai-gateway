@@ -1,7 +1,7 @@
 # Client Compatibility Matrix & Integration Profiles
 
 > **Status:** Approved. Foundational model for [Roadmap Epic #36 — First-class client compatibility and integration profiles](https://github.com/echoares-lab/ai-gateway/issues/36).
-> This document specifies the client compatibility matrix, defines named integration profiles, maps client protocols to translator code paths, and analyzes integration test coverage gaps.
+> This document specifies the client compatibility matrix, defines named integration profiles, maps client protocols to gateway-engine code paths, and analyzes integration test coverage gaps.
 
 ---
 
@@ -27,21 +27,21 @@ An **Integration Profile** defines the exact base URL, authorization mapping, mo
 ### 2.1 Profile Definitions
 
 #### Cursor Profile
-- **Base URL:** `http://localhost:4000/v1` (forwarded via translator)
+- **Base URL:** `http://localhost:4000/v1` (forwarded via gateway-engine)
 - **Authorization:** `Bearer ak-{org}-{workspace}-{team}-{repo}-{environment}`
-- **Model Prefixing:** Uses `AI-Gateway:` prefix in `/v1/models` so Cursor distinguishes gateway-managed LLMs from local or defaults. The prefix is dynamically stripped by `_strip_prefix` in `translator.py` before forwarding to LiteLLM.
+- **Model Prefixing:** Uses `AI-Gateway:` prefix in `/v1/models` so Cursor distinguishes gateway-managed LLMs from local or defaults. The prefix is dynamically stripped by `_strip_prefix` in `gateway-engine.py` before forwarding to LiteLLM.
 - **Cache Strategy:** Keyed by client `Authorization` token hash to ensure cross-user isolation.
 
 #### Claude Code Profile
 - **Base URL:** `http://localhost:4000/v1`
-- **Authorization:** Passed in `x-api-key` header (mapped to `Authorization: Bearer ak-...` by translator).
+- **Authorization:** Passed in `x-api-key` header (mapped to `Authorization: Bearer ak-...` by gateway-engine).
 - **Schema Mapping:** Map messages roles (`user`, `assistant`), type conversions, and convert Anthropic tool definitions (`tool_use`) to OpenAI tools format.
 
 #### Codex Profile
 - **Base URL:** `http://localhost:4000/v1/responses`
 - **Authorization:** `Bearer ak-...`
 - **Responses Compaction:** Calls to `/v1/responses/compact` with non-OpenAI models are rewritten to `gpt-5-5` to avoid upstream proxy unsupported failures.
-- **WebSocket multi-turn:** Codex CLI opens `WS /v1/responses` for persistent sessions. The translator proxies directly to CLIProxy (`CLIPROXY_WS_URL`), bypassing LiteLLM and the policy-engine evaluate path. See [POLICY_ENGINE_AND_ROUTING_REFACTOR.md §9](./POLICY_ENGINE_AND_ROUTING_REFACTOR.md#9-websocket-path--codex-bypass-issue-38-14). CLIProxy session-affinity and credential routing still apply upstream.
+- **WebSocket multi-turn:** Codex CLI opens `WS /v1/responses` for persistent sessions. The gateway-engine proxies directly to CLIProxy (`CLIPROXY_WS_URL`), bypassing LiteLLM and the policy-engine evaluate path. See [POLICY_ENGINE_AND_ROUTING_REFACTOR.md §9](./POLICY_ENGINE_AND_ROUTING_REFACTOR.md#9-websocket-path--codex-bypass-issue-38-14). CLIProxy session-affinity and credential routing still apply upstream.
 
 #### Gemini Profile
 - **Base URL:** `http://localhost:4000/v1beta/models/...`
@@ -49,9 +49,9 @@ An **Integration Profile** defines the exact base URL, authorization mapping, mo
 
 ---
 
-## 3. Translator Path Mapping
+## 3. Gateway Engine Path Mapping
 
-The entrypoints in `services/translator/translator.py` process requests according to their respective profiles:
+The entrypoints in `services/gateway-engine/gateway-engine.py` process requests according to their respective profiles:
 
 ```text
 Incoming HTTP Request
@@ -77,7 +77,7 @@ An analysis of `tests/integration/test_gateway.py` against the supported client 
    - **Status:** Basic text completion mapping is tested.
    - **Gaps:** Missing contract tests for Gemini function call mappings (`functionCall` payload blocks) and function response injections (`functionResponse`).
 3. **Responses API Compaction Interception:**
-   - **Status:** Unit tests exist for translator hook level.
+   - **Status:** Unit tests exist for gateway-engine hook level.
    - **Gaps:** Missing E2E integration test hitting `/v1/responses/compact` with a Claude model mapping to verify full client-gateway lifecycle works on production slots.
 4. **WebSocket Protocol Multi-turn Compatibility:**
    - **Status:** E2E websocket proxy is tested for raw connection establishment.

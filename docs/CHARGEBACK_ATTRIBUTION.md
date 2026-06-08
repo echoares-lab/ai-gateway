@@ -81,7 +81,7 @@ LiteLLM spend logs / LiteLLM_SpendLogs table
 | Langfuse | per LLM trace | tokens, latency, metadata | sampling gaps if trace missing |
 | LiteLLM DB | per completion | authoritative spend for billed keys | weaker agent_id unless tagged |
 
-**Correlation key (design):** propagate `request_id` from translator through
+**Correlation key (design):** propagate `request_id` from gateway-engine through
 LiteLLM into Langfuse trace metadata (`metadata.request_id`). Audit log already
 stores the same `request_id`. Offline aggregation job joins on this field.
 
@@ -152,16 +152,16 @@ Export formats (phase 2): CSV for finance, JSON API for admin console.
 | Phase | Issue slice | Deliverable |
 |-------|-------------|-------------|
 | **5a** (this stub) | 38-21 | Design doc + `policy_json.chargeback` schema + dispatch |
-| **5b** | follow-up | `request_id` propagation into Langfuse metadata (translator) |
+| **5b** | follow-up | `request_id` propagation into Langfuse metadata (gateway-engine) |
 | **5c** | follow-up | `chargeback_daily_rollups` migration + nightly aggregation script |
 | **5d** | follow-up | Admin console chargeback panel (per-repo/agent breakdown) |
 | **5e** | follow-up | RUNBOOK operator guide + retention policy |
 
-**Dependencies:** 38-16 audit log (done), TENANCY metadata in translator
+**Dependencies:** 38-16 audit log (done), TENANCY metadata in gateway-engine
 ([#79](https://github.com/echoares-lab/ai-gateway/pull/79)), Langfuse credentials
 in RUNBOOK.md, [TOKEN_USAGE_ANALYTICS.md](./TOKEN_USAGE_ANALYTICS.md) panel schema.
 
-**Blocked by:** none for design; runtime **5b** benefits from 38-04 translator
+**Blocked by:** none for design; runtime **5b** benefits from 38-04 gateway-engine
 wire; **5c** requires stable `request_id` join path.
 
 ---

@@ -12,14 +12,14 @@ Design companion: [ROUTING_AND_FAILOVER_STRATEGY.md](./ROUTING_AND_FAILOVER_STRA
 ## 1. Architecture
 
 ```text
-Client → translator → policy-engine /v1/evaluate (optional, fail-open)
+Client → gateway-engine → policy-engine /v1/evaluate (optional, fail-open)
                     → LiteLLM (HTTP paths) → CLIProxy → Provider OAuth
                     → CLIProxy (Codex WS path, policy bypass — see §9)
 ```
 
 | Component | Role |
 |-----------|------|
-| `translator` | Build `RoutingContext`, call evaluate, inject `metadata.routing_decision` |
+| `gateway-engine` | Build `RoutingContext`, call evaluate, inject `metadata.routing_decision` |
 | `policy-engine` | Evaluate rules, return `RoutingDecision` |
 | LiteLLM | Model-level fallbacks, deployment ordering |
 | CLIProxy | Credential pools, session-affinity, quota-aware routing |
@@ -37,7 +37,7 @@ Defined in `services/policy-engine/schemas.py` (issue 38-01):
 
 ---
 
-## 3. Translator integration (issue 38-04)
+## 3. Gateway Engine integration (issue 38-04)
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
@@ -104,7 +104,7 @@ First-class policy dimension (not optional). See
 
 ## 8. HTTP path coverage
 
-| Translator endpoint | Policy evaluate | Metadata injection |
+| Gateway Engine endpoint | Policy evaluate | Metadata injection |
 |---------------------|-----------------|------------------|
 | `POST /v1/chat/completions` (`proxy`) | When `POLICY_ENGINE_ENABLED` | LiteLLM metadata |
 | `POST /v1/responses` (`responses_proxy`) | When `POLICY_ENGINE_ENABLED` | LiteLLM metadata |
@@ -115,13 +115,13 @@ First-class policy dimension (not optional). See
 
 ## 9. WebSocket path — Codex bypass (issue 38-14)
 
-| Translator endpoint | Policy evaluate | Routing metadata | Upstream |
+| Gateway Engine endpoint | Policy evaluate | Routing metadata | Upstream |
 |---------------------|-----------------|------------------|----------|
 | `WS /v1/responses` (`responses_websocket`) | **Bypass** (default) | None at upgrade | CLIProxy direct (`CLIPROXY_WS_URL`) |
 
 ### Decision: explicit bypass (Option B)
 
-Codex CLI multi-turn sessions use `WS /v1/responses`, which the translator proxies
+Codex CLI multi-turn sessions use `WS /v1/responses`, which the gateway-engine proxies
 **directly to CLIProxy** — not through LiteLLM. Policy evaluation on the HTTP path
 injects `metadata.routing_decision` into LiteLLM requests; that injection point does
 not exist on the WebSocket upgrade path.
@@ -142,7 +142,7 @@ not exist on the WebSocket upgrade path.
 
 Set `POLICY_ENGINE_WS_EVALUATE=true` **and** `POLICY_ENGINE_ENABLED=true` (issue 38-04)
 to attempt evaluate on WS upgrade using tenancy from the auth header. When a decision
-is returned, the translator may forward `session_key` as `X-Session-ID` and
+is returned, the gateway-engine may forward `session_key` as `X-Session-ID` and
 `quota_aware_mode` hints to CLIProxy upstream headers. **Default remains bypass** until
 38-04 ships and Gate C Codex WS smoke passes.
 

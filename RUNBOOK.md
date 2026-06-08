@@ -72,7 +72,7 @@ source .env && curl -s http://localhost:4000/admin/status \
 ```
 Returns the `admin-console.v1` JSON contract (see `docs/ADMIN_CONSOLE_DATA_CONTRACT.md`)
 with health, models, providers, routing, and config-drift panels aggregated from the
-translator, `litellm-config.yaml`, `/metrics`, and (best-effort) `cliproxy-setup.sh health`.
+gateway-engine, `litellm-config.yaml`, `/metrics`, and (best-effort) `cliproxy-setup.sh health`.
 Read-only and operator-local: it never mutates state and redacts secrets. Degraded sources
 report `warning`/`unknown` rather than failing the response.
 
@@ -617,7 +617,7 @@ cd ~/repos/ai-gateway
 # Apply Postgres migrations before credential-prober writes credential_inventory
 ./db/apply-migrations.sh ai-postgres-1
 docker compose up -d
-# LiteLLM and Redis healthchecks gate translator startup — no manual wait needed
+# LiteLLM and Redis healthchecks gate gateway-engine startup — no manual wait needed
 ./cliproxy-setup.sh health
 ```
 
@@ -630,13 +630,13 @@ fallback ordering. Design: [POLICY_ENGINE_AND_ROUTING_REFACTOR.md](./docs/POLICY
 OpenAPI: [docs/openapi/policy-engine.yaml](./docs/openapi/policy-engine.yaml).
 
 > **Rollout status:** Epic #38 is complete on `main`. Policy evaluation runs **in-process**
-> inside the translator with `POLICY_ENGINE_ENABLED=false` by default (Stage 0).
+> inside the gateway-engine with `POLICY_ENGINE_ENABLED=false` by default (Stage 0).
 > Enable Stage 2 on stable only after validating in a dev slot (Stage 1).
 
 ### Enabling on stable stack (Stage 2)
 
 HTTP routing evaluate is **fail-open**: if the in-process evaluator is unavailable,
-the translator forwards without `routing_decision` and static YAML fallbacks apply.
+the gateway-engine forwards without `routing_decision` and static YAML fallbacks apply.
 WebSocket `/v1/responses` bypasses evaluate unless you also set
 `POLICY_ENGINE_WS_EVALUATE=true` (Stage 3 — not recommended until Gate C WS smoke).
 
@@ -657,14 +657,14 @@ WebSocket `/v1/responses` bypasses evaluate unless you also set
    POLICY_ENGINE_ENABLED=true
    ```
 
-2. Recreate translator so it picks up the flag:
+2. Recreate gateway-engine so it picks up the flag:
 
    ```bash
    cd ~/repos/ai-gateway
-   docker compose up -d translator
+   docker compose up -d gateway-engine
    ```
 
-   `translator` waits for `litellm` and `redis` healthchecks before accepting traffic.
+   `gateway-engine` waits for `litellm` and `redis` healthchecks before accepting traffic.
 
 3. **Gate D smoke** (stable):
 
@@ -688,7 +688,7 @@ WebSocket `/v1/responses` bypasses evaluate unless you also set
 ```bash
 # In stable .env
 POLICY_ENGINE_ENABLED=false
-docker compose up -d translator
+docker compose up -d gateway-engine
 ```
 
 Traffic continues immediately; evaluate calls are skipped. Fix Redis/Postgres policy stores
@@ -710,7 +710,7 @@ WS bypass semantics.
 | Store | Used for | Env var | Degraded behavior |
 |-------|----------|---------|-------------------|
 | **Redis** | Agent affinity (`affinity:agent:*`), cooldown registry (`rate_limit:*`), profile cache, last-known-good decisions | `REDIS_URL` | Hot state disabled; evaluator continues with Postgres + request context only |
-| **Postgres** | `policy_profiles`, `credential_pools`, `credential_pool_members`, `credential_inventory`, `routing_decisions_log` | `DATABASE_URL` (translator in-process evaluator) | Profiles/inventory reads fail-open to baseline; audit writer disabled |
+| **Postgres** | `policy_profiles`, `credential_pools`, `credential_pool_members`, `credential_inventory`, `routing_decisions_log` | `DATABASE_URL` (gateway-engine in-process evaluator) | Profiles/inventory reads fail-open to baseline; audit writer disabled |
 
 **Health checks:**
 
@@ -834,7 +834,7 @@ Static `litellm-config.yaml` fallbacks remain the safety net.
 
 | Failure | System behavior | Operator action |
 |---------|-----------------|-----------------|
-| Policy-engine down / timeout | Translator skips evaluate; forwards without `routing_decision` | Fix service; check compose health; requests continue on YAML fallbacks |
+| Policy-engine down / timeout | Gateway Engine skips evaluate; forwards without `routing_decision` | Fix service; check compose health; requests continue on YAML fallbacks |
 | Redis unavailable | Hot affinity/cooldown state disabled; logs warn once | Restore Redis; affinity rebinds on next request |
 | Postgres unavailable | Profile/inventory reads skipped; audit writer disabled | Restore Postgres; apply migration 002 if tables missing |
 | Misconfigured tier alias | LiteLLM 503 / CLIProxy miss | Roll back `credential_tier_preference`; verify `litellm-config.yaml` tier entry |
@@ -843,8 +843,8 @@ Static `litellm-config.yaml` fallbacks remain the safety net.
 **Incident checklist:**
 
 1. Confirm traffic still flows: `./cliproxy-setup.sh test claude-sonnet-4-6`
-2. Disable enforcement (fastest): set `POLICY_ENGINE_ENABLED=false` in `.env` and `docker compose up -d translator` (stable or dev slot)
-3. Check translator logs: `docker compose logs translator --tail=50`
+2. Disable enforcement (fastest): set `POLICY_ENGINE_ENABLED=false` in `.env` and `docker compose up -d gateway-engine` (stable or dev slot)
+3. Check gateway-engine logs: `docker compose logs gateway-engine --tail=50`
 4. Inspect last audit denies: `SELECT gate, decision_json FROM routing_decisions_log ORDER BY evaluated_at DESC LIMIT 10;`
 5. If bad profile promoted: `UPDATE policy_profiles SET enabled = false WHERE profile_id = '...';`
 6. Re-enable after fix; watch deny/throttle rate in audit log
@@ -908,15 +908,15 @@ on the policy-engine container and restart. Revert to `0.01` after resolution.
 | File | Purpose |
 |------|---------|
 | `docker-compose.yml` | Full stack definition |
-| `services/translator/translator.py` | FastAPI proxy — Responses API translation + model prefix |
-| `services/translator/Dockerfile` | Builds the translator container |
-| `services/translator/gemini-model-map.json` | Dotted→dashed Gemini model alias map (auto-managed by sync-models) |
+| `services/gateway-engine/gateway-engine.py` | FastAPI proxy — Responses API translation + model prefix |
+| `services/gateway-engine/Dockerfile` | Builds the gateway-engine container |
+| `services/gateway-engine/gemini-model-map.json` | Dotted→dashed Gemini model alias map (auto-managed by sync-models) |
 | `Dockerfile.cliproxy` | Builds the CLIProxyAPI container image |
 | `docs/ARCHITECTURE.md` | Architecture Decision Record (ADR) — MCP Control Plane Hosting |
 | `litellm-config.yaml` | Model routing (auto-managed by sync-models) |
 | `.env` | Secrets (keys, passwords) — never commit |
 | `cliproxy-setup.sh` | Setup, auth, sync, health CLI |
-| `services/translator/core/policy/` | In-process policy evaluator (Epic #38 / Epic 2) |
+| `services/gateway-engine/core/policy/` | In-process policy evaluator (Epic #38 / Epic 2) |
 | `db/migrations/002_policy_profiles_pools.sql` | Policy profiles, pools, audit log schema |
 | `~/.cliproxy/config.yaml` | CLIProxyAPI config (port, API key, management key) |
 | `~/.cli-proxy-api/*.json` | OAuth token files (Claude, Codex, Gemini) |

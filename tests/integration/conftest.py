@@ -11,7 +11,7 @@ import fakeredis.aioredis
 from httpx import ASGITransport
 
 import sys
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../services/translator')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../services/gateway-engine')))
 
 # Set env vars BEFORE importing main
 os.environ['POLICY_MOCK_SCENARIOS'] = '1'
@@ -19,7 +19,7 @@ os.environ['POLICY_ENGINE_ENABLED'] = '1'
 os.environ['CACHE_ENABLED'] = '1'
 os.environ['LITELLM_URL'] = 'http://litellm:4000'
 
-import main as translator_main
+import main as gateway_engine_main
 from main import app
 
 load_dotenv()
@@ -37,16 +37,16 @@ def client():
 
 @pytest_asyncio.fixture
 async def asgi_client(monkeypatch):
-    """Provides an httpx.AsyncClient hooked directly to the Translator ASGI app, bypassing network."""
+    """Provides an httpx.AsyncClient hooked directly to the Gateway Engine ASGI app, bypassing network."""
     
-    # Setup fakeredis for the translator
+    # Setup fakeredis for the gateway-engine
     fake_redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
-    monkeypatch.setattr(translator_main, "_redis", fake_redis)
+    monkeypatch.setattr(gateway_engine_main, "_redis", fake_redis)
     
     # Initialize globals normally set in _lifespan
-    translator_main._client = httpx.AsyncClient()
-    translator_main.LITELLM = "http://litellm:4000"
-    translator_main._policy_evaluator = translator_main.PolicyEvaluator.from_env()
+    gateway_engine_main._client = httpx.AsyncClient()
+    gateway_engine_main.LITELLM = "http://litellm:4000"
+    gateway_engine_main._policy_evaluator = gateway_engine_main.PolicyEvaluator.from_env()
     
     headers = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
     async with ASGITransport(app=app) as transport:
@@ -55,7 +55,7 @@ async def asgi_client(monkeypatch):
         ) as c:
             yield c
     
-    await translator_main._client.aclose()
+    await gateway_engine_main._client.aclose()
 
 
 @pytest_asyncio.fixture

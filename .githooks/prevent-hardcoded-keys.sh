@@ -10,7 +10,7 @@ CLIPROXY_RE='cliproxy-[a-zA-Z0-9]{10,}'
 
 SCAN_FILES=(
   litellm-config.yaml
-  services/translator/main.py
+  services/gateway-engine/main.py
   docker-compose.yml
   docker-compose.dev.yml
 )

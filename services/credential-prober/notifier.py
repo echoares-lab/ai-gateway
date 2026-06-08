@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 log = logging.getLogger("credential-prober.notifier")
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
-TRANSLATOR_URL = os.environ.get("TRANSLATOR_URL", "http://translator:4000").rstrip("/")
+GATEWAY_ENGINE_URL = os.environ.get("GATEWAY_ENGINE_URL", "http://gateway-engine:4000").rstrip("/")
 
 
 def send_slack_alert(
@@ -57,8 +57,8 @@ def notify_policy_engine(
     reason: str | None = None,
     cool_down_until: datetime | None = None,
 ) -> bool:
-    translator_url = os.environ.get("TRANSLATOR_URL", "http://translator:4000").strip().rstrip("/")
-    if not translator_url:
+    gateway_engine_url = os.environ.get("GATEWAY_ENGINE_URL", "http://gateway-engine:4000").strip().rstrip("/")
+    if not gateway_engine_url:
         return False
 
     payload: dict[str, str] = {
@@ -75,7 +75,7 @@ def notify_policy_engine(
 
     try:
         req = urllib.request.Request(
-            f"{translator_url}/v1/events/credential",
+            f"{gateway_engine_url}/v1/events/credential",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -83,15 +83,15 @@ def notify_policy_engine(
         with urllib.request.urlopen(req, timeout=5) as response:
             if response.status >= 400:
                 log.warning(
-                    "Translator credential event returned %s for %s",
+                    "Gateway Engine credential event returned %s for %s",
                     response.status,
                     credential_id,
                 )
                 return False
         return True
     except urllib.error.URLError as exc:
-        log.warning("Translator credential notify failed for %s: %s", credential_id, exc)
+        log.warning("Gateway Engine credential notify failed for %s: %s", credential_id, exc)
         return False
     except Exception as exc:
-        log.error("Translator credential notify error for %s: %s", credential_id, exc)
+        log.error("Gateway Engine credential notify error for %s: %s", credential_id, exc)
         return False

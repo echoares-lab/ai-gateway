@@ -2,21 +2,20 @@
 
 CONTAINER_PREFIX ?= PROD-
 
-# Lint the translator (mirrors the CI fast tier).
+# Lint the gateway-engine (mirrors the CI fast tier).
 lint:
-	ruff check services/translator/main.py
-	ruff format --check services/translator/main.py
+	ruff check services/gateway-engine/main.py
+	ruff format --check services/gateway-engine/main.py
 
 # Regression tests for sync-models probe classification (429 must preserve catalog).
 test-sync-models-probe:
 	python3 -m pytest tests/test_sync_models_probe_classify.py -v
 	bash tests/test-sync-models-probe.sh
 
-# Unit tests: build the translator image and run the fully-mocked suite (parallel, CI parity).
+# Unit tests: build the gateway-engine image and run the fully-mocked suite (parallel, CI parity).
 test-unit:
-	-docker rm -f $(CONTAINER_PREFIX)ai-translator-test 2>/dev/null
-	docker build -t ai-translator-test:latest services/translator
-	docker run --rm --name $(CONTAINER_PREFIX)ai-translator-test ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
+	docker build -t ai-gateway-engine-test:latest services/gateway-engine
+	docker run --rm --name $(CONTAINER_PREFIX)ai-gateway-engine-test ai-gateway-engine-test:latest sh -c 'pytest test_gateway_engine*.py -n auto -v'
 
 # Mock tier: in-memory ASGI integration tests (no OAuth, canned upstream).
 test-mock:

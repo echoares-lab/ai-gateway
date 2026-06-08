@@ -20,7 +20,7 @@ runs:
         path: |
           ~/.cache/pip
           .venv-ci
-        key: venv-${{ runner.os }}-${{ hashFiles('**/requirements*.txt', 'services/translator/Dockerfile', '.github/actions/setup-python-venv/action.yml') }}
+        key: venv-${{ runner.os }}-${{ hashFiles('**/requirements*.txt', 'services/gateway-engine/Dockerfile', '.github/actions/setup-python-venv/action.yml') }}
         restore-keys: |
           venv-${{ runner.os }}-
 

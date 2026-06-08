@@ -100,7 +100,7 @@ Model name:  AI-Gateway:claude-sonnet-4-6   # the AI-Gateway: prefix is required
 
 Notes:
   - Cursor sees models from GET ${BASE_ROOT}/v1/models (prefixed with "AI-Gateway:").
-  - The translator strips the prefix before forwarding to LiteLLM.
+  - The gateway-engine strips the prefix before forwarding to LiteLLM.
   - Tenant metadata is extracted when the Bearer token starts with ak- (see docs/TENANCY.md).
 EOF
   echo

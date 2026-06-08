@@ -123,7 +123,7 @@ Postgres + Langfuse API credentials documented in RUNBOOK.md.
 | Phase | Deliverable | Depends on |
 |-------|-------------|------------|
 | **5a (this stub)** | Design doc + issue file + dispatch board | 38-8 done |
-| **5b** | `evaluator/quality.py` stub + unit tests (fail-open) | 38-4 translator wire |
+| **5b** | `evaluator/quality.py` stub + unit tests (fail-open) | 38-4 gateway-engine wire |
 | **5c** | Nightly aggregation script + `model_scores` writer | 38-16 audit log, Langfuse |
 | **5d** | Admin console quality card | 38-15 admin trace |
 

@@ -30,12 +30,12 @@ cd /home/dev/worktrees/ai-gateway-<feature>
 ./dev-env.sh start 1          # or slot 2, 3, …
 
 # 3. Edit code — hot-reload is automatic
-# translator.py changes: uvicorn auto-reloads within ~1s
+# gateway-engine.py changes: uvicorn auto-reloads within ~1s
 # litellm-config.yaml changes: litellm-reloader restarts LiteLLM within ~10s
 # (no rebuild or manual restart needed)
 
 # 4. Run unit tests (no container restart needed)
-docker exec aidev1-translator-1 pytest test_translator.py -v
+docker exec aidev1-gateway-engine-1 pytest test_gateway-engine.py -v
 
 # 5. Run integration tests against the slot
 ./dev-env.sh test 1
@@ -55,9 +55,9 @@ cd /home/dev/repos/ai-gateway && git worktree remove /home/dev/worktrees/ai-gate
 # Start full stack
 docker compose up -d
 
-# translator.py changes: no action needed, uvicorn auto-reloads
+# gateway-engine.py changes: no action needed, uvicorn auto-reloads
 # (only rebuild needed if Dockerfile or dependencies change)
-docker compose build translator && docker compose up -d translator
+docker compose build gateway-engine && docker compose up -d gateway-engine
 
 # litellm-config.yaml changes: automatic via litellm-reloader sidecar
 # (no action needed; litellm-reloader watches and restarts LiteLLM)
@@ -75,11 +75,11 @@ docker compose build translator && docker compose up -d translator
 # Quota summary: per-provider usage counts from CLIProxy
 ./cliproxy-setup.sh quota-summary
 
-# Run translator unit tests (no container restart needed)
-docker compose exec translator pytest test_translator.py -v
+# Run gateway-engine unit tests (no container restart needed)
+docker compose exec gateway-engine pytest test_gateway-engine.py -v
 
 # View logs
-docker compose logs translator -f
+docker compose logs gateway-engine -f
 docker compose logs litellm -f
 docker compose logs cliproxy -f
 
@@ -95,7 +95,7 @@ source .env && curl -s http://localhost:4000/v1/models -H "Authorization: Bearer
 ```
 External client (Cursor, curl, SDK)
   └─► Cloudflare Tunnel (gateway.example.com) → gateway-host.example:4000
-        └─► translator (port 4000, public)   ← entry point for ALL traffic
+        └─► gateway-engine (port 4000, public)   ← entry point for ALL traffic
               └─► litellm (port 4000 internal, 4001 external for UI)
                     └─► cliproxy (port 8317)
                           ├─► Anthropic (Claude Pro/Max OAuth)
@@ -105,8 +105,8 @@ External client (Cursor, curl, SDK)
                           └─► Moonshot (Kimi OAuth)
 ```
 
-**`services/translator/translator.py`** is the real entry point — clients hit port 4000 which is the translator, not LiteLLM directly. LiteLLM is only accessible internally (and on port 4001 for its UI). The translator does three things:
-1. **Responses API → Chat Completions**: Cursor Agent mode sends `input` (not `messages`) using OpenAI Responses API format. The translator converts all item types: plain `{role,content}` dicts, `function_call`, `function_call_output`, and content types like `input_text`/`input_image`.
+**`services/gateway-engine/gateway-engine.py`** is the real entry point — clients hit port 4000 which is the gateway-engine, not LiteLLM directly. LiteLLM is only accessible internally (and on port 4001 for its UI). The gateway-engine does three things:
+1. **Responses API → Chat Completions**: Cursor Agent mode sends `input` (not `messages`) using OpenAI Responses API format. The gateway-engine converts all item types: plain `{role,content}` dicts, `function_call`, `function_call_output`, and content types like `input_text`/`input_image`.
 2. **Tool format normalisation**: Cursor sends `{type, name, parameters}` (Responses API); LiteLLM needs `{type, function: {name, parameters}}` (Chat Completions).
 3. **Model prefix**: `/v1/models` responses are prefixed with `AI-Gateway:` so Cursor can distinguish gateway models from its built-ins. The prefix is stripped from incoming requests before forwarding.
 
@@ -114,7 +114,7 @@ External client (Cursor, curl, SDK)
 
 **Redis caching** is enabled in `litellm_settings`. Only non-streaming requests are cached (LiteLLM limitation).
 
-**Translator env vars** (all optional, set in `.env`):
+**Gateway Engine env vars** (all optional, set in `.env`):
 | Variable | Default | Purpose |
 |---|---|---|
 | `LITELLM_URL` | `http://litellm:4000` | Internal LiteLLM endpoint |
@@ -130,8 +130,8 @@ External client (Cursor, curl, SDK)
 
 | File | Purpose |
 |------|---------|
-| `services/translator/translator.py` | FastAPI proxy: Responses API translation + model prefix |
-| `services/translator/Dockerfile` | Builds the translator container |
+| `services/gateway-engine/gateway-engine.py` | FastAPI proxy: Responses API translation + model prefix |
+| `services/gateway-engine/Dockerfile` | Builds the gateway-engine container |
 | `litellm-config.yaml` | All model definitions (auto-managed by `sync-models`) |
 | `cliproxy-setup.sh` | Auth, sync, health, upgrade CLI |
 | `.env` | All secrets — gitignored, never commit |
@@ -154,12 +154,12 @@ Run `docker compose` from within the worktree directory when testing changes the
 
 ## Dev Environment (Isolated Dev Stacks)
 
-`dev-env.sh` manages isolated 3-container dev stacks (cliproxy from fork + litellm + translator) so multiple agents can develop and test features without touching the stable gateway on port 4000.
+`dev-env.sh` manages isolated 3-container dev stacks (cliproxy from fork + litellm + gateway-engine) so multiple agents can develop and test features without touching the stable gateway on port 4000.
 
 Each **slot N** maps to dedicated ports (slot 0 = stable, reserved):
 | Service | Stable | Slot 1 | Slot 2 |
 |---|---|---|---|
-| translator | :4000 | :4010 | :4020 |
+| gateway-engine | :4000 | :4010 | :4020 |
 | litellm UI | :4001 | :4011 | :4021 |
 | cliproxy | :8317 | :8327 | :8337 |
 
@@ -171,10 +171,10 @@ ln -s /home/dev/repos/ai-gateway/.env /home/dev/worktrees/ai-gateway-feat-X/.env
 cd /home/dev/worktrees/ai-gateway-feat-X
 
 # From inside the worktree (or repo root for slot testing):
-./dev-env.sh start 1          # build & start — translator:4010, litellm:4011, cliproxy:8327
+./dev-env.sh start 1          # build & start — gateway-engine:4010, litellm:4011, cliproxy:8327
 
-# After editing translator.py:
-./dev-env.sh rebuild 1        # rebuilds translator only (fast)
+# After editing gateway-engine.py:
+./dev-env.sh rebuild 1        # rebuilds gateway-engine only (fast)
 
 # After editing CLIProxyAPI fork:
 cd /home/dev/repos/CLIProxyAPI && git pull
@@ -206,7 +206,7 @@ git worktree remove /home/dev/worktrees/ai-gateway-feat-X
 
 - **Base URL**: `https://gateway.example.com/v1`
 - **Model names**: Must use `AI-Gateway:` prefix, e.g. `AI-Gateway:claude-sonnet-4-6`
-- The prefix is added by the translator's `/v1/models` response and stripped before forwarding to LiteLLM — no changes to `litellm-config.yaml` needed for new models.
+- The prefix is added by the gateway-engine's `/v1/models` response and stripped before forwarding to LiteLLM — no changes to `litellm-config.yaml` needed for new models.
 
 ## LiteLLM Database
 

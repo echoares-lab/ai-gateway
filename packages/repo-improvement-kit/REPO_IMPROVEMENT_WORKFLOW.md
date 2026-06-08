@@ -172,7 +172,7 @@ Every approved item becomes a GitHub issue with a strict template.
 At minimum:
 - one `type:*` label
 - one priority label (`priority:high`, `priority:medium`, `priority:low`)
-- one area label (`area:translator`, `area:tests`, etc.)
+- one area label (`area:gateway-engine`, `area:tests`, etc.)
 - one status label (`status:ready`, `status:claimed`, etc.)
 
 ### Rule
@@ -295,7 +295,7 @@ Claiming: #123, #124
 Branch: feat/cache-auth-key
 Worktree: /path/to/worktrees/<repo>-cache-auth-key
 Slot: 2
-Scope: translator cache key + tests
+Scope: gateway-engine cache key + tests
 ```
 
 ### Stale claim policy
@@ -313,7 +313,7 @@ A reclaim should be visible in the issue thread.
 ### Avoiding duplication
 
 Use area labels to make ownership visible:
-- `area:translator`
+- `area:gateway-engine`
 - `area:config`
 - `area:tests`
 - `area:docs`
@@ -611,7 +611,7 @@ Do **not** allow:
 - verification evidence living only in chat
 - direct pushes to production branch
 - long-lived drifting feature branches
-- vague issues like “clean up translator”
+- vague issues like “clean up gateway-engine”
 - hidden follow-up work not broken into new issues
 
 ---
@@ -644,7 +644,7 @@ Do **not** allow:
 - `type:feature`
 
 ### Area labels
-- `area:translator`
+- `area:gateway-engine`
 - `area:config`
 - `area:tests`
 - `area:infra`

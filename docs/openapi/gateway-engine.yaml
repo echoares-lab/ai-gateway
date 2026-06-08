@@ -1,0 +1,445 @@
+openapi: 3.0.3
+info:
+  title: Gateway Engine API
+  description: Translation proxy for multiple AI CLI formats to LiteLLM (OpenAI Chat Completions).
+  version: 1.0.0
+paths:
+  /v1/chat/completions:
+    post:
+      summary: Proxy for Cursor/OpenAI hybrid formats
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model: {type: string}
+                messages: {type: array, items: {type: object}}
+            example:
+              model: "AI-Gateway:gpt-4"
+              messages: [{"role": "user", "content": "Hello!"}]
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              example:
+                id: "chatcmpl-123"
+                choices: [{"message": {"role": "assistant", "content": "Hello there!"}}]
+  /v1beta/models/{model_action}:
+    get:
+      summary: Get models information
+      parameters:
+        - name: model_action
+          in: path
+          required: true
+          schema: {type: string}
+    post:
+      summary: Gemini CLI format proxy
+      parameters:
+        - name: model_action
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Successful response
+  /v1/responses:
+    post:
+      summary: Codex CLI / OpenAI Responses API proxy
+      responses:
+        '200':
+          description: Successful response
+    get:
+      summary: Codex WebSocket proxy
+      responses:
+        '101':
+          description: Switching Protocols (WebSocket)
+  /v1/messages:
+    post:
+      summary: Claude / Anthropic Messages API proxy
+      responses:
+        '200':
+          description: Successful response
+  /metrics:
+    get:
+      summary: Prometheus metrics endpoint
+      responses:
+        '200':
+          description: Success
+  /admin/status:
+    get:
+      summary: Read-only operator status aggregator
+      responses:
+        '200':
+          description: admin-console.v1 JSON payload
+          content:
+            application/json:
+              example:
+                schema_version: "admin-console.v1"
+                panels:
+                  token_analytics:
+                    status: "ok"
+                    data:
+                      summary:
+                        total_input_tokens: 1250000
+                        total_output_tokens: 350000
+                        total_tokens: 1600000
+  /admin/analytics/tokens:
+    get:
+      summary: Granular token usage analytics by provider and model
+      responses:
+        '200':
+          description: Token analytics panel
+          content:
+            application/json:
+              example:
+                status: "ok"
+                source: "gateway-engine:/metrics (token counters)"
+                data:
+                  summary:
+                    total_input_tokens: 1250000
+                    total_output_tokens: 350000
+                    total_tokens: 1600000
+                  by_provider:
+                    - provider: "anthropic"
+                      model_count: 3
+                      input_tokens: 600000
+                      output_tokens: 150000
+                      total_tokens: 750000
+                  by_model:
+                    - model: "claude-sonnet-4-6"
+                      provider: "anthropic"
+                      input_tokens: 350000
+                      output_tokens: 85000
+                  by_canonical_model:
+                    - canonical_model_id: "claude-sonnet-4-6"
+                      canonical_provider: "anthropic"
+                      canonical_family: "claude"
+                      requested_models: ["claude-sonnet-4-6", "sonnet"]
+                      input_tokens: 350000
+                      output_tokens: 85000
+                      total_tokens: 435000
+  /admin/credentials:
+    get:
+      summary: List redacted gateway-engine credential inventory records
+      responses:
+        '200':
+          description: Credential inventory state from Postgres. Labels, fingerprints, and request metadata are redacted.
+          content:
+            application/json:
+              example:
+                source: "postgres:credential_inventory"
+                registry_available: true
+                credentials:
+                  - credential_id: "claude-mock.json"
+                    provider: "anthropic"
+                    label: "[redacted]"
+                    key_fingerprint: "[redacted]"
+                    status: "HEALTHY"
+                    consecutive_failures: 0
+                    metadata:
+                      status_message: ""
+                      updated_at: "2026-06-06T13:00:00Z"
+                errors: []
+  /admin/credentials/sync:
+    post:
+      summary: Sync CLIProxy auth-file state into credential_inventory
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run:
+                  type: boolean
+                  default: true
+            example:
+              dry_run: true
+      responses:
+        '200':
+          description: Sync result with redacted credential records and policy-compatible transitions
+          content:
+            application/json:
+              example:
+                accepted: true
+                dry_run: true
+                source: "cliproxy:/v0/management/auth-files"
+                registry_available: true
+                discovered_count: 1
+                imported_count: 1
+                credentials:
+                  - credential_id: "claude-mock.json"
+                    provider: "anthropic"
+                    label: "[redacted]"
+                    key_fingerprint: "[redacted]"
+                    status: "CRITICAL"
+                transitions:
+                  - credential_id: "claude-mock.json"
+                    provider: "anthropic"
+                    previous_status: "HEALTHY"
+                    new_status: "CRITICAL"
+                    reason: "401 invalid token"
+                errors: []
+        '403':
+          description: Invalid admin key
+        '503':
+          description: Admin mutations disabled or dependency unavailable
+  /admin/credentials/{credential_id}/probe:
+    post:
+      summary: Targeted credential probe placeholder
+      description: Returns a documented unsupported response until CLIProxy exposes a targeted credential probe API.
+      parameters:
+        - name: credential_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      responses:
+        '501':
+          description: Targeted credential probe is not supported by current CLIProxy management API
+  /admin/models:
+    get:
+      summary: List gateway-engine-owned model registry records
+      responses:
+        '200':
+          description: Registry models, falling back to parsed LiteLLM config when Postgres is unavailable
+          content:
+            application/json:
+              example:
+                source: "postgres:model_registry"
+                registry_available: true
+                models:
+                  - model_id: "claude-sonnet-4-6"
+                    provider: "anthropic"
+                    family: "anthropic"
+                    upstream_model: "claude-sonnet-4.6"
+                    litellm_model: "openai/claude-sonnet-4.6"
+                    enabled: true
+                    status: "UNKNOWN"
+                errors: []
+    post:
+      summary: Create or replace a model registry record
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            example:
+              model_id: "gpt-5-4"
+              upstream_model: "gpt-5.4"
+              supports_tools: true
+      responses:
+        '200':
+          description: Model upserted
+        '403':
+          description: Invalid admin key
+        '503':
+          description: Admin mutations disabled or registry unavailable
+  /admin/models/{model_id}:
+    get:
+      summary: Read one model registry record
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Matching model record
+        '404':
+          description: Model not found
+    patch:
+      summary: Update one model registry record
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            example:
+              enabled: true
+              status: "HEALTHY"
+              cost_tier: 2
+      responses:
+        '200':
+          description: Model updated
+        '404':
+          description: Model not found
+    delete:
+      summary: Disable one model registry record
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: hard
+          in: query
+          required: false
+          schema: {type: boolean, default: false}
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Model disabled or deleted
+        '404':
+          description: Model not found
+  /admin/models/{model_id}/probe:
+    post:
+      summary: Probe one model and persist normalized probe status
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Probe completed and registry probe fields updated
+          content:
+            application/json:
+              example:
+                accepted: true
+                registry_available: true
+                model_id: "gpt-5-4"
+                probe_status: "success"
+                probe_http_status: 200
+                probe_checked_at: "2026-06-06T00:00:00Z"
+                model:
+                  model_id: "gpt-5-4"
+                  provider: "openai"
+                  probe_status: "success"
+                  probe_http_status: 200
+                errors: []
+        '403':
+          description: Invalid admin key
+        '404':
+          description: Model not found in registry
+        '503':
+          description: Admin mutations disabled when GATEWAY_ENGINE_ADMIN_KEY is unset
+  /admin/models/reconcile:
+    post:
+      summary: Render registry-driven LiteLLM and Gemini map changes without writing files
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run:
+                  type: boolean
+                  default: true
+                  description: Reserved for apply-mode expansion; this endpoint currently renders only.
+                include_disabled:
+                  type: boolean
+                  default: false
+                  description: Include disabled registry models in rendered resources.
+            example:
+              dry_run: true
+              include_disabled: false
+      responses:
+        '200':
+          description: Dry-run rendered resources and diffs
+          content:
+            application/json:
+              example:
+                accepted: true
+                dry_run: true
+                source: "postgres:model_registry"
+                registry_available: true
+                resources:
+                  - name: "litellm-config.yaml"
+                    kind: "yaml"
+                    changed: true
+                    content: "model_list:\n- model_name: gpt-5-4\n"
+                    diff: "--- current/litellm-config.yaml\n+++ desired/litellm-config.yaml\n"
+                  - name: "gemini-model-map.json"
+                    kind: "json"
+                    changed: true
+                    content: "{\n  \"gemini-3.flash\": \"gemini-3-flash\"\n}\n"
+                    diff: "--- current/gemini-model-map.json\n+++ desired/gemini-model-map.json\n"
+                errors: []
+        '403':
+          description: Invalid admin key
+        '503':
+          description: Admin mutations disabled when GATEWAY_ENGINE_ADMIN_KEY is unset
+  /admin/models/sync:
+    post:
+      summary: Import LiteLLM config or CLIProxy discovery into the gateway-engine model registry
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run:
+                  type: boolean
+                  default: true
+                source:
+                  type: string
+                  enum: [litellm-config, cliproxy]
+                  default: litellm-config
+            example:
+              dry_run: true
+              source: cliproxy
+      responses:
+        '200':
+          description: Import result
+          content:
+            application/json:
+              example:
+                dry_run: true
+                source: cliproxy
+                registry_available: true
+                imported_count: 2
+                skipped_count: 0
+                models:
+                  - model_id: "gpt-5-4"
+                    provider: "openai"
+                    upstream_model: "gpt-5.4"
+                    litellm_model: "openai/gpt-5.4"
+                    source: "cliproxy"
+                diffs:
+                  - kind: "add"
+                    model_id: "gpt-5-4"
+                errors: []
+        '503':
+          description: Admin mutations disabled when GATEWAY_ENGINE_ADMIN_KEY is unset
+  /admin/dashboard:
+    get:
+      summary: Admin console HTML dashboard
+      responses:
+        '200':
+          description: HTML dashboard page

@@ -26,7 +26,7 @@ tests: |
   N/A — design stub only (Gate A docs lint if wired in CI)
 risks: |
   Missing request_id on Langfuse traces forces weaker metadata-only joins —
-  translator propagation (5b) is prerequisite for accurate agent attribution.
+  gateway-engine propagation (5b) is prerequisite for accurate agent attribution.
 dependencies:
   - issues/policy-engine-38-16-audit-log.md
   - docs/TENANCY.md
@@ -39,7 +39,7 @@ blocks: []
 blocked_by: []
 execution_notes: |
   Design stub acceptable per Phase 5 dispatch. Nightly rollup and admin panel
-  deferred until request_id propagation (5b) and 38-04 translator wire stabilize.
+  deferred until request_id propagation (5b) and 38-04 gateway-engine wire stabilize.
 github_issue: #140
 ---
 

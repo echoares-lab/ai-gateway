@@ -10,5 +10,5 @@ if [[ -f "${ROOT}/.env" ]]; then
   source "${ROOT}/.env"
 fi
 
-cd "${ROOT}/services/translator"
+cd "${ROOT}/services/gateway-engine"
 exec python3 "${ROOT}/scripts/pool_sync.py" "$@"

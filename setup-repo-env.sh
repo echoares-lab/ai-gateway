@@ -17,7 +17,7 @@
 #   4. Runs `direnv allow` to whitelist it
 #
 # Gateway API keys should follow: ak-{org}-{workspace}-{team}-{repo}-{environment}
-# so the translator can attach tenant metadata (docs/TENANCY.md).
+# so the gateway-engine can attach tenant metadata (docs/TENANCY.md).
 
 set -euo pipefail
 

@@ -37,9 +37,9 @@ github_issue: #141
 
 ## Epic status (2026-06-05)
 
-**Phase 1–4 implementation:** Complete on `main` (translator wire, mock Gate B stack, audit log, runbook, admin trace).
+**Phase 1–4 implementation:** Complete on `main` (gateway-engine wire, mock Gate B stack, audit log, runbook, admin trace).
 
-**Merged (policy epic):** [#142](https://github.com/echoares-lab/ai-gateway/pull/142) budget · [#143](https://github.com/echoares-lab/ai-gateway/pull/143) prober · [#144](https://github.com/echoares-lab/ai-gateway/pull/144) fallback · [#145](https://github.com/echoares-lab/ai-gateway/pull/145) audit · [#146](https://github.com/echoares-lab/ai-gateway/pull/146) cliproxy sync · [#147–#150](https://github.com/echoares-lab/ai-gateway/pull/147) Phase 5 design stubs · [#151](https://github.com/echoares-lab/ai-gateway/pull/151) runbook · [#155](https://github.com/echoares-lab/ai-gateway/pull/155) compose · [#156](https://github.com/echoares-lab/ai-gateway/pull/156) translator + admin trace + websocket · [#158](https://github.com/echoares-lab/ai-gateway/pull/158) Gate B failover integration (#136).
+**Merged (policy epic):** [#142](https://github.com/echoares-lab/ai-gateway/pull/142) budget · [#143](https://github.com/echoares-lab/ai-gateway/pull/143) prober · [#144](https://github.com/echoares-lab/ai-gateway/pull/144) fallback · [#145](https://github.com/echoares-lab/ai-gateway/pull/145) audit · [#146](https://github.com/echoares-lab/ai-gateway/pull/146) cliproxy sync · [#147–#150](https://github.com/echoares-lab/ai-gateway/pull/147) Phase 5 design stubs · [#151](https://github.com/echoares-lab/ai-gateway/pull/151) runbook · [#155](https://github.com/echoares-lab/ai-gateway/pull/155) compose · [#156](https://github.com/echoares-lab/ai-gateway/pull/156) gateway-engine + admin trace + websocket · [#158](https://github.com/echoares-lab/ai-gateway/pull/158) Gate B failover integration (#136).
 
 **CI (merged):** [#160](https://github.com/echoares-lab/ai-gateway/pull/160) mock Postgres volume + LiteLLM fail-fast · [#161](https://github.com/echoares-lab/ai-gateway/pull/161) self-hosted workspace permissions · [#159](https://github.com/echoares-lab/ai-gateway/pull/159) closed (superseded).
 
@@ -54,8 +54,8 @@ github_issue: #141
 4. On completion, set `claim_status: done` and record PR link in issue body.
 5. **Do not claim** epic parent or Phase 0 tracking issue for implementation.
 6. **Hotspot rule:** `services/policy-engine/schemas.py` is owned by 38-1 (done) — additive changes only via new issues.
-7. **Do not double-claim 38-04:** Agent lane `142a1b91-9adf-45d2-8766-eb75a6c04231` was superseded by bundled work on `feat/translator-policy` — [PR #156](https://github.com/echoares-lab/ai-gateway/pull/156). Do not open a parallel branch for 38-04.
-8. **Do not double-claim 38-15:** [PR #157](https://github.com/echoares-lab/ai-gateway/pull/157) (`feat/admin-policy-trace`) was **closed as duplicate** — zero diff vs `feat/translator-policy`. Track 38-15 on PR #156 only.
+7. **Do not double-claim 38-04:** Agent lane `142a1b91-9adf-45d2-8766-eb75a6c04231` was superseded by bundled work on `feat/gateway-engine-policy` — [PR #156](https://github.com/echoares-lab/ai-gateway/pull/156). Do not open a parallel branch for 38-04.
+8. **Do not double-claim 38-15:** [PR #157](https://github.com/echoares-lab/ai-gateway/pull/157) (`feat/admin-policy-trace`) was **closed as duplicate** — zero diff vs `feat/gateway-engine-policy`. Track 38-15 on PR #156 only.
 
 ## Phase order
 
@@ -71,13 +71,13 @@ github_issue: #141
 ## Parallel lanes
 
 ```text
-Phase 0 (parallel design — no translator wire):
+Phase 0 (parallel design — no gateway-engine wire):
   38-01 schemas ─────────────┐
   38-10 pool migration ──────┘  (both may complete before Phase 0 gate clears)
 
 Phase 1 (after 38-01 done):
   38-02 scaffold ──┬── 38-03 redis      (parallel after 38-02)
-                 └── 38-04 translator  (parallel after 38-02; shared env needs P0-1..P0-3)
+                 └── 38-04 gateway-engine  (parallel after 38-02; shared env needs P0-1..P0-3)
 
 Phase 2 (after 38-03; 38-04 for 38-9):
   38-05 repo affinity ───┐
@@ -124,10 +124,10 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-01 schemas | **done** | Quota-aware schemas shipped |
 | 38-02 scaffold | **done** | Stub evaluator + tests |
 | 38-03 redis | **done** | Cooldown registry, agent affinity, profile/decision cache keys |
-| 38-04 translator | **done** | PR #156 merged — `POLICY_ENGINE_ENABLED` evaluate hook + unit tests |
+| 38-04 gateway-engine | **done** | PR #156 merged — `POLICY_ENGINE_ENABLED` evaluate hook + unit tests |
 | 38-05 repo affinity | **done** | Postgres read + repo affinity + Redis profile cache |
 | 38-06 agent affinity | **done** | Agent affinity evaluator wired |
-| 38-07 rate-limit | **done** | Aggregator wired; inventory + Redis + translator merge |
+| 38-07 rate-limit | **done** | Aggregator wired; inventory + Redis + gateway-engine merge |
 | 38-08 fallback | **done** | Layered evaluator + 11 unit tests (#127, PR #144) |
 | 38-09 budget | **done** | Soft gates + fail-open hard deny (#128) |
 | 38-10 pool schema | **done** | Migration 002 in repo |
@@ -164,7 +164,7 @@ Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRAT
 | 38-19 eval routing | done | #138, PR #147 |
 | 38-21 chargeback | done | #140, PR #150 |
 | 38-14 websocket | **done** | PR #156 — Option B bypass + design doc §9; closes #133 |
-| 38-04 translator | **done** | PR #156 merged — `POLICY_ENGINE_ENABLED` evaluate hook + unit tests |
+| 38-04 gateway-engine | **done** | PR #156 merged — `POLICY_ENGINE_ENABLED` evaluate hook + unit tests |
 | 38-15 admin trace | **done** | PR #156 merged — `policy_engine` panel in `/admin/status`; closes #134 |
 | 38-06 agent affinity | done | #125 |
 | 38-10 pool schema | done | #129 |

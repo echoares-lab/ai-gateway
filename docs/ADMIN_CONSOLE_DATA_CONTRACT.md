@@ -33,7 +33,7 @@ Langfuse, Prometheus, or repo config.
   "generated_at": "2026-06-02T02:45:00Z",
   "environment": {
     "stack": "stable",
-    "translator_base_url": "http://localhost:4000",
+    "gateway-engine_base_url": "http://localhost:4000",
     "litellm_ui_url": "http://localhost:4001",
     "cliproxy_management_url": "http://localhost:8317/management.html",
     "cpa_manager_url": "http://localhost:18317/management.html"
@@ -64,7 +64,7 @@ Langfuse, Prometheus, or repo config.
 ```json
 {
   "status": "ok",
-  "source": "translator:/health",
+  "source": "gateway-engine:/health",
   "freshness_seconds": 0,
   "errors": [],
   "data": {}
@@ -85,8 +85,8 @@ Langfuse, Prometheus, or repo config.
 ```json
 {
   "code": "source_unreachable",
-  "message": "translator /metrics timed out after 2s",
-  "source": "translator:/metrics",
+  "message": "gateway-engine /metrics timed out after 2s",
+  "source": "gateway-engine:/metrics",
   "redacted": true
 }
 ```
@@ -105,7 +105,7 @@ Rules:
 
 ### Source(s)
 
-- Translator `GET /health`
+- Gateway Engine `GET /health`
 - Docker/container state from `./cliproxy-setup.sh health` output or future API
 - Optional: LiteLLM health endpoint and CLIProxy reachability
 
@@ -114,12 +114,12 @@ Rules:
 ```json
 {
   "status": "ok",
-  "source": "translator:/health + cliproxy-setup:health",
+  "source": "gateway-engine:/health + cliproxy-setup:health",
   "freshness_seconds": 0,
   "errors": [],
   "data": {
     "services": [
-      {"name": "translator", "status": "ok", "endpoint": "http://localhost:4000/health"},
+      {"name": "gateway-engine", "status": "ok", "endpoint": "http://localhost:4000/health"},
       {"name": "litellm", "status": "ok", "endpoint": "http://localhost:4001"},
       {"name": "cliproxy", "status": "ok", "endpoint": "http://localhost:8317"},
       {"name": "cpa-manager", "status": "unknown", "endpoint": "http://localhost:18317/management.html"}
@@ -140,7 +140,7 @@ Rules:
   ],
   "data": {
     "services": [
-      {"name": "translator", "status": "ok"},
+      {"name": "gateway-engine", "status": "ok"},
       {"name": "cliproxy", "status": "warning"}
     ]
   }
@@ -153,7 +153,7 @@ Rules:
 
 ### Source(s)
 
-- Client-visible models: `GET /v1/models` through translator, authorized with
+- Client-visible models: `GET /v1/models` through gateway-engine, authorized with
   `LITELLM_MASTER_KEY` server-side only.
 - Configured models: `litellm-config.yaml` `model_list`.
 
@@ -162,7 +162,7 @@ Rules:
 ```json
 {
   "status": "ok",
-  "source": "translator:/v1/models + repo:litellm-config.yaml",
+  "source": "gateway-engine:/v1/models + repo:litellm-config.yaml",
   "freshness_seconds": 0,
   "errors": [],
   "data": {
@@ -189,7 +189,7 @@ Rules:
 ```json
 {
   "status": "warning",
-  "source": "translator:/v1/models + repo:litellm-config.yaml",
+  "source": "gateway-engine:/v1/models + repo:litellm-config.yaml",
   "freshness_seconds": 0,
   "errors": [],
   "data": {
@@ -259,10 +259,10 @@ Rules:
 ### Source(s)
 
 - `litellm-config.yaml`: `router_settings`, `litellm_settings.fallbacks`
-- Translator `/metrics` provider signal series from #59:
-  - `translator_provider_request_duration_seconds`
-  - `translator_provider_requests_total`
-  - `translator_provider_rate_limits_total`
+- Gateway Engine `/metrics` provider signal series from #59:
+  - `gateway-engine_provider_request_duration_seconds`
+  - `gateway-engine_provider_requests_total`
+  - `gateway-engine_provider_rate_limits_total`
 - Optional bounded LiteLLM log source for cooldown/fallback events
 
 ### Payload
@@ -270,7 +270,7 @@ Rules:
 ```json
 {
   "status": "ok",
-  "source": "repo:litellm-config.yaml + translator:/metrics",
+  "source": "repo:litellm-config.yaml + gateway-engine:/metrics",
   "freshness_seconds": 15,
   "errors": [],
   "data": {
@@ -327,7 +327,7 @@ always `[redacted]` in operator views.
 ```json
 {
   "status": "warning",
-  "source": "repo:litellm-config.yaml + translator:/metrics",
+  "source": "repo:litellm-config.yaml + gateway-engine:/metrics",
   "freshness_seconds": 15,
   "errors": [],
   "data": {
@@ -347,13 +347,13 @@ always `[redacted]` in operator views.
 
 Operator-facing trace of policy-engine evaluate output. Mirrors
 `RoutingDecision.to_metadata()` from `services/policy-engine/schemas.py` — the same
-shape the translator injects as `metadata.routing_decision` on HTTP paths (issue
+shape the gateway-engine injects as `metadata.routing_decision` on HTTP paths (issue
 38-04). Design reference:
 [`docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md`](./POLICY_ENGINE_AND_ROUTING_REFACTOR.md).
 
 ### Source(s)
 
-- Translator env: `POLICY_ENGINE_ENABLED`, `POLICY_ENGINE_WS_EVALUATE`
+- Gateway Engine env: `POLICY_ENGINE_ENABLED`, `POLICY_ENGINE_WS_EVALUATE`
 - Policy-engine `GET /health` (optional reachability)
 - Bounded recent rows from `routing_decisions_log` (issue 38-16, sampled audit)
 
@@ -386,7 +386,7 @@ Each trace row exposes a `policy_decision` object with these fields (all map 1:1
 ```json
 {
   "status": "ok",
-  "source": "translator:env + policy-engine:/health + postgres:routing_decisions_log",
+  "source": "gateway-engine:env + policy-engine:/health + postgres:routing_decisions_log",
   "freshness_seconds": 30,
   "errors": [],
   "data": {
@@ -457,7 +457,7 @@ Each trace row exposes a `policy_decision` object with these fields (all map 1:1
 ```json
 {
   "status": "unknown",
-  "source": "translator:env",
+  "source": "gateway-engine:env",
   "freshness_seconds": 0,
   "errors": [],
   "data": {
@@ -598,7 +598,7 @@ Future aggregator issue (#69) must follow these contract rules:
 ## 11. References
 
 - [`docs/ADMIN_CONSOLE.md`](./ADMIN_CONSOLE.md) — parent design and implementation plan.
-- [`docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md`](./POLICY_ENGINE_AND_ROUTING_REFACTOR.md) — policy-engine architecture, `RoutingDecision` schema, translator injection, and admin trace (38-15).
+- [`docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md`](./POLICY_ENGINE_AND_ROUTING_REFACTOR.md) — policy-engine architecture, `RoutingDecision` schema, gateway-engine injection, and admin trace (38-15).
 - [`docs/ADAPTIVE_ROUTING.md`](./ADAPTIVE_ROUTING.md) — routing inputs and provider signals.
 - [`docs/openapi/policy-engine.yaml`](./openapi/policy-engine.yaml) — OpenAPI schema for `RoutingDecision`.
 - [`RUNBOOK.md`](../RUNBOOK.md) — operational command sources.

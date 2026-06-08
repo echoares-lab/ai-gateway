@@ -16,7 +16,7 @@ CLIPROXY_REPO="router-for-me/CLIProxyAPI"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LITELLM_CONFIG="${LITELLM_CONFIG:-$SCRIPT_DIR/litellm-config.yaml}"
 LITELLM_KEY="${LITELLM_MASTER_KEY:-$(grep '^LITELLM_MASTER_KEY=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2 || true)}"
-TRANSLATOR_URL="${TRANSLATOR_URL:-http://localhost:${TRANSLATOR_PORT:-4000}}"
+GATEWAY_ENGINE_URL="${GATEWAY_ENGINE_URL:-http://localhost:${GATEWAY_ENGINE_PORT:-4000}}"
 
 # Detect OS/arch for binary download
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -100,12 +100,12 @@ get_mgmt_key() {
   grep 'management-key:' "$CLIPROXY_CONFIG" 2>/dev/null | sed 's/.*management-key:\s*//' | tr -d '"' | head -1
 }
 
-get_translator_admin_key() {
-  if [ -n "${TRANSLATOR_ADMIN_KEY:-}" ]; then
-    echo "$TRANSLATOR_ADMIN_KEY"
+get_gateway_engine_admin_key() {
+  if [ -n "${GATEWAY_ENGINE_ADMIN_KEY:-}" ]; then
+    echo "$GATEWAY_ENGINE_ADMIN_KEY"
     return
   fi
-  grep '^TRANSLATOR_ADMIN_KEY=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2- || true
+  grep '^GATEWAY_ENGINE_ADMIN_KEY=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2- || true
 }
 
 cmd_quota_summary() {
@@ -166,7 +166,7 @@ require_bin() {
 # Convert CLIProxyAPI model ID to a LiteLLM-safe alias (dots → dashes)
 model_to_alias() { echo "$1" | tr '.' '-'; }
 
-GEMINI_MAP_FILE="${GEMINI_MAP_FILE:-$SCRIPT_DIR/services/translator/gemini-model-map.json}"
+GEMINI_MAP_FILE="${GEMINI_MAP_FILE:-$SCRIPT_DIR/services/gateway-engine/gemini-model-map.json}"
 
 # Add a dotted→dashed entry to gemini-model-map.json (no-op if key == value or not Gemini)
 gemini_map_add() {
@@ -527,31 +527,31 @@ cmd_upgrade() {
   echo "Done. Run: $0 health"
 }
 
-translator_admin_post() {
+gateway-engine_admin_post() {
   local endpoint="$1"
   local body="$2"
   local output_file="$3"
   local admin_key
-  admin_key=$(get_translator_admin_key)
+  admin_key=$(get_gateway_engine_admin_key)
   if [ -z "$admin_key" ]; then
-    echo "ERROR: TRANSLATOR_ADMIN_KEY is required for sync-models apply mode."
-    echo "Set TRANSLATOR_ADMIN_KEY in .env or use: $0 sync-models --legacy"
+    echo "ERROR: GATEWAY_ENGINE_ADMIN_KEY is required for sync-models apply mode."
+    echo "Set GATEWAY_ENGINE_ADMIN_KEY in .env or use: $0 sync-models --legacy"
     return 1
   fi
 
-  curl -fsS -X POST "$TRANSLATOR_URL$endpoint" \
+  curl -fsS -X POST "$GATEWAY_ENGINE_URL$endpoint" \
     -H "Content-Type: application/json" \
     -H "x-admin-key: $admin_key" \
     -d "$body" \
     -o "$output_file"
 }
 
-translator_admin_patch() {
+gateway-engine_admin_patch() {
   local endpoint="$1"
   local body="$2"
   local admin_key
-  admin_key=$(get_translator_admin_key)
-  curl -fsS -X PATCH "$TRANSLATOR_URL$endpoint" \
+  admin_key=$(get_gateway_engine_admin_key)
+  curl -fsS -X PATCH "$GATEWAY_ENGINE_URL$endpoint" \
     -H "Content-Type: application/json" \
     -H "x-admin-key: $admin_key" \
     -d "$body" >/dev/null
@@ -601,20 +601,20 @@ for model in body.get("models") or []:
 PYEOF
 }
 
-probe_translator_registry_models() {
+probe_gateway-engine_registry_models() {
   local sync_response_file="$1"
   local admin_key
-  admin_key=$(get_translator_admin_key)
+  admin_key=$(get_gateway_engine_admin_key)
 
   echo ""
-  echo "Probing registry models through translator..."
+  echo "Probing registry models through gateway-engine..."
   local probed=0 disabled=0 transient=0 failed=0
   while IFS= read -r model_id; do
     [ -n "$model_id" ] || continue
     probed=$((probed + 1))
     local probe_file
     probe_file=$(mktemp)
-    if ! curl -fsS -X POST "$TRANSLATOR_URL/admin/models/$model_id/probe" \
+    if ! curl -fsS -X POST "$GATEWAY_ENGINE_URL/admin/models/$model_id/probe" \
       -H "Content-Type: application/json" \
       -H "x-admin-key: $admin_key" \
       -d '{}' \
@@ -641,7 +641,7 @@ PYEOF
         ;;
       missing_model)
         echo "  DEAD $model_id $probe_status; disabling in registry"
-        if translator_admin_patch "/admin/models/$model_id" '{"enabled":false,"status":"UNAVAILABLE","source":"sync-models"}'; then
+        if gateway-engine_admin_patch "/admin/models/$model_id" '{"enabled":false,"status":"UNAVAILABLE","source":"sync-models"}'; then
           disabled=$((disabled + 1))
         else
           failed=$((failed + 1))
@@ -715,9 +715,9 @@ cmd_sync_models_registry() {
   sync_response=$(mktemp)
   reconcile_response=$(mktemp)
 
-  echo "Syncing CLIProxy models into translator registry..."
-  if ! translator_admin_post "/admin/models/sync" '{"dry_run":false,"source":"cliproxy"}' "$sync_response"; then
-    echo "ERROR: translator registry sync failed at $TRANSLATOR_URL."
+  echo "Syncing CLIProxy models into gateway-engine registry..."
+  if ! gateway-engine_admin_post "/admin/models/sync" '{"dry_run":false,"source":"cliproxy"}' "$sync_response"; then
+    echo "ERROR: gateway-engine registry sync failed at $GATEWAY_ENGINE_URL."
     echo "Use the explicit emergency path if needed: $0 sync-models --legacy"
     rm -f "$sync_response" "$reconcile_response"
     return 1
@@ -728,16 +728,16 @@ cmd_sync_models_registry() {
   fi
 
   if [ "${CLIPROXY_SYNC_PROBE:-true}" != "false" ]; then
-    probe_translator_registry_models "$sync_response"
+    probe_gateway-engine_registry_models "$sync_response"
   else
     echo ""
     echo "Skipping model probes because CLIPROXY_SYNC_PROBE=false."
   fi
 
   echo ""
-  echo "Reconciling LiteLLM and Gemini config from translator registry..."
-  if ! translator_admin_post "/admin/models/reconcile" '{"dry_run":true,"include_disabled":false}' "$reconcile_response"; then
-    echo "ERROR: translator reconcile failed at $TRANSLATOR_URL."
+  echo "Reconciling LiteLLM and Gemini config from gateway-engine registry..."
+  if ! gateway-engine_admin_post "/admin/models/reconcile" '{"dry_run":true,"include_disabled":false}' "$reconcile_response"; then
+    echo "ERROR: gateway-engine reconcile failed at $GATEWAY_ENGINE_URL."
     rm -f "$sync_response" "$reconcile_response"
     return 1
   fi
@@ -1156,7 +1156,7 @@ case "$cmd" in
     ;;
 
   test-all)
-    # One representative model per provider; tests the full translator→litellm→cliproxy path
+    # One representative model per provider; tests the full gateway-engine→litellm→cliproxy path
     declare -A PROVIDER_MODELS=(
       [claude]="claude-sonnet-4-5-20250929"
       [gemini]="gemini-3-flash"
@@ -1165,7 +1165,7 @@ case "$cmd" in
       [kimi]="kimi-k2"
     )
     PASS=0; FAIL=0; SKIP=0
-    echo "=== Provider flow test (translator → LiteLLM → CLIProxy) ==="
+    echo "=== Provider flow test (gateway-engine → LiteLLM → CLIProxy) ==="
     for provider in claude gemini openai xai kimi; do
       model="${PROVIDER_MODELS[$provider]}"
       # skip if model not in litellm config
@@ -1213,7 +1213,7 @@ Setup:
 
 Operations:
   apply                Full update workflow: upgrade → sync-models → health
-  sync-models          Sync via translator registry APIs; writes reconciled config
+  sync-models          Sync via gateway-engine registry APIs; writes reconciled config
   sync-models --legacy Emergency direct mutation path for one-release rollback
   upgrade              Download newer binary + rebuild Docker image if available
   health               Show per-provider auth status and container state

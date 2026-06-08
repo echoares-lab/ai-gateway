@@ -43,7 +43,7 @@ issues = [
     {
         "title": "Scaffold In-Memory Fixtures (conftest.py)",
         "body": """## Summary
-Setup `respx` router, `httpx.AsyncClient` with the Translator ASGI app, and `fakeredis` backend in `tests/integration/conftest.py`.
+Setup `respx` router, `httpx.AsyncClient` with the Gateway Engine ASGI app, and `fakeredis` backend in `tests/integration/conftest.py`.
 
 ## Problem
 We need the foundational fixtures and mocking infrastructure to support in-memory ASGI testing.
@@ -53,7 +53,7 @@ This is the prerequisite for porting existing tests and decommissioning the slow
 
 ## Scope
 - Create `tests/integration/conftest.py` updates to provide an `asgi_client` fixture.
-- Wire `fakeredis` into the translator's state initialization when running tests.
+- Wire `fakeredis` into the gateway-engine's state initialization when running tests.
 - Add `respx` to test dependencies if needed.
 
 ## Non-goals

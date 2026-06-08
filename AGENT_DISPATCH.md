@@ -155,10 +155,10 @@ cd /home/dev/worktrees/ai-gateway-<short-name>
 Read the full issue body carefully. Follow the **Actions** and satisfy the **Acceptance criteria**.
 
 During implementation:
-- Make changes — the translator hot-reloads in ~1s, litellm-config.yaml hot-reloads in ~10s
+- Make changes — the gateway-engine hot-reloads in ~1s, litellm-config.yaml hot-reloads in ~10s
 - After each significant change, run unit tests:
   ```bash
-  docker exec aidev<slot>-translator-1 pytest test_translator.py -v
+  docker exec aidev<slot>-gateway-engine-1 pytest test_gateway-engine.py -v
   ```
 - For gateway/wire-format changes, also run the fast mock integration tier:
   ```bash
@@ -166,8 +166,8 @@ During implementation:
   ./dev-env.sh test-mock 9
   ./dev-env.sh stop-mock 9
   ```
-  The mock tier runs translator + LiteLLM + a canned CLIProxy upstream, requires no OAuth, and must have **0 skips**.
-- All translator unit tests must pass before continuing
+  The mock tier runs gateway-engine + LiteLLM + a canned CLIProxy upstream, requires no OAuth, and must have **0 skips**.
+- All gateway-engine unit tests must pass before continuing
 - Commit often with conventional messages:
   ```bash
   git add -p
@@ -183,7 +183,7 @@ During implementation:
 When implementation is complete:
 
 ```bash
-# Fast mock integration tier (required for translator/wire-format/config routing changes)
+# Fast mock integration tier (required for gateway-engine/wire-format/config routing changes)
 ./dev-env.sh start-mock 9
 ./dev-env.sh test-mock 9
 ./dev-env.sh stop-mock 9
@@ -235,7 +235,7 @@ gh pr create \
 - Fixes #NNN
 
 ## Test plan
-- [ ] Translator unit tests pass (41/41)
+- [ ] Gateway Engine unit tests pass (41/41)
 - [ ] Mock integration tier passes with 0 skips (`./dev-env.sh test-mock 9` or `make test-mock`)
 - [ ] Real-provider integration / `run-e2e` label used only when needed
 - [ ] Health check passes
@@ -306,9 +306,9 @@ gh pr merge $PR_NUMBER --repo echoares-lab/ai-gateway --merge
 
 **Required fast-tier CI checks that must pass:**
 - `lint-and-syntax` — ruff check + format, shell syntax, YAML syntax, no hardcoded keys
-- `unit-tests` — translator unit tests
+- `unit-tests` — gateway-engine unit tests
 - `multi-repo-isolation` — environment isolation checks
-- `mock-integration` — translator + LiteLLM + mock upstream integration tests (0 skips)
+- `mock-integration` — gateway-engine + LiteLLM + mock upstream integration tests (0 skips)
 
 **Gated CI check:**
 - `real-provider-e2e` — runs only on `workflow_dispatch` or PR label `run-e2e`; not required by default
@@ -349,7 +349,7 @@ gh issue comment $ISSUE --repo echoares-lab/ai-gateway --body "$(cat <<'EOF'
 - PR: #<pr-number>
 - Merge commit: <sha>
 - Gates run:
-  - Gate A: lint-and-syntax, unit-tests (test_translator*.py)
+  - Gate A: lint-and-syntax, unit-tests (test_gateway-engine*.py)
   - Gate B: mock-integration (0 skips)
   - Gate C: real-provider-e2e (if high-risk / run-e2e label)
   - Gate D: cliproxy-setup health + 3 model smokes on stable (:4000)
@@ -385,7 +385,7 @@ before closing epics or ending a multi-agent session.
 
 | Command | When |
 |---------|------|
-| `docker exec aidev<slot>-translator-1 pytest test_translator*.py -v` | Gate A — after every significant change |
+| `docker exec aidev<slot>-gateway-engine-1 pytest test_gateway-engine*.py -v` | Gate A — after every significant change |
 | `make test-fast` | Gate A + B — local equivalent of required CI fast tier |
 | `make test-mock` | Gate B only — mock stack, 0 skips |
 | `./dev-env.sh test <slot>` | Gate C — real-provider integration when broader coverage needed |
@@ -415,7 +415,7 @@ If two agents are running simultaneously:
 - Each agent uses a **different dev slot** (check `./dev-env.sh list` before starting; never slot 0)
 - Each agent uses a **different worktree** (different directory and branch name)
 - Each claim uses a **unique `Claim-ID`** per session (not just per GitHub account)
-- Issues touching the same hotspot (`translator.py`, `litellm-config.yaml`, etc.) are **serialized** — use `Depends on:` or stacked PRs + rebase after the first merges
+- Issues touching the same hotspot (`gateway-engine.py`, `litellm-config.yaml`, etc.) are **serialized** — use `Depends on:` or stacked PRs + rebase after the first merges
 - Poll dependency state with `gh issue view` / `gh pr view` before claiming or implementing
 - After a dependency merges: `git fetch origin && git rebase origin/main`, resolve conflicts, `make test-fast`, `git push --force-with-lease`
 - CI `mock-integration` infra flakes: confirm with local `make test-mock` before retrying merge

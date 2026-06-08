@@ -15,14 +15,14 @@ This document outlines the implementation of granular token usage analytics for 
 ## Data Sources
 - **Langfuse**: Trace-level token counts and latency metrics
 - **LiteLLM logs**: Request-level input/output token counts
-- **Translator metrics**: Prometheus metrics for request volume by provider/model
+- **Gateway Engine metrics**: Prometheus metrics for request volume by provider/model
 - **CPA-Manager**: Usage summaries from credential-prober
 
 ## Analytics Panel Schema
 ```json
 {
   "status": "ok",
-  "source": "langfuse:/api/traces + litellm:logs + translator:/metrics",
+  "source": "langfuse:/api/traces + litellm:logs + gateway-engine:/metrics",
   "freshness_seconds": 300,
   "data": {
     "summary": {
@@ -87,13 +87,13 @@ This document outlines the implementation of granular token usage analytics for 
 ```
 
 `by_model` and `by_provider` remain backwards compatible and continue to
-reflect the model/provider labels seen in traffic. When the translator-owned
+reflect the model/provider labels seen in traffic. When the gateway-engine-owned
 model registry can resolve an alias or LiteLLM model name, `by_canonical_model`
 adds a registry-aware rollup keyed by `canonical_model_id`, with provider/family
 labels and the request model labels that contributed to the rollup.
 
 ## Implementation Phases
-1. **Phase 1**: Add token tracking to translator and metrics aggregation
+1. **Phase 1**: Add token tracking to gateway-engine and metrics aggregation
 2. **Phase 2**: Implement Langfuse integration for detailed trace analytics
 3. **Phase 3**: Add cost calculation layer with provider pricing
 4. **Phase 4**: Time-series storage and historical analysis
