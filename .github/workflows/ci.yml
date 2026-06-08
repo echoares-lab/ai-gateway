@@ -209,16 +209,20 @@ jobs:
       - uses: ./.github/actions/build-docker-cached
         with:
           context: ./services/gateway-engine
-          tags: |
-            ai-gateway-engine-test:latest
-            ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.GIT_SHA }}
-            ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
+          tags: ai-gateway-engine-test:latest
           scope: gateway-engine
-          push: ${{ steps.should_push.outputs.push }}
+          push: false
           build-args: |
             GIT_SHA=${{ env.GIT_SHA }}
       - name: Run gateway-engine unit tests (parallel)
         run: docker run --rm ai-gateway-engine-test:latest sh -c 'pytest test_gateway_engine*.py -n auto -v'
+      - name: Push gateway-engine to GHCR
+        if: steps.should_push.outputs.push == 'true'
+        run: |
+          docker tag ai-gateway-engine-test:latest ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.GIT_SHA }}
+          docker tag ai-gateway-engine-test:latest ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
+          docker push ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.GIT_SHA }}
+          docker push ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
