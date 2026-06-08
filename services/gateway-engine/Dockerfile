@@ -16,6 +16,7 @@ WORKDIR /app
 COPY main.py admin_api.py workspace_rules.py gemini-model-map.json conftest.py pytest.ini test_gateway_engine*.py test_token_analytics.py ./
 COPY core ./core/
 COPY providers ./providers/
+COPY orchestrator ./orchestrator/
 COPY utils ./utils/
 
 ENV GATEWAY_ENGINE_PORT=4000
