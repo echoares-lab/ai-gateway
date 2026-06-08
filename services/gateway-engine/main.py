@@ -91,11 +91,13 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from providers import claude as claude_provider
 from providers import gemini as gemini_provider
 from providers.gemini import get_gemini_map
+from providers.virtual import virtual_provider
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("gateway-engine")
 
-UPSTREAM_TIMEOUT = float(os.environ.get("UPSTREAM_TIMEOUT", "30.0"))
+UPSTREAM_TIMEOUT = config.UPSTREAM_TIMEOUT
+ENABLE_VIRTUAL_PROVIDERS = config.ENABLE_VIRTUAL_PROVIDERS
 
 
 @asynccontextmanager
@@ -322,6 +324,7 @@ _PROVIDER_PREFIXES = (
     ("grok", "xai"),
     ("kimi", "moonshot"),
     ("moonshot", "moonshot"),
+    ("virt-", "virtual"),
 )
 
 
@@ -797,6 +800,36 @@ async def _post_with_retry(url: str, headers: dict, content: bytes, retries: int
     rate-limit) for every attempt — see docs/ADAPTIVE_ROUTING.md (issue #59).
     """
     model = _model_from_content(content)
+
+    if ENABLE_VIRTUAL_PROVIDERS and model.startswith("virt-"):
+        start = time.monotonic()
+        try:
+            body = json.loads(content)
+        except Exception:
+            body = {}
+
+        parts = model.split("-")
+        status_code = 200
+        if len(parts) >= 3 and parts[1] == "error":
+            try:
+                status_code = int(parts[2])
+            except ValueError:
+                pass
+
+        if status_code == 200:
+            v_resp = virtual_provider.oai_to_resp(body, model)
+        else:
+            v_resp = virtual_provider.simulate_error(status_code)
+
+        elapsed = time.monotonic() - start
+        _record_provider_signal(model, status_code, elapsed)
+
+        return httpx.Response(
+            status_code=status_code,
+            content=json.dumps(v_resp).encode("utf-8"),
+            request=httpx.Request("POST", url, headers=headers, content=content),
+        )
+
     for attempt in range(retries + 1):
         start = time.monotonic()
         resp = await _client.post(url, headers=headers, content=content)
@@ -3946,6 +3979,36 @@ async def proxy(path: str, request: Request):
             )
 
     _proxy_start = time.monotonic()
+
+    if ENABLE_VIRTUAL_PROVIDERS and signal_model.startswith("virt-"):
+        parts = signal_model.split("-")
+        status_code = 200
+        if len(parts) >= 3 and parts[1] == "error":
+            try:
+                status_code = int(parts[2])
+            except ValueError:
+                pass
+
+        try:
+            req_body = json.loads(body)
+        except Exception:
+            req_body = {}
+
+        if status_code == 200:
+            v_resp = virtual_provider.oai_to_resp(req_body, signal_model)
+        else:
+            v_resp = virtual_provider.simulate_error(status_code)
+
+        elapsed = time.monotonic() - _proxy_start
+        if is_chat:
+            _record_provider_signal(signal_model, status_code, elapsed)
+
+        resp_body = json.dumps(v_resp).encode("utf-8")
+        if ck and status_code == 200 and is_chat:
+            await _cache_set(ck + ":json", [resp_body.decode("utf-8")])
+
+        return Response(content=resp_body, status_code=status_code, headers={"content-type": "application/json"})
+
     try:
         resp = await _client.request(request.method, url, headers=headers, content=body, params=params)
     except httpx.TimeoutException as exc:
