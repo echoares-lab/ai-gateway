@@ -43,6 +43,7 @@ services:
       retries: 10
   cliproxy:
     container_name: TESTING-cliproxy-dev
+    image: ghcr.io/echoares-lab/ai-gateway/cliproxy:${GIT_SHA:-latest}
     build:
       context: ${CLIPROXY_BUILD_CONTEXT:-/home/dev/repos/CLIProxyAPI}
       dockerfile: ${CLIPROXY_DOCKERFILE:-Dockerfile}
@@ -96,6 +97,7 @@ services:
       start_period: 20s
   litellm-reloader:
     container_name: TESTING-litellm-reloader-dev
+    image: ghcr.io/echoares-lab/ai-gateway/litellm-reloader:${GIT_SHA:-latest}
     build:
       context: ./services/litellm-reloader
       dockerfile: Dockerfile
@@ -112,6 +114,7 @@ services:
     - litellm
   credential-prober:
     container_name: TESTING-credential-prober-dev
+    image: ghcr.io/echoares-lab/ai-gateway/credential-prober:${GIT_SHA:-latest}
     build:
       context: ./services/credential-prober
       dockerfile: Dockerfile
@@ -133,7 +136,7 @@ services:
         condition: service_started
   gateway-engine:
     container_name: TESTING-gateway-engine-dev
-    image: ${GATEWAY_ENGINE_IMAGE:-aidev-gateway-engine-local}
+    image: ghcr.io/echoares-lab/ai-gateway/gateway-engine:${GIT_SHA:-latest}
     build:
       context: ./services/gateway-engine
       dockerfile: Dockerfile

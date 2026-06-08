@@ -11,6 +11,13 @@ inputs:
   scope:
     description: GHA cache scope (isolates layer caches per service)
     required: true
+  push:
+    description: Push image to registry
+    required: false
+    default: "false"
+  build-args:
+    description: Build-time variables
+    required: false
 
 runs:
   using: composite
@@ -19,7 +26,9 @@ runs:
       with:
         context: ${{ inputs.context }}
         load: true
+        push: ${{ inputs.push == 'true' }}
         tags: ${{ inputs.tags }}
+        build-args: ${{ inputs.build-args }}
         cache-from: |
           type=gha,scope=${{ inputs.scope }}
           type=local,src=/var/cache/ai-gateway/buildkit

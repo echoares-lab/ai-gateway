@@ -3,16 +3,19 @@
 # the tagged image is missing locally (first run / runner reboot).
 set -euo pipefail
 
+REGISTRY="${REGISTRY:-}"
+
 build_if_needed() {
   local changed="$1" image="$2" context="$3" scope="$4"
-  if [[ "$changed" != "true" ]] && docker image inspect "$image" >/dev/null 2>&1; then
-    echo "Skipping $image (unchanged, image present locally)"
+  local full_image="${REGISTRY}${image}"
+  if [[ "$changed" != "true" ]] && docker image inspect "$full_image" >/dev/null 2>&1; then
+    echo "Skipping $full_image (unchanged, image present locally)"
     return 0
   fi
-  echo "Building $image from $context (scope=$scope)"
+  echo "Building $full_image from $context (scope=$scope)"
   docker buildx build \
     --load \
-    --tag "$image" \
+    --tag "$full_image" \
     --cache-from "type=gha,scope=${scope}" \
     --cache-from "type=local,src=/var/cache/ai-gateway/buildkit" \
     --cache-to "type=gha,mode=max,scope=${scope}" \

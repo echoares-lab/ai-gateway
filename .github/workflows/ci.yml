@@ -43,6 +43,8 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -108,6 +110,14 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-python-venv
         with:
           extra-packages: ruff pyyaml pydantic pytest
@@ -176,13 +186,35 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+      - name: Determine if we should push
+        id: should_push
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ contains(github.event.pull_request.labels.*.name, 'push-images') }}" == "true" ]]; then
+            echo "push=true" >> $GITHUB_OUTPUT
+          else
+            echo "push=false" >> $GITHUB_OUTPUT
+          fi
       - uses: ./.github/actions/build-docker-cached
         with:
           context: ./services/gateway-engine
-          tags: ai-gateway-engine-test:latest
+          tags: |
+            ai-gateway-engine-test:latest
+            ghcr.io/${{ github.repository }}/gateway-engine:${{ env.GIT_SHA }}
+            ghcr.io/${{ github.repository }}/gateway-engine:latest
           scope: gateway-engine
+          push: ${{ steps.should_push.outputs.push }}
+          build-args: |
+            GIT_SHA=${{ env.GIT_SHA }}
       - name: Run gateway-engine unit tests (parallel)
         run: docker run --rm ai-gateway-engine-test:latest sh -c 'pytest test_gateway_engine*.py -n auto -v'
       - name: Fix workspace permissions (self-hosted)
@@ -203,6 +235,14 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-python-venv
       - name: Run litellm-reloader unit tests
         run: .venv-ci/bin/python -m unittest discover -s services/litellm-reloader -p 'test_*.py' -v
@@ -224,6 +264,14 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-python-venv
         with:
           requirements-files: services/credential-prober/requirements-test.txt
@@ -297,6 +345,14 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-python-venv
         with:
           requirements-files: tests/integration/requirements.txt
@@ -316,6 +372,7 @@ jobs:
       needs.unit-tests.result == 'success' &&
       (
         github.event_name == 'workflow_dispatch' ||
+        github.ref == 'refs/heads/main' ||
         contains(github.event.pull_request.labels.*.name, 'run-e2e')
       )
     runs-on: self-hosted
@@ -327,6 +384,14 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
+      - name: Set GIT_SHA
+        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-python-venv
         with:
           requirements-files: tests/integration/requirements.txt
@@ -347,12 +412,30 @@ jobs:
         run: |
           ./dev-env.sh stop 1 || true
           bash scripts/ci-free-mock-host-ports.sh "$GITHUB_WORKSPACE" || true
+      - name: Determine if we should push
+        id: should_push
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ contains(github.event.pull_request.labels.*.name, 'push-images') }}" == "true" ]]; then
+            echo "push=true" >> $GITHUB_OUTPUT
+          else
+            echo "push=false" >> $GITHUB_OUTPUT
+          fi
       - name: Build and Start Gateway Stack
         run: |
           export CLIPROXY_DEV_CONFIG="$PWD/tests/cliproxy-config-ci.yaml"
           export CLIPROXY_BUILD_CONTEXT="$PWD"
           export CLIPROXY_DOCKERFILE="Dockerfile.cliproxy"
           ./dev-env.sh start 1
+      - name: Push images to GHCR
+        if: steps.should_push.outputs.push == 'true'
+        run: |
+          # Push with GIT_SHA tag (already built by dev-env.sh start)
+          docker compose -f docker-compose.dev.yml -p aidev1 push cliproxy gateway-engine litellm-reloader credential-prober
+          
+          # Tag and push latest
+          export GIT_SHA=latest
+          docker compose -f docker-compose.dev.yml -p aidev1 build cliproxy gateway-engine litellm-reloader credential-prober
+          docker compose -f docker-compose.dev.yml -p aidev1 push cliproxy gateway-engine litellm-reloader credential-prober
       - name: Wait for gateway-engine health
         run: |
           for i in {1..36}; do

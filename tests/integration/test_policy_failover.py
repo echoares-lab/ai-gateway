@@ -156,7 +156,7 @@ async def test_quota_429_preemptive_deprioritizes_credentials(client, policy_deb
 
 
 @pytest.mark.mock
-async def test_quota_429_preemptive_from_gateway-engine_rate_limit_signals(client, policy_debug, mock_litellm_router):
+async def test_quota_429_preemptive_from_gateway_engine_rate_limit_signals(client, policy_debug, mock_litellm_router):
     # Mocking logic moved to conftest.py _chat_completion_mock side effect
     
     seed = await _chat(

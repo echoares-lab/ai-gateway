@@ -19,7 +19,7 @@ os.environ['POLICY_ENGINE_ENABLED'] = '1'
 os.environ['CACHE_ENABLED'] = '1'
 os.environ['LITELLM_URL'] = 'http://litellm:4000'
 
-import main as gateway-engine_main
+import main as gateway_engine_main
 from main import app
 
 load_dotenv()
@@ -41,12 +41,12 @@ async def asgi_client(monkeypatch):
     
     # Setup fakeredis for the gateway-engine
     fake_redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
-    monkeypatch.setattr(gateway-engine_main, "_redis", fake_redis)
+    monkeypatch.setattr(gateway_engine_main, "_redis", fake_redis)
     
     # Initialize globals normally set in _lifespan
-    gateway-engine_main._client = httpx.AsyncClient()
-    gateway-engine_main.LITELLM = "http://litellm:4000"
-    gateway-engine_main._policy_evaluator = gateway-engine_main.PolicyEvaluator.from_env()
+    gateway_engine_main._client = httpx.AsyncClient()
+    gateway_engine_main.LITELLM = "http://litellm:4000"
+    gateway_engine_main._policy_evaluator = gateway_engine_main.PolicyEvaluator.from_env()
     
     headers = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
     async with ASGITransport(app=app) as transport:
@@ -55,7 +55,7 @@ async def asgi_client(monkeypatch):
         ) as c:
             yield c
     
-    await gateway-engine_main._client.aclose()
+    await gateway_engine_main._client.aclose()
 
 
 @pytest_asyncio.fixture

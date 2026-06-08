@@ -12,6 +12,13 @@ PASS=0; FAIL=0; SKIP=0
 GATEWAY="${GATEWAY_URL:-http://localhost:4000}"
 TIMEOUT=30
 
+# ── registry pull (optional) ───────────────────────────────────────────────
+
+if [[ "${PULL_IMAGES:-}" == "1" ]]; then
+    echo "Pulling images from registry..."
+    docker compose pull --quiet || echo "Warning: docker compose pull failed"
+fi
+
 pass() { echo "  ✓ $1"; ((PASS++)) || true; }
 fail() { echo "  ✗ $1"; ((FAIL++)) || true; }
 skip() { echo "  ○ $1 (skipped — no key)"; ((SKIP++)) || true; }
