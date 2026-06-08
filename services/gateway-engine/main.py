@@ -677,7 +677,9 @@ def _model_registry_metadata_for_policy(model: str) -> dict | None:
     return None
 
 
-def _build_routing_context(token: str | None, body: dict, *, budget: dict | None = None, tenancy_info: dict | None = None) -> dict:
+def _build_routing_context(
+    token: str | None, body: dict, *, budget: dict | None = None, tenancy_info: dict | None = None
+) -> dict:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
     model = body.get("model", "")
     context_metadata = {}
