@@ -156,7 +156,17 @@ echo "=== Gateway E2E Test ==="
 echo "Gateway: $GATEWAY"
 health=$(curl -sf --max-time 5 "$GATEWAY/health" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','?'))" 2>/dev/null || echo "unreachable")
 echo "Health: $health"
-[[ "$health" == "ok" ]] || { echo "Gateway unreachable — aborting"; exit 1; }
+if [[ "$health" != "ok" ]]; then
+    echo "Gateway unreachable — aborting"
+    echo "Checking for failed containers..."
+    docker ps -a --filter "status=exited"
+    echo "Last 20 lines of logs for failed containers:"
+    for container in $(docker ps -a --filter "status=exited" --format "{{.Names}}"); do
+        echo "--- $container ---"
+        docker logs "$container" | tail -n 20
+    done
+    exit 1
+fi
 
 test_websocket
 
