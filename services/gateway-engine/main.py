@@ -3871,7 +3871,9 @@ async def proxy(path: str, request: Request):
 
     # Integration Profile Detection (Epic #36)
     integration_profile = client_detector.detect(request)
-    log.debug("Detected integration profile: %s", integration_profile.get("client_name") if integration_profile else "none")
+    log.debug(
+        "Detected integration profile: %s", integration_profile.get("client_name") if integration_profile else "none"
+    )
 
     # Intercept /responses/compact for non-OpenAI models: map to gpt-5-5 for CLIProxy compatibility
     is_responses_compact = path.rstrip("/") in (
@@ -3907,7 +3909,7 @@ async def proxy(path: str, request: Request):
             pass
 
     headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
-    
+
     # Inject integration profile headers (Epic #36)
     if integration_profile and "inject_headers" in integration_profile.get("config", {}):
         headers.update(integration_profile["config"]["inject_headers"])
