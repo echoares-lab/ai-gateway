@@ -81,6 +81,7 @@ from core.model_registry import (
 )
 from core.policy import PolicyEvaluator
 from core.policy import policy_version as in_process_policy_version
+from core.policy.client_detector import client_detector
 from core.policy.evaluate import process_credential_event_async
 from core.policy.schemas import CredentialEvent
 from core.state import _policy_history, _policy_trace, record_policy_history
@@ -3868,6 +3869,10 @@ async def proxy(path: str, request: Request):
     tenancy_info = _tenancy_from_token(auth_token)
     log.debug("Processing request with TenancyContext: %s", tenancy_info)
 
+    # Integration Profile Detection (Epic #36)
+    integration_profile = client_detector.detect(request)
+    log.debug("Detected integration profile: %s", integration_profile.get("client_name") if integration_profile else "none")
+
     # Intercept /responses/compact for non-OpenAI models: map to gpt-5-5 for CLIProxy compatibility
     is_responses_compact = path.rstrip("/") in (
         "v1/responses/compact",
@@ -3902,6 +3907,11 @@ async def proxy(path: str, request: Request):
             pass
 
     headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+    
+    # Inject integration profile headers (Epic #36)
+    if integration_profile and "inject_headers" in integration_profile.get("config", {}):
+        headers.update(integration_profile["config"]["inject_headers"])
+
     _normalize_upstream_authorization(headers)
     log.info(
         "Proxy request path: %s headers: %s",
