@@ -22,7 +22,7 @@ with `REPO_IMPROVEMENT_WORKFLOW.md` (process) and `REPO_IMPROVEMENT_APPENDIX.md`
 | Tier | CI jobs | Blocks merge? | When |
 |------|---------|---------------|------|
 | **Required — Fast (A)** | `lint-and-syntax`, `unit-tests` | Yes | Every PR |
-| **Required — Conditional (A/B)** | `multi-repo-isolation`, `credential-prober`, `mock-integration`, `policy-engine-tests`, `litellm-reloader-tests` | Yes | When matching paths change (skipped = pass) |
+| **Required — Conditional (A/B)** | `multi-repo-isolation`, `credential-prober`, `mock-integration`, `policy-engine-tests` | Yes | When matching paths change (skipped = pass) |
 | **Required — Hotspot (C)** | `real-provider-e2e` | Yes | When hotspot paths change, `run-e2e` label, or dispatch |
 | **Advisory** | `nightly-integration`, `hotspot-e2e-reminder`, `post-merge-gate-d` | No | Signal, schedule, or post-merge |
 
