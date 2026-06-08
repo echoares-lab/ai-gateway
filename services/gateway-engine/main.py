@@ -807,7 +807,7 @@ async def _post_with_retry(url: str, headers: dict, content: bytes, retries: int
             body = json.loads(content)
         except Exception:
             body = {}
-            
+
         parts = model.split("-")
         status_code = 200
         if len(parts) >= 3 and parts[1] == "error":
@@ -815,7 +815,7 @@ async def _post_with_retry(url: str, headers: dict, content: bytes, retries: int
                 status_code = int(parts[2])
             except ValueError:
                 pass
-                
+
         if status_code == 200:
             v_resp = virtual_provider.oai_to_resp(body, model)
         else:
@@ -823,11 +823,11 @@ async def _post_with_retry(url: str, headers: dict, content: bytes, retries: int
 
         elapsed = time.monotonic() - start
         _record_provider_signal(model, status_code, elapsed)
-        
+
         return httpx.Response(
             status_code=status_code,
             content=json.dumps(v_resp).encode("utf-8"),
-            request=httpx.Request("POST", url, headers=headers, content=content)
+            request=httpx.Request("POST", url, headers=headers, content=content),
         )
 
     for attempt in range(retries + 1):
@@ -3979,7 +3979,7 @@ async def proxy(path: str, request: Request):
             )
 
     _proxy_start = time.monotonic()
-    
+
     if ENABLE_VIRTUAL_PROVIDERS and signal_model.startswith("virt-"):
         parts = signal_model.split("-")
         status_code = 200
@@ -3988,7 +3988,7 @@ async def proxy(path: str, request: Request):
                 status_code = int(parts[2])
             except ValueError:
                 pass
-                
+
         try:
             req_body = json.loads(body)
         except Exception:
@@ -4002,11 +4002,11 @@ async def proxy(path: str, request: Request):
         elapsed = time.monotonic() - _proxy_start
         if is_chat:
             _record_provider_signal(signal_model, status_code, elapsed)
-            
+
         resp_body = json.dumps(v_resp).encode("utf-8")
         if ck and status_code == 200 and is_chat:
             await _cache_set(ck + ":json", [resp_body.decode("utf-8")])
-            
+
         return Response(content=resp_body, status_code=status_code, headers={"content-type": "application/json"})
 
     try:
