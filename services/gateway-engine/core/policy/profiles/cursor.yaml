@@ -1,0 +1,8 @@
+client_name: cursor
+signature:
+  user_agent_contains: "Cursor"
+config:
+  patch_body: true
+  inject_headers: {"x-gateway-client": "cursor"}
+  model_translation: {}
+  websocket_bypass: false
