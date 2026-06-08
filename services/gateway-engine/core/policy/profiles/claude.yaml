@@ -1,0 +1,8 @@
+client_name: claude
+signature:
+  user_agent_contains: "Claude"
+config:
+  patch_body: true
+  inject_headers: {"x-gateway-client": "claude"}
+  model_translation: {}
+  websocket_bypass: false
