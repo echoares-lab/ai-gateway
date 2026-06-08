@@ -30,7 +30,6 @@ jobs:
       runtime: ${{ steps.filter.outputs.runtime }}
       isolation: ${{ steps.filter.outputs.isolation }}
       credential_prober: ${{ steps.filter.outputs.credential_prober }}
-      litellm_reloader: ${{ steps.filter.outputs.litellm_reloader }}
       hotspot: ${{ steps.filter.outputs.hotspot }}
       gateway_engine: ${{ steps.filter.outputs.gateway_engine }}
       cliproxy: ${{ steps.filter.outputs.cliproxy }}
@@ -53,8 +52,6 @@ jobs:
           filters: |
             gateway_engine:
               - 'services/gateway-engine/**'
-            litellm_reloader:
-              - 'services/litellm-reloader/**'
             litellm_config:
               - 'litellm-config.yaml'
               - 'tests/litellm-config-mock.yaml'
@@ -223,37 +220,6 @@ jobs:
           docker tag ai-gateway-engine-test:latest ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
           docker push ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.GIT_SHA }}
           docker push ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
-      - name: Fix workspace permissions (self-hosted)
-        if: always()
-        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-
-  litellm-reloader-tests:
-    needs: changes
-    if: >
-      needs.changes.outputs.litellm_reloader == 'true' ||
-      github.event_name == 'workflow_dispatch'
-    runs-on: self-hosted
-    steps:
-      - name: Pre-clean workspace (self-hosted)
-        run: |
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
-          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
-          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
-      - uses: actions/checkout@v4
-      - name: Set GIT_SHA
-        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: ./.github/actions/setup-python-venv
-        with:
-          requirements-files: services/litellm-reloader/requirements-test.txt
-      - name: Run litellm-reloader unit tests
-        run: .venv-ci/bin/python -m unittest discover -s services/litellm-reloader -p 'test_*.py' -v
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
@@ -438,12 +404,12 @@ jobs:
         if: steps.should_push.outputs.push == 'true'
         run: |
           # Push with GIT_SHA tag (already built by dev-env.sh start)
-          docker compose -f docker-compose.dev.yml -p aidev1 push cliproxy gateway-engine litellm-reloader credential-prober
+          docker compose -f docker-compose.dev.yml -p aidev1 push cliproxy gateway-engine credential-prober
           
           # Tag and push latest
           export GIT_SHA=latest
-          docker compose -f docker-compose.dev.yml -p aidev1 build cliproxy gateway-engine litellm-reloader credential-prober
-          docker compose -f docker-compose.dev.yml -p aidev1 push cliproxy gateway-engine litellm-reloader credential-prober
+          docker compose -f docker-compose.dev.yml -p aidev1 build cliproxy gateway-engine credential-prober
+          docker compose -f docker-compose.dev.yml -p aidev1 push cliproxy gateway-engine credential-prober
       - name: Wait for gateway-engine health
         run: |
           for i in {1..36}; do

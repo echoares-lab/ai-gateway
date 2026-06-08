@@ -31,7 +31,6 @@ cd /home/dev/worktrees/ai-gateway-<feature>
 
 # 3. Edit code — hot-reload is automatic
 # gateway-engine.py changes: uvicorn auto-reloads within ~1s
-# litellm-config.yaml changes: litellm-reloader restarts LiteLLM within ~10s
 # (no rebuild or manual restart needed)
 
 # 4. Run unit tests (no container restart needed)
@@ -59,8 +58,6 @@ docker compose up -d
 # (only rebuild needed if Dockerfile or dependencies change)
 docker compose build gateway-engine && docker compose up -d gateway-engine
 
-# litellm-config.yaml changes: automatic via litellm-reloader sidecar
-# (no action needed; litellm-reloader watches and restarts LiteLLM)
 # If you need to force restart: docker compose restart litellm
 
 # Health check

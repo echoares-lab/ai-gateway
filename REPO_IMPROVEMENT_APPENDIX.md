@@ -52,7 +52,7 @@ main -> feat/* worktree/branch -> PR -> main
 | Tier | Jobs | Blocks merge? |
 |------|------|---------------|
 | **Required — Fast (A)** | `lint-and-syntax`, `unit-tests`, `build-gateway-engine` | Yes, every PR |
-| **Required — Conditional** | `mock-integration`, `multi-repo-isolation`, `credential-prober`, `policy-engine-tests`, `litellm-reloader-tests` | Yes, when paths match (skipped = pass) |
+| **Required — Conditional** | `mock-integration`, `multi-repo-isolation`, `credential-prober`, `policy-engine-tests` | Yes, when paths match (skipped = pass) |
 | **Required — Hotspot (C)** | `real-provider-e2e` | Yes, when hotspot paths change |
 | **Advisory** | `nightly-integration`, `hotspot-e2e-reminder`, `post-merge-gate-d` | No |
 
@@ -69,7 +69,7 @@ Required on `main` PRs:
 - `real-provider-e2e` → Gate C (**hotspot paths**; skipped when not applicable)
 
 Path-filtered (required when triggered):
-- `credential-prober`, `policy-engine-tests`, `litellm-reloader-tests` → Gate A
+- `credential-prober`, `policy-engine-tests` → Gate A
 
 Advisory:
 - `nightly-integration`, `post-merge-gate-d` → Gate C/D signal

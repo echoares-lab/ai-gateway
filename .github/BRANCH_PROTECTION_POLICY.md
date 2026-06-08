@@ -28,7 +28,6 @@ Recommended:
 |-----|------|---------------|
 | `credential-prober` | A | `services/credential-prober/**` changes |
 | `policy-engine-tests` | A | `services/policy-engine/**` changes |
-| `litellm-reloader-tests` | A | `services/litellm-reloader/**` changes |
 | `multi-repo-isolation` | A | isolation script paths change |
 | `mock-integration` | B | runtime paths change |
 
