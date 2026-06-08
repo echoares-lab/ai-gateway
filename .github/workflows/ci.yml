@@ -30,7 +30,7 @@ jobs:
       credential_prober: ${{ steps.filter.outputs.credential_prober }}
       litellm_reloader: ${{ steps.filter.outputs.litellm_reloader }}
       hotspot: ${{ steps.filter.outputs.hotspot }}
-      gateway-engine: ${{ steps.filter.outputs.gateway-engine }}
+      gateway_engine: ${{ steps.filter.outputs.gateway_engine }}
       cliproxy: ${{ steps.filter.outputs.cliproxy }}
       litellm_config: ${{ steps.filter.outputs.litellm_config }}
       compose: ${{ steps.filter.outputs.compose }}
@@ -165,8 +165,8 @@ jobs:
           sudo rm -rf services/gateway-engine/__pycache__ || true
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
-  build-gateway-engine:
-    name: "CI :: Build Gateway Engine"
+  unit-tests:
+    name: "CI :: Build and Unit Test"
     runs-on: self-hosted
     steps:
       - name: Pre-clean workspace (self-hosted)
@@ -183,21 +183,6 @@ jobs:
           context: ./services/gateway-engine
           tags: ai-gateway-engine-test:latest
           scope: gateway-engine
-      - name: Fix workspace permissions (self-hosted)
-        if: always()
-        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-
-  unit-tests:
-    needs: build-gateway-engine
-    runs-on: self-hosted
-    steps:
-      - name: Pre-clean workspace (self-hosted)
-        run: |
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
-          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
-          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
-      - uses: actions/checkout@v4
       - name: Run gateway-engine unit tests (parallel)
         run: docker run --rm ai-gateway-engine-test:latest sh -c 'pytest test_gateway_engine*.py -n auto -v'
       - name: Fix workspace permissions (self-hosted)
@@ -294,7 +279,7 @@ jobs:
 
   mock-integration:
     name: "CI :: Mock Integration"
-    needs: [changes, lint-and-syntax, unit-tests, build-gateway-engine]
+    needs: [changes, lint-and-syntax, unit-tests]
     if: >
       needs.lint-and-syntax.result == 'success' &&
       needs.unit-tests.result == 'success' &&

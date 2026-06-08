@@ -1,15 +1,9 @@
-# Standalone dev stack — NOT an override of docker-compose.yml.
-# Run via dev-env.sh, which sets COMPOSE_PROJECT_NAME=aidev<slot> and port env vars.
-# Each slot gets its own Docker network (aidev<slot>_default) — no ai_default join.
-
 networks:
   default: {}
-
 volumes:
-  dev_auth:    # seeded from ~/.cli-proxy-api at dev-env start; writes stay isolated
-  dev_pgdata:  # postgres data for litellm
-  dev_cpa_data: # persistent usage analytics for cpa-manager
-
+  dev_auth: null
+  dev_pgdata: null
+  dev_cpa_data: null
 services:
   postgres:
     container_name: TESTING-postgres-dev
@@ -20,50 +14,53 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-litellm}
     volumes:
-      - dev_pgdata:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    - dev_pgdata:/var/lib/postgresql/data
+    - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U postgres
       interval: 5s
       timeout: 3s
       retries: 10
-
   redis:
     container_name: TESTING-redis-dev
     image: docker.io/redis:7
     restart: unless-stopped
-    command: >
-      --requirepass ${REDIS_AUTH:-myredissecret}
-      --maxmemory-policy noeviction
+    command: '--requirepass ${REDIS_AUTH:-myredissecret} --maxmemory-policy noeviction
+
+      '
     healthcheck:
       test:
-        [
-          "CMD",
-          "redis-cli",
-          "--no-auth-warning",
-          "-a",
-          "${REDIS_AUTH:-myredissecret}",
-          "ping",
-        ]
+      - CMD
+      - redis-cli
+      - --no-auth-warning
+      - -a
+      - ${REDIS_AUTH:-myredissecret}
+      - ping
       interval: 3s
       timeout: 10s
       retries: 10
-
   cliproxy:
     container_name: TESTING-cliproxy-dev
     build:
       context: ${CLIPROXY_BUILD_CONTEXT:-/home/dev/repos/CLIProxyAPI}
       dockerfile: ${CLIPROXY_DOCKERFILE:-Dockerfile}
-    command: ["./CLIProxyAPI", "--config", "/config/config.yaml"]
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        ENVIRONMENT: ${ENVIRONMENT:-production}
+    command:
+    - ./CLIProxyAPI
+    - --config
+    - /config/config.yaml
     restart: unless-stopped
     volumes:
-      - ${CLIPROXY_DEV_CONFIG:-${HOME}/.cliproxy/config.yaml}:/config/config.yaml:ro
-      - dev_auth:/home/dev/.cli-proxy-api
+    - ${CLIPROXY_DEV_CONFIG:-${HOME}/.cliproxy/config.yaml}:/config/config.yaml:ro
+    - dev_auth:/home/dev/.cli-proxy-api
     environment:
       MANAGEMENT_PASSWORD: dev-management-key
     ports:
-      - "${DEV_CLIPROXY_PORT:-8327}:8317"
-
+    - ${DEV_CLIPROXY_PORT:-8327}:8317
   litellm:
     container_name: TESTING-litellm-dev
     image: ghcr.io/berriai/litellm:v1.87.1@sha256:9de33287d844a164f873479a04eebe065610e131d7e3aaf010f520fb5b4cfd7b
@@ -77,48 +74,56 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
       CLIPROXY_API_KEY: ${CLIPROXY_API_KEY}
-      DISABLE_CACHE: "true"
+      DISABLE_CACHE: 'true'
     volumes:
-      - ./litellm-config.yaml:/app/config.yaml:ro
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    - ./litellm-config.yaml:/app/config.yaml:ro
+    command:
+    - --config
+    - /app/config.yaml
+    - --port
+    - '4000'
     ports:
-      - "${DEV_LITELLM_PORT:-4011}:4000"
+    - ${DEV_LITELLM_PORT:-4011}:4000
     healthcheck:
       test:
-        [
-        "CMD-SHELL",
-        "python - <<'PY'\nimport urllib.request, sys\ntry:\n    r = urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=3)\n    sys.exit(0 if 200 <= r.status < 300 else 1)\nexcept Exception:\n    sys.exit(1)\nPY"
-        ]
+      - CMD-SHELL
+      - "python - <<'PY'\nimport urllib.request, sys\ntry:\n    r = urllib.request.urlopen('http://127.0.0.1:4000/health/readiness',\
+        \ timeout=3)\n    sys.exit(0 if 200 <= r.status < 300 else 1)\nexcept Exception:\n\
+        \    sys.exit(1)\nPY"
       interval: 5s
       timeout: 3s
       retries: 10
       start_period: 20s
-
   litellm-reloader:
     container_name: TESTING-litellm-reloader-dev
     build:
       context: ./services/litellm-reloader
       dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        ENVIRONMENT: ${ENVIRONMENT:-production}
     restart: unless-stopped
     environment:
-      - LITELLM_CONTAINER=${COMPOSE_PROJECT_NAME:-aidev1}-litellm-1
+    - LITELLM_CONTAINER=${COMPOSE_PROJECT_NAME:-aidev1}-litellm-1
     volumes:
-      - ./litellm-config.yaml:/config/litellm-config.yaml:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+    - ./litellm-config.yaml:/config/litellm-config.yaml:ro
+    - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
-      - litellm
-
+    - litellm
   credential-prober:
     container_name: TESTING-credential-prober-dev
     build:
       context: ./services/credential-prober
       dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        ENVIRONMENT: ${ENVIRONMENT:-production}
     restart: unless-stopped
     environment:
-      - CLIPROXY_URL=http://cliproxy:8317
-      - CLIPROXY_MANAGEMENT_KEY=${CLIPROXY_MANAGEMENT_KEY:-cliproxy-mgmt-H6VXKpUCzmeDuHcGmH8Oqg}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
-      - GATEWAY_ENGINE_URL=${GATEWAY_ENGINE_URL:-http://gateway-engine:4000}
+    - CLIPROXY_URL=http://cliproxy:8317
+    - CLIPROXY_MANAGEMENT_KEY=${CLIPROXY_MANAGEMENT_KEY:-cliproxy-mgmt-H6VXKpUCzmeDuHcGmH8Oqg}
+    - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
+    - GATEWAY_ENGINE_URL=${GATEWAY_ENGINE_URL:-http://gateway-engine:4000}
     depends_on:
       postgres:
         condition: service_healthy
@@ -126,13 +131,15 @@ services:
         condition: service_started
       gateway-engine:
         condition: service_started
-
   gateway-engine:
     container_name: TESTING-gateway-engine-dev
     image: ${GATEWAY_ENGINE_IMAGE:-aidev-gateway-engine-local}
     build:
       context: ./services/gateway-engine
       dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        ENVIRONMENT: ${ENVIRONMENT:-production}
     command: uvicorn main:app --host 0.0.0.0 --port 4000 --reload
     restart: unless-stopped
     depends_on:
@@ -151,23 +158,21 @@ services:
       POLICY_ENGINE_ENABLED: ${POLICY_ENGINE_ENABLED:-false}
       POLICY_ENGINE_TIMEOUT_MS: ${POLICY_ENGINE_TIMEOUT_MS:-100}
     ports:
-      - "${DEV_GATEWAY_ENGINE_PORT:-4010}:4000"
+    - ${DEV_GATEWAY_ENGINE_PORT:-4010}:4000
     volumes:
-      - ./services/gateway-engine:/app
-      # Read-only mount so /admin/status can read configured models/router/fallbacks.
-      - ./litellm-config.yaml:/config/litellm-config.yaml:ro
-
+    - ./services/gateway-engine:/app
+    - ./litellm-config.yaml:/config/litellm-config.yaml:ro
   cpa-manager:
     container_name: TESTING-cpa-manager-dev
     image: seakee/cpa-manager:1.5.5
     restart: unless-stopped
     depends_on:
-      - cliproxy
+    - cliproxy
     ports:
-      - "${DEV_CPA_MANAGER_PORT:-18327}:18317"
+    - ${DEV_CPA_MANAGER_PORT:-18327}:18317
     environment:
-      HTTP_ADDR: "0.0.0.0:18317"
-      USAGE_DB_PATH: "/data/usage.sqlite"
-      USAGE_COLLECTOR_MODE: "auto"
+      HTTP_ADDR: 0.0.0.0:18317
+      USAGE_DB_PATH: /data/usage.sqlite
+      USAGE_COLLECTOR_MODE: auto
     volumes:
-      - dev_cpa_data:/data
+    - dev_cpa_data:/data
