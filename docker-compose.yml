@@ -132,7 +132,7 @@ services:
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
   cliproxy:
     container_name: PROD-cliproxy
-    image: ghcr.io/echoares-lab/ai-gateway/cliproxy:${GIT_SHA:-latest}
+    image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/cliproxy:${GIT_SHA:-latest}
     build:
       context: .
       dockerfile: Dockerfile.cliproxy
@@ -176,7 +176,7 @@ services:
       retries: 3
   gateway-engine:
     container_name: PROD-gateway-engine
-    image: ghcr.io/echoares-lab/ai-gateway/gateway-engine:${GIT_SHA:-latest}
+    image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/gateway-engine:${GIT_SHA:-latest}
     build:
       context: ./services/gateway-engine
       dockerfile: Dockerfile
@@ -270,7 +270,7 @@ services:
         condition: service_healthy
   litellm-reloader:
     container_name: PROD-litellm-reloader
-    image: ghcr.io/echoares-lab/ai-gateway/litellm-reloader:${GIT_SHA:-latest}
+    image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/litellm-reloader:${GIT_SHA:-latest}
     build:
       context: ./services/litellm-reloader
       dockerfile: Dockerfile
@@ -379,7 +379,7 @@ services:
     - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
   docs-server:
     container_name: PROD-docs-server
-    image: ghcr.io/echoares-lab/ai-gateway/docs-server:${GIT_SHA:-latest}
+    image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/docs-server:${GIT_SHA:-latest}
     build:
       context: .
       dockerfile: services/docs-server/Dockerfile
@@ -393,7 +393,7 @@ services:
     - ./docs/openapi:/app/docs/openapi:ro
   credential-prober:
     container_name: PROD-credential-prober
-    image: ghcr.io/echoares-lab/ai-gateway/credential-prober:${GIT_SHA:-latest}
+    image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/credential-prober:${GIT_SHA:-latest}
     build:
       context: ./services/credential-prober
       dockerfile: Dockerfile

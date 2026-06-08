@@ -100,7 +100,7 @@ get_mgmt_key() {
   grep 'management-key:' "$CLIPROXY_CONFIG" 2>/dev/null | sed 's/.*management-key:\s*//' | tr -d '"' | head -1
 }
 
-get_gateway-engine_admin_key() {
+get_gateway_engine_admin_key() {
   if [ -n "${GATEWAY_ENGINE_ADMIN_KEY:-}" ]; then
     echo "$GATEWAY_ENGINE_ADMIN_KEY"
     return
@@ -532,7 +532,7 @@ gateway-engine_admin_post() {
   local body="$2"
   local output_file="$3"
   local admin_key
-  admin_key=$(get_gateway-engine_admin_key)
+  admin_key=$(get_gateway_engine_admin_key)
   if [ -z "$admin_key" ]; then
     echo "ERROR: GATEWAY_ENGINE_ADMIN_KEY is required for sync-models apply mode."
     echo "Set GATEWAY_ENGINE_ADMIN_KEY in .env or use: $0 sync-models --legacy"
@@ -550,7 +550,7 @@ gateway-engine_admin_patch() {
   local endpoint="$1"
   local body="$2"
   local admin_key
-  admin_key=$(get_gateway-engine_admin_key)
+  admin_key=$(get_gateway_engine_admin_key)
   curl -fsS -X PATCH "$GATEWAY_ENGINE_URL$endpoint" \
     -H "Content-Type: application/json" \
     -H "x-admin-key: $admin_key" \
@@ -604,7 +604,7 @@ PYEOF
 probe_gateway-engine_registry_models() {
   local sync_response_file="$1"
   local admin_key
-  admin_key=$(get_gateway-engine_admin_key)
+  admin_key=$(get_gateway_engine_admin_key)
 
   echo ""
   echo "Probing registry models through gateway-engine..."

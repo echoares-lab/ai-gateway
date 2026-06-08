@@ -57,8 +57,8 @@ def notify_policy_engine(
     reason: str | None = None,
     cool_down_until: datetime | None = None,
 ) -> bool:
-    gateway-engine_url = os.environ.get("GATEWAY_ENGINE_URL", "http://gateway-engine:4000").strip().rstrip("/")
-    if not gateway-engine_url:
+    gateway_engine_url = os.environ.get("GATEWAY_ENGINE_URL", "http://gateway-engine:4000").strip().rstrip("/")
+    if not gateway_engine_url:
         return False
 
     payload: dict[str, str] = {
@@ -75,7 +75,7 @@ def notify_policy_engine(
 
     try:
         req = urllib.request.Request(
-            f"{gateway-engine_url}/v1/events/credential",
+            f"{gateway_engine_url}/v1/events/credential",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",

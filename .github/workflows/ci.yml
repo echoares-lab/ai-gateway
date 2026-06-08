@@ -4,6 +4,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   PYTHONDONTWRITEBYTECODE: "1"
   CI_MOCK_FRESH_DB: "1"
+  DOCKER_REGISTRY: ghcr.io/echoares-lab/ai-gateway
 
 on:
   push:
@@ -20,6 +21,7 @@ concurrency:
 permissions:
   contents: read
   pull-requests: read
+  packages: write
 
 jobs:
   changes:
@@ -209,8 +211,8 @@ jobs:
           context: ./services/gateway-engine
           tags: |
             ai-gateway-engine-test:latest
-            ghcr.io/${{ github.repository }}/gateway-engine:${{ env.GIT_SHA }}
-            ghcr.io/${{ github.repository }}/gateway-engine:latest
+            ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.GIT_SHA }}
+            ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
           scope: gateway-engine
           push: ${{ steps.should_push.outputs.push }}
           build-args: |

@@ -10,7 +10,7 @@ lint.select = ["E", "F", "W", "I"]
 lint.ignore = ["E501"]  # Line too long (handled by formatter)
 
 [tool.ruff.lint.isort]
-known-first-party = ["gateway-engine"]
+known-first-party = ["gateway_engine"]
 
 [build-system]
 requires = ["setuptools"]
