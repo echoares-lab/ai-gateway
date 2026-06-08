@@ -86,15 +86,18 @@ from core.policy.schemas import CredentialEvent
 from core.state import _policy_history, _policy_trace, record_policy_history
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from orchestrator import litellm_admin_get
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from providers import claude as claude_provider
 from providers import gemini as gemini_provider
 from providers.gemini import get_gemini_map
+from providers.virtual import virtual_provider
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("gateway-engine")
 
 UPSTREAM_TIMEOUT = config.UPSTREAM_TIMEOUT
+ENABLE_VIRTUAL_PROVIDERS = config.ENABLE_VIRTUAL_PROVIDERS
 
 
 @asynccontextmanager
@@ -104,11 +107,11 @@ async def _lifespan(application: FastAPI):
     _client = httpx.AsyncClient(
         timeout=httpx.Timeout(UPSTREAM_TIMEOUT, connect=10.0),
         limits=httpx.Limits(
-            max_keepalive_connections=config.HTTPX_MAX_KEEPALIVE,
-            max_connections=config.HTTPX_MAX_CONNECTIONS,
+            max_keepalive_connections=int(os.environ.get("HTTPX_MAX_KEEPALIVE", "20")),
+            max_connections=int(os.environ.get("HTTPX_MAX_CONNECTIONS", "100")),
         ),
     )
-    redis_url = config.REDIS_URL
+    redis_url = os.environ.get("REDIS_URL", "")
     if CACHE_ENABLED and redis_url:
         try:
             _redis = aioredis.from_url(redis_url, encoding="utf-8", decode_responses=True)
@@ -130,7 +133,7 @@ async def _lifespan(application: FastAPI):
     if GATEWAY_ENGINE_CREDENTIAL_SYNC_ENABLED:
         credential_sync_task = asyncio.create_task(_credential_sync_scheduler_loop())
         log.info(
-            "gateway_engine credential sync scheduler enabled interval=%ss dry_run=%s",
+            "gateway-engine credential sync scheduler enabled interval=%ss dry_run=%s",
             GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC,
             GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN,
         )
@@ -149,15 +152,45 @@ app = FastAPI(lifespan=_lifespan)
 app.include_router(admin_router)
 LITELLM = config.LITELLM_URL
 MODEL_PREFIX = "AI-Gateway:"
-POLICY_ENGINE_ENABLED = config.POLICY_ENGINE_ENABLED
-TEAM_BUDGET_SNAPSHOT_ENABLED = config.TEAM_BUDGET_SNAPSHOT_ENABLED
-TEAM_BUDGET_CACHE_TTL_SEC = config.TEAM_BUDGET_CACHE_TTL_SEC
-LITELLM_ADMIN_URL = config.LITELLM_ADMIN_URL
-ADMIN_POLICY_TRACE_ENABLED = config.ADMIN_POLICY_TRACE_ENABLED
-GATEWAY_ENGINE_CREDENTIAL_SYNC_ENABLED = config.CREDENTIAL_SYNC_ENABLED
-GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC = config.CREDENTIAL_SYNC_INTERVAL_SEC
-GATEWAY_ENGINE_CREDENTIAL_SYNC_INITIAL_DELAY_SEC = config.CREDENTIAL_SYNC_INITIAL_DELAY_SEC
-GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN = config.CREDENTIAL_SYNC_DRY_RUN
+POLICY_ENGINE_ENABLED = os.environ.get("POLICY_ENGINE_ENABLED", "false").lower() not in (
+    "0",
+    "false",
+    "no",
+)
+TEAM_BUDGET_SNAPSHOT_ENABLED = os.environ.get("TEAM_BUDGET_SNAPSHOT_ENABLED", "true").lower() not in (
+    "0",
+    "false",
+    "no",
+)
+TEAM_BUDGET_CACHE_TTL_SEC = int(os.environ.get("TEAM_BUDGET_CACHE_TTL_SEC", "30"))
+LITELLM_ADMIN_URL = os.environ.get("LITELLM_ADMIN_URL", LITELLM).rstrip("/")
+ADMIN_POLICY_TRACE_ENABLED = os.environ.get("ADMIN_POLICY_TRACE_ENABLED", "true").lower() not in (
+    "0",
+    "false",
+    "no",
+)
+GATEWAY_ENGINE_CREDENTIAL_SYNC_ENABLED = os.environ.get(
+    "GATEWAY_ENGINE_CREDENTIAL_SYNC_ENABLED", "false"
+).lower() not in (
+    "0",
+    "false",
+    "no",
+)
+GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC = max(
+    1,
+    int(os.environ.get("GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC", "300")),
+)
+GATEWAY_ENGINE_CREDENTIAL_SYNC_INITIAL_DELAY_SEC = max(
+    0,
+    int(os.environ.get("GATEWAY_ENGINE_CREDENTIAL_SYNC_INITIAL_DELAY_SEC", "30")),
+)
+GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN = os.environ.get(
+    "GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN", "false"
+).lower() not in (
+    "0",
+    "false",
+    "no",
+)
 
 
 _policy_version_hint: str | None = None
@@ -170,12 +203,16 @@ async def metrics():
 
 
 _client: httpx.AsyncClient | None = None
-# NOTE: Translator caching is DISABLED in favor of LiteLLM's auth-aware Redis cache.
+# NOTE: Gateway Engine caching is DISABLED in favor of LiteLLM's auth-aware Redis cache.
 # LiteLLM's cache includes Authorization header in its cache key, preventing cross-user responses.
-# Translator caching layer is redundant when multi-team virtual keys are in use.
+# Gateway Engine caching layer is redundant when multi-team virtual keys are in use.
 # Set CACHE_ENABLED=true only if LiteLLM's cache is unavailable or disabled.
-CACHE_ENABLED = config.CACHE_ENABLED
-CACHE_TTL = config.CACHE_TTL
+CACHE_ENABLED = os.environ.get("CACHE_ENABLED", "false").lower() not in (
+    "0",
+    "false",
+    "no",
+)
+CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "60"))
 _redis: aioredis.Redis | None = None
 _policy_evaluator: PolicyEvaluator | None = None
 
@@ -221,7 +258,7 @@ async def _tee_lines(aiter, buf: list[str]):
 @app.middleware("http")
 async def _limit_request_size(request: Request, call_next):
     """Reject requests larger than MAX_REQUEST_BYTES to prevent memory exhaustion."""
-    max_bytes = config.MAX_REQUEST_BYTES
+    max_bytes = int(os.environ.get("MAX_REQUEST_BYTES", 50 * 1024 * 1024))  # 50MB default
     if request.headers.get("content-length"):
         try:
             content_length = int(request.headers["content-length"])
@@ -287,6 +324,7 @@ _PROVIDER_PREFIXES = (
     ("grok", "xai"),
     ("kimi", "moonshot"),
     ("moonshot", "moonshot"),
+    ("virt-", "virtual"),
 )
 
 
@@ -362,7 +400,7 @@ def _normalize_upstream_authorization(headers: dict) -> None:
             auth_val = value
             break
     token = (auth_val or "").removeprefix("Bearer ").strip()
-    master_key = config.LITELLM_MASTER_KEY
+    master_key = os.environ.get("LITELLM_MASTER_KEY", "")
     if master_key and (not token or token.startswith("ak-")):
         headers[auth_key or "authorization"] = f"Bearer {master_key}"
 
@@ -407,7 +445,7 @@ def _build_rate_limit_hints(model: str) -> list[dict]:
 def _load_quota_headroom_hints() -> list[dict]:
     if _quota_headroom_cache is not None:
         return list(_quota_headroom_cache)
-    raw = config.QUOTA_HEADROOM_JSON
+    raw = os.environ.get("QUOTA_HEADROOM_JSON", "").strip()
     if not raw:
         return []
     try:
@@ -453,7 +491,7 @@ def _parse_team_info_to_budget(team_info: dict) -> dict:
 
 
 def _load_budget_snapshot_override() -> dict | None:
-    raw = config.TEAM_BUDGET_SNAPSHOT_JSON
+    raw = os.environ.get("TEAM_BUDGET_SNAPSHOT_JSON", "").strip()
     if not raw:
         return None
     try:
@@ -464,33 +502,11 @@ def _load_budget_snapshot_override() -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-async def _litellm_admin_get(path: str, *, params: dict | None = None) -> dict | None:
-    if _client is None:
-        return None
-    master_key = config.LITELLM_MASTER_KEY
-    if not master_key:
-        return None
-    headers = {"Authorization": f"Bearer {master_key}"}
-    try:
-        resp = await _client.get(
-            f"{LITELLM_ADMIN_URL}{path}",
-            headers=headers,
-            params=params,
-            timeout=0.25,
-        )
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        return data if isinstance(data, dict) else None
-    except Exception:
-        return None
-
-
 async def _resolve_litellm_team_id(team_alias: str) -> str | None:
     global _team_alias_index, _team_alias_index_at
     now = time.monotonic()
     if _team_alias_index is None or (now - _team_alias_index_at) > TEAM_BUDGET_CACHE_TTL_SEC:
-        data = await _litellm_admin_get("/team/list")
+        data = await litellm_admin_get("/team/list")
         teams = []
         if isinstance(data, list):
             teams = data
@@ -514,7 +530,7 @@ async def _fetch_litellm_team_budget(team_alias: str) -> dict | None:
     team_id = await _resolve_litellm_team_id(team_alias)
     if not team_id:
         return None
-    data = await _litellm_admin_get("/team/info", params={"team_id": team_id})
+    data = await litellm_admin_get("/team/info", params={"team_id": team_id})
     if not data:
         return None
     team_info = data.get("team_info") if isinstance(data.get("team_info"), dict) else data
@@ -661,7 +677,7 @@ def _model_registry_metadata_for_policy(model: str) -> dict | None:
     return None
 
 
-def _build_routing_context(token: str | None, body: dict, *, budget: dict | None = None) -> dict:
+def _build_routing_context(token: str | None, body: dict, *, budget: dict | None = None, tenancy_info: dict | None = None) -> dict:
     metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
     model = body.get("model", "")
     context_metadata = {}
@@ -674,7 +690,7 @@ def _build_routing_context(token: str | None, body: dict, *, budget: dict | None
             context_metadata["backing_credentials"] = deployment_credentials
     ctx = {
         "requested_model": model,
-        "tenancy": _tenancy_from_token(token),
+        "tenancy": tenancy_info or _tenancy_from_token(token),
         "capabilities": _request_capabilities(body),
         "agent_id": metadata.get("agent_id"),
         "session_id": metadata.get("session_id") or metadata.get("litellm_session_id"),
@@ -709,12 +725,12 @@ async def _evaluate_policy_engine(context: dict) -> dict | None:
         return None
 
 
-async def _apply_policy_engine(token: str | None, body: dict) -> dict:
+async def _apply_policy_engine(token: str | None, body: dict, tenancy_info: dict | None = None) -> dict:
     if not POLICY_ENGINE_ENABLED:
         return body
-    tenancy = _tenancy_from_token(token)
+    tenancy = tenancy_info or _tenancy_from_token(token)
     budget = await _load_team_budget_snapshot(tenancy)
-    decision = await _evaluate_policy_engine(_build_routing_context(token, body, budget=budget))
+    decision = await _evaluate_policy_engine(_build_routing_context(token, body, budget=budget, tenancy_info=tenancy))
     if decision is None:
         return body
     if "metadata" not in body or not isinstance(body["metadata"], dict):
@@ -784,6 +800,36 @@ async def _post_with_retry(url: str, headers: dict, content: bytes, retries: int
     rate-limit) for every attempt — see docs/ADAPTIVE_ROUTING.md (issue #59).
     """
     model = _model_from_content(content)
+
+    if ENABLE_VIRTUAL_PROVIDERS and model.startswith("virt-"):
+        start = time.monotonic()
+        try:
+            body = json.loads(content)
+        except Exception:
+            body = {}
+
+        parts = model.split("-")
+        status_code = 200
+        if len(parts) >= 3 and parts[1] == "error":
+            try:
+                status_code = int(parts[2])
+            except ValueError:
+                pass
+
+        if status_code == 200:
+            v_resp = virtual_provider.oai_to_resp(body, model)
+        else:
+            v_resp = virtual_provider.simulate_error(status_code)
+
+        elapsed = time.monotonic() - start
+        _record_provider_signal(model, status_code, elapsed)
+
+        return httpx.Response(
+            status_code=status_code,
+            content=json.dumps(v_resp).encode("utf-8"),
+            request=httpx.Request("POST", url, headers=headers, content=content),
+        )
+
     for attempt in range(retries + 1):
         start = time.monotonic()
         resp = await _client.post(url, headers=headers, content=content)
@@ -1374,7 +1420,7 @@ def codex_ws_policy_bypass() -> bool:
     """True when Codex WS upgrade skips policy-engine evaluate (default).
 
     Optional parity requires both POLICY_ENGINE_ENABLED and POLICY_ENGINE_WS_EVALUATE
-    (translator integration issue 38-04 must ship evaluate wiring first).
+    (gateway-engine integration issue 38-04 must ship evaluate wiring first).
     """
     if _policy_engine_enabled() and _policy_engine_ws_evaluate_enabled():
         return False
@@ -1398,7 +1444,7 @@ def _codex_ws_upstream_headers(
     }
     headers = {k: v for k, v in ws_headers.items() if k.lower() not in skip}
 
-    cliproxy_api_key = config.CLIPROXY_API_KEY
+    cliproxy_api_key = os.environ.get("CLIPROXY_API_KEY", "")
     if cliproxy_api_key:
         headers["authorization"] = f"Bearer {cliproxy_api_key}"
 
@@ -1721,7 +1767,7 @@ async def responses_websocket(ws: WebSocket):
     if not client_auth:
         client_auth = ws.query_params.get("key", "")
 
-    expected_master_key = config.LITELLM_MASTER_KEY
+    expected_master_key = os.environ.get("LITELLM_MASTER_KEY", "")
     is_authorized = True
     auth_token: str | None = None
 
@@ -1749,7 +1795,7 @@ async def responses_websocket(ws: WebSocket):
         return
 
     # Target CLIProxy WebSocket URL
-    cliproxy_ws_url = config.CLIPROXY_WS_URL
+    cliproxy_ws_url = os.environ.get("CLIPROXY_WS_URL", "ws://cliproxy:8317/v1/responses")
 
     ws_bypass = codex_ws_policy_bypass()
     routing_decision = None
@@ -2270,13 +2316,13 @@ async def debug_policy_reset():
 # panel to warning/unknown rather than failing the whole response.
 
 ADMIN_SCHEMA_VERSION = "admin-console.v1"
-LITELLM_CONFIG_PATH = config.LITELLM_CONFIG_PATH
-GEMINI_MODEL_MAP_PATH = config.GEMINI_MODEL_MAP_PATH
+LITELLM_CONFIG_PATH = os.environ.get("LITELLM_CONFIG_PATH", "/config/litellm-config.yaml")
+GEMINI_MODEL_MAP_PATH = os.environ.get("GEMINI_MODEL_MAP_PATH", "/app/gemini-model-map.json")
 ADMIN_ERROR_MAXLEN = 400
-GATEWAY_ENGINE_ADMIN_KEY = config.ADMIN_KEY
-CLIPROXY_URL = config.CLIPROXY_URL.rstrip("/")
-CLIPROXY_MANAGEMENT_KEY = config.CLIPROXY_MANAGEMENT_KEY
-MODEL_PROBE_TIMEOUT = config.MODEL_PROBE_TIMEOUT
+GATEWAY_ENGINE_ADMIN_KEY = os.environ.get("GATEWAY_ENGINE_ADMIN_KEY", "")
+CLIPROXY_URL = os.environ.get("CLIPROXY_URL", "http://cliproxy:8317").rstrip("/")
+CLIPROXY_MANAGEMENT_KEY = os.environ.get("CLIPROXY_MANAGEMENT_KEY", "")
+MODEL_PROBE_TIMEOUT = float(os.environ.get("MODEL_PROBE_TIMEOUT", "8.0"))
 
 _SECRET_PATTERNS = [
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]{12,}"),
@@ -2326,7 +2372,7 @@ def _admin_panel(status: str, source: str, freshness_seconds, errors: list, data
 
 
 def _admin_key_valid(request: Request) -> bool:
-    """Return true when mutating gateway_engine admin APIs are enabled and authorized."""
+    """Return true when mutating gateway-engine admin APIs are enabled and authorized."""
     configured = GATEWAY_ENGINE_ADMIN_KEY or os.environ.get("GATEWAY_ENGINE_ADMIN_KEY", "")
     if not configured:
         return False
@@ -2340,7 +2386,7 @@ def _require_admin_key(request: Request) -> JSONResponse | None:
     return JSONResponse(
         {
             "error": {
-                "message": "gateway_engine admin mutations are disabled or unauthorized",
+                "message": "gateway-engine admin mutations are disabled or unauthorized",
                 "code": "admin_key_required",
             }
         },
@@ -2589,7 +2635,7 @@ def _admin_environment() -> dict:
 
 
 def _admin_health_panel() -> dict:
-    # Gateway engine is serving by definition; other services are linked but not
+    # Gateway Engine is serving by definition; other services are linked but not
     # actively probed in v1 (avoids unbounded calls). They are marked unknown.
     env = _admin_environment()
     services = [
@@ -2606,7 +2652,7 @@ def _admin_health_panel() -> dict:
             "endpoint": env["cpa_manager_url"],
         },
     ]
-    return _admin_panel("ok", "gateway_engine:self", 0, [], {"services": services})
+    return _admin_panel("ok", "gateway-engine:self", 0, [], {"services": services})
 
 
 def _admin_models_panel(
@@ -2682,7 +2728,7 @@ def _admin_models_panel(
         status = "warning"
     return _admin_panel(
         status,
-        (registry.source if registry is not None else "gateway_engine:/v1/models + repo:litellm-config.yaml"),
+        (registry.source if registry is not None else "gateway-engine:/v1/models + repo:litellm-config.yaml"),
         0,
         panel_errors,
         {
@@ -2819,7 +2865,7 @@ def _admin_routing_panel(
         data["policy_engine"] = policy_engine
     return _admin_panel(
         status,
-        "repo:litellm-config.yaml + gateway_engine:/metrics",
+        "repo:litellm-config.yaml + gateway-engine:/metrics",
         15,
         errors,
         data,
@@ -2975,7 +3021,7 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
     status = "ok" if metrics_text and not errors else "warning"
     return _admin_panel(
         status,
-        "gateway_engine:/metrics (token counters)",
+        "gateway-engine:/metrics (token counters)",
         0,
         errors,
         {
@@ -3042,7 +3088,7 @@ async def _admin_fetch_visible_models() -> tuple[list[str] | None, list[dict]]:
             _admin_error(
                 "client_unavailable",
                 "http client not initialized",
-                "gateway_engine:/v1/models",
+                "gateway-engine:/v1/models",
             )
         ]
     master_key = os.environ.get("LITELLM_MASTER_KEY", "")
@@ -3076,7 +3122,7 @@ async def _admin_fetch_metrics_text() -> tuple[str | None, list[dict]]:
     try:
         return generate_latest().decode("utf-8", errors="replace"), []
     except Exception as exc:
-        return None, [_admin_error("metrics_error", f"{type(exc).__name__}: {exc}", "gateway_engine:/metrics")]
+        return None, [_admin_error("metrics_error", f"{type(exc).__name__}: {exc}", "gateway-engine:/metrics")]
 
 
 async def _fetch_cliproxy_auth_files() -> tuple[list[dict], list[dict]]:
@@ -3265,7 +3311,7 @@ async def _sync_credentials_from_cliproxy(
                             _admin_error(
                                 "policy_event_error",
                                 f"{type(exc).__name__}: {exc}",
-                                "gateway_engine:policy-event",
+                                "gateway-engine:policy-event",
                             )
                         )
         elif body.dry_run:
@@ -3321,7 +3367,7 @@ async def admin_token_analytics():
 
 @app.get("/admin/credentials", response_model=CredentialInventoryListResponse)
 async def admin_credentials():
-    """List redacted translator credential inventory records."""
+    """List redacted gateway-engine credential inventory records."""
     loaded = _credential_inventory_store().list_credentials()
     return loaded.model_copy(update={"credentials": _redact_credential_records(loaded.credentials)})
 
@@ -3358,7 +3404,7 @@ async def admin_credential_probe(credential_id: str, request: Request):
 
 @app.get("/admin/models", response_model=ModelRegistryListResponse)
 async def admin_models():
-    """List translator-owned model registry records, falling back to LiteLLM config."""
+    """List gateway-engine-owned model registry records, falling back to LiteLLM config."""
     return _load_model_registry_with_config_fallback()
 
 
@@ -3815,6 +3861,11 @@ async def proxy(path: str, request: Request):
         body = raw
     changed = prefix_stripped or fmt_changed
 
+    # Tenancy/Budget Context Initialization (Epic #30)
+    auth_token = request.headers.get("authorization")
+    tenancy_info = _tenancy_from_token(auth_token)
+    log.debug("Processing request with TenancyContext: %s", tenancy_info)
+
     # Intercept /responses/compact for non-OpenAI models: map to gpt-5-5 for CLIProxy compatibility
     is_responses_compact = path.rstrip("/") in (
         "v1/responses/compact",
@@ -3933,6 +3984,36 @@ async def proxy(path: str, request: Request):
             )
 
     _proxy_start = time.monotonic()
+
+    if ENABLE_VIRTUAL_PROVIDERS and signal_model.startswith("virt-"):
+        parts = signal_model.split("-")
+        status_code = 200
+        if len(parts) >= 3 and parts[1] == "error":
+            try:
+                status_code = int(parts[2])
+            except ValueError:
+                pass
+
+        try:
+            req_body = json.loads(body)
+        except Exception:
+            req_body = {}
+
+        if status_code == 200:
+            v_resp = virtual_provider.oai_to_resp(req_body, signal_model)
+        else:
+            v_resp = virtual_provider.simulate_error(status_code)
+
+        elapsed = time.monotonic() - _proxy_start
+        if is_chat:
+            _record_provider_signal(signal_model, status_code, elapsed)
+
+        resp_body = json.dumps(v_resp).encode("utf-8")
+        if ck and status_code == 200 and is_chat:
+            await _cache_set(ck + ":json", [resp_body.decode("utf-8")])
+
+        return Response(content=resp_body, status_code=status_code, headers={"content-type": "application/json"})
+
     try:
         resp = await _client.request(request.method, url, headers=headers, content=body, params=params)
     except httpx.TimeoutException as exc:
