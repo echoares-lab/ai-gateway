@@ -71,6 +71,20 @@ async def _proxy_to_litellm(method: str, path: str, request: Request):
             status_code=502
         )
 
+from pydantic import BaseModel, Field
+
+class RegistrationRequest(BaseModel):
+    repo_name: str
+    team_slug: str
+    client_profile: str
+
+@router.post("/onboarding/register")
+async def register_repo(request: RegistrationRequest):
+    """Register a new repository."""
+    # TODO: Validate tenancy constraints and reserve config slots
+    log.info("Registering repository: %s for team: %s", request.repo_name, request.team_slug)
+    return JSONResponse(content={"status": "registered", "repo": request.repo_name})
+
 @router.get("/admin/teams")
 async def get_teams(request: Request):
     """Proxy to LiteLLM team/list."""
