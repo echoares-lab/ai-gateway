@@ -3,6 +3,7 @@ import httpx
 import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from core.credential_inventory import CredentialInventoryStore
 
 log = logging.getLogger("gateway_engine.admin_api")
 
@@ -84,3 +85,31 @@ async def create_team(request: Request):
 async def create_key(request: Request):
     """Proxy to LiteLLM key/generate."""
     return await _proxy_to_litellm("POST", "key/generate", request)
+
+from core.credential_inventory import CredentialInventoryStore
+from orchestrator.litellm_admin import litellm_admin_get
+
+log = logging.getLogger("gateway_engine.admin_api")
+...
+@router.get("/admin/tenants")
+async def get_tenants(request: Request):
+    """Aggregate tenant/team usage, quota, and credential health."""
+    config = _get_config()
+    auth_error = _require_admin_key(request, config)
+    if auth_error:
+        return auth_error
+    
+    # 1. Fetch teams from LiteLLM
+    teams_data = await litellm_admin_get("/team/list")
+    if teams_data is None:
+        return JSONResponse(content={"error": "Failed to fetch teams"}, status_code=502)
+    teams = teams_data.get("teams", [])
+
+    # 2. Fetch credentials from inventory
+    inventory = CredentialInventoryStore()
+    credentials_resp = inventory.list_credentials() 
+    
+    return JSONResponse(content={
+        "teams": teams, 
+        "credentials": [c.model_dump() for c in credentials_resp.credentials]
+    })

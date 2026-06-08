@@ -70,21 +70,34 @@ async def test_admin_teams_create_success(admin_key):
         assert response.json() == mock_response
 
 @pytest.mark.asyncio
-async def test_admin_keys_create_success(admin_key):
-    mock_response = {"key": "sk-123"}
-    key_data = {"team_id": "team-1"}
-
-    with patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_request:
-        mock_request.return_value = httpx.Response(
-            200,
-            json=mock_response
+async def test_admin_tenants_success(admin_key):
+    mock_teams_response = {"teams": [{"team_id": "team-1", "team_alias": "Team 1"}]}
+    
+    # Mock CredentialInventoryRecord
+    from core.credential_inventory import CredentialInventoryRecord, CredentialInventoryListResponse
+    mock_creds = [
+        CredentialInventoryRecord(
+            credential_id="cred-1",
+            provider="openai",
+            label="cred-1-label",
+            key_fingerprint="fp-1"
         )
+    ]
+    mock_inventory_response = CredentialInventoryListResponse(
+        registry_available=True,
+        credentials=mock_creds
+    )
 
-        response = client.post(
-            "/admin/keys",
-            headers={"x-admin-key": admin_key},
-            json=key_data
+    with patch("admin_api.litellm_admin_get", return_value=mock_teams_response), \
+         patch("admin_api.CredentialInventoryStore.list_credentials", return_value=mock_inventory_response):
+        
+        response = client.get(
+            "/admin/tenants",
+            headers={"x-admin-key": admin_key}
         )
 
         assert response.status_code == 200
-        assert response.json() == mock_response
+        data = response.json()
+        assert data["teams"] == mock_teams_response["teams"]
+        assert len(data["credentials"]) == 1
+        assert data["credentials"][0]["credential_id"] == "cred-1"
