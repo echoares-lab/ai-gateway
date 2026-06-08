@@ -1,10 +1,13 @@
 name: Auto Approve
 on: pull_request_target
+permissions:
+  pull-requests: write
 jobs:
   approve:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: github.actor == 'TheNorthWestPassage'
     steps:
       - uses: hmarr/auto-approve-action@v4
         with:
+          github-token: "${{ secrets.GH_PAT_AUTO_APPROVE || secrets.GITHUB_TOKEN }}"
           review-message: "Auto-approved by orchestrator workflow."
