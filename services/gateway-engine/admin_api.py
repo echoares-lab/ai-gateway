@@ -108,6 +108,36 @@ async def register_repo(request: RegistrationRequest):
         "key_name": key_name
     })
 
+@router.post("/onboarding/validate")
+async def validate_onboarding(request: Request):
+    """
+    Validate connectivity for a newly generated credential.
+    Probes the gateway with the provided credential.
+    """
+    # 1. Extract credential to test from request
+    body = await request.json()
+    auth_key = body.get("key")
+    
+    if not auth_key:
+        return JSONResponse(content={"error": "Credential (key) required"}, status_code=400)
+    
+    # 2. Probe connectivity (simple ping to /v1/models to verify auth)
+    config = _get_config()
+    url = f"{config['admin_url']}/v1/models"
+    
+    headers = {"Authorization": f"Bearer {auth_key}"}
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers)
+            
+            if resp.status_code == 200:
+                return JSONResponse(content={"status": "connected", "message": "Credential validated successfully"})
+            else:
+                return JSONResponse(content={"status": "failed", "message": f"Connection failed with status {resp.status_code}"}, status_code=401)
+    except Exception as exc:
+        return JSONResponse(content={"status": "error", "message": str(exc)}, status_code=502)
+
 @router.get("/admin/teams")
 async def get_teams(request: Request):
     """Proxy to LiteLLM team/list."""

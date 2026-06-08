@@ -70,23 +70,17 @@ async def test_admin_teams_create_success(admin_key):
         assert response.json() == mock_response
 
 @pytest.mark.asyncio
-async def test_onboarding_register_success(admin_key):
-    mock_key_response = {"key": "sk-123", "name": "ak-echoares-core-eng-my-repo-dev"}
-    registration_data = {
-        "repo_name": "my-repo",
-        "team_slug": "eng",
-        "client_profile": "cursor"
-    }
+async def test_onboarding_validate_success(admin_key):
+    # Mocking httpx.AsyncClient.get for the probe call
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = httpx.Response(200)
 
-    with patch("admin_api.litellm_admin_post", return_value=mock_key_response):
         response = client.post(
-            "/onboarding/register",
+            "/onboarding/validate",
             headers={"x-admin-key": admin_key},
-            json=registration_data
+            json={"key": "sk-123"}
         )
 
         assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "registered"
-        assert data["key"] == "sk-123"
-        assert "my-repo" in data["key_name"]
+        assert response.json()["status"] == "connected"
+        assert mock_get.called
