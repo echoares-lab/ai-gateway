@@ -4,7 +4,7 @@ permissions:
   pull-requests: write
 jobs:
   approve:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: github.actor == 'TheNorthWestPassage'
     steps:
       - uses: hmarr/auto-approve-action@v4
