@@ -88,7 +88,6 @@ Dev slots map to ports:
 ### Step 3 — Make changes (hot-reload is automatic)
 
 - `services/gateway-engine/main.py` edits → uvicorn reloads in ~1 second (no action needed)
-- `litellm-config.yaml` edits → litellm-reloader detects and restarts in ~10 seconds
 - `Dockerfile` or pip dependency changes → `./dev-env.sh rebuild <slot>`
 
 ### Step 4 — Test after each significant change (Gate A)

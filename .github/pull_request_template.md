@@ -32,7 +32,7 @@ Risk level: **low / medium / high** (see `TESTING_AND_PROMOTION_POLICY.md` and `
 
 - [ ] `make test-mock` pass (0 skips; runtime paths)
 - [ ] `bash tests/test-multi-repo-isolation.sh` (isolation script paths)
-- [ ] Policy-engine / litellm-reloader / credential-prober tests (service paths)
+- [ ] Policy-engine / credential-prober tests (service paths)
 
 ### Gate C — real providers (opt-in; high-risk only)
 

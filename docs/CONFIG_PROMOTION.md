@@ -68,7 +68,6 @@ Configuration changes must move through a structured promotion pipeline to guara
 ### 2.4 Stage 4: Production Release
 1. The PR is merged to `main`.
 2. The production gateway pulls the updated files.
-3. The `litellm-reloader` service detects the update, performs pre-flight verification, and restarts the LiteLLM container gracefully.
 
 ---
 
@@ -117,7 +116,6 @@ Once the LiteLLM container is restarted, the reloader monitors its startup:
 
 We propose splitting the execution of Epic #35 into the following sequenced child issues:
 
-1. **#99 -- feat(config): implement config pre-flight validation in litellm-reloader**
    Add offline YAML parsing and model validation to the `watch.py` script before triggering container restarts.
 2. **#100 -- feat(config): implement post-start health checks and auto-rollback**
    Add a monitoring loop to `watch.py` that rolls back to a backup configuration if LiteLLM fails to boot within a 45-second timeout.

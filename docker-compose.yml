@@ -217,24 +217,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-  litellm-reloader:
-    container_name: PROD-litellm-reloader
-    image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/litellm-reloader:${GIT_SHA:-latest}
-    build:
-      context: ./services/litellm-reloader
-      dockerfile: Dockerfile
-      args:
-        GIT_SHA: ${GIT_SHA:-unknown}
-        ENVIRONMENT: ${ENVIRONMENT:-production}
-    restart: always
-    environment:
-    - LITELLM_CONTAINER=ai-litellm-1
-    - LITELLM_HEALTH_URL=http://litellm:4000/health/readiness
-    volumes:
-    - ./litellm-config.yaml:/config/litellm-config.yaml:ro
-    - /var/run/docker.sock:/var/run/docker.sock:ro
-    depends_on:
-    - litellm
   clickhouse:
     container_name: PROD-clickhouse
     image: docker.io/clickhouse/clickhouse-server
