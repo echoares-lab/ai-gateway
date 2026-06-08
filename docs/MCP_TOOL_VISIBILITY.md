@@ -36,7 +36,7 @@ list before it reaches the client.
 Non-goals for this stub:
 
 - Moving MCP registration out of LiteLLM (ADR: LiteLLM remains control plane).
-- Adding MCP routing logic to `translator.py` (ADR: pass-through only).
+- Adding MCP routing logic to `gateway-engine.py` (ADR: pass-through only).
 - Per-tool argument-level ACL (server-alias granularity first).
 - Dynamic MCP server provisioning (static registry + profile filters).
 
@@ -94,7 +94,7 @@ MCP rules → **allow all registered servers** (backward compatible).
 
 ```text
 Client request (Bearer ak-…)
-  → translator (tenancy metadata → RoutingContext)
+  → gateway-engine (tenancy metadata → RoutingContext)
   → LiteLLM chat completion with tools
        ↑
   policy-engine GET /v1/profiles/... (existing)
@@ -105,12 +105,12 @@ Client request (Bearer ak-…)
 ```
 
 Per ADR, filtering happens **inside or immediately after LiteLLM's MCP tool
-materialization**, not in the translator. Options (pick in implementation PR):
+materialization**, not in the gateway-engine. Options (pick in implementation PR):
 
 1. **LiteLLM virtual-key metadata** — attach `allowed_mcp_servers` to the key;
    LiteLLM filters if supported in target version.
-2. **Translator post-filter** — only strips MCP-origin tools from `/v1/models` or
-   tool-bearing responses; minimal, but touches translator (prefer option 1).
+2. **Gateway Engine post-filter** — only strips MCP-origin tools from `/v1/models` or
+   tool-bearing responses; minimal, but touches gateway-engine (prefer option 1).
 3. **Dedicated sidecar** — overkill for phase 1.
 
 Audit: log filtered server aliases in `routing_decisions_log.rules_applied` when
@@ -129,10 +129,10 @@ a deny occurs (extends 38-16).
 | **5e** | TENANCY-4 closeout | ROADMAP #30 child issue done; RUNBOOK operator guide |
 
 **Dependencies:** 38-05 repo affinity profiles (done), tenant metadata in
-translator ([#79](https://github.com/echoares-lab/ai-gateway/pull/79)), global
+gateway-engine ([#79](https://github.com/echoares-lab/ai-gateway/pull/79)), global
 `mcp_servers` registry in `litellm-config.yaml`.
 
-**Blocked by:** none for design; runtime **5c** benefits from 38-04 translator
+**Blocked by:** none for design; runtime **5c** benefits from 38-04 gateway-engine
 wire but MCP filter can prototype on policy-engine + mock integration first.
 
 ---

@@ -23,7 +23,7 @@ acceptance:
 tests: |
   N/A — documentation only
 risks: |
-  Procedures may reference features not yet wired in translator (38-04) — marked design-only.
+  Procedures may reference features not yet wired in gateway-engine (38-04) — marked design-only.
 dependencies:
   - policy-engine-38-16-audit-log.md
   - docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md

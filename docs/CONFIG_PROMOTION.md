@@ -52,13 +52,13 @@ Configuration changes must move through a structured promotion pipeline to guara
 ### 2.1 Stage 1: Local & Dev Slot Verification
 1. The developer modifies `litellm-config.yaml` or compose files inside a git worktree.
 2. The developer launches an isolated dev slot (e.g. Slot 1) using `./dev-env.sh start 1`.
-3. The developer verifies changes by running local unit tests (`docker exec aidev1-translator-1 pytest test_translator.py`).
+3. The developer verifies changes by running local unit tests (`docker exec aidev1-gateway-engine-1 pytest test_gateway-engine.py`).
 
 ### 2.2 Stage 2: Pull Request & CI Gate
 1. The developer pushes the branch and creates a PR to `main`.
 2. GitHub Actions runs the CI Suite:
    - **`lint-and-syntax`**: Verifies YAML syntax (`yaml.safe_load`), Ruff lint rules, and bash script syntax.
-   - **`mock-integration`**: Builds the translator/LiteLLM images and executes the mock test suite.
+   - **`mock-integration`**: Builds the gateway-engine/LiteLLM images and executes the mock test suite.
 3. The PR cannot be merged if any automated check fails.
 
 ### 2.3 Stage 3: Staging E2E Testing (Gated)
@@ -74,7 +74,7 @@ Configuration changes must move through a structured promotion pipeline to guara
 
 ## 3. Rollout & Rollback Strategy
 
-LiteLLM and the translator support dynamic configuration updates, but restarting containers carries risk. We implement a **fail-safe hot-reload workflow** in the reloader service.
+LiteLLM and the gateway-engine support dynamic configuration updates, but restarting containers carries risk. We implement a **fail-safe hot-reload workflow** in the reloader service.
 
 ```text
        Config Change Detected

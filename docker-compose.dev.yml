@@ -118,20 +118,20 @@ services:
       - CLIPROXY_URL=http://cliproxy:8317
       - CLIPROXY_MANAGEMENT_KEY=${CLIPROXY_MANAGEMENT_KEY:-cliproxy-mgmt-H6VXKpUCzmeDuHcGmH8Oqg}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
-      - TRANSLATOR_URL=${TRANSLATOR_URL:-http://translator:4000}
+      - GATEWAY_ENGINE_URL=${GATEWAY_ENGINE_URL:-http://gateway-engine:4000}
     depends_on:
       postgres:
         condition: service_healthy
       cliproxy:
         condition: service_started
-      translator:
+      gateway-engine:
         condition: service_started
 
-  translator:
-    container_name: TESTING-translator-dev
-    image: ${TRANSLATOR_IMAGE:-aidev-translator-local}
+  gateway-engine:
+    container_name: TESTING-gateway-engine-dev
+    image: ${GATEWAY_ENGINE_IMAGE:-aidev-gateway-engine-local}
     build:
-      context: ./services/translator
+      context: ./services/gateway-engine
       dockerfile: Dockerfile
     command: uvicorn main:app --host 0.0.0.0 --port 4000 --reload
     restart: unless-stopped
@@ -151,9 +151,9 @@ services:
       POLICY_ENGINE_ENABLED: ${POLICY_ENGINE_ENABLED:-false}
       POLICY_ENGINE_TIMEOUT_MS: ${POLICY_ENGINE_TIMEOUT_MS:-100}
     ports:
-      - "${DEV_TRANSLATOR_PORT:-4010}:4000"
+      - "${DEV_GATEWAY_ENGINE_PORT:-4010}:4000"
     volumes:
-      - ./services/translator:/app
+      - ./services/gateway-engine:/app
       # Read-only mount so /admin/status can read configured models/router/fallbacks.
       - ./litellm-config.yaml:/config/litellm-config.yaml:ro
 

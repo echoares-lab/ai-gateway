@@ -39,7 +39,7 @@ CI uses **GitHub Actions cache** (`type=gha`) for Docker layers plus optional lo
 
 The composite action [`.github/actions/setup-python-venv`](../.github/actions/setup-python-venv/action.yml) caches `~/.cache/pip` and `.venv-ci` keyed on requirements files.
 
-Docker builds use [`.github/actions/build-docker-cached`](../.github/actions/build-docker-cached/action.yml) with scoped GHA cache (`translator`, `cliproxy-mock`, `policy-engine-mock`). Mock-stack compose images are built via [`scripts/ci-build-mock-services.sh`](../scripts/ci-build-mock-services.sh) with path-filtered skip when the tagged image already exists locally.
+Docker builds use [`.github/actions/build-docker-cached`](../.github/actions/build-docker-cached/action.yml) with scoped GHA cache (`gateway-engine`, `cliproxy-mock`, `policy-engine-mock`). Mock-stack compose images are built via [`scripts/ci-build-mock-services.sh`](../scripts/ci-build-mock-services.sh) with path-filtered skip when the tagged image already exists locally.
 
 ---
 
@@ -50,7 +50,7 @@ Docker builds use [`.github/actions/build-docker-cached`](../.github/actions/bui
 | Layer | Group key | Effect |
 |-------|-----------|--------|
 | Workflow | `ci-CI Suite-<PR number or ref>` | Different PRs (and `main` pushes) run CI concurrently across the dev runner group |
-| Fast jobs | (none) | `lint-and-syntax`, `unit-tests`, `build-translator`, path-filtered jobs fan out to any idle runner |
+| Fast jobs | (none) | `lint-and-syntax`, `unit-tests`, `build-gateway-engine`, path-filtered jobs fan out to any idle runner |
 | Docker jobs | `ci-docker-host-ports` | One mock or Gate C stack at a time globally (port collision guard; `runner.name` is not allowed in job concurrency groups) |
 
 Workflow concurrency is **per ref**: a new push to the same PR cancels the in-progress run for that PR only. Other PRs are unaffected.
@@ -94,7 +94,7 @@ See [`.github/actions/pre-clean-self-hosted`](../.github/actions/pre-clean-self-
 ```
 changes ─┬─► lint-and-syntax ──┬─► mock-integration
          │                     └─► real-provider-e2e (hotspot paths)
-         ├─► build-translator ─► unit-tests ──┘
+         ├─► build-gateway-engine ─► unit-tests ──┘
          ├─► credential-prober (path-filtered)
          └─► multi-repo-isolation (path-filtered)
 ```

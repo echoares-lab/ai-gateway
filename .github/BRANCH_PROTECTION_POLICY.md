@@ -13,7 +13,7 @@ Recommended:
 - Required checks (must match [`.github/workflows/ci.yml`](workflows/ci.yml) job names exactly):
   - `lint-and-syntax` — **Required — Fast (Gate A)**
   - `unit-tests` — **Required — Fast (Gate A)**
-  - `build-translator` — builds shared translator image (required dependency)
+  - `build-gateway-engine` — builds shared gateway-engine image (required dependency)
   - `multi-repo-isolation` — **Required — Conditional** (isolation script paths)
   - `mock-integration` — **Required — Conditional (Gate B)** (runtime paths)
 - Require conversation resolution before merging

@@ -201,9 +201,9 @@ async def metrics():
 
 
 _client: httpx.AsyncClient | None = None
-# NOTE: Translator caching is DISABLED in favor of LiteLLM's auth-aware Redis cache.
+# NOTE: Gateway Engine caching is DISABLED in favor of LiteLLM's auth-aware Redis cache.
 # LiteLLM's cache includes Authorization header in its cache key, preventing cross-user responses.
-# Translator caching layer is redundant when multi-team virtual keys are in use.
+# Gateway Engine caching layer is redundant when multi-team virtual keys are in use.
 # Set CACHE_ENABLED=true only if LiteLLM's cache is unavailable or disabled.
 CACHE_ENABLED = os.environ.get("CACHE_ENABLED", "false").lower() not in (
     "0",
@@ -2602,7 +2602,7 @@ def _admin_environment() -> dict:
 
 
 def _admin_health_panel() -> dict:
-    # Translator is serving by definition; other services are linked but not
+    # Gateway Engine is serving by definition; other services are linked but not
     # actively probed in v1 (avoids unbounded calls). They are marked unknown.
     env = _admin_environment()
     services = [

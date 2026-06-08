@@ -1,6 +1,6 @@
 ---
 work_type: type:feature
-summary: Translator integration — POLICY_ENGINE_ENABLED flag, evaluate call, metadata injection, fail-open.
+summary: Gateway Engine integration — POLICY_ENGINE_ENABLED flag, evaluate call, metadata injection, fail-open.
 claim_status: in_progress
 claimed_by: cursor-575k-20260605T120000Z
 github_issue: #123
@@ -12,4 +12,4 @@ acceptance:
   - [x] Fail-open verified by unit test (policy-engine down)
   - [x] RoutingContext includes quota_headroom when inventory available
 ---
-# 38-4 — Translator Integration
+# 38-4 — Gateway Engine Integration

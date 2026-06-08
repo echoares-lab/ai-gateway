@@ -101,7 +101,7 @@ git push --force-with-lease origin feat/<b>
 
 Poll before claiming: `gh issue view <dep> --json state,closed` and `gh pr view <pr> --json state,mergedAt`.
 
-Issues touching the same hotspot (e.g. `translator.py`) must serialize via `Depends on:` or this stack-then-rebase pattern.
+Issues touching the same hotspot (e.g. `gateway-engine.py`) must serialize via `Depends on:` or this stack-then-rebase pattern.
 
 ---
 

@@ -30,7 +30,7 @@ jobs:
       credential_prober: ${{ steps.filter.outputs.credential_prober }}
       litellm_reloader: ${{ steps.filter.outputs.litellm_reloader }}
       hotspot: ${{ steps.filter.outputs.hotspot }}
-      translator: ${{ steps.filter.outputs.translator }}
+      gateway-engine: ${{ steps.filter.outputs.gateway-engine }}
       cliproxy: ${{ steps.filter.outputs.cliproxy }}
       litellm_config: ${{ steps.filter.outputs.litellm_config }}
       compose: ${{ steps.filter.outputs.compose }}
@@ -47,8 +47,8 @@ jobs:
         id: filter
         with:
           filters: |
-            translator:
-              - 'services/translator/**'
+            gateway_engine:
+              - 'services/gateway-engine/**'
             litellm_reloader:
               - 'services/litellm-reloader/**'
             litellm_config:
@@ -85,7 +85,7 @@ jobs:
               - 'tests/litellm-config-mock.yaml'
               - 'tests/mock-policy-engine/**'
             hotspot:
-              - 'services/translator/**'
+              - 'services/gateway-engine/**'
               - 'litellm-config.yaml'
               - 'docker-compose*.yml'
               - 'Dockerfile*'
@@ -94,7 +94,7 @@ jobs:
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: |
-          sudo rm -rf services/translator/__pycache__ || true
+          sudo rm -rf services/gateway-engine/__pycache__ || true
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   lint-and-syntax:
@@ -112,9 +112,9 @@ jobs:
         with:
           extra-packages: ruff pyyaml pydantic pytest
       - name: Lint with ruff
-        run: .venv-ci/bin/ruff check services/translator/main.py
+        run: .venv-ci/bin/ruff check services/gateway-engine/main.py
       - name: Format check with ruff
-        run: .venv-ci/bin/ruff format --check services/translator/main.py
+        run: .venv-ci/bin/ruff format --check services/gateway-engine/main.py
       - name: Shell syntax check
         run: |
           bash -n cliproxy-setup.sh
@@ -156,17 +156,17 @@ jobs:
           print(f"✓ litellm-config.yaml: {len(data.get('model_list') or [])} models validated")
           PY
       - name: Validate policy-profiles.yaml
-        run: PYTHONPATH=services/translator .venv-ci/bin/python3 scripts/validate_policy_profiles.py
+        run: PYTHONPATH=services/gateway-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
       - name: Check for hardcoded API keys
         run: CHECK_ALL=1 bash .githooks/prevent-hardcoded-keys.sh
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: |
-          sudo rm -rf services/translator/__pycache__ || true
+          sudo rm -rf services/gateway-engine/__pycache__ || true
           sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
-  build-translator:
-    name: "CI :: Build Translator"
+  build-gateway-engine:
+    name: "CI :: Build Gateway Engine"
     runs-on: self-hosted
     steps:
       - name: Pre-clean workspace (self-hosted)
@@ -180,15 +180,15 @@ jobs:
         uses: docker/setup-buildx-action@v3
       - uses: ./.github/actions/build-docker-cached
         with:
-          context: ./services/translator
-          tags: ai-translator-test:latest
-          scope: translator
+          context: ./services/gateway-engine
+          tags: ai-gateway-engine-test:latest
+          scope: gateway-engine
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   unit-tests:
-    needs: build-translator
+    needs: build-gateway-engine
     runs-on: self-hosted
     steps:
       - name: Pre-clean workspace (self-hosted)
@@ -198,8 +198,8 @@ jobs:
           sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
           sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
-      - name: Run translator unit tests (parallel)
-        run: docker run --rm ai-translator-test:latest sh -c 'pytest test_translator*.py -n auto -v'
+      - name: Run gateway-engine unit tests (parallel)
+        run: docker run --rm ai-gateway-engine-test:latest sh -c 'pytest test_gateway_engine*.py -n auto -v'
       - name: Fix workspace permissions (self-hosted)
         if: always()
         run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
@@ -294,7 +294,7 @@ jobs:
 
   mock-integration:
     name: "CI :: Mock Integration"
-    needs: [changes, lint-and-syntax, unit-tests, build-translator]
+    needs: [changes, lint-and-syntax, unit-tests, build-gateway-engine]
     if: >
       needs.lint-and-syntax.result == 'success' &&
       needs.unit-tests.result == 'success' &&
@@ -368,13 +368,13 @@ jobs:
           export CLIPROXY_BUILD_CONTEXT="$PWD"
           export CLIPROXY_DOCKERFILE="Dockerfile.cliproxy"
           ./dev-env.sh start 1
-      - name: Wait for translator health
+      - name: Wait for gateway-engine health
         run: |
           for i in {1..36}; do
             curl -sf http://localhost:4010/health >/dev/null && exit 0
             sleep 5
           done
-          docker compose -f docker-compose.dev.yml -p aidev1 logs --no-color --tail 200 translator || true
+          docker compose -f docker-compose.dev.yml -p aidev1 logs --no-color --tail 200 gateway-engine || true
           exit 1
       - name: Run real-provider smoke E2E
         run: |

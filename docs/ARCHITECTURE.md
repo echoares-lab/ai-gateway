@@ -23,7 +23,7 @@ We formally establish **LiteLLM (v1.82+) as the sole MCP control plane and routi
                             │ (OpenAI Chat API)
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│                   Translator Proxy                     │
+│                   Gateway Engine Proxy                     │
 └───────────────────────────┬────────────────────────────┘
                             │ (Pass-through with metadata)
                             ▼
@@ -44,10 +44,10 @@ We formally establish **LiteLLM (v1.82+) as the sole MCP control plane and routi
    All MCP servers must be explicitly declared and registered in `/etc/litellm/config.yaml` (or local `litellm-config.yaml`) under the `mcp_servers:` configuration block.
    
 2. **Translation Layer Isolation:**
-   **No MCP routing, dispatching, or tool-execution logic should ever reside in `translator.py`**. The translator's sole responsibility is format normalization and credential mapping. Tool calls and executions are completely standard downstream LiteLLM behaviors.
+   **No MCP routing, dispatching, or tool-execution logic should ever reside in `gateway-engine.py`**. The gateway-engine's sole responsibility is format normalization and credential mapping. Tool calls and executions are completely standard downstream LiteLLM behaviors.
 
 3. **Standard Tool Schema Downstream:**
-   When a client requests completions, LiteLLM exposes registered MCP tools as standard OpenAI-compatible tool definitions. The translator proxy simply passes these definitions through to the client.
+   When a client requests completions, LiteLLM exposes registered MCP tools as standard OpenAI-compatible tool definitions. The gateway-engine proxy simply passes these definitions through to the client.
 
 ---
 

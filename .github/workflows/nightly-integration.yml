@@ -38,7 +38,7 @@ jobs:
           export CLIPROXY_BUILD_CONTEXT="$PWD"
           export CLIPROXY_DOCKERFILE="Dockerfile.cliproxy"
           ./dev-env.sh start 1
-      - name: Wait for translator
+      - name: Wait for gateway-engine
         run: |
           for i in {1..30}; do
             curl -sf http://localhost:4010/health >/dev/null && exit 0

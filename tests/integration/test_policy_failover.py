@@ -33,7 +33,7 @@ async def client(asgi_client):
 
 @pytest.fixture
 async def policy_debug(asgi_client):
-    """In-process mock scenario debug endpoints on the translator."""
+    """In-process mock scenario debug endpoints on the gateway-engine."""
     return asgi_client
 
 
@@ -82,7 +82,7 @@ async def _last_evaluate(policy_debug: httpx.AsyncClient) -> dict:
     resp = await policy_debug.get("/debug/policy/last")
     assert resp.status_code == 200, f"debug/policy/last failed: {resp.text}"
     payload = resp.json()
-    assert payload, "translator received no in-process policy evaluate call"
+    assert payload, "gateway-engine received no in-process policy evaluate call"
     return payload
 
 
@@ -156,7 +156,7 @@ async def test_quota_429_preemptive_deprioritizes_credentials(client, policy_deb
 
 
 @pytest.mark.mock
-async def test_quota_429_preemptive_from_translator_rate_limit_signals(client, policy_debug, mock_litellm_router):
+async def test_quota_429_preemptive_from_gateway-engine_rate_limit_signals(client, policy_debug, mock_litellm_router):
     # Mocking logic moved to conftest.py _chat_completion_mock side effect
     
     seed = await _chat(

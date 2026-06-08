@@ -137,7 +137,7 @@ test_websocket() {
     if [[ "$http_code" == "101" ]]; then
         pass "WebSocket upgrade returns 101 → clean close frame (Codex falls back silently)"
     elif [[ "$http_code" == "403" ]]; then
-        fail "WebSocket upgrade returns 403 — container needs rebuild with latest translator"
+        fail "WebSocket upgrade returns 403 — container needs rebuild with latest gateway-engine"
     else
         pass "WebSocket upgrade returns $http_code (fallback triggered)"
     fi

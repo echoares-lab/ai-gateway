@@ -39,7 +39,7 @@
       "downstream_context": {
         "key_interfaces_introduced": [],
         "patterns_established": [
-          "Renamed service 'translator' to 'gateway-engine' across code, CI, and Docker.",
+          "Renamed service 'gateway-engine' to 'gateway-engine' across code, CI, and Docker.",
           "Environment variables updated to GATEWAY_ENGINE_* prefix.",
           "Prometheus metrics updated to gateway_engine_* prefix."
         ],

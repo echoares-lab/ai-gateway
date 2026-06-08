@@ -53,7 +53,7 @@ Public repos get **branch protection** and required status checks on Free. After
 
 ## What was scrubbed for public release
 
-- Hardcoded gateway auth fallbacks removed from `services/translator/main.py`
+- Hardcoded gateway auth fallbacks removed from `services/gateway-engine/main.py`
 - Compose management key default → `dev-management-key` (dev-only)
 - Personal emails → `@example.com` placeholders in RUNBOOK / admin docs
 - Internal host IPs → `gateway-host.example` in docs and scripts

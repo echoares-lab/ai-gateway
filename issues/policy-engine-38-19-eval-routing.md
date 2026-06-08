@@ -36,7 +36,7 @@ blocks: []
 blocked_by: []
 execution_notes: |
   Design stub acceptable per Phase 5 dispatch. Runtime layer deferred until 38-04
-  translator wire and offline aggregation job (5c).
+  gateway-engine wire and offline aggregation job (5c).
 github_issue: #138
 ---
 

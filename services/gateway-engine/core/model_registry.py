@@ -1,4 +1,4 @@
-"""Translator-owned model registry helpers.
+"""Gateway Engine-owned model registry helpers.
 
 The registry is Postgres-backed when DATABASE_URL is configured. Callers can
 fall back to parsed LiteLLM config when the DB is unavailable so admin/status

@@ -30,8 +30,8 @@ Routing today is **static and hand-tuned**:
   (`background_health_checks` commented out) because Gemini Pro models have strict
   per-minute limits; several models carry `disable_background_health_check: true`.
 
-- **Translator-side retry** is narrow: `_post_with_retry()` in
-  `services/translator/translator.py` retries only transient `502`/`503` from
+- **Gateway Engine-side retry** is narrow: `_post_with_retry()` in
+  `services/gateway-engine/gateway-engine.py` retries only transient `502`/`503` from
   LiteLLM, with a fixed 1s sleep and 2 retries. It has no awareness of *which
   provider* failed or its recent error history.
 
@@ -130,7 +130,7 @@ here; §3 describes how they combine, and §4 maps each to a concrete source.
 Capability fit is a **hard filter**, applied before health/latency scoring:
 
 - **Tools:** if the request carries `tools`, only tool-capable models are eligible.
-  (The translator already has `_maybe_preview_fallback()` handling a tools-vs-preview
+  (The gateway-engine already has `_maybe_preview_fallback()` handling a tools-vs-preview
   case — adaptive routing generalizes this.)
 - **Vision:** if the request carries image content (`input_image` / image parts),
   only vision-capable models are eligible.
@@ -158,11 +158,11 @@ A deployment in an **active rate-limit cooldown** is deprioritized to the bottom
 ## 3. Dynamic routing strategy
 
 The strategy evolves the static baseline in three layers, preferring
-**LiteLLM-native controls** where they fit and adding **translator-side logic**
+**LiteLLM-native controls** where they fit and adding **gateway-engine-side logic**
 only where LiteLLM cannot express the decision. This respects the ADR mandate
-(`docs/ARCHITECTURE.md` §2) that the translator stays a thin format/credential
+(`docs/ARCHITECTURE.md` §2) that the gateway-engine stays a thin format/credential
 layer — adaptive *routing* lives in LiteLLM/router config wherever possible;
-the translator only contributes **signal capture** and request-shape-derived
+the gateway-engine only contributes **signal capture** and request-shape-derived
 **capability hints**.
 
 ### Layer A — LiteLLM-native router controls (preferred)
@@ -187,20 +187,20 @@ routing score (§2). The static list defines *which* providers are
 capability-valid alternatives; the score decides *what order* to try them in and
 whether to skip ones currently in cooldown.
 
-### Layer C — Translator-side capability hints (minimal)
+### Layer C — Gateway Engine-side capability hints (minimal)
 
-The translator already inspects request shape (tools, image content) to make
+The gateway-engine already inspects request shape (tools, image content) to make
 `_maybe_preview_fallback()` decisions. Adaptive routing extends this only to
 **annotate** requests with derived capability needs (tools / vision / token
 estimate) passed as metadata, so LiteLLM's pre-call checks and the scorer can
 filter correctly. **No tool-execution or routing dispatch logic is added to the
-translator** (per ARCHITECTURE.md §2.2).
+gateway-engine** (per ARCHITECTURE.md §2.2).
 
 ### Decision flow (per request)
 
 ```
 request
-  → derive capability needs (tools? vision? token estimate)      [translator]
+  → derive capability needs (tools? vision? token estimate)      [gateway-engine]
   → eligible = models passing capability fit + pre-call checks    [LiteLLM]
   → order eligible by routing score (health/latency/error/429)    [LiteLLM router + signals]
   → skip deployments in active 429/5xx cooldown                   [LiteLLM cooldown]
@@ -218,9 +218,9 @@ added (the **needed** rows become child issue #59).
 
 | Signal | Source | Granularity | Usable for routing as-is? |
 |---|---|---|---|
-| Request latency | `REQUEST_LATENCY` histogram (translator) | by HTTP method + path | ❌ not per-provider/model |
-| Upstream errors | `UPSTREAM_ERRORS` counter (translator) | by path + status | ⚠️ path-level, not provider-attributed |
-| Request counts | `REQUEST_COUNT` counter (translator) | method/path/status | ⚠️ no model dimension |
+| Request latency | `REQUEST_LATENCY` histogram (gateway-engine) | by HTTP method + path | ❌ not per-provider/model |
+| Upstream errors | `UPSTREAM_ERRORS` counter (gateway-engine) | by path + status | ⚠️ path-level, not provider-attributed |
+| Request counts | `REQUEST_COUNT` counter (gateway-engine) | method/path/status | ⚠️ no model dimension |
 | Cache hit/miss | `CACHE_HITS` / `CACHE_MISSES` | by path/kind | n/a for routing |
 | LiteLLM spend/usage | LiteLLM DB (`store_model_in_db`) + Langfuse traces | per model/key | ✅ but offline (not live routing input) |
 | Model health page | LiteLLM background health checks | per model | ⚠️ disabled by default for quota reasons |
@@ -232,7 +232,7 @@ added (the **needed** rows become child issue #59).
 | **Per-provider/model latency (p50/p95)** | latency-aware ordering | Prometheus histogram labeled by model/provider; LiteLLM router latency stats |
 | **Per-provider/model error rate (5xx/timeout)** | health scoring | Prometheus counter labeled by model + error class |
 | **Per-provider 429 / quota-exhaustion events + cooldown state** | rate-limit-aware skip | LiteLLM `allowed_fails`/cooldown state + CLIProxy quota signals (`cliproxy-setup.sh quota-summary`) |
-| **Capability metadata on requests** | capability-fit filtering | translator request-shape annotation (tools/vision/tokens) |
+| **Capability metadata on requests** | capability-fit filtering | gateway-engine request-shape annotation (tools/vision/tokens) |
 | **Tenant attribution** *(optional)* | tenant-aware routing | tenant metadata from epic #30 model (#56) |
 
 **Constraint:** signal capture must **not** rely on enabling background health
@@ -251,8 +251,8 @@ from real traffic over **active** probing.
   (not instantaneous state) to dampen.
 - **Capability regressions:** reordering must never route a tool/vision request to
   an incapable model — capability fit is a hard filter applied *before* scoring.
-- **No translator routing logic:** keep dispatch/routing in LiteLLM per ADR;
-  translator only captures signals and annotates capability needs.
+- **No gateway-engine routing logic:** keep dispatch/routing in LiteLLM per ADR;
+  gateway-engine only captures signals and annotates capability needs.
 - **Tenant coupling:** tenant-aware routing depends on the tenancy model (#56 /
   epic #30); treat it as optional/last and do not block #59/#60 on it.
 
@@ -275,7 +275,7 @@ child issues:
    `routing_strategy` / `cooldown_time` / `allowed_fails`; keep capability fit as a
    hard pre-filter. Optional tenant-aware preferences coordinated with epic #30.
 
-Each child issue carries its own acceptance criteria, tests (translator unit +
+Each child issue carries its own acceptance criteria, tests (gateway-engine unit +
 mock integration, plus real-provider integration for #60), and rollback notes.
 
 ---
@@ -284,10 +284,10 @@ mock integration, plus real-provider integration for #60), and rollback notes.
 
 - [`litellm-config.yaml`](../litellm-config.yaml) — `router_settings`,
   `litellm_settings.fallbacks`, background health-check notes.
-- [`services/translator/translator.py`](../services/translator/translator.py) —
+- [`services/gateway-engine/gateway-engine.py`](../services/gateway-engine/gateway-engine.py) —
   `_post_with_retry()`, `_maybe_preview_fallback()`, Prometheus metrics
   (`REQUEST_LATENCY`, `UPSTREAM_ERRORS`, `REQUEST_COUNT`).
-- [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — control-plane ADR; translator
+- [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — control-plane ADR; gateway-engine
   isolation mandate.
 - [Epic #31](https://github.com/echoares-lab/ai-gateway/issues/31),
   children [#59](https://github.com/echoares-lab/ai-gateway/issues/59) /

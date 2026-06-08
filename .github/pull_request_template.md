@@ -25,7 +25,7 @@ Risk level: **low / medium / high** (see `TESTING_AND_PROMOTION_POLICY.md` and `
 ### Required — Fast (Gate A) — every PR
 
 - [ ] `make lint` pass
-- [ ] `make test-unit` pass (translator + policy-engine; `-n auto`)
+- [ ] `make test-unit` pass (gateway-engine + policy-engine; `-n auto`)
 - [ ] YAML validation pass (if `litellm-config.yaml` changed)
 
 ### Required — Conditional (Gate A/B) — when matching paths change
@@ -55,7 +55,7 @@ Not required to merge (Gate C paused pending e2e refactor). Opt in via label or 
 
 ### CI required checks
 
-- [ ] `lint-and-syntax`, `unit-tests`, `build-translator`
+- [ ] `lint-and-syntax`, `unit-tests`, `build-gateway-engine`
 - [ ] `mock-integration` (runtime paths; skipped OK on docs-only)
 
 ## Risk / rollback

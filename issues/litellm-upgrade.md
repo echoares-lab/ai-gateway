@@ -13,7 +13,7 @@ scope: |
   - Follow-up (this issue): Tune settings for Granian, OTEL, and DB connection pooling.
 non_goals:
   - Immediate enablement of Granian or OTEL (deferred to separate PR for stability).
-  - Changes to the translator logic or LiteLLM configuration.
+  - Changes to the gateway-engine logic or LiteLLM configuration.
 acceptance:
   - [ ] LiteLLM is running v1.87.1.
   - [ ] LiteLLM UI is functional at :4001.

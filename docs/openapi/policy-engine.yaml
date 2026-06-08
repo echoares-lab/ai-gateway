@@ -3,7 +3,7 @@ info:
   title: Policy Engine API
   description: |
     Evaluates routing policy for AI Gateway requests (Epic #38).
-    Returns a RoutingDecision consumed by translator → LiteLLM metadata.
+    Returns a RoutingDecision consumed by gateway-engine → LiteLLM metadata.
     Design: docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md
   version: 0.1.0
 
@@ -261,12 +261,12 @@ components:
           enum: [fill-first, quota-aware, round-robin]
         metadata:
           type: object
-          description: Additive request metadata supplied by translator. Policy-engine must ignore unknown keys.
+          description: Additive request metadata supplied by gateway-engine. Policy-engine must ignore unknown keys.
           additionalProperties: true
           properties:
             model_registry:
               type: object
-              description: Compact translator registry metadata for the requested model. Omitted when registry lookup fails.
+              description: Compact gateway-engine registry metadata for the requested model. Omitted when registry lookup fails.
               additionalProperties: true
               properties:
                 canonical_model_id:

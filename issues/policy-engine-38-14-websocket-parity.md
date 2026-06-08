@@ -7,7 +7,7 @@ problem: |
 why_now: |
   Phase 3 — parity or documented bypass required before production policy enforcement.
 scope: |
-  - Option A: Build RoutingContext + evaluate for WS upgrade path in translator
+  - Option A: Build RoutingContext + evaluate for WS upgrade path in gateway-engine
   - Option B: Document explicit bypass in POLICY_ENGINE_AND_ROUTING_REFACTOR.md + CLIENT_COMPATIBILITY.md
   - If parity: inject session_key and quota_aware hints into WS upstream metadata
 non_goals:
@@ -22,16 +22,16 @@ tests: |
 risks: |
   WS latency budget tighter than HTTP evaluate SLA.
 dependencies:
-  - policy-engine-38-04-translator.md
+  - policy-engine-38-04-gateway-engine.md
 files:
-  - services/translator/translator.py
+  - services/gateway-engine/gateway-engine.py
   - docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md
 claim_status: done
 claimed_by: cursor-575k-20260605T060900Z
 blocks:
   - policy-engine-38-17-integration-tests.md
 blocked_by:
-  - policy-engine-38-04-translator.md
+  - policy-engine-38-04-gateway-engine.md
 execution_notes: |
   Quota-aware applies to WS if parity — same deprioritized_credentials semantics.
 github_issue: #133

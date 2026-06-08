@@ -21,7 +21,7 @@ ask during normal operations and incidents:
 - What changed recently, and what should an operator do next?
 
 The console should **unify visibility**, not become a second source of truth. It
-must read from the existing systems that already own state: translator metrics,
+must read from the existing systems that already own state: gateway-engine metrics,
 LiteLLM, CLIProxy/CPA-Manager, Langfuse, repo config, and operational scripts.
 
 ---
@@ -33,7 +33,7 @@ LiteLLM, CLIProxy/CPA-Manager, Langfuse, repo config, and operational scripts.
 Primary operator tasks:
 
 1. **Health triage**
-   - See translator, LiteLLM, CLIProxy, Redis, Postgres, and provider-token state.
+   - See gateway-engine, LiteLLM, CLIProxy, Redis, Postgres, and provider-token state.
    - Identify whether failures are local infrastructure, provider auth, model
      availability, or routing/cooldown behavior.
 
@@ -83,15 +83,15 @@ These are **deferred** from the first implementation wave.
 
 | Panel | Source of truth | Access path | Freshness | Auth / permissions | Notes |
 |---|---|---|---|---|---|
-| Translator health | translator service | `GET /health` on port 4000 / dev slot | live | gateway-local | Public entry point for clients. |
-| Translator metrics | translator Prometheus exporter | `GET /metrics` | live | gateway-local | Includes request counts/latency and provider routing signals. |
-| Client-visible models | translator/LiteLLM | `GET /v1/models` with LiteLLM master key | live | `LITELLM_MASTER_KEY` | Translator adds `AI-Gateway:` prefix. |
+| Gateway Engine health | gateway-engine service | `GET /health` on port 4000 / dev slot | live | gateway-local | Public entry point for clients. |
+| Gateway Engine metrics | gateway-engine Prometheus exporter | `GET /metrics` | live | gateway-local | Includes request counts/latency and provider routing signals. |
+| Client-visible models | gateway-engine/LiteLLM | `GET /v1/models` with LiteLLM master key | live | `LITELLM_MASTER_KEY` | Gateway Engine adds `AI-Gateway:` prefix. |
 | LiteLLM model config | repo config | `litellm-config.yaml` | commit-time | repo access | Source for model aliases, fallbacks, MCP registrations. |
 | LiteLLM runtime state | LiteLLM DB/API/UI | LiteLLM API/UI, Postgres tables | live/persistent | LiteLLM admin key / DB access | UI/API changes can override config; drift panel should flag this. |
 | Provider auth health | CLIProxy | `./cliproxy-setup.sh health`, CLIProxy management UI | live | host/operator access | Shows OAuth token/account status. |
 | Quota/usage summary | CLIProxy/CPA-Manager | `./cliproxy-setup.sh quota-summary`, CPA-Manager | near-live | management key | CPA-Manager runs on port 18317. |
 | Request traces | Langfuse | Langfuse UI/API | near-live | Langfuse credentials | Source for trace-level usage and debugging. |
-| Routing/fallback events | LiteLLM logs + translator metrics | logs, `/metrics` | live/recent | gateway-local | Provider signal metrics from #59; cooldown logs from LiteLLM. |
+| Routing/fallback events | LiteLLM logs + gateway-engine metrics | logs, `/metrics` | live/recent | gateway-local | Provider signal metrics from #59; cooldown logs from LiteLLM. |
 | MCP tool config | LiteLLM config/DB | `litellm-config.yaml`, LiteLLM Tool tables | commit/live | repo + DB access | MCP config can also live in LiteLLM DB tables. |
 | Config syntax | repo files | YAML parser, shell `bash -n`, CI | commit-time | repo access | Mirrors `lint-and-syntax` CI job. |
 
@@ -118,7 +118,7 @@ from existing systems instead of replacing them:
      hardcoded-key scan) for operator visibility.
 
 2. **Live health layer**
-   - Poll translator `/health`, `/v1/models`, `/metrics`.
+   - Poll gateway-engine `/health`, `/v1/models`, `/metrics`.
    - Call or wrap `cliproxy-setup.sh health` / `quota-summary` for provider state.
    - Link to LiteLLM UI (`:4001`), CLIProxy management (`:8317`), CPA-Manager
      (`:18317`), and Langfuse.
@@ -126,9 +126,9 @@ from existing systems instead of replacing them:
 3. **Routing intelligence layer**
    - Display fallback matrix and router settings from `litellm-config.yaml`.
    - Display provider signal metrics added by #59:
-     `translator_provider_request_duration_seconds`,
-     `translator_provider_requests_total`, and
-     `translator_provider_rate_limits_total`.
+     `gateway-engine_provider_request_duration_seconds`,
+     `gateway-engine_provider_requests_total`, and
+     `gateway-engine_provider_rate_limits_total`.
    - Show recent provider cooldown/rate-limit warnings from LiteLLM logs once a
      safe log access path is defined.
 
@@ -144,8 +144,8 @@ and fits the repo's existing operator-script workflow.
 
 | Alternative | Pros | Cons | Recommendation |
 |---|---|---|---|
-| Extend LiteLLM UI only | Already part of stack; close to routing/config state | Does not own CLIProxy auth, CPA usage, translator metrics, repo drift | Link into it; do not depend solely on it. |
-| Use CPA-Manager as primary admin UI | Strong CLIProxy/usage visibility | Not the source of translator/LiteLLM/MCP repo config | Link/embed as a panel. |
+| Extend LiteLLM UI only | Already part of stack; close to routing/config state | Does not own CLIProxy auth, CPA usage, gateway-engine metrics, repo drift | Link into it; do not depend solely on it. |
+| Use CPA-Manager as primary admin UI | Strong CLIProxy/usage visibility | Not the source of gateway-engine/LiteLLM/MCP repo config | Link/embed as a panel. |
 | Custom full admin app | Maximum control | Higher maintenance; risks duplicating existing UIs | Avoid until read-only dashboard proves value. |
 | Static generated status page | Low risk, easy to host | Not live enough for incidents | Useful as first artifact or fallback mode. |
 
@@ -155,7 +155,7 @@ and fits the repo's existing operator-script workflow.
 
 ### Can start now
 
-- Health overview for translator/LiteLLM/CLIProxy.
+- Health overview for gateway-engine/LiteLLM/CLIProxy.
 - Model list and config drift checks.
 - Provider token/quota summary.
 - Routing/fallback/cooldown visibility using merged #58/#59/#60 artifacts.

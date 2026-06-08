@@ -26,7 +26,7 @@ jobs:
         with:
           filters: |
             hotspot:
-              - 'services/translator/**'
+              - 'services/gateway-engine/**'
               - 'litellm-config.yaml'
               - 'docker-compose*.yml'
               - 'Dockerfile*'

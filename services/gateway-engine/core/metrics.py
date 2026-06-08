@@ -7,22 +7,22 @@ REQUEST_COUNT = Counter(
 )
 REQUEST_LATENCY = Histogram(
     "gateway_engine_request_duration_seconds",
-    "Translator request latency in seconds",
+    "Gateway Engine request latency in seconds",
     ["method", "path"],
 )
 UPSTREAM_ERRORS = Counter(
     "gateway_engine_upstream_errors_total",
-    "Translator upstream errors by path and status",
+    "Gateway Engine upstream errors by path and status",
     ["path", "status"],
 )
 CACHE_HITS = Counter(
     "gateway_engine_cache_hits_total",
-    "Translator cache hits",
+    "Gateway Engine cache hits",
     ["path", "kind"],
 )
 CACHE_MISSES = Counter(
     "gateway_engine_cache_misses_total",
-    "Translator cache misses",
+    "Gateway Engine cache misses",
     ["path", "kind"],
 )
 FORMAT_REQUESTS = Counter(

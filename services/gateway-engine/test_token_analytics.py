@@ -1,6 +1,6 @@
 """
 Unit tests for token usage analytics (#117).
-Tests token extraction and Prometheus metric recording for Translator responses.
+Tests token extraction and Prometheus metric recording for Gateway Engine responses.
 """
 
 from unittest.mock import MagicMock, patch

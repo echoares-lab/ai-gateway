@@ -26,7 +26,7 @@ repos:
         name: Prevent hardcoded API keys
         entry: bash .githooks/prevent-hardcoded-keys.sh
         language: system
-        files: ^(litellm-config\.yaml|services/translator/main\.py|services/credential-prober/.*\.py|docker-compose\.yml|docker-compose\.dev\.yml)$
+        files: ^(litellm-config\.yaml|services/gateway-engine/main\.py|services/credential-prober/.*\.py|docker-compose\.yml|docker-compose\.dev\.yml)$
         pass_filenames: false
 
       - id: validate-yaml-syntax

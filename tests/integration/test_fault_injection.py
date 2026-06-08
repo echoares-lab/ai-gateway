@@ -12,7 +12,7 @@ pytestmark = [pytest.mark.mock, pytest.mark.asyncio]
 
 
 async def test_upstream_read_timeout_returns_504(asgi_client):
-    """Simulate a LiteLLM timeout and verify the translator returns 504."""
+    """Simulate a LiteLLM timeout and verify the gateway-engine returns 504."""
     with respx.mock(base_url="http://litellm:4000", assert_all_called=False) as respx_mock:
         respx_mock.post(re.compile(r".*/v1/chat/completions")).mock(
             side_effect=httpx.ReadTimeout("Simulated timeout")
@@ -33,7 +33,7 @@ async def test_upstream_read_timeout_returns_504(asgi_client):
 
 
 async def test_upstream_502_bad_gateway_surfaced(asgi_client):
-    """Simulate a 502 from LiteLLM and verify the translator surfaces it."""
+    """Simulate a 502 from LiteLLM and verify the gateway-engine surfaces it."""
     with respx.mock(base_url="http://litellm:4000", assert_all_called=False) as respx_mock:
         respx_mock.post(re.compile(r".*/v1/chat/completions")).mock(
             return_value=httpx.Response(502, json={"error": "LiteLLM is down"})
@@ -53,7 +53,7 @@ async def test_upstream_502_bad_gateway_surfaced(asgi_client):
 
 
 async def test_upstream_connection_refused_returns_502(asgi_client):
-    """Simulate a connection refused error and verify the translator returns 502."""
+    """Simulate a connection refused error and verify the gateway-engine returns 502."""
     with respx.mock(base_url="http://litellm:4000", assert_all_called=False) as respx_mock:
         respx_mock.post(re.compile(r".*/v1/chat/completions")).mock(
             side_effect=httpx.ConnectError("Connection refused")

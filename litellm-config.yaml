@@ -782,7 +782,7 @@ router_settings:
   # --- Adaptive provider routing (issue #60; design: docs/ADAPTIVE_ROUTING.md) ---
   # Moves routing from purely-static fallback lists toward health/error-aware
   # ordering using LiteLLM-native router controls. Routing logic stays in LiteLLM
-  # (not translator.py) per docs/ARCHITECTURE.md §2.2.
+  # (not gateway-engine.py) per docs/ARCHITECTURE.md §2.2.
 
   # Capability fit (context-window / basic capability) pre-filtering. Kept on so
   # a request is never routed to a deployment that cannot serve it.

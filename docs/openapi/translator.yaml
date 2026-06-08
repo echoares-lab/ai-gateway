@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Translator API
+  title: Gateway Engine API
   description: Translation proxy for multiple AI CLI formats to LiteLLM (OpenAI Chat Completions).
   version: 1.0.0
 paths:
@@ -95,7 +95,7 @@ paths:
             application/json:
               example:
                 status: "ok"
-                source: "translator:/metrics (token counters)"
+                source: "gateway-engine:/metrics (token counters)"
                 data:
                   summary:
                     total_input_tokens: 1250000
@@ -122,7 +122,7 @@ paths:
                       total_tokens: 435000
   /admin/credentials:
     get:
-      summary: List redacted translator credential inventory records
+      summary: List redacted gateway-engine credential inventory records
       responses:
         '200':
           description: Credential inventory state from Postgres. Labels, fingerprints, and request metadata are redacted.
@@ -208,7 +208,7 @@ paths:
           description: Targeted credential probe is not supported by current CLIProxy management API
   /admin/models:
     get:
-      summary: List translator-owned model registry records
+      summary: List gateway-engine-owned model registry records
       responses:
         '200':
           description: Registry models, falling back to parsed LiteLLM config when Postgres is unavailable
@@ -338,7 +338,7 @@ paths:
         '404':
           description: Model not found in registry
         '503':
-          description: Admin mutations disabled when TRANSLATOR_ADMIN_KEY is unset
+          description: Admin mutations disabled when GATEWAY_ENGINE_ADMIN_KEY is unset
   /admin/models/reconcile:
     post:
       summary: Render registry-driven LiteLLM and Gemini map changes without writing files
@@ -389,10 +389,10 @@ paths:
         '403':
           description: Invalid admin key
         '503':
-          description: Admin mutations disabled when TRANSLATOR_ADMIN_KEY is unset
+          description: Admin mutations disabled when GATEWAY_ENGINE_ADMIN_KEY is unset
   /admin/models/sync:
     post:
-      summary: Import LiteLLM config or CLIProxy discovery into the translator model registry
+      summary: Import LiteLLM config or CLIProxy discovery into the gateway-engine model registry
       parameters:
         - name: x-admin-key
           in: header
@@ -436,7 +436,7 @@ paths:
                     model_id: "gpt-5-4"
                 errors: []
         '503':
-          description: Admin mutations disabled when TRANSLATOR_ADMIN_KEY is unset
+          description: Admin mutations disabled when GATEWAY_ENGINE_ADMIN_KEY is unset
   /admin/dashboard:
     get:
       summary: Admin console HTML dashboard

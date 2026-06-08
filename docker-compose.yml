@@ -123,10 +123,10 @@ services:
       timeout: 3s
       retries: 3
 
-  translator:
-    container_name: PROD-translator
+  gateway-engine:
+    container_name: PROD-gateway-engine
     build:
-      context: ./services/translator
+      context: ./services/gateway-engine
       dockerfile: Dockerfile
     command: uvicorn main:app --host 0.0.0.0 --port 4000 --reload --workers 1
     restart: always
@@ -151,9 +151,9 @@ services:
       - UPSTREAM_TIMEOUT=${UPSTREAM_TIMEOUT:-30.0}
       - LITELLM_CONFIG_PATH=/config/litellm-config.yaml
     volumes:
-      - ./services/translator:/app
+      - ./services/gateway-engine:/app
       # Read-only mount so the admin status aggregator (/admin/status) can read
-      # configured models, router settings, and fallbacks. Never written by the translator.
+      # configured models, router settings, and fallbacks. Never written by the gateway-engine.
       - ./litellm-config.yaml:/config/litellm-config.yaml:ro
 
   litellm:
@@ -337,13 +337,13 @@ services:
       - CLIPROXY_URL=http://cliproxy:8317
       - CLIPROXY_MANAGEMENT_KEY=${CLIPROXY_MANAGEMENT_KEY:-cliproxy-mgmt-H6VXKpUCzmeDuHcGmH8Oqg}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
-      - TRANSLATOR_URL=${TRANSLATOR_URL:-http://translator:4000}
+      - GATEWAY_ENGINE_URL=${GATEWAY_ENGINE_URL:-http://gateway-engine:4000}
     depends_on:
       postgres:
         condition: service_healthy
       cliproxy:
         condition: service_started
-      translator:
+      gateway-engine:
         condition: service_started
 
 

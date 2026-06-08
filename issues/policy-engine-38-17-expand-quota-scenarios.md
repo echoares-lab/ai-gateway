@@ -5,7 +5,7 @@ claim_status: claimed-by-cursor-policy-failover-expand
 parent: policy-engine-38-17-integration-tests.md
 acceptance:
   - [x] 429 preemptive deprioritizes credentials and skips cooled-down deployments
-  - [x] Translator prometheus rate-limit signals trigger preemptive path without agent fixture
+  - [x] Gateway Engine prometheus rate-limit signals trigger preemptive path without agent fixture
   - [x] Budget hard deny surfaces gate, retry_after, and admin trace
   - [x] Cooldown skip removes rate-limited fallback from ordered chain
   - [x] Inventory exclude deprioritizes degraded credentials from routing

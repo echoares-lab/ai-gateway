@@ -22,15 +22,15 @@ tests: |
 risks: |
   PII in decision debug — redact session keys in production view.
 dependencies:
-  - policy-engine-38-04-translator.md
+  - policy-engine-38-04-gateway-engine.md
 files:
-  - services/translator/translator.py
+  - services/gateway-engine/gateway-engine.py
   - docs/ADMIN_CONSOLE_DATA_CONTRACT.md
 claim_status: in-review
 claimed_by: cursor-575k-20260605
 blocks: []
 blocked_by:
-  - policy-engine-38-04-translator.md
+  - policy-engine-38-04-gateway-engine.md
 execution_notes: |
   Required before production POLICY_ENGINE_ENABLED=true per rollout stages.
   Duplicate PR #157 closed; track on PR #156 only.

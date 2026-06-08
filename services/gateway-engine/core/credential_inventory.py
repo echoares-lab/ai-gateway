@@ -1,4 +1,4 @@
-"""Translator-owned credential inventory helpers."""
+"""Gateway Engine-owned credential inventory helpers."""
 
 from __future__ import annotations
 
