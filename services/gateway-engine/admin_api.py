@@ -78,12 +78,35 @@ class RegistrationRequest(BaseModel):
     team_slug: str
     client_profile: str
 
+from core.credential_inventory import CredentialInventoryStore
+from orchestrator.litellm_admin import litellm_admin_get, litellm_admin_post
+
+log = logging.getLogger("gateway_engine.admin_api")
+...
 @router.post("/onboarding/register")
 async def register_repo(request: RegistrationRequest):
-    """Register a new repository."""
-    # TODO: Validate tenancy constraints and reserve config slots
-    log.info("Registering repository: %s for team: %s", request.repo_name, request.team_slug)
-    return JSONResponse(content={"status": "registered", "repo": request.repo_name})
+    """Register a new repository and provision a LiteLLM key."""
+    # 1. Generate key based on naming convention
+    # ak-{org}-{workspace}-{team}-{repo}-{env}
+    # Using defaults for org, workspace, env for self-service
+    org = "echoares"
+    workspace = "core"
+    env = "dev"
+    key_name = f"ak-{org}-{workspace}-{request.team_slug}-{request.repo_name}-{env}"
+    
+    # 2. Provision key in LiteLLM
+    # LiteLLM key/generate endpoint structure check
+    key_data = await litellm_admin_post("/key/generate", {"name": key_name, "team_id": request.team_slug})
+    if key_data is None:
+        return JSONResponse(content={"error": "Failed to generate key"}, status_code=502)
+
+    log.info("Registered repository: %s for team: %s. Key generated.", request.repo_name, request.team_slug)
+    return JSONResponse(content={
+        "status": "registered", 
+        "repo": request.repo_name,
+        "key": key_data.get("key"),
+        "key_name": key_name
+    })
 
 @router.get("/admin/teams")
 async def get_teams(request: Request):
