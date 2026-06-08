@@ -33,7 +33,7 @@ class TestCodexWsPolicyBypass(unittest.TestCase):
 
 class TestCodexWsUpstreamHeaders(unittest.TestCase):
     def test_strips_handshake_headers_and_sets_cliproxy_auth(self):
-        with patch.object(t.config, "CLIPROXY_API_KEY", "cliproxy-test-key"):
+        with patch("os.environ.get", side_effect=lambda key, default=None: "cliproxy-test-key" if key == "CLIPROXY_API_KEY" else default):
             headers = t._codex_ws_upstream_headers(
                 {
                     "host": "localhost:4000",
