@@ -2,6 +2,7 @@
 
 See the [API Documentation System](docs/API_DOCUMENTATION.md) for technical endpoint references.
 **Mandatory**: Any new API endpoints created or discovered must be documented in `docs/openapi/` and registered in the system.
+`REPO_IMPROVEMENT_APPENDIX.md` and `docs/TESTING.md`.
 
 These instructions apply to **any AI coding agent** working in this repo
 (Claude Code, Cursor Agent, Codex, Amp, or similar). For deep-dive detail
@@ -10,10 +11,10 @@ see `RUNBOOK.md`.
 
 Repo improvement and PR processing are governed by:
 - `REPO_IMPROVEMENT_WORKFLOW.md` — process rules (discovery, approval, claim, PR, merge, closeout).
-- `TESTING_AND_PROMOTION_POLICY.md` — gate definitions (A/B/C/D), risk tiers, parallel-agent isolation.
+- `TESTING_AND_PROMOTION_POLICY.md` — gate definitions (A/B/C/D), risk tiers, parallel-agent isolation, and the new [Epic-Based Development and Release Policy](#epic-based-development-and-release-policy).
 - `REPO_IMPROVEMENT_APPENDIX.md` — this repo's branch policy, environment slots, and test commands.
 - `AGENT_DISPATCH.md` — the copy-paste prompt agents run to claim an issue and ship it.
-- `packages/repo-improvement-kit/` — portable source for the above; see its `README.md` for deployment.
+- `infra/repo-improvement/` — portable source for the above; see its `README.md` for deployment.
 
 ---
 
@@ -56,7 +57,7 @@ agents must follow it.
 
 ## Development workflow
 
-Every session follows this sequence. Do not skip steps.
+Every session follows this sequence. Do not skip steps. This workflow is designed to align with the [Epic-Based Development and Release Policy](#epic-based-development-and-release-policy) in `TESTING_AND_PROMOTION_POLICY.md` and the detailed worktree instructions in `WORKTREES.md`.
 
 ### Step 1 — Create a feature worktree
 
@@ -169,7 +170,7 @@ Wait for required CI checks to pass:
 - `lint-and-syntax`, `unit-tests`, `multi-repo-isolation`, `mock-integration`
 
 If `main` moved since your last green CI (e.g. a dependency PR merged), rebase first —
-see [Parallel agents, rebase, and stacking](#parallel-agents-rebase-and-stacking).
+see `WORKTREES.md` and `TESTING_AND_PROMOTION_POLICY.md` for detailed rebase guidance in an epic-based workflow.
 
 Then merge:
 
@@ -246,9 +247,7 @@ comment records the cleanup.
 
 ## Parallel agents, rebase, and stacking
 
-When multiple agents work the same repo concurrently, enforce **one issue = one agent
-= one slot = one worktree**. See `REPO_IMPROVEMENT_WORKFLOW.md` §8–10 and
-`AGENT_DISPATCH.md` for claim conventions.
+When multiple agents work the same repo concurrently, enforce **one issue = one agent = one slot = one worktree**. For a full explanation of the workflow, including dependencies and rebasing, refer to `WORKTREES.md` and the [Epic-Based Development and Release Policy](#epic-based-development-and-release-policy) in `TESTING_AND_PROMOTION_POLICY.md`.
 
 ### Slot and claim rules
 
