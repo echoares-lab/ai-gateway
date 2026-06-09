@@ -4,32 +4,14 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from datetime import datetime, timezone
+from pydantic import BaseModel
+from core.onboarding.onboarding_service import onboarding_service
+from core.admin_shared import _get_config, _require_admin_key
+
 log = logging.getLogger("gateway-engine.admin_api")
 
 router = APIRouter()
-
-def _get_config():
-    litellm_url = os.environ.get("LITELLM_URL", "http://litellm:4000")
-    return {
-        "admin_url": os.environ.get("LITELLM_ADMIN_URL", litellm_url).rstrip("/"),
-        "admin_key": os.environ.get("ADMIN_API_KEY", "").strip(),
-        "master_key": os.environ.get("LITELLM_MASTER_KEY", "").strip(),
-    }
-
-def _require_admin_key(request: Request, config: dict) -> JSONResponse | None:
-    admin_key = config["admin_key"]
-    if not admin_key:
-        log.warning("ADMIN_API_KEY not configured, blocking admin access")
-        return JSONResponse(
-            {"error": {"message": "ADMIN_API_KEY not configured", "code": "admin_key_missing"}},
-            status_code=503
-        )
-    if request.headers.get("x-admin-key") != admin_key:
-        return JSONResponse(
-            {"error": {"message": "Unauthorized", "code": "unauthorized"}},
-            status_code=403
-        )
-    return None
 
 async def _proxy_to_litellm(method: str, path: str, request: Request):
     config = _get_config()
@@ -58,7 +40,6 @@ async def _proxy_to_litellm(method: str, path: str, request: Request):
             try:
                 return JSONResponse(content=resp.json(), status_code=resp.status_code)
             except Exception:
-                # Fallback for non-JSON responses
                 return JSONResponse(
                     content={"raw_response": resp.text}, 
                     status_code=resp.status_code
@@ -69,6 +50,9 @@ async def _proxy_to_litellm(method: str, path: str, request: Request):
             {"error": {"message": f"Proxy failed: {exc}", "code": "proxy_error"}},
             status_code=502
         )
+
+
+# --- Legacy Proxy API ---
 
 @router.get("/admin/teams")
 async def get_teams(request: Request):
@@ -84,3 +68,31 @@ async def create_team(request: Request):
 async def create_key(request: Request):
     """Proxy to LiteLLM key/generate."""
     return await _proxy_to_litellm("POST", "key/generate", request)
+
+# --- Onboarding API ---
+
+class RegisterTenantRequest(BaseModel):
+    tenant_id: str
+    email: str
+    plan_id: str = "default"
+
+@router.post("/admin/onboarding/register")
+async def register_tenant(request: Request, register_request: RegisterTenantRequest):
+    """
+    Registers a new multi-tenant entry, provisioning necessary resources.
+    Requires ADMIN_API_KEY.
+    """
+    config = _get_config()
+    auth_error = _require_admin_key(request, config)
+    if auth_error:
+        return auth_error
+
+    result = await onboarding_service.register_tenant(
+        tenant_id=register_request.tenant_id,
+        email=register_request.email,
+        plan_id=register_request.plan_id,
+    )
+    if result["success"]:
+        return JSONResponse(content=result, status_code=200)
+    else:
+        return JSONResponse(content=result, status_code=500)
