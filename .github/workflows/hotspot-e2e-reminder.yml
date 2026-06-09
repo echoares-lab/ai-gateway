@@ -7,6 +7,10 @@ on:
     types: [ opened, synchronize, reopened ]
     branches: [ main ]
 
+concurrency:
+  group: hotspot-e2e-reminder-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   pull-requests: write
   contents: read
@@ -14,12 +18,9 @@ permissions:
 jobs:
   hotspot-check:
     name: "Reminder :: Hotspot Check"
-    runs-on: self-hosted
+    # Lightweight comment bot — avoid self-hosted queue behind Docker CI jobs.
+    runs-on: ubuntu-latest
     steps:
-      - name: Pre-clean workspace (self-hosted)
-        run: |
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
