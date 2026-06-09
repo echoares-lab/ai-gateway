@@ -166,6 +166,7 @@ services:
     image: ghcr.io/berriai/litellm:v1.87.1@sha256:9de33287d844a164f873479a04eebe065610e131d7e3aaf010f520fb5b4cfd7b
     restart: always
     environment:
+    - OP_CONNECT_TOKEN=${OP_CONNECT_TOKEN}
     - SKIP_MIGRATIONS=true
     - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
     - DATABASE_URL=${LITELLM_DATABASE_URL}
