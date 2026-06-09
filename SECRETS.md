@@ -41,6 +41,34 @@ For local development without Connect access:
 2. Fill in values manually (for testing only)
 3. `.env.local` is gitignored and safe for local overrides
 
+## Adding & Provisioning Secrets
+
+The 1Password Connect server and its associated tokens are strictly **read-only** and are intended solely for applications to consume secrets at runtime. 
+
+To programmatically create or update secrets during deployment, CI/CD, or administrative tasks, you must use a **1Password Service Account**.
+
+### Best Practice: Service Accounts for CLI Automation
+
+For automated provisioning via the 1Password CLI (`op`), the officially recommended approach is to use **1Password Service Accounts**. Service Accounts are purpose-built for infrastructure automation, support read/write operations, and do not consume user seats.
+
+**Step 1: Authenticate with a Service Account**
+1. Create a Service Account in the 1Password Web UI (**Developer** -> **Service Accounts**).
+2. Grant it "Create, Update, and Delete" permissions for the target vault(s).
+3. Export the provided token in your terminal or CI environment:
+   ```bash
+   export OP_SERVICE_ACCOUNT_TOKEN="<your-service-account-token>"
+   ```
+
+**Step 2: Create Secrets via CLI**
+With the service account token exported, the `op` CLI will automatically use it to authenticate:
+```bash
+# Create an API Key or credential
+op item create --category="API Credential" --title="My New Service Key" --vault="ai-gateway" credential="super-secret-value"
+
+# Create a standard password
+op item create --category="login" --title="Database Password" --vault="ai-gateway" password="db-password-123"
+```
+
 ## Rotation & Updates
 
 To rotate secrets:
