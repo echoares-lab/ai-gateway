@@ -46,9 +46,11 @@ When a PR touches only documentation and non-runtime paths, `mock-integration` a
 
 ### Advisory (not required for merge)
 
+**Do not add these to required status checks.** They are comment bots or report-only jobs; requiring them blocks merges when runners queue or stall.
+
+- `Reminder :: Hotspot Check` (`hotspot-e2e-reminder` workflow) — PR comment bot only; runs on `ubuntu-latest`
 - `real-provider-e2e` — Gate C real-provider smoke (opt-in via `run-e2e` label or `workflow_dispatch`)
 - `nightly-integration` — scheduled Gate C matrix (report-only)
-- `hotspot-e2e-reminder` — PR comment bot (suggests opt-in Gate C on hotspot paths)
 - `post-merge-gate-d` — post-merge stable smoke on `main` (advisory)
 
 ## GitHub rulesets (optional)

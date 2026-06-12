@@ -1,0 +1,13 @@
+# Client Integration Profile Schema
+
+client_name: str
+signature: 
+  user_agent_contains: str | None
+  headers_require: dict[str, str] | None
+  path_pattern: str | None
+
+config:
+  patch_body: bool
+  inject_headers: dict[str, str]
+  model_translation: dict[str, str]
+  websocket_bypass: bool

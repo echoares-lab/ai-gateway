@@ -232,10 +232,6 @@ cmd_list() {
     docker ps --filter "name=aidev" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 }
 
-cmd_list() {
-    docker ps --filter "name=aidev" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-}
-
 cmd_cleanup() {
     echo "Purging all aidev containers and volumes..."
     docker ps -a --filter "name=aidev" --format "{{.Names}}" | xargs -r docker rm -f

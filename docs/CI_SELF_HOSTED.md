@@ -110,3 +110,31 @@ Heavy Docker jobs (`mock-integration`, `real-provider-e2e`) wait for **lint-and-
 - [ ] `CLIPROXY_AUTH_TAR_B64` secret set for Gate C
 - [ ] Branch protection required checks match [`.github/BRANCH_PROTECTION_POLICY.md`](../.github/BRANCH_PROTECTION_POLICY.md)
 - [ ] Stable stack on `:4000` healthy for post-merge Gate D workflow
+- [ ] `scripts/ci-runner-status.sh` shows runner `online` and systemd `active`
+
+---
+
+## Troubleshooting: jobs stuck in `queued`
+
+**Symptom:** `Reminder :: Hotspot Check` passes (GitHub-hosted) but `CI :: Lint and Syntax` / `changes` / `CI :: Build and Unit Test` stay `queued` for minutes.
+
+**Common cause:** the self-hosted runner on `dev-01` is offline or was unregistered. Check:
+
+```bash
+scripts/ci-runner-status.sh
+# or on the runner host:
+sudo systemctl status actions.runner.echoares-lab-ai-gateway.dev-01.service
+sudo ls /home/github-runner/actions-runner/.runner   # must exist
+```
+
+**Fix (on dev-01):**
+
+```bash
+sudo ./scripts/ci-runner-reregister.sh
+```
+
+This fetches a repo registration token via `gh`, runs `config.sh --replace`, installs the systemd service, and starts the listener.
+
+**History:** On 2026-06-07 the runner received Ctrl-C, then `config.sh remove` deleted `.runner` without reinstalling the service. CI jobs queued until re-registration.
+
+**Note:** Only one job runs at a time on a single runner; remaining jobs show `queued` until the active job finishes. That is normal — not the same as a dead runner.
