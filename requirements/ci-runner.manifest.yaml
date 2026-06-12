@@ -1,0 +1,17 @@
+# CI runner manifest — consumed by homelab-gitops `make sync-ci-runners`
+# See homelab-gitops/docs/CI_RUNNER_SETUP.md
+
+schema_version: 1
+repo: ai-gateway
+
+python:
+  version: "3.12"
+  venv_packages: requirements/ci-runner-venv.txt
+
+system_packages_file: requirements/ci-runner-system-packages.txt
+
+# Optional explicit apt list (merged with system_packages_file lines):
+apt_packages: []
+
+pip_requirements_files:
+  - requirements/ci-runner-venv.txt
