@@ -15,7 +15,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-litellm}
     volumes:
     - langfuse_postgres_data:/var/lib/postgresql/data
-    - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    - ./init-db-bootstrap.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test:
       - CMD-SHELL
@@ -62,6 +62,40 @@ services:
       MANAGEMENT_PASSWORD: dev-management-key
     ports:
     - ${DEV_CLIPROXY_PORT:-8327}:8317
+  litellm-migrate:
+    container_name: TESTING-litellm-migrate-dev
+    image: ghcr.io/berriai/litellm:v1.87.1@sha256:9de33287d844a164f873479a04eebe065610e131d7e3aaf010f520fb5b4cfd7b
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
+    entrypoint:
+    - prisma
+    command:
+    - migrate
+    - deploy
+    depends_on:
+      postgres:
+        condition: service_healthy
+  gateway-migrate:
+    container_name: TESTING-gateway-migrate-dev
+    image: postgres:17
+    restart: "no"
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+    - ./db/migrations:/migrations:ro
+    entrypoint:
+    - /bin/bash
+    - -ec
+    - |
+      shopt -s nullglob
+      for f in /migrations/*.sql; do
+        echo "Applying $$(basename "$$f")"
+        psql -v ON_ERROR_STOP=1 -h postgres -U postgres -d litellm -f "$$f"
+      done
+    depends_on:
+      litellm-migrate:
+        condition: service_completed_successfully
   litellm:
     container_name: TESTING-litellm-dev
     image: ghcr.io/berriai/litellm:v1.87.1@sha256:9de33287d844a164f873479a04eebe065610e131d7e3aaf010f520fb5b4cfd7b
@@ -71,7 +105,12 @@ services:
         condition: service_healthy
       cliproxy:
         condition: service_started
+      litellm-migrate:
+        condition: service_completed_successfully
+      gateway-migrate:
+        condition: service_completed_successfully
     environment:
+      SKIP_MIGRATIONS: "true"
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
       CLIPROXY_API_KEY: ${CLIPROXY_API_KEY}
@@ -88,13 +127,11 @@ services:
     healthcheck:
       test:
       - CMD-SHELL
-      - "python - <<'PY'\nimport urllib.request, sys\ntry:\n    r = urllib.request.urlopen('http://127.0.0.1:4000/health/readiness',\
-        \ timeout=3)\n    sys.exit(0 if 200 <= r.status < 300 else 1)\nexcept Exception:\n\
-        \    sys.exit(1)\nPY"
+      - "python -c 'import urllib.request, sys; r = urllib.request.urlopen(\"http://127.0.0.1:4000/health/readiness\", timeout=3); sys.exit(0 if 200 <= r.status < 300 else 1)'"
       interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 20s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
   credential-prober:
     container_name: TESTING-credential-prober-dev
     image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/credential-prober:${GIT_SHA:-latest}

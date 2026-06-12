@@ -1,7 +1,13 @@
 name: Setup Python venv (self-hosted)
-description: Create or restore a cached Python venv on self-hosted runners
+description: >
+  Host Python venv for CI jobs (NOT Docker). Restores .venv-ci from Actions cache,
+  falls back to Ansible seed venv at /var/cache/ai-gateway/venv-ci-seed, uses python3.12.
 
 inputs:
+  python_version:
+    description: Minor Python version for the venv (must match github_runner_base / seed venv)
+    required: false
+    default: '3.12'
   extra-packages:
     description: Space-separated pip packages to install after venv creation
     required: false
@@ -10,6 +16,10 @@ inputs:
     description: Newline-separated requirements file paths (optional)
     required: false
     default: ''
+  seed_venv_path:
+    description: Warm venv on runner disk (from make apply-ci-runners)
+    required: false
+    default: /var/cache/ai-gateway/venv-ci-seed
 
 runs:
   using: composite
@@ -20,31 +30,59 @@ runs:
         path: |
           ~/.cache/pip
           .venv-ci
-        key: venv-${{ runner.os }}-${{ hashFiles('**/requirements*.txt', 'services/gateway-engine/Dockerfile', '.github/actions/setup-python-venv/action.yml') }}
+        key: venv-py${{ inputs.python_version }}-${{ runner.os }}-${{ hashFiles('**/requirements*.txt', 'services/gateway-engine/Dockerfile', '.github/actions/setup-python-venv/action.yml') }}
         restore-keys: |
-          venv-${{ runner.os }}-
+          venv-py${{ inputs.python_version }}-${{ runner.os }}-
 
-    - name: Ensure python3-venv
+    - name: Resolve Python and ensure venv module
+      id: py
       shell: bash
       run: |
-        sudo apt-get update
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
+        set -euo pipefail
+        PY="python${{ inputs.python_version }}"
+        if ! command -v "$PY" >/dev/null 2>&1; then
+          echo "WARN: $PY not found, falling back to python3" >&2
+          PY=python3
+        fi
+        PROBE="$(mktemp -d)"
+        trap 'rm -rf "$PROBE"' EXIT
+        if ! "$PY" -m venv "$PROBE" 2>/dev/null; then
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "python${{ inputs.python_version }}-venv" python3-pip
+          rm -rf "$PROBE"
+          PROBE="$(mktemp -d)"
+          "$PY" -m venv "$PROBE"
+        fi
+        echo "bin=$PY" >> "$GITHUB_OUTPUT"
 
     - name: Create venv and install packages
       shell: bash
       run: |
         set -euo pipefail
+        PY="${{ steps.py.outputs.bin }}"
+        SEED="${{ inputs.seed_venv_path }}"
+        need_create=false
         if [[ ! -x .venv-ci/bin/python ]] || ! .venv-ci/bin/pip --version >/dev/null 2>&1; then
+          need_create=true
+        elif ! .venv-ci/bin/python -c "import sys; v=tuple(map(int, '${{ inputs.python_version }}'.split('.'))); exit(0 if sys.version_info[:2]==v else 1)"; then
+          need_create=true
+        fi
+        if [[ "$need_create" == true ]]; then
           rm -rf .venv-ci
-          python3 -m venv .venv-ci
+          if [[ -x "$SEED/bin/python" ]] && "$SEED/bin/python" -c "import sys; v=tuple(map(int, '${{ inputs.python_version }}'.split('.'))); exit(0 if sys.version_info[:2]==v else 1)"; then
+            echo "Seeding .venv-ci from $SEED"
+            mkdir -p .venv-ci
+            rsync -a "$SEED/" .venv-ci/
+          else
+            "$PY" -m venv .venv-ci
+          fi
         fi
         .venv-ci/bin/pip install --upgrade pip
         if [[ -n "${{ inputs.extra-packages }}" ]]; then
-          .venv-ci/bin/pip install ${{ inputs.extra-packages }}
+          .venv-ci/bin/pip install --upgrade-strategy only-if-needed ${{ inputs.extra-packages }}
         fi
         if [[ -n "${{ inputs.requirements-files }}" ]]; then
           while IFS= read -r req; do
             [[ -z "$req" ]] && continue
-            .venv-ci/bin/pip install -r "$req"
+            .venv-ci/bin/pip install --upgrade-strategy only-if-needed -r "$req"
           done <<< "${{ inputs.requirements-files }}"
         fi
