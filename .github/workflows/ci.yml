@@ -346,7 +346,6 @@ jobs:
       needs.unit-tests.result == 'success' &&
       (
         github.event_name == 'workflow_dispatch' ||
-        github.ref == 'refs/heads/main' ||
         contains(github.event.pull_request.labels.*.name, 'run-e2e')
       )
     runs-on: self-hosted
@@ -389,7 +388,7 @@ jobs:
       - name: Determine if we should push
         id: should_push
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ contains(github.event.pull_request.labels.*.name, 'push-images') }}" == "true" ]]; then
+          if [[ "${{ contains(github.event.pull_request.labels.*.name, 'push-images') }}" == "true" ]]; then
             echo "push=true" >> $GITHUB_OUTPUT
           else
             echo "push=false" >> $GITHUB_OUTPUT

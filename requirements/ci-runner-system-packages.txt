@@ -1,0 +1,15 @@
+# One-time apt packages for ai-gateway self-hosted CI runners.
+# Used by: scripts/ci-runner-bootstrap.sh
+#
+# CI currently re-runs `apt-get install python3-venv` every job via
+# setup-python-venv; pre-installing here makes that step a fast no-op.
+
+docker.io
+docker-buildx-plugin
+direnv
+psmisc
+git
+curl
+python3.12
+python3.12-venv
+python3-pip
