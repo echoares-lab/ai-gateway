@@ -1,0 +1,25 @@
+# Consolidated pip packages for the host .venv-ci used by CI jobs that call
+# .github/actions/setup-python-venv (lint, mock-integration, real-provider-e2e,
+# credential-prober). Pinned to match repo requirement files as of 2026-06-09.
+#
+# NOTE: Use Python 3.12 for this venv on the runner host. Python 3.14 fails to
+# build pydantic-core (PyO3 max 3.13). Unit tests use Docker python:3.12-slim.
+
+# lint-and-syntax (extra-packages)
+ruff
+pyyaml
+pydantic==2.10.6
+pytest==8.3.5
+
+# tests/integration/requirements.txt
+pytest-asyncio==0.24.0
+httpx==0.28.1
+respx==0.22.0
+fakeredis[asyncio]==2.26.2
+prometheus-client==0.21.1
+fastapi==0.115.12
+uvicorn[standard]==0.34.3
+PyYAML==6.0.2
+python-dotenv==1.0.1
+websockets==16.0
+psycopg2-binary>=2.9.10
