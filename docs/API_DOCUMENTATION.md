@@ -6,11 +6,19 @@ This repository uses an automated, containerized documentation system based on [
 The documentation site is hosted within the Docker environment and can be accessed at:
 **`http://localhost:8002`**
 
-By default, it shows the **Gateway Engine API**. You can switch to other services by using the `spec` URL parameter:
-- **Gateway Engine API**: `http://localhost:8002/?spec=gateway-engine.yaml`
-- **CLIProxy API**: `http://localhost:8002/?spec=cliproxy.yaml`
-- **LiteLLM API**: `http://localhost:8002/?spec=litellm.yaml`
-- **CPA Manager API**: `http://localhost:8002/?spec=cpa-manager.yaml`
+The index lists every OpenAPI spec mounted from `docs/openapi/`. Direct links:
+- **Gateway Engine API**: `http://localhost:8002/docs/gateway-engine.yaml`
+- **CLIProxy API**: `http://localhost:8002/docs/cliproxy.yaml`
+- **LiteLLM API**: `http://localhost:8002/docs/litellm.yaml`
+- **CPA Manager API**: `http://localhost:8002/docs/cpa-manager.yaml`
+
+### Historical / Internal Specifications
+
+- **Policy Engine API**: `http://localhost:8002/docs/policy-engine.yaml` is
+  retained as a historical schema reference for policy decisions and profile
+  shapes. The standalone policy-engine service is decommissioned, so the spec
+  intentionally does not advertise a live `servers:` target. Use the Gateway
+  Engine admin status API for runtime policy trace data.
 
 ## Adding New Endpoints
 1. **Define Specification**: Add or update the corresponding OpenAPI YAML file in `docs/openapi/`.

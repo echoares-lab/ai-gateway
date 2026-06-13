@@ -2,10 +2,19 @@ openapi: 3.0.3
 info:
   title: Policy Engine API
   description: |
-    Evaluates routing policy for AI Gateway requests (Epic #38).
-    Returns a RoutingDecision consumed by gateway-engine → LiteLLM metadata.
+    Historical/internal schema reference for the decommissioned standalone
+    policy-engine service (Epic #38).
+
+    The standalone policy-engine process is not advertised as a live local
+    service target. Runtime policy traces and effective routing state are
+    exposed through gateway-engine admin status endpoints; this document is
+    retained for RoutingDecision and profile schema compatibility.
+
     Design: docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md
   version: 0.1.0
+x-lifecycle:
+  status: historical
+  replacement: gateway-engine admin status policy trace
 
 paths:
   /v1/health:

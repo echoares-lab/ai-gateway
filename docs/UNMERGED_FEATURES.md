@@ -10,13 +10,14 @@ Compared local worktrees, local branches, and remote branches against `origin/ma
 |--------|--------|------|
 | Local OpenAPI audit | Added current top-level OpenAPI `servers:` entries for `gateway-engine.yaml` and `litellm.yaml` so Scalar has usable local targets without importing stale `translator.yaml` deletions | low |
 | Dev stack tooling | Updated `./dev-env.sh list` and `cleanup` to use Compose project labels so they see fixed-name `TESTING-*` containers, and made `start` retry once with an explicit wait budget for slow LiteLLM migration recovery | medium |
+| Policy-engine OpenAPI audit | Marked `docs/openapi/policy-engine.yaml` as a historical/internal schema reference instead of adding a misleading live `servers:` target for the decommissioned standalone service | low |
+| API documentation index | Corrected documented Scalar links from the stale `?spec=` query format to the implemented `/docs/{spec}` route | low |
 
 ### Newly observed deferred work
 
 | Feature | Source | Why deferred | Suggested approach |
 |---------|--------|--------------|-------------------|
 | Self-hosted CI runner bootstrap script | `/home/dev/.cursor/worktrees/ai-gateway__SSH__dev_/wfd0/scripts/ci-runner-bootstrap.sh` | Local-only untracked script grants sudoers access and seeds system-level caches; useful but needs security review and docs alignment before import | Rework as a reviewed ops script linked from `docs/CI_SELF_HOSTED.md`; require shellcheck and a dry-run mode before merge |
-| OpenAPI `servers:` for policy-engine spec | Current policy-engine OpenAPI spec | The standalone policy engine has been decommissioned; adding a live localhost server target could mislead users | Either mark `docs/openapi/policy-engine.yaml` as historical/internal or document the gateway-engine admin route that exposes policy state |
 
 Audit date: 2026-06-09. Evaluated all local worktrees and remote branches against `main` (`001c5d9`).
 Risk tiers: **low** (docs/small fix), **medium** (isolated feature), **high** (large refactor / stale base).
