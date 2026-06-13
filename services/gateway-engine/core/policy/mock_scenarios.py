@@ -42,9 +42,7 @@ def evaluate_mock_scenario(context: dict[str, Any]) -> dict[str, Any]:
     caps = context.get("capabilities") if isinstance(context.get("capabilities"), dict) else {}
     rate_limits = context.get("rate_limits") if isinstance(context.get("rate_limits"), list) else []
 
-    if agent_id == "test:agent-family-lock" or (
-        agent_id.endswith("agent-family-lock") and caps.get("has_tools")
-    ):
+    if agent_id == "test:agent-family-lock" or (agent_id.endswith("agent-family-lock") and caps.get("has_tools")):
         decision = _base_decision(
             lock_model_family=True,
             ordered_deployments=["claude-sonnet-4-6"],

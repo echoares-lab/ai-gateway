@@ -104,7 +104,7 @@ body:
       label: Affected files / areas
       description: Representative files or subsystems likely to change
       placeholder: |
-        - services/gateway-engine/gateway-engine.py
+        - services/gateway-engine/main.py
         - cliproxy-setup.sh
         - .github/workflows/lint.yml
 

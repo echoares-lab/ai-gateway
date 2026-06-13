@@ -36,7 +36,7 @@ list before it reaches the client.
 Non-goals for this stub:
 
 - Moving MCP registration out of LiteLLM (ADR: LiteLLM remains control plane).
-- Adding MCP routing logic to `gateway-engine.py` (ADR: pass-through only).
+- Adding MCP routing logic to `main.py` (ADR: pass-through only).
 - Per-tool argument-level ACL (server-alias granularity first).
 - Dynamic MCP server provisioning (static registry + profile filters).
 

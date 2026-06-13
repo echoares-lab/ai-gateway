@@ -15,9 +15,7 @@ from core.policy.schemas import (
 
 
 def test_evaluate_pass_through_stub():
-    decision = evaluate(
-        EvaluateRequest(context=RoutingContext(requested_model="claude-sonnet-4-6"))
-    )
+    decision = evaluate(EvaluateRequest(context=RoutingContext(requested_model="claude-sonnet-4-6")))
     assert decision.gate.value == "allow"
     assert decision.allowed_models == ["claude-sonnet-4-6"]
     assert "stub:pass_through" in decision.rules_applied

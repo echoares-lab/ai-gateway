@@ -48,7 +48,7 @@ The architecture scales horizontally simply by adding more OAuth credentials to 
 - **Native Cross-Provider Aliasing in CLIProxy**: Currently, Tier-1 to Tier-2 failover (Antigravity → Gemini CLI) requires LiteLLM to maintain parallel model entries (`-via-gcli`). Patching CLIProxy to allow `oauth-model-alias` to pool across different underlying providers would simplify `litellm-config.yaml` massively. 
 
 ### Middleware Adjustments
-- **Capability Polyfilling**: Adding a middleware layer in `gateway-engine.py` that can strip or polyfill unsupported parameters across families.
+- **Capability Polyfilling**: Adding a middleware layer in `main.py` that can strip or polyfill unsupported parameters across families.
 
 ## 4. Limitations and Quirks
 

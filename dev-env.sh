@@ -4,7 +4,7 @@
 # Usage:
 #   ./dev-env.sh start   [slot]          build & start dev stack (default slot=1)
 #   ./dev-env.sh stop    [slot]          stop & remove dev stack and its auth volume
-#   ./dev-env.sh rebuild [slot]          rebuild gateway-engine only (fast after gateway-engine.py edit)
+#   ./dev-env.sh rebuild [slot]          rebuild gateway-engine only (fast after main.py edit)
 #   ./dev-env.sh rebuild-cliproxy [slot] rebuild cliproxy from fork source
 #   ./dev-env.sh logs    [slot]          tail all dev logs
 #   ./dev-env.sh test    [slot]          run integration tests against dev slot

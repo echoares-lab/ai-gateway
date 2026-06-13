@@ -6,9 +6,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator
-
 from core.policy.schemas import PolicyProfile, PolicyScope
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 
 class BudgetPolicyConfig(BaseModel):
@@ -158,9 +157,7 @@ def validate_policy_profiles(data: dict[str, Any]) -> list[str]:
 
         scope_key = (profile.scope.value, profile.scope_id)
         if scope_key in seen_scope_pairs:
-            errors.append(
-                f"duplicate scope binding ({profile.scope.value}, {profile.scope_id!r})"
-            )
+            errors.append(f"duplicate scope binding ({profile.scope.value}, {profile.scope_id!r})")
         seen_scope_pairs.add(scope_key)
 
         if profile.scope == PolicyScope.ORG and not profile.scope_id:

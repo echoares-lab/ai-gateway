@@ -1,11 +1,13 @@
-import os
-import httpx
 import logging
+import os
+
+import httpx
 
 log = logging.getLogger("gateway-engine.orchestrator.litellm_admin")
 
 LITELLM_ADMIN_URL = os.environ.get("LITELLM_ADMIN_URL", "http://litellm:4000").rstrip("/")
 _client: httpx.AsyncClient | None = None
+
 
 def get_client() -> httpx.AsyncClient:
     global _client
@@ -13,12 +15,13 @@ def get_client() -> httpx.AsyncClient:
         _client = httpx.AsyncClient(timeout=30.0)
     return _client
 
+
 async def litellm_admin_get(path: str, *, params: dict | None = None) -> dict | None:
     master_key = os.environ.get("LITELLM_MASTER_KEY", "")
     if not master_key:
         log.warning("LITELLM_MASTER_KEY not configured")
         return None
-    
+
     headers = {"Authorization": f"Bearer {master_key}"}
     try:
         client = get_client()
@@ -36,12 +39,13 @@ async def litellm_admin_get(path: str, *, params: dict | None = None) -> dict | 
         log.error("LiteLLM admin GET %s failed: %s", path, exc)
         return None
 
+
 async def litellm_admin_post(path: str, json_data: dict) -> dict | None:
     master_key = os.environ.get("LITELLM_MASTER_KEY", "")
     if not master_key:
         log.warning("LITELLM_MASTER_KEY not configured")
         return None
-    
+
     headers = {"Authorization": f"Bearer {master_key}"}
     try:
         client = get_client()

@@ -918,7 +918,7 @@ on the policy-engine container and restart. Revert to `0.01` after resolution.
 | File | Purpose |
 |------|---------|
 | `docker-compose.yml` | Full stack definition |
-| `services/gateway-engine/gateway-engine.py` | FastAPI proxy — Responses API translation + model prefix |
+| `services/gateway-engine/main.py` | FastAPI proxy — Responses API translation + model prefix |
 | `services/gateway-engine/Dockerfile` | Builds the gateway-engine container |
 | `services/gateway-engine/gemini-model-map.json` | Dotted→dashed Gemini model alias map (auto-managed by sync-models) |
 | `Dockerfile.cliproxy` | Builds the CLIProxyAPI container image |

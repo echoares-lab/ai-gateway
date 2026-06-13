@@ -10,8 +10,8 @@ clean-db:
 
 # Lint the gateway-engine (mirrors the CI fast tier).
 lint:
-	ruff check services/gateway-engine/main.py
-	ruff format --check services/gateway-engine/main.py
+	ruff check services/gateway-engine/
+	ruff format --check services/gateway-engine/
 
 # Regression tests for sync-models probe classification (429 must preserve catalog).
 test-sync-models-probe:

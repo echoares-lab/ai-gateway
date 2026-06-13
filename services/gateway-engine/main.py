@@ -34,6 +34,7 @@ import redis.asyncio as aioredis
 import websockets
 import yaml
 from admin_api import router as admin_router
+from core.admin_shared import _require_admin_key
 from core.config import config
 from core.credential_inventory import (
     CredentialInventoryListResponse,
@@ -1462,6 +1463,39 @@ def _codex_ws_upstream_headers(
     return headers
 
 
+def _parse_ws_client_auth(ws: WebSocket) -> str:
+    client_auth = ws.headers.get("authorization", "")
+    if not client_auth:
+        client_auth = ws.headers.get("api-key", "")
+    if not client_auth:
+        client_auth = ws.query_params.get("key", "")
+    return client_auth
+
+
+def _validate_ws_auth_token(client_auth: str) -> tuple[bool, str | None]:
+    """Return (authorized, normalized_token). Fail closed when auth is missing."""
+    if not client_auth:
+        return False, None
+    auth_token = client_auth[7:] if client_auth.startswith("Bearer ") else client_auth
+    expected_master_key = os.environ.get("LITELLM_MASTER_KEY", "")
+    if expected_master_key and auth_token == expected_master_key:
+        return True, auth_token
+    if auth_token.startswith("sk-") and len(auth_token) >= 10:
+        return True, auth_token
+    return False, auth_token
+
+
+def _ws_log_safe_mapping(values: dict[str, str]) -> dict[str, str]:
+    auth_keys = frozenset({"authorization", "api-key", "x-api-key", "key"})
+    safe: dict[str, str] = {}
+    for key, value in values.items():
+        if key.lower() in auth_keys:
+            safe[key] = "[redacted]"
+        else:
+            safe[key] = value
+    return safe
+
+
 # ── Codex / OpenAI Responses API converters ──────────────────────────────────
 
 
@@ -1758,37 +1792,20 @@ async def responses_websocket(ws: WebSocket):
     # Accept client WebSocket connection
     await ws.accept()
 
-    log.info("WebSocket headers: %s", dict(ws.headers))
-    log.info("WebSocket query params: %s", dict(ws.query_params))
+    log.info("WebSocket headers: %s", _ws_log_safe_mapping(dict(ws.headers)))
+    log.info("WebSocket query params: %s", _ws_log_safe_mapping(dict(ws.query_params)))
 
-    # Authenticate client connection
-    client_auth = ws.headers.get("authorization", "")
-    if not client_auth:
-        client_auth = ws.headers.get("api-key", "")
-    if not client_auth:
-        client_auth = ws.query_params.get("key", "")
-
-    expected_master_key = os.environ.get("LITELLM_MASTER_KEY", "")
-    is_authorized = True
-    auth_token: str | None = None
-
-    if client_auth:
-        auth_token = client_auth
-        if auth_token.startswith("Bearer "):
-            auth_token = auth_token[7:]
-
-        if expected_master_key and auth_token == expected_master_key:
-            is_authorized = True
-        elif auth_token.startswith("sk-") and len(auth_token) >= 10:
-            is_authorized = True
-        else:
-            is_authorized = False
+    client_auth = _parse_ws_client_auth(ws)
+    is_authorized, auth_token = _validate_ws_auth_token(client_auth)
 
     if not is_authorized:
+        redacted_auth, _ = _admin_redact(client_auth) if client_auth else ("", False)
         log.warning(
-            "Unauthorized Codex WebSocket connection attempt with token: %s",
-            client_auth,
+            "Unauthorized Codex WebSocket connection attempt (auth_present=%s)",
+            bool(client_auth),
         )
+        if client_auth:
+            log.debug("Unauthorized WebSocket token (redacted): %s", redacted_auth)
         try:
             await ws.close(code=1008, reason="Unauthorized")
         except Exception:
@@ -2370,29 +2387,6 @@ def _admin_panel(status: str, source: str, freshness_seconds, errors: list, data
         "errors": errors,
         "data": data,
     }
-
-
-def _admin_key_valid(request: Request) -> bool:
-    """Return true when mutating gateway-engine admin APIs are enabled and authorized."""
-    configured = GATEWAY_ENGINE_ADMIN_KEY or os.environ.get("GATEWAY_ENGINE_ADMIN_KEY", "")
-    if not configured:
-        return False
-    return request.headers.get("x-admin-key", "") == configured
-
-
-def _require_admin_key(request: Request) -> JSONResponse | None:
-    if _admin_key_valid(request):
-        return None
-    status = 403 if (GATEWAY_ENGINE_ADMIN_KEY or os.environ.get("GATEWAY_ENGINE_ADMIN_KEY", "")) else 503
-    return JSONResponse(
-        {
-            "error": {
-                "message": "gateway-engine admin mutations are disabled or unauthorized",
-                "code": "admin_key_required",
-            }
-        },
-        status_code=status,
-    )
 
 
 def _admin_load_litellm_config() -> tuple[dict | None, list[dict]]:

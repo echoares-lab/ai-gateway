@@ -9,6 +9,37 @@ sys.path.insert(0, os.path.dirname(__file__))
 import main as t
 
 
+class TestCodexWsAuth(unittest.TestCase):
+    def tearDown(self):
+        os.environ.pop("LITELLM_MASTER_KEY", None)
+
+    def test_validate_ws_auth_missing_credentials(self):
+        assert t._validate_ws_auth_token("") == (False, None)
+
+    def test_validate_ws_auth_master_key(self):
+        os.environ["LITELLM_MASTER_KEY"] = "master-secret"
+        ok, token = t._validate_ws_auth_token("Bearer master-secret")
+        assert ok is True
+        assert token == "master-secret"
+
+    def test_validate_ws_auth_sk_prefix(self):
+        ok, token = t._validate_ws_auth_token("Bearer sk-test-key-123")
+        assert ok is True
+        assert token == "sk-test-key-123"
+
+    def test_validate_ws_auth_invalid_token(self):
+        os.environ["LITELLM_MASTER_KEY"] = "master-secret"
+        ok, token = t._validate_ws_auth_token("Bearer wrong")
+        assert ok is False
+        assert token == "wrong"
+
+    def test_ws_log_safe_mapping_redacts_auth(self):
+        safe = t._ws_log_safe_mapping({"authorization": "Bearer sk-secret", "user-agent": "test", "key": "sk-q"})
+        assert safe["authorization"] == "[redacted]"
+        assert safe["key"] == "[redacted]"
+        assert safe["user-agent"] == "test"
+
+
 class TestCodexWsPolicyBypass(unittest.TestCase):
     def tearDown(self):
         for key in ("POLICY_ENGINE_ENABLED", "POLICY_ENGINE_WS_EVALUATE"):

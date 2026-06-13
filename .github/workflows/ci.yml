@@ -121,9 +121,9 @@ jobs:
         with:
           extra-packages: ruff pyyaml pydantic pytest
       - name: Lint with ruff
-        run: .venv-ci/bin/ruff check services/gateway-engine/main.py
+        run: .venv-ci/bin/ruff check services/gateway-engine/
       - name: Format check with ruff
-        run: .venv-ci/bin/ruff format --check services/gateway-engine/main.py
+        run: .venv-ci/bin/ruff format --check services/gateway-engine/
       - name: Shell syntax check
         run: |
           bash -n cliproxy-setup.sh

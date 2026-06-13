@@ -158,7 +158,7 @@ During implementation:
 - Make changes — the gateway-engine hot-reloads in ~1s, litellm-config.yaml hot-reloads in ~10s
 - After each significant change, run unit tests:
   ```bash
-  docker exec aidev<slot>-gateway-engine-1 pytest test_gateway-engine.py -v
+  docker exec aidev<slot>-gateway-engine-1 pytest test_gateway_engine*.py -v
   ```
 - For gateway/wire-format changes, also run the fast mock integration tier:
   ```bash
@@ -415,7 +415,7 @@ If two agents are running simultaneously:
 - Each agent uses a **different dev slot** (check `./dev-env.sh list` before starting; never slot 0)
 - Each agent uses a **different worktree** (different directory and branch name)
 - Each claim uses a **unique `Claim-ID`** per session (not just per GitHub account)
-- Issues touching the same hotspot (`gateway-engine.py`, `litellm-config.yaml`, etc.) are **serialized** — use `Depends on:` or stacked PRs + rebase after the first merges
+- Issues touching the same hotspot (`main.py`, `litellm-config.yaml`, etc.) are **serialized** — use `Depends on:` or stacked PRs + rebase after the first merges
 - Poll dependency state with `gh issue view` / `gh pr view` before claiming or implementing
 - After a dependency merges: `git fetch origin && git rebase origin/main`, resolve conflicts, `make test-fast`, `git push --force-with-lease`
 - CI `mock-integration` infra flakes: confirm with local `make test-mock` before retrying merge

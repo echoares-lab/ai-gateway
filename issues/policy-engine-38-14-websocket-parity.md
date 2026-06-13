@@ -24,7 +24,7 @@ risks: |
 dependencies:
   - policy-engine-38-04-gateway-engine.md
 files:
-  - services/gateway-engine/gateway-engine.py
+  - services/gateway-engine/main.py
   - docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md
 claim_status: done
 claimed_by: cursor-575k-20260605T060900Z
