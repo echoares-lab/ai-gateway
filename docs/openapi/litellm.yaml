@@ -3,6 +3,11 @@ info:
   title: LiteLLM API
   description: LiteLLM gateway API configuration and health.
   version: 1.0.0
+servers:
+  - url: http://localhost:4001
+    description: Stable local LiteLLM UI/API
+  - url: http://localhost:4011
+    description: Development slot 1 LiteLLM UI/API
 paths:
   /health:
     get:

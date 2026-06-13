@@ -1,5 +1,32 @@
 # Unmerged Features Backlog
 
+## Follow-up audit - 2026-06-13
+
+Compared local worktrees, local branches, and remote branches against `origin/main` (`26b32b4`). No open PRs were present. Baseline `make test-unit` passed with `229 passed`; `./dev-env.sh start 1` returned a failure while LiteLLM was still recovering Prisma migrations, but the LiteLLM container became healthy shortly afterward. That startup behavior should be treated as a dev-stack wait/health issue, not as a permanent service failure.
+
+### Applied in `feat/unmerged-work-recovery`
+
+| Source | Change | Risk |
+|--------|--------|------|
+| `feat/admin-ui-scaffold` worktree (partial local edits) | Added current top-level OpenAPI `servers:` entries for `gateway-engine.yaml` and `litellm.yaml` so Scalar has usable local targets without importing stale `translator.yaml` deletions | low |
+
+### Newly observed deferred work
+
+| Feature | Source | Why deferred | Suggested approach |
+|---------|--------|--------------|-------------------|
+| Dev stack list/slot isolation cleanup | Current `dev-env.sh` plus `docker-compose.dev.yml` | `./dev-env.sh list` filters `aidev` names, but dev containers are fixed `TESTING-*` names; a full fix likely touches container naming, CI naming tests, and multi-slot semantics | Design a small infra change that either makes dev container names slot-aware or updates slot commands around the `TESTING-*` convention; include `tests/verify-docker-naming.sh` coverage |
+| Dev stack wait timeout after long LiteLLM migration recovery | Current `./dev-env.sh start 1` run | Compose returned failure before LiteLLM became healthy; logs showed migration recovery completed and health probes returned 200 afterward | Add an explicit post-`up` condition wait with a longer LiteLLM budget, or document the first-start recovery path; verify with a clean dev volume |
+| Self-hosted CI runner bootstrap script | `/home/dev/.cursor/worktrees/ai-gateway__SSH__dev_/wfd0/scripts/ci-runner-bootstrap.sh` | Local-only untracked script grants sudoers access and seeds system-level caches; useful but needs security review and docs alignment before import | Rework as a reviewed ops script linked from `docs/CI_SELF_HOSTED.md`; require shellcheck and a dry-run mode before merge |
+| OpenAPI `servers:` for policy-engine spec | `feat/admin-ui-scaffold` worktree | The standalone policy engine has been decommissioned; adding a live localhost server target could mislead users | Either mark `docs/openapi/policy-engine.yaml` as historical/internal or document the gateway-engine admin route that exposes policy state |
+
+### Reconfirmed high-risk skips
+
+| Feature | Source | Reason |
+|---------|--------|--------|
+| CLIProxy model sync branch | `feat/cliproxy-model-sync-232` | Still targets `services/translator/**`; current main has gateway-engine registry/probe APIs and renamed OpenAPI docs |
+| Full final-fix stack | `origin/feat/final-fix` | Large stale stack touching rename, tenancy, onboarding, CI, Docker, and deleted services; cherry-picking would be higher risk than reimplementation |
+| Admin OpenAPI helper scripts | `feat/admin-ui-scaffold` worktree `add_servers.py`, `clean_openapi.py` | Ad-hoc scripts use regex and the local diff deletes hundreds of current gateway-engine endpoint docs from old `translator.yaml` |
+
 Audit date: 2026-06-09. Evaluated all local worktrees and remote branches against `main` (`001c5d9`).
 Risk tiers: **low** (docs/small fix), **medium** (isolated feature), **high** (large refactor / stale base).
 
