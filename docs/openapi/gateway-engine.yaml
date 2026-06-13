@@ -3,6 +3,11 @@ info:
   title: Gateway Engine API
   description: Translation proxy for multiple AI CLI formats to LiteLLM (OpenAI Chat Completions).
   version: 1.0.0
+servers:
+  - url: http://localhost:4000
+    description: Stable local gateway-engine
+  - url: http://localhost:4010
+    description: Development slot 1 gateway-engine
 paths:
   /v1/chat/completions:
     post:
