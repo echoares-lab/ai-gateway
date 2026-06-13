@@ -103,9 +103,13 @@ cmd_start() {
     local slot
     slot="$(require_slot "${1:-1}")"
     slot_ports "$slot"
+    local wait_timeout="${DEV_ENV_WAIT_TIMEOUT:-300}"
     echo "starting dev slot ${slot}: gateway-engine=:${GATEWAY_ENGINE_PORT}  litellm=:${LITELLM_PORT}  cliproxy=:${CLIPROXY_PORT}"
     seed_auth_volume "$slot"
-    run_compose "$slot" up -d --build
+    if ! run_compose "$slot" up -d --build --wait --wait-timeout "$wait_timeout"; then
+        echo "initial compose wait failed; retrying once for slow LiteLLM migration recovery ..." >&2
+        run_compose "$slot" up -d --wait --wait-timeout "$wait_timeout"
+    fi
     echo ""
     echo "dev slot ${slot} is up:"
     echo "  gateway-engine  http://localhost:${GATEWAY_ENGINE_PORT}/health"
@@ -229,12 +233,19 @@ cmd_stop_mock() {
 }
 
 cmd_list() {
-    docker ps --filter "name=aidev" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    docker ps \
+        --filter "label=com.docker.compose.project" \
+        --format 'table {{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Status}}\t{{.Ports}}' \
+        | awk 'NR == 1 || $2 ~ /^aidev/'
 }
 
 cmd_cleanup() {
     echo "Purging all aidev containers and volumes..."
-    docker ps -a --filter "name=aidev" --format "{{.Names}}" | xargs -r docker rm -f
+    docker ps -a \
+        --filter "label=com.docker.compose.project" \
+        --format '{{.ID}}\t{{.Label "com.docker.compose.project"}}' \
+        | awk '$2 ~ /^aidev/ {print $1}' \
+        | xargs -r docker rm -f
     docker volume ls --filter "name=aidev" --format "{{.Name}}" | xargs -r docker volume rm
     echo "Cleanup complete."
 }

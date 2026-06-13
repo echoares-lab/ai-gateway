@@ -132,9 +132,11 @@ jobs:
           bash -n gen-client-config.sh
           bash -n scripts/ci-build-mock-services.sh
           bash -n scripts/ci-free-mock-host-ports.sh
+          bash -n tests/test-dev-env.sh
           bash -n tests/test-multi-repo-isolation.sh
           bash -n tests/test-gateway-e2e.sh
           bash -n tests/test-sync-models-probe.sh
+          bash tests/test-dev-env.sh
       - name: sync-models probe regression tests
         run: |
           .venv-ci/bin/python -m pytest tests/test_sync_models_probe_classify.py -v
