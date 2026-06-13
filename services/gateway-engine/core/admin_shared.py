@@ -60,5 +60,19 @@ def _require_admin_key(request: Request, config: dict | None = None) -> JSONResp
     )
 
 
+def admin_read_auth_enabled() -> bool:
+    return os.environ.get("GATEWAY_ENGINE_ADMIN_READ_AUTH", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _require_admin_read_access(request: Request) -> JSONResponse | None:
+    if not admin_read_auth_enabled():
+        return None
+    return _require_admin_key(request)
+
+
 def _admin_error(code: str, message: str, location: str) -> dict:
     return {"code": code, "message": message, "location": location}

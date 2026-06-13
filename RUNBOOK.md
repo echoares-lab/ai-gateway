@@ -365,7 +365,21 @@ CLIPROXY_SYNC_MODE=legacy ./cliproxy-setup.sh sync-models
 
 ---
 
-## Upgrading CLIProxyAPI and CPA-Manager
+## Gateway admin authentication
+
+Mutating `/admin/*` POST routes and the admin API proxy (`/admin/teams`, `/admin/keys`, onboarding) require the **`x-admin-key`** header matching **`GATEWAY_ENGINE_ADMIN_KEY`**.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `GATEWAY_ENGINE_ADMIN_KEY` | *(unset)* | Canonical admin key for gateway-engine mutations |
+| `ADMIN_API_KEY` | *(unset)* | **Deprecated** alias — logs a warning; use `GATEWAY_ENGINE_ADMIN_KEY` |
+| `GATEWAY_ENGINE_ADMIN_READ_AUTH` | `false` | When `true`, read-only GET `/admin/status`, `/admin/credentials`, etc. also require `x-admin-key` |
+
+Read-only admin endpoints are unauthenticated by default (operator-local convention). Enable `GATEWAY_ENGINE_ADMIN_READ_AUTH=true` when the gateway is reachable beyond localhost or a trusted tunnel.
+
+**Codex WebSocket (`/v1/responses` upgrade):** requires `Authorization`, `api-key`, or `?key=` matching `LITELLM_MASTER_KEY` or a LiteLLM virtual key validated via `/key/info`.
+
+---
 
 Maintainers should periodically check for new releases and pin them in the repo to ensure stability.
 

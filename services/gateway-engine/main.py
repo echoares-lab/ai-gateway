@@ -34,7 +34,7 @@ import redis.asyncio as aioredis
 import websockets
 import yaml
 from admin_api import router as admin_router
-from core.admin_shared import _require_admin_key
+from core.admin_shared import _require_admin_key, _require_admin_read_access
 from core.config import config
 from core.credential_inventory import (
     CredentialInventoryListResponse,
@@ -1485,6 +1485,36 @@ def _validate_ws_auth_token(client_auth: str) -> tuple[bool, str | None]:
     return False, auth_token
 
 
+async def _litellm_virtual_key_valid(auth_token: str) -> bool:
+    """Verify sk-* token against LiteLLM key/info (issue #307)."""
+    litellm_url = os.environ.get("LITELLM_URL", "http://litellm:4000").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{litellm_url}/key/info",
+                params={"key": auth_token},
+                headers={"Authorization": f"Bearer {auth_token}"},
+            )
+            return resp.status_code == 200
+    except Exception as exc:
+        log.warning("LiteLLM key validation failed: %s", type(exc).__name__)
+        return False
+
+
+async def _validate_ws_auth_token_async(client_auth: str) -> tuple[bool, str | None]:
+    ok, auth_token = _validate_ws_auth_token(client_auth)
+    if not ok or not auth_token:
+        return ok, auth_token
+    master = os.environ.get("LITELLM_MASTER_KEY", "")
+    if auth_token == master:
+        return True, auth_token
+    if auth_token.startswith("sk-"):
+        if await _litellm_virtual_key_valid(auth_token):
+            return True, auth_token
+        return False, auth_token
+    return ok, auth_token
+
+
 def _ws_log_safe_mapping(values: dict[str, str]) -> dict[str, str]:
     auth_keys = frozenset({"authorization", "api-key", "x-api-key", "key"})
     safe: dict[str, str] = {}
@@ -1796,7 +1826,7 @@ async def responses_websocket(ws: WebSocket):
     log.info("WebSocket query params: %s", _ws_log_safe_mapping(dict(ws.query_params)))
 
     client_auth = _parse_ws_client_auth(ws)
-    is_authorized, auth_token = _validate_ws_auth_token(client_auth)
+    is_authorized, auth_token = await _validate_ws_auth_token_async(client_auth)
 
     if not is_authorized:
         redacted_auth, _ = _admin_redact(client_auth) if client_auth else ("", False)
@@ -3354,15 +3384,21 @@ async def _credential_sync_scheduler_loop() -> None:
 
 
 @app.get("/admin/analytics/tokens")
-async def admin_token_analytics():
+async def admin_token_analytics(request: Request):
     """Granular token usage analytics by provider and model (#117)."""
+    auth_error = _require_admin_read_access(request)
+    if auth_error is not None:
+        return auth_error
     metrics_text, errors = await _admin_fetch_metrics_text()
     return _admin_token_analytics_panel(metrics_text, errors)
 
 
 @app.get("/admin/credentials", response_model=CredentialInventoryListResponse)
-async def admin_credentials():
+async def admin_credentials(request: Request):
     """List redacted gateway-engine credential inventory records."""
+    auth_error = _require_admin_read_access(request)
+    if auth_error is not None:
+        return auth_error
     loaded = _credential_inventory_store().list_credentials()
     return loaded.model_copy(update={"credentials": _redact_credential_records(loaded.credentials)})
 
@@ -3398,7 +3434,10 @@ async def admin_credential_probe(credential_id: str, request: Request):
 
 
 @app.get("/admin/models", response_model=ModelRegistryListResponse)
-async def admin_models():
+async def admin_models(request: Request):
+    auth_error = _require_admin_read_access(request)
+    if auth_error is not None:
+        return auth_error
     """List gateway-engine-owned model registry records, falling back to LiteLLM config."""
     return _load_model_registry_with_config_fallback()
 
@@ -3440,7 +3479,10 @@ async def admin_model_create(request: Request, body: ModelRegistryWriteRequest):
 
 
 @app.get("/admin/models/{model_id}", response_model=ModelRegistryListResponse)
-async def admin_model(model_id: str):
+async def admin_model(model_id: str, request: Request):
+    auth_error = _require_admin_read_access(request)
+    if auth_error is not None:
+        return auth_error
     """Read one model registry record by id, with config fallback."""
     loaded = _load_model_registry_with_config_fallback()
     matches = [model for model in loaded.models if model.model_id == model_id]
@@ -3722,8 +3764,11 @@ async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
 
 
 @app.get("/admin/status")
-async def admin_status():
+async def admin_status(request: Request):
     """Read-only operator status aggregator (admin-console.v1)."""
+    auth_error = _require_admin_read_access(request)
+    if auth_error is not None:
+        return auth_error
     config, config_errors = _admin_load_litellm_config()
     registry = _load_model_registry_with_config_fallback()
     visible_ids, model_errors = await _admin_fetch_visible_models()
@@ -3756,8 +3801,11 @@ async def admin_status():
 
 
 @app.get("/admin/status/policy")
-async def admin_policy_trace_history():
+async def admin_policy_trace_history(request: Request):
     """Expose recent policy routing decisions (issue #184)."""
+    auth_error = _require_admin_read_access(request)
+    if auth_error is not None:
+        return auth_error
     return [
         {
             **entry,
@@ -3838,7 +3886,10 @@ load();
 
 
 @app.get("/admin/dashboard")
-async def admin_dashboard():
+async def admin_dashboard(request: Request):
+    auth_error = _require_admin_read_access(request)
+    if auth_error is not None:
+        return auth_error
     """Read-only operator dashboard page; renders /admin/status client-side."""
     return HTMLResponse(content=_ADMIN_DASHBOARD_HTML)
 

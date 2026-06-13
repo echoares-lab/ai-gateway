@@ -16,6 +16,23 @@ def admin_key(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_admin_read_auth_optional(monkeypatch):
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "read-admin")
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_READ_AUTH", "true")
+    response = client.get("/admin/status")
+    assert response.status_code == 403
+    response = client.get("/admin/status", headers={"x-admin-key": "read-admin"})
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_admin_read_auth_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("GATEWAY_ENGINE_ADMIN_READ_AUTH", raising=False)
+    response = client.get("/admin/status")
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_admin_teams_list_unauthorized(admin_key):
     # Wrong key
     response = client.get("/admin/teams", headers={"x-admin-key": "wrong-key"})
