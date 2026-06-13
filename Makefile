@@ -1,4 +1,4 @@
-.PHONY: lint test-unit test-mock test-fast test-e2e validate-policy-profiles test-sync-models-probe clean-db
+.PHONY: lint test-unit test-mock test-fast test-e2e validate-policy-profiles test-sync-models-probe test-dev-env clean-db
 
 CONTAINER_PREFIX ?= PROD-
 
@@ -17,6 +17,9 @@ lint:
 test-sync-models-probe:
 	python3 -m pytest tests/test_sync_models_probe_classify.py -v
 	bash tests/test-sync-models-probe.sh
+
+test-dev-env:
+	bash tests/test-dev-env.sh
 
 # Unit tests: build the gateway-engine image and run the fully-mocked suite (parallel, CI parity).
 test-unit:
