@@ -73,7 +73,7 @@ class RegisterTenantRequest(BaseModel):
 async def register_tenant(request: Request, register_request: RegisterTenantRequest):
     """
     Registers a new multi-tenant entry, provisioning necessary resources.
-    Requires ADMIN_API_KEY.
+    Requires GATEWAY_ENGINE_ADMIN_KEY.
     """
     config = _get_config()
     auth_error = _require_admin_key(request, config)
