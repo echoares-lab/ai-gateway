@@ -59,6 +59,12 @@ criteria before execution.
 
 ---
 
+## Post-audit hardening and deferred backlog (2026-06-13)
+
+See [issues/post-audit-backlog-2026-06-13.md](../issues/post-audit-backlog-2026-06-13.md) and GitHub epics #305, #309, #313, #317, #320.
+
+---
+
 ## Related docs
 
 - [Architecture Decision Record - MCP Control Plane Hosting](./ARCHITECTURE.md)

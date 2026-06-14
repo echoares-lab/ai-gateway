@@ -31,7 +31,7 @@ dependencies:
   - issues/policy-engine-phase0-prerequisites.md (P0-4 TENANCY-3)
 files:
   - services/policy-engine/evaluator/budget.py
-  - services/gateway-engine/gateway-engine.py
+  - services/gateway-engine/main.py
 claim_status: done
 blocks: []
 blocked_by:

@@ -1,8 +1,10 @@
-import yaml
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 PROFILES_DIR = Path(__file__).parent / "profiles"
+
 
 class ClientDetector:
     def __init__(self):
@@ -20,5 +22,6 @@ class ClientDetector:
             if sig.get("user_agent_contains") in user_agent:
                 return profile
         return None
+
 
 client_detector = ClientDetector()

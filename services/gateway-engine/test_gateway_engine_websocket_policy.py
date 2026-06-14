@@ -1,12 +1,60 @@
 """Unit tests for Codex WebSocket policy bypass (issue 38-14)."""
 
+import asyncio
 import os
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, os.path.dirname(__file__))
 import main as t
+
+
+class TestCodexWsAuth(unittest.TestCase):
+    def tearDown(self):
+        os.environ.pop("LITELLM_MASTER_KEY", None)
+
+    def test_validate_ws_auth_missing_credentials(self):
+        assert t._validate_ws_auth_token("") == (False, None)
+
+    def test_validate_ws_auth_master_key(self):
+        os.environ["LITELLM_MASTER_KEY"] = "master-secret"
+        ok, token = t._validate_ws_auth_token("Bearer master-secret")
+        assert ok is True
+        assert token == "master-secret"
+
+    def test_validate_ws_auth_sk_prefix(self):
+        ok, token = t._validate_ws_auth_token("Bearer sk-test-key-123")
+        assert ok is True
+        assert token == "sk-test-key-123"
+
+    def test_validate_ws_auth_invalid_token(self):
+        os.environ["LITELLM_MASTER_KEY"] = "master-secret"
+        ok, token = t._validate_ws_auth_token("Bearer wrong")
+        assert ok is False
+        assert token == "wrong"
+
+    def test_ws_log_safe_mapping_redacts_auth(self):
+        safe = t._ws_log_safe_mapping({"authorization": "Bearer sk-secret", "user-agent": "test", "key": "sk-q"})
+        assert safe["authorization"] == "[redacted]"
+        assert safe["key"] == "[redacted]"
+        assert safe["user-agent"] == "test"
+
+    @patch("main.httpx.AsyncClient")
+    def test_validate_ws_auth_async_rejects_unknown_sk(self, mock_client_cls):
+        mock_client = mock_client_cls.return_value.__aenter__.return_value
+        mock_client.get = AsyncMock(return_value=type("R", (), {"status_code": 401})())
+        ok, token = asyncio.run(t._validate_ws_auth_token_async("Bearer sk-unknown-key-99"))
+        assert ok is False
+        assert token == "sk-unknown-key-99"
+
+    @patch("main.httpx.AsyncClient")
+    def test_validate_ws_auth_async_accepts_litellm_key(self, mock_client_cls):
+        mock_client = mock_client_cls.return_value.__aenter__.return_value
+        mock_client.get = AsyncMock(return_value=type("R", (), {"status_code": 200})())
+        ok, token = asyncio.run(t._validate_ws_auth_token_async("Bearer sk-valid-key-12345"))
+        assert ok is True
+        assert token == "sk-valid-key-12345"
 
 
 class TestCodexWsPolicyBypass(unittest.TestCase):

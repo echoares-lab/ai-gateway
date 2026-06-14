@@ -30,11 +30,11 @@ cd /home/dev/worktrees/ai-gateway-<feature>
 ./dev-env.sh start 1          # or slot 2, 3, …
 
 # 3. Edit code — hot-reload is automatic
-# gateway-engine.py changes: uvicorn auto-reloads within ~1s
+# main.py changes: uvicorn auto-reloads within ~1s
 # (no rebuild or manual restart needed)
 
 # 4. Run unit tests (no container restart needed)
-docker exec aidev1-gateway-engine-1 pytest test_gateway-engine.py -v
+docker exec aidev1-gateway-engine-1 pytest test_gateway_engine*.py -v
 
 # 5. Run integration tests against the slot
 ./dev-env.sh test 1
@@ -54,7 +54,7 @@ cd /home/dev/repos/ai-gateway && git worktree remove /home/dev/worktrees/ai-gate
 # Start full stack
 docker compose up -d
 
-# gateway-engine.py changes: no action needed, uvicorn auto-reloads
+# main.py changes: no action needed, uvicorn auto-reloads
 # (only rebuild needed if Dockerfile or dependencies change)
 docker compose build gateway-engine && docker compose up -d gateway-engine
 
@@ -73,7 +73,7 @@ docker compose build gateway-engine && docker compose up -d gateway-engine
 ./cliproxy-setup.sh quota-summary
 
 # Run gateway-engine unit tests (no container restart needed)
-docker compose exec gateway-engine pytest test_gateway-engine.py -v
+docker compose exec gateway-engine pytest test_gateway_engine*.py -v
 
 # View logs
 docker compose logs gateway-engine -f
@@ -102,7 +102,7 @@ External client (Cursor, curl, SDK)
                           └─► Moonshot (Kimi OAuth)
 ```
 
-**`services/gateway-engine/gateway-engine.py`** is the real entry point — clients hit port 4000 which is the gateway-engine, not LiteLLM directly. LiteLLM is only accessible internally (and on port 4001 for its UI). The gateway-engine does three things:
+**`services/gateway-engine/main.py`** is the real entry point — clients hit port 4000 which is the gateway-engine, not LiteLLM directly. LiteLLM is only accessible internally (and on port 4001 for its UI). The gateway-engine does three things:
 1. **Responses API → Chat Completions**: Cursor Agent mode sends `input` (not `messages`) using OpenAI Responses API format. The gateway-engine converts all item types: plain `{role,content}` dicts, `function_call`, `function_call_output`, and content types like `input_text`/`input_image`.
 2. **Tool format normalisation**: Cursor sends `{type, name, parameters}` (Responses API); LiteLLM needs `{type, function: {name, parameters}}` (Chat Completions).
 3. **Model prefix**: `/v1/models` responses are prefixed with `AI-Gateway:` so Cursor can distinguish gateway models from its built-ins. The prefix is stripped from incoming requests before forwarding.
@@ -127,7 +127,7 @@ External client (Cursor, curl, SDK)
 
 | File | Purpose |
 |------|---------|
-| `services/gateway-engine/gateway-engine.py` | FastAPI proxy: Responses API translation + model prefix |
+| `services/gateway-engine/main.py` | FastAPI proxy: Responses API translation + model prefix |
 | `services/gateway-engine/Dockerfile` | Builds the gateway-engine container |
 | `litellm-config.yaml` | All model definitions (auto-managed by `sync-models`) |
 | `cliproxy-setup.sh` | Auth, sync, health, upgrade CLI |
@@ -170,7 +170,7 @@ cd /home/dev/worktrees/ai-gateway-feat-X
 # From inside the worktree (or repo root for slot testing):
 ./dev-env.sh start 1          # build & start — gateway-engine:4010, litellm:4011, cliproxy:8327
 
-# After editing gateway-engine.py:
+# After editing main.py:
 ./dev-env.sh rebuild 1        # rebuilds gateway-engine only (fast)
 
 # After editing CLIProxyAPI fork:

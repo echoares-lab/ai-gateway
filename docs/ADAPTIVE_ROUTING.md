@@ -31,7 +31,7 @@ Routing today is **static and hand-tuned**:
   per-minute limits; several models carry `disable_background_health_check: true`.
 
 - **Gateway Engine-side retry** is narrow: `_post_with_retry()` in
-  `services/gateway-engine/gateway-engine.py` retries only transient `502`/`503` from
+  `services/gateway-engine/main.py` retries only transient `502`/`503` from
   LiteLLM, with a fixed 1s sleep and 2 retries. It has no awareness of *which
   provider* failed or its recent error history.
 
@@ -284,7 +284,7 @@ mock integration, plus real-provider integration for #60), and rollback notes.
 
 - [`litellm-config.yaml`](../litellm-config.yaml) — `router_settings`,
   `litellm_settings.fallbacks`, background health-check notes.
-- [`services/gateway-engine/gateway-engine.py`](../services/gateway-engine/gateway-engine.py) —
+- [`services/gateway-engine/main.py`](../services/gateway-engine/main.py) —
   `_post_with_retry()`, `_maybe_preview_fallback()`, Prometheus metrics
   (`REQUEST_LATENCY`, `UPSTREAM_ERRORS`, `REQUEST_COUNT`).
 - [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — control-plane ADR; gateway-engine

@@ -52,7 +52,7 @@ Configuration changes must move through a structured promotion pipeline to guara
 ### 2.1 Stage 1: Local & Dev Slot Verification
 1. The developer modifies `litellm-config.yaml` or compose files inside a git worktree.
 2. The developer launches an isolated dev slot (e.g. Slot 1) using `./dev-env.sh start 1`.
-3. The developer verifies changes by running local unit tests (`docker exec aidev1-gateway-engine-1 pytest test_gateway-engine.py`).
+3. The developer verifies changes by running local unit tests (`docker exec aidev1-gateway-engine-1 pytest test_gateway_engine*.py`).
 
 ### 2.2 Stage 2: Pull Request & CI Gate
 1. The developer pushes the branch and creates a PR to `main`.

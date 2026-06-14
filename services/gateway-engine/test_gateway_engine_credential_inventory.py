@@ -93,8 +93,8 @@ def test_admin_credentials_redacts_inventory(monkeypatch):
 
 
 def test_admin_credentials_sync_requires_admin_key(monkeypatch):
-    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "")
     monkeypatch.delenv("GATEWAY_ENGINE_ADMIN_KEY", raising=False)
+    monkeypatch.delenv("ADMIN_API_KEY", raising=False)
 
     client = TestClient(t.app)
     resp = client.post("/admin/credentials/sync", json={"dry_run": True})
@@ -108,7 +108,7 @@ def test_admin_credentials_sync_dry_run_fetches_cliproxy_and_redacts(monkeypatch
     fake_client = _FakeHttpClient()
     monkeypatch.setattr(t, "_credential_inventory_store", lambda: store)
     monkeypatch.setattr(t, "_client", fake_client)
-    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
     monkeypatch.setattr(t, "CLIPROXY_MANAGEMENT_KEY", "mgmt-key")
     monkeypatch.setattr(t, "CLIPROXY_URL", "http://cliproxy:8317")
 
@@ -137,7 +137,7 @@ def test_admin_credentials_sync_apply_writes_and_emits_policy_event(monkeypatch)
     emitted = []
     monkeypatch.setattr(t, "_credential_inventory_store", lambda: store)
     monkeypatch.setattr(t, "_client", _FakeHttpClient())
-    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
     monkeypatch.setattr(t, "CLIPROXY_MANAGEMENT_KEY", "mgmt-key")
 
     async def fake_emit(transition):
@@ -217,7 +217,7 @@ def test_credential_sync_scheduler_loop_uses_interval_and_cancels(monkeypatch):
 
 
 def test_admin_credential_probe_is_documented_unsupported(monkeypatch):
-    monkeypatch.setattr(t, "GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
 
     client = TestClient(t.app)
     resp = client.post(

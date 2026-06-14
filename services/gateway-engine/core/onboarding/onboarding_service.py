@@ -1,10 +1,11 @@
-from typing import Any
-import os
-import httpx
 import logging
-import json
+import os
+from typing import Any
+
+import httpx
 
 log = logging.getLogger("gateway-engine.onboarding_service")
+
 
 class OnboardingService:
     def __init__(self):
@@ -52,8 +53,8 @@ class OnboardingService:
         key_payload = {
             "team_id": team_id,
             "key_name": f"{tenant_id}-api-key",
-            "max_budget": 0, # To be updated by policy engine or further steps
-            "budget_duration": "monthly"
+            "max_budget": 0,  # To be updated by policy engine or further steps
+            "budget_duration": "monthly",
         }
         try:
             async with httpx.AsyncClient() as client:
@@ -73,5 +74,6 @@ class OnboardingService:
         # This will be done in a later stage, leveraging existing policy engine mechanisms.
         log.info(f"Tenant {tenant_id} registered successfully.")
         return {"success": True, "tenant_id": tenant_id, "api_key": api_key, "team_id": team_id}
+
 
 onboarding_service = OnboardingService()

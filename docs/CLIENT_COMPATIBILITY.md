@@ -29,7 +29,7 @@ An **Integration Profile** defines the exact base URL, authorization mapping, mo
 #### Cursor Profile
 - **Base URL:** `http://localhost:4000/v1` (forwarded via gateway-engine)
 - **Authorization:** `Bearer ak-{org}-{workspace}-{team}-{repo}-{environment}`
-- **Model Prefixing:** Uses `AI-Gateway:` prefix in `/v1/models` so Cursor distinguishes gateway-managed LLMs from local or defaults. The prefix is dynamically stripped by `_strip_prefix` in `gateway-engine.py` before forwarding to LiteLLM.
+- **Model Prefixing:** Uses `AI-Gateway:` prefix in `/v1/models` so Cursor distinguishes gateway-managed LLMs from local or defaults. The prefix is dynamically stripped by `_strip_prefix` in `main.py` before forwarding to LiteLLM.
 - **Cache Strategy:** Keyed by client `Authorization` token hash to ensure cross-user isolation.
 
 #### Claude Code Profile
@@ -51,7 +51,7 @@ An **Integration Profile** defines the exact base URL, authorization mapping, mo
 
 ## 3. Gateway Engine Path Mapping
 
-The entrypoints in `services/gateway-engine/gateway-engine.py` process requests according to their respective profiles:
+The entrypoints in `services/gateway-engine/main.py` process requests according to their respective profiles:
 
 ```text
 Incoming HTTP Request

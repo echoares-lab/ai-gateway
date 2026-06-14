@@ -10,5 +10,5 @@ This issue tracks the consolidation of the service's API endpoints into a unifie
 - [ ] Integrate local scripts and service configurations.
 
 ## Scope
-- `services/gateway-engine/gateway-engine.py`
+- `services/gateway-engine/main.py`
 - `docs/openapi/`

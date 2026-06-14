@@ -1,12 +1,11 @@
 """Virtual Provider for deterministic E2E testing and synthetic monitoring."""
 
-import json
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 from providers.base import ProviderConverter
+
 
 class VirtualProvider(ProviderConverter):
     """
@@ -19,10 +18,7 @@ class VirtualProvider(ProviderConverter):
         Passes the request through but attaches 'virtual' metadata.
         In a real scenario, this might perform validation or normalization.
         """
-        body["_virtual"] = {
-            "requested_model": model,
-            "received_at": datetime.now(timezone.utc).isoformat()
-        }
+        body["_virtual"] = {"requested_model": model, "received_at": datetime.now(timezone.utc).isoformat()}
         return body
 
     def oai_to_resp(self, oai: dict, model: str) -> dict:
@@ -31,7 +27,7 @@ class VirtualProvider(ProviderConverter):
         """
         # Determine behavior based on model name or payload flags
         # Default behavior: Echo
-        
+
         prompt = ""
         messages = oai.get("messages", [])
         if messages:
@@ -50,18 +46,14 @@ class VirtualProvider(ProviderConverter):
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": f"[Virtual Response] I received your prompt: \"{prompt}\"",
+                        "content": f'[Virtual Response] I received your prompt: "{prompt}"',
                     },
                     "logprobs": None,
-                    "finish_reason": "stop"
+                    "finish_reason": "stop",
                 }
             ],
-            "usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 20,
-                "total_tokens": 30
-            },
-            "system_fingerprint": "v1-virtual"
+            "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+            "system_fingerprint": "v1-virtual",
         }
 
     def simulate_error(self, status_code: int) -> dict:
@@ -71,6 +63,6 @@ class VirtualProvider(ProviderConverter):
                 "message": f"Simulated virtual error {status_code}",
                 "type": "virtual_error",
                 "param": None,
-                "code": status_code
+                "code": status_code,
             }
         }
