@@ -3,6 +3,7 @@ import os
 from typing import Any
 
 import httpx
+from core.admin_shared import resolve_gateway_admin_key
 
 log = logging.getLogger("gateway-engine.onboarding_service")
 
@@ -12,7 +13,7 @@ class OnboardingService:
         # Configuration for LiteLLM admin API
         self.litellm_admin_url = os.environ.get("LITELLM_ADMIN_URL", "http://litellm:4000").rstrip("/")
         self.litellm_master_key = os.environ.get("LITELLM_MASTER_KEY", "").strip()
-        self.admin_api_key = os.environ.get("ADMIN_API_KEY", "").strip()
+        self.gateway_admin_key = resolve_gateway_admin_key()
 
     async def register_tenant(self, tenant_id: str, email: str, plan_id: str = "default") -> dict[str, Any]:
         """
@@ -26,9 +27,9 @@ class OnboardingService:
         if not self.litellm_master_key:
             log.error("LITELLM_MASTER_KEY is not configured.")
             return {"success": False, "error": "LITELLM_MASTER_KEY not configured"}
-        if not self.admin_api_key:
-            log.error("ADMIN_API_KEY is not configured.")
-            return {"success": False, "error": "ADMIN_API_KEY not configured"}
+        if not self.gateway_admin_key:
+            log.error("GATEWAY_ENGINE_ADMIN_KEY is not configured.")
+            return {"success": False, "error": "GATEWAY_ENGINE_ADMIN_KEY not configured"}
 
         headers = {"Authorization": f"Bearer {self.litellm_master_key}"}
         # Step 1: Create LiteLLM team
