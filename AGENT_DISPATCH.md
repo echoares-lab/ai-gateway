@@ -349,7 +349,7 @@ gh issue comment $ISSUE --repo echoares-lab/ai-gateway --body "$(cat <<'EOF'
 - PR: #<pr-number>
 - Merge commit: <sha>
 - Gates run:
-  - Gate A: lint-and-syntax, unit-tests (test_gateway-engine*.py)
+  - Gate A: lint-and-syntax, unit-tests (test_gateway_engine*.py)
   - Gate B: mock-integration (0 skips)
   - Gate C: real-provider-e2e (if high-risk / run-e2e label)
   - Gate D: cliproxy-setup health + 3 model smokes on stable (:4000)
@@ -385,7 +385,7 @@ before closing epics or ending a multi-agent session.
 
 | Command | When |
 |---------|------|
-| `docker exec aidev<slot>-gateway-engine-1 pytest test_gateway-engine*.py -v` | Gate A — after every significant change |
+| `docker exec aidev<slot>-gateway-engine-1 pytest test_gateway_engine*.py -v` | Gate A — after every significant change |
 | `make test-fast` | Gate A + B — local equivalent of required CI fast tier |
 | `make test-mock` | Gate B only — mock stack, 0 skips |
 | `./dev-env.sh test <slot>` | Gate C — real-provider integration when broader coverage needed |
