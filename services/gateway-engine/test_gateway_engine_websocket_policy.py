@@ -40,7 +40,7 @@ class TestCodexWsAuth(unittest.TestCase):
         assert safe["key"] == "[redacted]"
         assert safe["user-agent"] == "test"
 
-    @patch("main.httpx.AsyncClient")
+    @patch("api.ws_router.httpx.AsyncClient")
     def test_validate_ws_auth_async_rejects_unknown_sk(self, mock_client_cls):
         mock_client = mock_client_cls.return_value.__aenter__.return_value
         mock_client.get = AsyncMock(return_value=type("R", (), {"status_code": 401})())
@@ -48,7 +48,7 @@ class TestCodexWsAuth(unittest.TestCase):
         assert ok is False
         assert token == "sk-unknown-key-99"
 
-    @patch("main.httpx.AsyncClient")
+    @patch("api.ws_router.httpx.AsyncClient")
     def test_validate_ws_auth_async_accepts_litellm_key(self, mock_client_cls):
         mock_client = mock_client_cls.return_value.__aenter__.return_value
         mock_client.get = AsyncMock(return_value=type("R", (), {"status_code": 200})())

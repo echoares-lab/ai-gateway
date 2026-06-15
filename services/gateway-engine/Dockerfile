@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir fastapi==0.115.12 "uvicorn[standard]==0.34.3" htt
 
 WORKDIR /app
 COPY main.py admin_api.py workspace_rules.py gemini-model-map.json conftest.py pytest.ini test_gateway_engine*.py test_token_analytics.py ./
+COPY api ./api/
 COPY core ./core/
 COPY orchestrator ./orchestrator/
 COPY providers ./providers/
