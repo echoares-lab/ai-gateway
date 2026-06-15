@@ -1,4 +1,4 @@
-.PHONY: lint test-unit test-mock test-fast test-e2e validate-policy-profiles test-sync-models-probe test-dev-env clean-db
+.PHONY: lint test-unit test-mock test-fast test-e2e validate-policy-profiles test-sync-models-probe test-compose-config test-dev-env clean-db
 
 CONTAINER_PREFIX ?= PROD-
 
@@ -21,6 +21,10 @@ test-sync-models-probe:
 test-dev-env:
 	bash tests/test-dev-env.sh
 
+test-compose-config:
+	python3 -m pytest tests/test_litellm_compose_migration.py -v
+	docker compose -f docker-compose.yml config >/dev/null
+
 # Unit tests: build the gateway-engine image and run the fully-mocked suite (parallel, CI parity).
 test-unit:
 	docker build -t ai-gateway-engine-test:latest services/gateway-engine
@@ -37,7 +41,7 @@ validate-policy-profiles:
 # Fast tier = Gate A + B locally (no OAuth, no real LLM).
 # Note: multi-repo-isolation is CI path-filtered only — run manually when touching dev-env.sh / cliproxy-setup.sh:
 #   bash tests/test-multi-repo-isolation.sh
-test-fast: lint test-unit validate-policy-profiles test-sync-models-probe test-mock
+test-fast: lint test-unit validate-policy-profiles test-sync-models-probe test-compose-config test-mock
 
 # Full real-provider E2E. Needs real OAuth in ~/.cli-proxy-api (slot 1 -> :4010).
 # Runs only the slim `smoke` subset.
