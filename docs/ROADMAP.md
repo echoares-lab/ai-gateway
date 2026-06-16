@@ -14,26 +14,52 @@ The current active roadmap focus is:
 - **Local MCP hosting and tool gateway** ([#29](https://github.com/echoares-lab/ai-gateway/issues/29)):
   LiteLLM-centered MCP control plane, local MCP services, and safe operator
   workflow.
-- **Multi-tenant workspace management** ([#30](https://github.com/echoares-lab/ai-gateway/issues/30)):
-  tenancy model and workspace-level configuration foundations.
 - **Adaptive provider intelligence** ([#31](https://github.com/echoares-lab/ai-gateway/issues/31)):
   provider health, latency, error, and fallback signals for adaptive routing.
+
+Agents should only claim approved child issues. Do not claim parent epics
+directly.
+
+---
+
+## Completed roadmap areas
+
+These parent epics are closed for their current documented scope. Future work in
+the same area should be opened as new atomic issues with fresh acceptance
+criteria.
+
 - **Unified admin console** ([#32](https://github.com/echoares-lab/ai-gateway/issues/32)):
-  operational visibility and control-plane UI once the underlying models are
-  stable.
-
-Medium-priority roadmap epics remain available for future child issues:
-
-- **Credential pool orchestration and account health automation** ([#33](https://github.com/echoares-lab/ai-gateway/issues/33)).
-- **Self-service onboarding for repos, apps, and AI clients** ([#34](https://github.com/echoares-lab/ai-gateway/issues/34)).
-- **Environment promotion and config release channels** ([#35](https://github.com/echoares-lab/ai-gateway/issues/35)).
-- **First-class client compatibility and integration profiles** ([#36](https://github.com/echoares-lab/ai-gateway/issues/36)).
-
-Low-priority roadmap epics are coordination items until split into approved
-atomic issues:
-
+  read-only status aggregator, dashboard, routing/fallback events, and the data
+  contract are complete for the first implementation wave. Tenant/team panels
+  remain deferred.
+- **First-class client compatibility and integration profiles** ([#36](https://github.com/echoares-lab/ai-gateway/issues/36)):
+  supported-client matrix, integration profiles, contract-test gaps, and
+  per-client config snippets are complete.
 - **Evaluation-driven routing quality loop** ([#37](https://github.com/echoares-lab/ai-gateway/issues/37)):
-  design stub in [EVAL_DRIVEN_ROUTING.md](./EVAL_DRIVEN_ROUTING.md) (Epic #38 issue 38-19, [#138](https://github.com/echoares-lab/ai-gateway/issues/138)).
+  design scope is complete in [EVAL_DRIVEN_ROUTING.md](./EVAL_DRIVEN_ROUTING.md).
+  Runtime quality-routing work is deferred until explicitly reopened through
+  child issues.
+
+---
+
+## Deferred tenant and onboarding areas
+
+Tenant-related work is intentionally deferred as of 2026-06-16. These issues may
+remain open as coordination anchors, but they should not be treated as
+ready-to-claim implementation work until the roadmap is refreshed and child
+issues are approved.
+
+- **Multi-tenant workspace management** ([#30](https://github.com/echoares-lab/ai-gateway/issues/30)):
+  foundational pieces already exist on `main`: tenancy model docs, `ak-*`
+  metadata extraction, tenant-aware bootstrap helpers, and budget/rate-limit
+  foundations. Remaining work should be narrowed before implementation, likely
+  around runtime MCP visibility, admin visibility, and tenant lifecycle gaps.
+- **Self-service onboarding for repos, apps, and AI clients** ([#34](https://github.com/echoares-lab/ai-gateway/issues/34)):
+  tenant registration and client/bootstrap helpers exist, but the broader
+  self-service flow needs a refreshed design before new implementation work.
+- **Admin tenant/team panel** ([#109](https://github.com/echoares-lab/ai-gateway/issues/109)):
+  keep deferred until tenant/workspace work is active again and the admin data
+  contract is refreshed.
 
 ---
 
@@ -42,6 +68,8 @@ atomic issues:
 The following platform-control epics are intentionally deferred and should not be
 treated as active next-priority work:
 
+- **Credential pool orchestration and account health automation** ([#33](https://github.com/echoares-lab/ai-gateway/issues/33)).
+- **Environment promotion and config release channels** ([#35](https://github.com/echoares-lab/ai-gateway/issues/35)).
 - **RBAC and identity integration**.
 - **Budgeting, quota governance, and chargeback**.
 - **Policy engine for model, tool, and request controls**.
