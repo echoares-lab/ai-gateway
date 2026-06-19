@@ -801,14 +801,18 @@ print(m.group(1) if m else '')
     local status=0
     probe_model "$upstream" || status=$?
 
+    local consecutive
+    consecutive=$(python3 "$SCRIPT_DIR/scripts/track_probe_failures.py" "$alias" "$status")
+
     if [ "$status" = "0" ]; then
       echo "  OK   $alias"
     elif [ "$status" = "44" ]; then
-      # Definitive model-not-found — safe to remove from config
-      echo "  DEAD $alias (HTTP $PROBE_HTTP_CODE, $PROBE_OUTCOME) — removing"
-      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) REMOVED $alias (probe $PROBE_HTTP_CODE - $PROBE_OUTCOME)" >> "$AUDIT_LOG"
-      # Use Python to safely remove the model block from YAML
-      python3 - "$LITELLM_CONFIG" "$alias" <<'PYEOF'
+      if [ "$consecutive" -ge 3 ]; then
+        # Definitive model-not-found — safe to remove from config
+        echo "  DEAD $alias (HTTP $PROBE_HTTP_CODE, $PROBE_OUTCOME) — removing (failed $consecutive times)"
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) REMOVED $alias (probe $PROBE_HTTP_CODE - $PROBE_OUTCOME after $consecutive failures)" >> "$AUDIT_LOG"
+        # Use Python to safely remove the model block from YAML
+        python3 - "$LITELLM_CONFIG" "$alias" <<'PYEOF'
 import sys, re
 path, alias = sys.argv[1], sys.argv[2]
 with open(path) as f: txt = f.read()
@@ -817,8 +821,12 @@ pattern = rf'\n  - model_name: {re.escape(alias)}\n    litellm_params:.*?(?=\n  
 txt = re.sub(pattern, '', txt, flags=re.DOTALL)
 with open(path, 'w') as f: f.write(txt)
 PYEOF
-      gemini_map_remove "$alias"
-      changed=true
+        gemini_map_remove "$alias"
+        changed=true
+      else
+        echo "  WARN $alias — probe $PROBE_OUTCOME (HTTP $PROBE_HTTP_CODE) — failed $consecutive/3 times, skipping removal"
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) SKIPPED $alias (probe $PROBE_HTTP_CODE - $PROBE_OUTCOME, failed $consecutive/3 times)" >> "$AUDIT_LOG"
+      fi
     else
       # Rate limits, cooldowns, auth issues, and other transient failures — preserve
       echo "  WARN $alias — probe $PROBE_OUTCOME (HTTP $PROBE_HTTP_CODE) — skipping removal"
