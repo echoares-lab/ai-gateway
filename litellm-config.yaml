@@ -283,6 +283,23 @@ model_list:
       supports_function_calling: true
       disable_background_health_check: true
 
+  - model_name: gemini-3-5-flash
+    litellm_params:
+      model: gemini-3.5-flash
+      custom_llm_provider: openai
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+      max_tokens: 65535
+    model_info:
+      base_model: gemini-3.5-flash-preview
+      input_cost_per_token: 5.00e-07
+      output_cost_per_token: 3.00e-06
+      cache_read_input_token_cost: 5.00e-08
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
   - model_name: gemini-3-flash
     litellm_params:
       model: gemini-3-flash
