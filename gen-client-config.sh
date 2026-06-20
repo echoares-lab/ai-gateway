@@ -111,7 +111,7 @@ gen_claude_code() {
   echo "Claude Code / Claude CLI"
   _hr
   cat <<EOF
-export ANTHROPIC_BASE_URL="${BASE_ROOT}/v1"
+export ANTHROPIC_BASE_URL="${BASE_ROOT}"
 export ANTHROPIC_API_KEY="${KEY_REF}"   # Bearer ${TENANT_KEY_EXAMPLE} or mapped team key
 # Then use a gateway model alias, e.g.:
 #   claude --model claude-sonnet-4-6

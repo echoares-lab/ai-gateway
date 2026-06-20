@@ -114,6 +114,8 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
       CLIPROXY_API_KEY: ${CLIPROXY_API_KEY}
+      REDIS_AUTH: ${REDIS_AUTH:-myredissecret}
+      LITELLM_LOG: ${LITELLM_LOG:-INFO}
       DISABLE_CACHE: 'true'
     volumes:
     - ./litellm-config.yaml:/app/config.yaml:ro
