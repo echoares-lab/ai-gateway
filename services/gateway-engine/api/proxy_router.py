@@ -188,9 +188,9 @@ def _normalize_upstream_authorization(headers: dict) -> None:
             auth_val = value
             break
     token = (auth_val or "").removeprefix("Bearer ").strip()
-    master_key = os.environ.get("LITELLM_MASTER_KEY", "")
-    if master_key and (not token or token.startswith("ak-")):
-        headers[auth_key or "authorization"] = f"Bearer {master_key}"
+    routing_key = os.environ.get("LITELLM_ROUTING_KEY") or os.environ.get("LITELLM_MASTER_KEY", "")
+    if routing_key and (not token or token.startswith("ak-")):
+        headers[auth_key or "authorization"] = f"Bearer {routing_key}"
 
 
 _quota_headroom_cache: list[dict] | None = None
