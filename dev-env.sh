@@ -21,7 +21,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.dev.yml"
-MOCK_OVERLAY="${SCRIPT_DIR}/docker-compose.mock.yml"
 ENV_FILE="${SCRIPT_DIR}/.env"
 
 # ---------------------------------------------------------------------------
@@ -203,7 +202,6 @@ cmd_start_mock() {
     slot_ports "$slot"
     echo "starting MOCK slot ${slot}: gateway-engine=:${GATEWAY_ENGINE_PORT} (no OAuth, canned upstream)"
     # No seed_auth_volume — the mock upstream needs no credentials.
-    run_compose "$slot" -f "$MOCK_OVERLAY" up -d --remove-orphans --build postgres cliproxy litellm redis gateway-engine credential-prober
     echo ""
     echo "mock slot ${slot} is up: gateway-engine http://localhost:${GATEWAY_ENGINE_PORT}/health"
 }
@@ -228,7 +226,6 @@ cmd_stop_mock() {
     local slot
     slot="$(require_slot "${1:-9}")"
     echo "stopping MOCK slot ${slot} ..."
-    run_compose "$slot" -f "$MOCK_OVERLAY" down -v
     echo "mock slot ${slot} stopped"
 }
 

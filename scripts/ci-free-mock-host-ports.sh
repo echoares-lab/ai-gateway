@@ -8,7 +8,7 @@ set -euo pipefail
 ROOT="${1:-.}"
 cd "$ROOT"
 
-COMPOSE=(docker compose -f docker-compose.dev.yml -f docker-compose.mock.yml -p aidevmock)
+COMPOSE=(docker compose -f docker-compose.dev.yml -p aidevmock)
 MOCK_PORTS=(18080 4010 4011 8327)
 
 "${COMPOSE[@]}" down --remove-orphans || true

@@ -31,7 +31,7 @@ test-unit:
 	docker run --rm --name $(CONTAINER_PREFIX)ai-gateway-engine-test ai-gateway-engine-test:latest sh -c 'pytest test_gateway_engine*.py -n auto -v'
 
 # Mock tier: in-memory ASGI integration tests (no OAuth, canned upstream).
-test-mock: clean-db
+test-mock:
 	python3 -m pytest tests/integration/ -m mock -v
 
 # Offline schema check for git-tracked policy profile promotion (P0-7).
