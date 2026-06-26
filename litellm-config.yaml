@@ -192,6 +192,8 @@ model_list:
       supports_vision: true
       supports_function_calling: true
 
+  # gpt-5-3-codex-spark — CLIProxy returns auth_unavailable; codex provider credentials insufficient for this model.
+
   - model_name: codex-auto-review
     litellm_params:
       model: openai/codex-auto-review
@@ -209,7 +211,7 @@ model_list:
   # Pro models WILL 429 under background health checks — disable_background_health_check recommended
   - model_name: gemini-3-1-pro
     litellm_params:
-      model: gemini-3.1-pro-low
+      model: gemini-3.1-pro-preview
       custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
@@ -228,7 +230,7 @@ model_list:
 
   - model_name: gemini-3-1-pro-preview
     litellm_params:
-      model: gemini-3.1-pro-low
+      model: gemini-3.1-pro-preview
       custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
@@ -247,7 +249,7 @@ model_list:
 
   - model_name: gemini-3-pro
     litellm_params:
-      model: gemini-3.1-pro-low
+      model: gemini-3-pro-preview
       custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
@@ -266,7 +268,7 @@ model_list:
 
   - model_name: gemini-3-pro-preview
     litellm_params:
-      model: gemini-3.1-pro-low
+      model: gemini-3-pro-preview
       custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
@@ -282,6 +284,8 @@ model_list:
       supports_vision: true
       supports_function_calling: true
       disable_background_health_check: true
+
+  # gemini-3-pro-image-preview — CLIProxy lists it but returns auth_unavailable; no Gemini credentials configured for this tier.
 
   - model_name: gemini-3-5-flash
     litellm_params:
@@ -300,6 +304,23 @@ model_list:
       supports_prompt_caching: true
       supports_vision: true
       supports_function_calling: true
+
+  - model_name: gemini-3-5-flash-extra-low
+    litellm_params:
+      model: gemini-3.5-flash-extra-low
+      custom_llm_provider: openai
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+      max_tokens: 65536
+    model_info:
+      base_model: gemini/gemini-3.5-flash
+      input_cost_per_token: 7.50e-08
+      output_cost_per_token: 1.75e-07
+      max_input_tokens: 1048576
+      max_output_tokens: 65536
+      supports_vision: true
+      supports_function_calling: true
+
   - model_name: gemini-3-flash
     litellm_params:
       model: gemini-3-flash
@@ -356,7 +377,7 @@ model_list:
 
   - model_name: gemini-3-1-flash-lite-preview
     litellm_params:
-      model: gemini-3.1-flash-lite
+      model: gemini-3.1-flash-lite-preview
       custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
@@ -448,7 +469,7 @@ model_list:
 
   - model_name: gemini-3-pro-high
     litellm_params:
-      model: gemini-3-pro-high
+      model: gemini-3.1-pro-preview
       custom_llm_provider: openai
       api_base: http://cliproxy:8317/v1
       api_key: os.environ/CLIPROXY_API_KEY
@@ -528,6 +549,8 @@ model_list:
       max_output_tokens: 65536
       supports_vision: true
       supports_function_calling: true
+
+  # gemini-3-1-flash-image-preview — CLIProxy lists it but returns auth_unavailable; no Gemini credentials configured for this tier.
 
   - model_name: gemini-2-5-pro
     litellm_params:
@@ -778,6 +801,9 @@ model_list:
       api_key: os.environ/CLIPROXY_API_KEY
     model_info:
       base_model: claude-opus-4-8
+
+  # claude-fable-5 — requires Project Glasswing / invitation access; not available on Claude Pro/Max.
+  # CLIProxy lists it but returns 404 when called. Re-add if account access is granted.
 
 general_settings:
   forward_client_headers_to_llm_api: true
