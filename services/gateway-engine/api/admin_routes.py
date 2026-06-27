@@ -1045,6 +1045,63 @@ async def _fetch_cliproxy_quota_status() -> tuple[list[dict], list[dict]]:
         ]
 
 
+async def _fetch_cliproxy_quota_status_full() -> tuple[list[dict], list[dict]]:
+    """Call CLIProxy /v0/management/quota-status/full for live per-window breakdown."""
+    client = _deps().get_http_client()
+    if client is None:
+        return [], [
+            _admin_error(
+                "client_unavailable",
+                "http client not initialized",
+                "cliproxy:/v0/management/quota-status/full",
+            )
+        ]
+    management_key = _main_attr("CLIPROXY_MANAGEMENT_KEY", CLIPROXY_MANAGEMENT_KEY) or os.environ.get(
+        "CLIPROXY_MANAGEMENT_KEY", ""
+    )
+    if not management_key:
+        return [], [
+            _admin_error(
+                "management_key_missing",
+                "CLIPROXY_MANAGEMENT_KEY is required",
+                "cliproxy:/v0/management/quota-status/full",
+            )
+        ]
+    try:
+        resp = await client.get(
+            f"{_main_attr('CLIPROXY_URL', CLIPROXY_URL)}/v0/management/quota-status/full",
+            headers={"x-management-key": management_key},
+            timeout=30.0,  # live provider calls; needs more time than passive quota-status
+        )
+        if resp.status_code != 200:
+            return [], [
+                _admin_error(
+                    "cliproxy_http_error",
+                    f"/v0/management/quota-status/full returned {resp.status_code}",
+                    "cliproxy:/v0/management/quota-status/full",
+                )
+            ]
+        body = resp.json()
+        credentials = body.get("credentials") if isinstance(body, dict) else None
+        if not isinstance(credentials, list):
+            return [], [
+                _admin_error(
+                    "cliproxy_bad_response",
+                    "response missing credentials array",
+                    "cliproxy:/v0/management/quota-status/full",
+                )
+            ]
+        return [item for item in credentials if isinstance(item, dict)], []
+    except Exception as exc:
+        return [], [
+            _admin_error(
+                "cliproxy_fetch_error",
+                f"{type(exc).__name__}: {exc}",
+                "cliproxy:/v0/management/quota-status/full",
+            )
+        ]
+
+
 async def _fetch_cliproxy_models_for_registry() -> tuple[list[dict], list[dict]]:
     client = _deps().get_http_client()
     if client is None:
@@ -1272,34 +1329,36 @@ async def admin_credentials_sync(request: Request, body: CredentialInventorySync
 
 @router.get("/admin/quota/status")
 async def admin_quota_status(request: Request):
-    """Real-time OAuth quota status aggregated from CLIProxy."""
+    """Real-time OAuth quota status aggregated from CLIProxy, with full per-window breakdown."""
     auth_error = _require_admin_read_access(request)
     if auth_error is not None:
         return auth_error
 
-    (quota_creds, quota_errors), (auth_files, auth_errors) = await asyncio.gather(
+    (quota_creds, quota_errors), (full_creds, full_errors), (auth_files, auth_errors) = await asyncio.gather(
         _fetch_cliproxy_quota_status(),
+        _fetch_cliproxy_quota_status_full(),
         _fetch_cliproxy_auth_files(),
     )
 
-    all_errors = quota_errors + auth_errors
+    all_errors = quota_errors + full_errors + auth_errors
     if all_errors and not quota_creds:
         return JSONResponse(
             status_code=502,
             content={"status": "error", "errors": all_errors},
         )
 
-    # Build lookup: credential id → auth file metadata
+    # Lookups keyed by credential id
     auth_by_id: dict[str, dict] = {f["id"]: f for f in auth_files if "id" in f}
+    full_by_id: dict[str, dict] = {c["id"]: c for c in full_creds if "id" in c}
 
     accounts = []
     for cred in quota_creds:
         cred_id = cred.get("id", "")
-        # Skip internal CLIProxy artifacts (e.g. probe_failures.json)
         if not cred_id or cred.get("provider", "") in ("", "unknown"):
             continue
         provider = cred.get("provider", "")
         auth = auth_by_id.get(cred_id, {})
+        full = full_by_id.get(cred_id, {})
 
         def _nullify_zero_time(val: str | None) -> str | None:
             return None if val == _GO_ZERO_TIME else val
@@ -1309,8 +1368,48 @@ async def admin_quota_status(request: Request):
         captured_at = _nullify_zero_time(cred.get("captured_at"))
         resets_in = cred.get("resets_in")
         stale = bool(cred.get("stale"))
-        # Treat zero utilization as null when no data has been captured yet
         utilization_pct = None if stale and utilization_pct_raw == 0 else utilization_pct_raw
+
+        # Build windows from full quota data when available; fall back to binding-only
+        full_windows = full.get("windows") or {}
+
+        def _window(key: str) -> dict:
+            w = full_windows.get(key)
+            if w and isinstance(w, dict):
+                return {"utilization_pct": w.get("utilization_pct"), "resets_at": w.get("resets_at")}
+            return {"utilization_pct": None, "resets_at": None}
+
+        windows: dict = {
+            "five_hour": _window("five_hour"),
+            "seven_day": _window("seven_day"),
+        }
+        # Include non-null named sub-windows (opus, sonnet, oauth_apps, etc.)
+        for key, w in full_windows.items():
+            if key not in ("five_hour", "seven_day") and w is not None:
+                windows[key] = {"utilization_pct": w.get("utilization_pct"), "resets_at": w.get("resets_at")}
+        # Binding constraint from passive headers (always present, even before full data arrives)
+        windows["binding"] = {
+            "utilization_pct": utilization_pct,
+            "resets_at": resets_at,
+            "resets_in": resets_in,
+        }
+
+        quota_entry: dict = {
+            "source": cred.get("quota_source", ""),
+            "stale": stale,
+            "captured_at": captured_at,
+            "windows": windows,
+            "tokens_remaining": None if stale else cred.get("tokens_remaining"),
+            "tokens_limit": None if stale else cred.get("tokens_limit"),
+            "requests_remaining": None if stale else cred.get("requests_remaining"),
+            "requests_limit": None if stale else cred.get("requests_limit"),
+        }
+        # Per-model breakdown for Antigravity
+        if full.get("models"):
+            quota_entry["models"] = full["models"]
+        # Surface fetch error from full endpoint (non-fatal)
+        if full.get("error"):
+            quota_entry["full_quota_error"] = full["error"]
 
         accounts.append(
             {
@@ -1318,29 +1417,11 @@ async def admin_quota_status(request: Request):
                 "email": auth.get("email") or cred.get("label", ""),
                 "provider": provider,
                 "provider_label": _PROVIDER_LABELS.get(provider, provider),
+                "plan_type": full.get("plan_type"),
                 "account_status": "disabled" if auth.get("disabled") else auth.get("status", "unknown"),
                 "disabled": bool(auth.get("disabled")),
                 "applies_to_models": _PROVIDER_MODEL_SCOPE.get(provider, f"All {provider} models"),
-                "quota": {
-                    "source": cred.get("quota_source", ""),
-                    "stale": stale,
-                    "captured_at": captured_at,
-                    "windows": {
-                        "5h": {"utilization_pct": None, "resets_at": None},
-                        "7d": {"utilization_pct": None, "resets_at": None},
-                        # CLIProxy currently returns only the binding constraint window.
-                        # 5h/7d will be populated when CLIProxy exposes both separately.
-                        "binding": {
-                            "utilization_pct": utilization_pct,
-                            "resets_at": resets_at,
-                            "resets_in": resets_in,
-                        },
-                    },
-                    "tokens_remaining": None if stale else cred.get("tokens_remaining"),
-                    "tokens_limit": None if stale else cred.get("tokens_limit"),
-                    "requests_remaining": None if stale else cred.get("requests_remaining"),
-                    "requests_limit": None if stale else cred.get("requests_limit"),
-                },
+                "quota": quota_entry,
             }
         )
 
@@ -1349,12 +1430,8 @@ async def admin_quota_status(request: Request):
     return JSONResponse(
         content={
             "status": "ok",
-            "source": "cliproxy:/v0/management/quota-status",
+            "source": "cliproxy:/v0/management/quota-status + /quota-status/full",
             "captured_at": datetime.now(timezone.utc).isoformat(),
-            "quota_windows_note": (
-                "CLIProxy currently returns only the binding constraint window. "
-                "5h and 7d will be populated when CLIProxy exposes both windows separately."
-            ),
             "accounts": accounts,
             **({"errors": all_errors} if all_errors else {}),
         }
