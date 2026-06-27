@@ -59,8 +59,13 @@ case "${1:-}" in
     rm)
         ;;
     compose)
-        if [[ "$*" == *" up -d --build"* ]]; then
-            exit 1
+        # Fail the first `up -d --wait` to exercise the retry path; succeed after.
+        if [[ "$*" == *" up -d --wait"* ]]; then
+            marker="$(dirname "${DOCKER_STUB_LOG}")/.up_attempted"
+            if [[ ! -f "$marker" ]]; then
+                touch "$marker"
+                exit 1
+            fi
         fi
         ;;
 esac
@@ -91,10 +96,10 @@ test_start_retries_with_wait_after_initial_compose_failure() {
     output="$(PATH="$tmp/bin:$PATH" HOME="$tmp/home" DEV_ENV_WAIT_TIMEOUT=600 "$tmp/dev-env.sh" start 1 2>&1)"
 
     assert_contains "$output" "initial compose wait failed"
-    grep -q 'compose -f .* up -d --build --wait --wait-timeout 600' "$DOCKER_STUB_LOG" \
-        || fail "start did not use an initial wait-enabled compose up"
+    grep -q 'compose -f .* build gateway-engine credential-prober' "$DOCKER_STUB_LOG" \
+        || fail "start did not build the owned services (cliproxy is pulled)"
     grep -q 'compose -f .* up -d --wait --wait-timeout 600' "$DOCKER_STUB_LOG" \
-        || fail "start did not retry with a wait-only compose up"
+        || fail "start did not use a wait-enabled compose up"
 }
 
 test_cleanup_removes_aidev_project_labeled_containers() {
