@@ -60,5 +60,5 @@ async def litellm_admin_post(path: str, json_data: dict) -> dict | None:
         data = resp.json()
         return data if isinstance(data, dict) else None
     except Exception as exc:
-        log.error("LiteLLM admin POST %s failed: %s", exc)
+        log.error("LiteLLM admin POST %s failed: %s", path, exc)
         return None
