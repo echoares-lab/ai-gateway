@@ -114,8 +114,29 @@ CLIProxy refreshes OAuth tokens at runtime and writes them back to `~/.cli-proxy
 5. Smoke a model end-to-end (e.g. `claude-sonnet-4-6`) through the ingress with the master key.
 6. `langfuse.infra.plexplease.com` loads; traces appear.
 
+## Status — DEPLOYED ✅
+
+All 10 services run healthy in the `ai-gateway` namespace (ArgoCD `k3s-01` app
+Synced/Healthy). Verified end-to-end: `https://gateway.infra.plexplease.com` serves 44
+models and live completions (claude-sonnet-4-6, gpt-5-4) through the full path
+(ingress → gateway-engine → litellm → cliproxy → provider OAuth). Langfuse healthy at
+`langfuse.infra.plexplease.com`.
+
+### Decisions/fixes made during deploy (beyond the original design)
+- **Nexus push endpoint:** group repos can't accept pushes (Nexus OSS); exposed the
+  `docker-hosted` repo at `nexus-docker.infra.plexplease.com` (k3s-01 nexus overlay).
+- **OpenBao policy:** extended `k3s-01-external-secrets` to read `kv/…/prod/workloads/*`.
+- **Runner group:** moved `arc`/`arc-dind` to the DEV group (public-repo access);
+  set the `github-runner` namespace PSA to `privileged` for the dind sidecar.
+- **CLIProxyAPI** detached from the upstream fork network + made private so it can use
+  self-hosted runners.
+
 ## Out of scope / follow-ups
-- OAuth token write-back to OpenBao.
-- External Cloudflare public-edge repoint.
-- Image rollout automation (ArgoCD Image Updater or CI tag-commit) — initially `:latest`.
+- **Persist node tunables in GitOps:** `fs.inotify.max_user_instances` bump (needed by
+  cliproxy) and the `/var/lib/k3s-data/runner-cache-dind` dir were set imperatively on the
+  node — make them declarative (sysctl/tuned config; storage-fast PVC for the dind cache).
+- OAuth token write-back to OpenBao (currently PVC-only).
+- External Cloudflare public-edge repoint to the k8s ingress.
+- Pin images to released tags (CLIPROXY_IMAGE is `:dev`; gateway images `:latest`); add
+  rollout automation (ArgoCD Image Updater or CI tag-commit).
 - Decommission the old `docker compose` host + classic self-hosted runner (after burn-in).
