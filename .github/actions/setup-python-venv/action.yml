@@ -24,6 +24,13 @@ inputs:
 runs:
   using: composite
   steps:
+    # Provide a self-contained interpreter (with venv + pip) on ephemeral ARC runners,
+    # which don't ship python3.x-venv/pip and can't apt-install them.
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+
     - name: Cache pip and venv
       uses: actions/cache@v4
       with:
@@ -39,19 +46,13 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        PY="python${{ inputs.python_version }}"
-        if ! command -v "$PY" >/dev/null 2>&1; then
-          echo "WARN: $PY not found, falling back to python3" >&2
-          PY=python3
-        fi
+        VER="${{ inputs.python_version }}"
+        # setup-python puts python${VER} on PATH with venv + pip available.
+        PY="python${VER}"
+        command -v "$PY" >/dev/null 2>&1 || PY=python3
         PROBE="$(mktemp -d)"
         trap 'rm -rf "$PROBE"' EXIT
-        if ! "$PY" -m venv "$PROBE" 2>/dev/null; then
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "python${{ inputs.python_version }}-venv" python3-pip
-          rm -rf "$PROBE"
-          PROBE="$(mktemp -d)"
-          "$PY" -m venv "$PROBE"
-        fi
+        "$PY" -m venv "$PROBE"
         echo "bin=$PY" >> "$GITHUB_OUTPUT"
 
     - name: Create venv and install packages

@@ -1,3 +1,6 @@
+# DEPRECATED: production and the dev stack now pull the patched echoares-lab CLIProxyAPI
+# fork image from Nexus (see CLIPROXY_IMAGE in docker-compose*.yml). This Dockerfile, which
+# bakes the upstream prebuilt binary, is retained only as an offline/upstream fallback.
 FROM alpine:latest
 ARG GIT_SHA=unknown
 ARG ENVIRONMENT=production

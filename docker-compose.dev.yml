@@ -43,13 +43,10 @@ services:
       retries: 10
   cliproxy:
     container_name: TESTING-cliproxy-dev
-    image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/cliproxy:${GIT_SHA:-latest}
-    build:
-      context: ${CLIPROXY_BUILD_CONTEXT:-/home/dev/repos/CLIProxyAPI}
-      dockerfile: ${CLIPROXY_DOCKERFILE:-Dockerfile}
-      args:
-        GIT_SHA: ${GIT_SHA:-unknown}
-        ENVIRONMENT: ${ENVIRONMENT:-production}
+    # Pulled from Nexus by default (CLIProxyAPI fork CI). To iterate on the fork locally,
+    # use `./dev-env.sh rebuild-cliproxy <slot>`, which layers docker-compose.cliproxy-build.yml
+    # to build from ${CLIPROXY_BUILD_CONTEXT:-/home/dev/repos/CLIProxyAPI}.
+    image: ${CLIPROXY_IMAGE:-nexus-docker.infra.plexplease.com/cli-proxy-api:latest}
     command:
     - ./CLIProxyAPI
     - --config
@@ -136,7 +133,7 @@ services:
       start_period: 15s
   credential-prober:
     container_name: TESTING-credential-prober-dev
-    image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/credential-prober:${GIT_SHA:-latest}
+    image: ${DOCKER_REGISTRY:-nexus-docker.infra.plexplease.com/ai-gateway}/credential-prober:${GIT_SHA:-latest}
     build:
       context: ./services/credential-prober
       dockerfile: Dockerfile
@@ -158,7 +155,7 @@ services:
         condition: service_started
   gateway-engine:
     container_name: TESTING-gateway-engine-dev
-    image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/gateway-engine:${GIT_SHA:-latest}
+    image: ${DOCKER_REGISTRY:-nexus-docker.infra.plexplease.com/ai-gateway}/gateway-engine:${GIT_SHA:-latest}
     build:
       context: ./services/gateway-engine
       dockerfile: Dockerfile

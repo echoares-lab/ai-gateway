@@ -4,7 +4,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   PYTHONDONTWRITEBYTECODE: "1"
   CI_MOCK_FRESH_DB: "1"
-  DOCKER_REGISTRY: ghcr.io/echoares-lab/ai-gateway
+  DOCKER_REGISTRY: nexus-docker.infra.plexplease.com/ai-gateway
 
 on:
   push:
@@ -21,11 +21,10 @@ concurrency:
 permissions:
   contents: read
   pull-requests: read
-  packages: write
 
 jobs:
   changes:
-    runs-on: self-hosted
+    runs-on: arc
     outputs:
       runtime: ${{ steps.filter.outputs.runtime }}
       isolation: ${{ steps.filter.outputs.isolation }}
@@ -37,12 +36,6 @@ jobs:
       compose: ${{ steps.filter.outputs.compose }}
       integration_tests: ${{ steps.filter.outputs.integration_tests }}
     steps:
-      - name: Pre-clean workspace (self-hosted)
-        run: |
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
-          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
-          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
       - name: Set GIT_SHA
         run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
@@ -92,31 +85,14 @@ jobs:
               - 'Dockerfile*'
               - 'cliproxy-setup.sh'
               - 'dev-env.sh'
-      - name: Fix workspace permissions (self-hosted)
-        if: always()
-        run: |
-          sudo rm -rf services/gateway-engine/__pycache__ || true
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   lint-and-syntax:
     name: "CI :: Lint and Syntax"
-    runs-on: self-hosted
+    runs-on: arc
     steps:
-      - name: Pre-clean workspace (self-hosted)
-        run: |
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
-          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
-          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
       - name: Set GIT_SHA
         run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-python-venv
         with:
           extra-packages: ruff pyyaml pydantic pytest
@@ -143,7 +119,7 @@ jobs:
           bash tests/test-sync-models-probe.sh
       - name: Validate litellm-config.yaml
         run: |
-          python3 - <<'PY'
+          .venv-ci/bin/python3 - <<'PY'
           import sys, yaml
           with open("litellm-config.yaml") as f:
               data = yaml.safe_load(f)
@@ -170,31 +146,16 @@ jobs:
         run: PYTHONPATH=services/gateway-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
       - name: Check for hardcoded API keys
         run: CHECK_ALL=1 bash .githooks/prevent-hardcoded-keys.sh
-      - name: Fix workspace permissions (self-hosted)
-        if: always()
-        run: |
-          sudo rm -rf services/gateway-engine/__pycache__ || true
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   unit-tests:
     name: "CI :: Build and Unit Test"
-    runs-on: self-hosted
+    runs-on: arc-dind
     steps:
-      - name: Pre-clean workspace (self-hosted)
-        run: |
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
-          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
-          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
       - name: Set GIT_SHA
         run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to Nexus registry
+        run: echo "$NEXUS_PASSWORD" | docker login nexus-docker.infra.plexplease.com -u "$NEXUS_USERNAME" --password-stdin
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Determine if we should push
@@ -215,61 +176,37 @@ jobs:
             GIT_SHA=${{ env.GIT_SHA }}
       - name: Run gateway-engine unit tests (parallel)
         run: docker run --rm ai-gateway-engine-test:latest sh -c 'pytest test_gateway_engine*.py -n auto -v'
-      - name: Push gateway-engine to GHCR
+      - name: Push gateway-engine to Nexus
         if: steps.should_push.outputs.push == 'true'
         run: |
           docker tag ai-gateway-engine-test:latest ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.GIT_SHA }}
           docker tag ai-gateway-engine-test:latest ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
           docker push ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.GIT_SHA }}
           docker push ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
-      - name: Fix workspace permissions (self-hosted)
-        if: always()
-        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   credential-prober:
     needs: changes
     if: >
       needs.changes.outputs.credential_prober == 'true' ||
       github.event_name == 'workflow_dispatch'
-    runs-on: self-hosted
+    runs-on: arc
     steps:
-      - name: Pre-clean workspace (self-hosted)
-        run: |
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
-          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
-          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
       - name: Set GIT_SHA
         run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-python-venv
         with:
           requirements-files: services/credential-prober/requirements-test.txt
       - name: Run credential-prober unit tests
         run: .venv-ci/bin/python -m unittest discover -s services/credential-prober -p 'test_*.py' -v
-      - name: Fix workspace permissions (self-hosted)
-        if: always()
-        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   multi-repo-isolation:
     needs: changes
     if: >
       needs.changes.outputs.isolation == 'true' ||
       github.event_name == 'workflow_dispatch'
-    runs-on: self-hosted
+    runs-on: arc
     steps:
-      - name: Pre-clean workspace (self-hosted)
-        run: |
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
-          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
-          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
       - name: Install direnv
         run: sudo apt-get update && sudo apt-get install -y direnv
@@ -297,9 +234,6 @@ jobs:
         run: |
           eval "$(direnv hook bash)"
           REPOS_BASE=/tmp/mock-repos bash tests/test-multi-repo-isolation.sh
-      - name: Fix workspace permissions (self-hosted)
-        if: always()
-        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
   mock-integration:
     name: "CI :: Mock Integration"
@@ -312,23 +246,11 @@ jobs:
         needs.changes.outputs.integration_tests == 'true' ||
         github.event_name == 'workflow_dispatch'
       )
-    runs-on: self-hosted
+    runs-on: arc
     steps:
-      - name: Pre-clean workspace (self-hosted)
-        run: |
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
-          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
-          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
       - name: Set GIT_SHA
         run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-python-venv
         with:
           requirements-files: tests/integration/requirements.txt
@@ -336,11 +258,9 @@ jobs:
         run: |
           LITELLM_MASTER_KEY=sk-ci-mock \
             .venv-ci/bin/python -m pytest tests/integration/ -m mock -v
-      - name: Fix workspace permissions (self-hosted)
-        if: always()
-        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
 
-  # Gate C paused pending e2e refactor — use run-e2e label or workflow_dispatch
+  # Gate C+ — real-provider smoke E2E. Runs the full docker compose stack on the dind
+  # runner. Opt-in via the run-e2e label or workflow_dispatch.
   real-provider-e2e:
     needs: [changes, lint-and-syntax, unit-tests]
     if: >
@@ -350,23 +270,16 @@ jobs:
         github.event_name == 'workflow_dispatch' ||
         contains(github.event.pull_request.labels.*.name, 'run-e2e')
       )
-    runs-on: self-hosted
+    runs-on: arc-dind
     steps:
-      - name: Pre-clean workspace (self-hosted)
-        run: |
-          sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true
-          sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[!.]* "$GITHUB_WORKSPACE"/..?* || true
-          sudo mkdir -p /var/cache/ai-gateway/{pip,buildkit}
-          sudo chown -R "$(id -u)":"$(id -g)" /var/cache/ai-gateway || true
       - uses: actions/checkout@v4
       - name: Set GIT_SHA
         run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Mask injected CI secrets
+        run: |
+          [ -n "${CLIPROXY_AUTH_TAR_B64:-}" ] && echo "::add-mask::$CLIPROXY_AUTH_TAR_B64" || true
+      - name: Log in to Nexus registry
+        run: echo "$NEXUS_PASSWORD" | docker login nexus-docker.infra.plexplease.com -u "$NEXUS_USERNAME" --password-stdin
       - uses: ./.github/actions/setup-python-venv
         with:
           requirements-files: tests/integration/requirements.txt
@@ -375,11 +288,11 @@ jobs:
       - name: Seed real OAuth creds
         run: |
           mkdir -p "$HOME/.cli-proxy-api"
-          if [ -n "${{ secrets.CLIPROXY_AUTH_TAR_B64 }}" ]; then
-            echo "${{ secrets.CLIPROXY_AUTH_TAR_B64 }}" | base64 -d | tar -xz -C "$HOME/.cli-proxy-api"
+          if [ -n "${CLIPROXY_AUTH_TAR_B64:-}" ]; then
+            echo "$CLIPROXY_AUTH_TAR_B64" | base64 -d | tar -xz -C "$HOME/.cli-proxy-api"
             echo "✓ seeded OAuth creds"
           else
-            echo "::warning::No CLIPROXY_AUTH_TAR_B64 secret; real-provider tests will skip."
+            echo "::warning::No CLIPROXY_AUTH_TAR_B64 in runner env; real-provider tests will skip."
           fi
       - name: Teardown stale dev slot 1
         run: ./dev-env.sh stop 1 || true
@@ -397,20 +310,17 @@ jobs:
           fi
       - name: Build and Start Gateway Stack
         run: |
+          # cliproxy is pulled from Nexus (echoares-lab fork image); we only build our own services.
           export CLIPROXY_DEV_CONFIG="$PWD/tests/cliproxy-config-ci.yaml"
-          export CLIPROXY_BUILD_CONTEXT="$PWD"
-          export CLIPROXY_DOCKERFILE="Dockerfile.cliproxy"
           ./dev-env.sh start 1
-      - name: Push images to GHCR
+      - name: Push images to Nexus
         if: steps.should_push.outputs.push == 'true'
         run: |
-          # Push with GIT_SHA tag (already built by dev-env.sh start)
-          docker compose -f docker-compose.dev.yml -p aidev1 push cliproxy gateway-engine credential-prober
-          
-          # Tag and push latest
+          # Push the services we own (cliproxy is owned by the CLIProxyAPI repo CI).
+          docker compose -f docker-compose.dev.yml -p aidev1 push gateway-engine credential-prober
           export GIT_SHA=latest
-          docker compose -f docker-compose.dev.yml -p aidev1 build cliproxy gateway-engine credential-prober
-          docker compose -f docker-compose.dev.yml -p aidev1 push cliproxy gateway-engine credential-prober
+          docker compose -f docker-compose.dev.yml -p aidev1 build gateway-engine credential-prober
+          docker compose -f docker-compose.dev.yml -p aidev1 push gateway-engine credential-prober
       - name: Wait for gateway-engine health
         run: |
           for i in {1..36}; do
@@ -433,6 +343,3 @@ jobs:
         run: |
           docker compose -f docker-compose.dev.yml -p aidev1 logs || true
           ./dev-env.sh stop 1
-      - name: Fix workspace permissions (self-hosted)
-        if: always()
-        run: sudo chown -R "$(id -u)":"$(id -g)" "$GITHUB_WORKSPACE" || true

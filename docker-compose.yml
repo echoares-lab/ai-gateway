@@ -89,13 +89,13 @@ services:
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
   cliproxy:
     container_name: PROD-cliproxy
-    image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/cliproxy:${GIT_SHA:-latest}
-    build:
-      context: .
-      dockerfile: Dockerfile.cliproxy
-      args:
-        GIT_SHA: ${GIT_SHA:-unknown}
-        ENVIRONMENT: ${ENVIRONMENT:-production}
+    # Patched echoares-lab fork, built and pushed to Nexus by the CLIProxyAPI repo CI.
+    # Pin CLIPROXY_IMAGE to a released tag in production (e.g. :v7.1.50) for reproducibility.
+    image: ${CLIPROXY_IMAGE:-nexus-docker.infra.plexplease.com/cli-proxy-api:latest}
+    command:
+    - ./CLIProxyAPI
+    - --config
+    - /config/config.yaml
     restart: always
     volumes:
     - ${HOME}/.cliproxy/config.yaml:/config/config.yaml
@@ -129,7 +129,7 @@ services:
       retries: 3
   gateway-engine:
     container_name: PROD-gateway-engine
-    image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/gateway-engine:${GIT_SHA:-latest}
+    image: ${DOCKER_REGISTRY:-nexus-docker.infra.plexplease.com/ai-gateway}/gateway-engine:${GIT_SHA:-latest}
     build:
       context: ./services/gateway-engine
       dockerfile: Dockerfile
@@ -299,7 +299,7 @@ services:
     - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
   docs-server:
     container_name: PROD-docs-server
-    image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/docs-server:${GIT_SHA:-latest}
+    image: ${DOCKER_REGISTRY:-nexus-docker.infra.plexplease.com/ai-gateway}/docs-server:${GIT_SHA:-latest}
     build:
       context: .
       dockerfile: services/docs-server/Dockerfile
@@ -313,7 +313,7 @@ services:
     - ./docs/openapi:/app/docs/openapi:ro
   credential-prober:
     container_name: PROD-credential-prober
-    image: ${DOCKER_REGISTRY:-ghcr.io/echoares-lab/ai-gateway}/credential-prober:${GIT_SHA:-latest}
+    image: ${DOCKER_REGISTRY:-nexus-docker.infra.plexplease.com/ai-gateway}/credential-prober:${GIT_SHA:-latest}
     build:
       context: ./services/credential-prober
       dockerfile: Dockerfile

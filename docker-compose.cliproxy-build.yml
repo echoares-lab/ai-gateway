@@ -1,0 +1,11 @@
+# Override layered by `./dev-env.sh rebuild-cliproxy <slot>` to build the CLIProxyAPI
+# fork from local source instead of pulling the Nexus image. Not used by `start`
+# (which pulls the published image) or by production.
+services:
+  cliproxy:
+    build:
+      context: ${CLIPROXY_BUILD_CONTEXT:-/home/dev/repos/CLIProxyAPI}
+      dockerfile: ${CLIPROXY_DOCKERFILE:-Dockerfile}
+      args:
+        VERSION: ${CLIPROXY_VERSION:-dev}
+        COMMIT: ${GIT_SHA:-dev}

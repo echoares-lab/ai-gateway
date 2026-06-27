@@ -77,8 +77,12 @@ run_compose() {
         source "$ENV_FILE"
         set +o allexport
     fi
+    local extra_files=()
+    if [[ -n "${EXTRA_COMPOSE_FILE:-}" ]]; then
+        extra_files=(-f "$EXTRA_COMPOSE_FILE")
+    fi
     # shellcheck disable=SC2086
-    env $env_vars $op_run_prefix docker compose -f "$COMPOSE_FILE" "$@"
+    env $env_vars $op_run_prefix docker compose -f "$COMPOSE_FILE" ${extra_files[@]+"${extra_files[@]}"} "$@"
 }
 
 seed_auth_volume() {
@@ -105,7 +109,9 @@ cmd_start() {
     local wait_timeout="${DEV_ENV_WAIT_TIMEOUT:-300}"
     echo "starting dev slot ${slot}: gateway-engine=:${GATEWAY_ENGINE_PORT}  litellm=:${LITELLM_PORT}  cliproxy=:${CLIPROXY_PORT}"
     seed_auth_volume "$slot"
-    if ! run_compose "$slot" up -d --build --wait --wait-timeout "$wait_timeout"; then
+    # Build the services we own; cliproxy is pulled from Nexus (the fork image).
+    run_compose "$slot" build gateway-engine credential-prober
+    if ! run_compose "$slot" up -d --wait --wait-timeout "$wait_timeout"; then
         echo "initial compose wait failed; retrying once for slow LiteLLM migration recovery ..." >&2
         run_compose "$slot" up -d --wait --wait-timeout "$wait_timeout"
     fi
@@ -135,9 +141,13 @@ cmd_rebuild() {
 cmd_rebuild_cliproxy() {
     local slot
     slot="$(require_slot "${1:-1}")"
-    echo "rebuilding cliproxy for slot ${slot} (from /home/dev/repos/CLIProxyAPI) ..."
-    run_compose "$slot" build cliproxy
-    run_compose "$slot" up -d cliproxy
+    local src="${CLIPROXY_BUILD_CONTEXT:-/home/dev/repos/CLIProxyAPI}"
+    echo "rebuilding cliproxy for slot ${slot} (from ${src}) ..."
+    # Layer the build override so cliproxy is built from local fork source instead of pulled.
+    EXTRA_COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.cliproxy-build.yml" \
+        run_compose "$slot" build cliproxy
+    EXTRA_COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.cliproxy-build.yml" \
+        run_compose "$slot" up -d cliproxy
 }
 
 cmd_logs() {
