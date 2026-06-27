@@ -119,7 +119,7 @@ jobs:
           bash tests/test-sync-models-probe.sh
       - name: Validate litellm-config.yaml
         run: |
-          python3 - <<'PY'
+          .venv-ci/bin/python3 - <<'PY'
           import sys, yaml
           with open("litellm-config.yaml") as f:
               data = yaml.safe_load(f)
