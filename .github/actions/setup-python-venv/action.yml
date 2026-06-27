@@ -39,15 +39,24 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        PY="python${{ inputs.python_version }}"
+        VER="${{ inputs.python_version }}"
+        PY="python${VER}"
+        # On ephemeral ARC runners the requested interpreter may be absent — install it
+        # (works on Ubuntu 24.04 base; falls through to python3 if the distro lacks it).
         if ! command -v "$PY" >/dev/null 2>&1; then
-          echo "WARN: $PY not found, falling back to python3" >&2
+          echo "::notice::$PY not present, attempting apt install"
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -y || true
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "python${VER}" "python${VER}-venv" python3-pip || true
+        fi
+        if ! command -v "$PY" >/dev/null 2>&1; then
+          echo "::warning::$PY still unavailable, falling back to python3 ($(python3 --version 2>&1))" >&2
           PY=python3
         fi
         PROBE="$(mktemp -d)"
         trap 'rm -rf "$PROBE"' EXIT
         if ! "$PY" -m venv "$PROBE" 2>/dev/null; then
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "python${{ inputs.python_version }}-venv" python3-pip
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${PY}-venv" python3-pip || \
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "python${VER}-venv" python3-pip
           rm -rf "$PROBE"
           PROBE="$(mktemp -d)"
           "$PY" -m venv "$PROBE"

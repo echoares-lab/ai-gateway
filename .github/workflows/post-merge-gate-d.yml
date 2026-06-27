@@ -12,6 +12,10 @@ permissions:
 
 jobs:
   gate-d-smoke:
+    # Intentionally stays on the gateway-host self-hosted runner: this gate validates the
+    # RUNNING stable stack (localhost:4000 + cliproxy-setup.sh health), which still lives on
+    # the docker-compose host. It migrates to ARC/in-cluster checks in Phase 2 (CD), once the
+    # stable stack is deployed to k3s.
     runs-on: self-hosted
     continue-on-error: true
     steps:

@@ -1,5 +1,5 @@
 name: Build Docker image (cached)
-description: Build and load a Docker image with GHA + local BuildKit cache
+description: Build and load a Docker image with a BuildKit registry-backed layer cache (Nexus)
 
 inputs:
   context:
@@ -9,7 +9,7 @@ inputs:
     description: Image tag(s), comma-separated
     required: true
   scope:
-    description: GHA cache scope (isolates layer caches per service)
+    description: Cache scope — used as the cache image tag (isolates layer caches per service)
     required: true
   push:
     description: Push image to registry
@@ -18,6 +18,10 @@ inputs:
   build-args:
     description: Build-time variables
     required: false
+  cache-image:
+    description: Registry repo holding the BuildKit layer cache (one tag per scope)
+    required: false
+    default: nexus-docker.infra.plexplease.com/ai-gateway/buildcache
 
 runs:
   using: composite
@@ -29,9 +33,5 @@ runs:
         push: ${{ inputs.push == 'true' }}
         tags: ${{ inputs.tags }}
         build-args: ${{ inputs.build-args }}
-        cache-from: |
-          type=gha,scope=${{ inputs.scope }}
-          type=local,src=/var/cache/ai-gateway/buildkit
-        cache-to: |
-          type=gha,mode=max,scope=${{ inputs.scope }}
-          type=local,dest=/var/cache/ai-gateway/buildkit,mode=max
+        cache-from: type=registry,ref=${{ inputs.cache-image }}:${{ inputs.scope }}
+        cache-to: type=registry,ref=${{ inputs.cache-image }}:${{ inputs.scope }},mode=max

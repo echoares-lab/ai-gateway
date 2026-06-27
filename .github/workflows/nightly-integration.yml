@@ -12,31 +12,32 @@ concurrency:
 
 jobs:
   real-provider-smoke:
-    runs-on: ubuntu-latest
+    runs-on: arc-dind
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Mask injected CI secrets
+        run: |
+          [ -n "${CLIPROXY_AUTH_TAR_B64:-}" ] && echo "::add-mask::$CLIPROXY_AUTH_TAR_B64" || true
+      - name: Log in to Nexus registry
+        run: echo "$NEXUS_PASSWORD" | docker login nexus-docker.infra.plexplease.com -u "$NEXUS_USERNAME" --password-stdin
+      - uses: ./.github/actions/setup-python-venv
         with:
-          python-version: '3.12'
-          cache: 'pip'
-      - name: Install pytest dependencies
-        run: pip install -r tests/integration/requirements.txt
+          requirements-files: tests/integration/requirements.txt
       - name: Setup environment file
         run: cp .env.example .env
       - name: Seed real OAuth creds
         run: |
           mkdir -p "$HOME/.cli-proxy-api"
-          if [ -n "${{ secrets.CLIPROXY_AUTH_TAR_B64 }}" ]; then
-            echo "${{ secrets.CLIPROXY_AUTH_TAR_B64 }}" | base64 -d | tar -xz -C "$HOME/.cli-proxy-api"
+          if [ -n "${CLIPROXY_AUTH_TAR_B64:-}" ]; then
+            echo "$CLIPROXY_AUTH_TAR_B64" | base64 -d | tar -xz -C "$HOME/.cli-proxy-api"
             echo "✓ seeded OAuth creds"
           else
-            echo "::warning::No CLIPROXY_AUTH_TAR_B64 secret; tests will skip."
+            echo "::warning::No CLIPROXY_AUTH_TAR_B64 in runner env; tests will skip."
           fi
       - name: Build and start gateway stack
         run: |
+          # cliproxy is pulled from Nexus (echoares-lab fork image).
           export CLIPROXY_DEV_CONFIG="$PWD/tests/cliproxy-config-ci.yaml"
-          export CLIPROXY_BUILD_CONTEXT="$PWD"
-          export CLIPROXY_DOCKERFILE="Dockerfile.cliproxy"
           ./dev-env.sh start 1
       - name: Wait for gateway-engine
         run: |
