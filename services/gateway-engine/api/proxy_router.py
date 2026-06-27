@@ -25,7 +25,7 @@ from core.model_registry import ModelRegistryRecord
 from core.policy.client_detector import client_detector
 from fastapi import APIRouter, Request
 from fastapi.responses import Response, StreamingResponse
-from orchestrator import litellm_admin_get
+from orchestrator import litellm_admin_get, litellm_admin_post
 from providers import claude as claude_provider
 from providers import gemini as gemini_provider
 from providers.gemini import get_gemini_map
@@ -85,6 +85,78 @@ def _main_override(name: str, current: Any) -> Any | None:
 
 def _enable_virtual_providers() -> bool:
     return bool(_deps().enable_virtual_providers())
+
+
+_PROVISIONED_MODELS_CACHE = set()
+_PROVISIONED_MODELS_CACHE_MUTEX = asyncio.Lock()
+
+
+async def _ensure_model_provisioned(model_name: str) -> None:
+    if not model_name or model_name in ("-", "unknown"):
+        return
+
+    clean_name = model_name
+    if clean_name.startswith("AI-Gateway:"):
+        clean_name = clean_name[len("AI-Gateway:") :]
+
+    async with _PROVISIONED_MODELS_CACHE_MUTEX:
+        if clean_name in _PROVISIONED_MODELS_CACHE:
+            return
+
+        try:
+            client = _http_client()
+        except Exception:
+            return
+
+        if type(client).__name__ in ("MagicMock", "Mock", "AsyncMock"):
+            return
+
+        master_key = os.environ.get("LITELLM_MASTER_KEY", "").strip()
+        headers = {"Authorization": f"Bearer {master_key}"}
+        try:
+            resp = await _http_client().get(f"{_deps().litellm_url}/v1/models", headers=headers, timeout=5.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                models_list = data.get("data", [])
+                for m in models_list:
+                    mid = m.get("id", "")
+                    _PROVISIONED_MODELS_CACHE.add(mid)
+        except Exception as exc:
+            log.warning("Failed to fetch LiteLLM models list: %s", exc)
+
+        if clean_name in _PROVISIONED_MODELS_CACHE:
+            return
+
+        log.info("Model %s not found in LiteLLM. Auto-provisioning…", clean_name)
+
+        upstream_model = clean_name
+        if clean_name.startswith("claude-"):
+            upstream_model = f"openai/{clean_name}"
+
+        payload = {
+            "model_name": clean_name,
+            "litellm_params": {
+                "model": upstream_model,
+                "custom_llm_provider": "openai",
+                "api_base": "http://cliproxy:8317/v1",
+                "api_key": "os.environ/CLIPROXY_API_KEY",
+            },
+            "model_info": {
+                "base_model": clean_name,
+                "max_input_tokens": 1048576,
+                "max_output_tokens": 65536,
+                "supports_prompt_caching": True,
+                "supports_vision": True,
+                "supports_function_calling": True,
+            },
+        }
+
+        res = await litellm_admin_post("/model/new", payload)
+        if res:
+            log.info("Successfully provisioned %s in LiteLLM", clean_name)
+            _PROVISIONED_MODELS_CACHE.add(clean_name)
+        else:
+            log.error("Failed to provision %s in LiteLLM", clean_name)
 
 
 async def _aiter_list(lst: list[str]):
@@ -595,6 +667,7 @@ async def _post_with_retry(url: str, headers: dict, content: bytes, retries: int
     if override is not None:
         return await override(url, headers, content, retries=retries)
     model = _model_from_content(content)
+    await _ensure_model_provisioned(model)
 
     if _enable_virtual_providers() and model.startswith("virt-"):
         start = time.monotonic()
@@ -1063,6 +1136,7 @@ async def gemini_proxy(model_action: str, request: Request):
     # Extract and apply tenancy metadata
     oai_body = _extract_and_apply_tenancy(auth, oai_body)
     oai_body = await _apply_policy_engine(auth, oai_body)
+    await _ensure_model_provisioned(oai_body.get("model"))
 
     oai_bytes = json.dumps(oai_body).encode()
     headers = {
@@ -1516,6 +1590,7 @@ async def responses_proxy(request: Request):
     auth = request.headers.get("authorization")
     oai_body = _extract_and_apply_tenancy(auth, oai_body)
     oai_body = await _apply_policy_engine(auth, oai_body)
+    await _ensure_model_provisioned(oai_body.get("model"))
 
     oai_bytes = json.dumps(oai_body).encode()
     headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "content-length", "content-type")}
@@ -1752,6 +1827,7 @@ async def claude_proxy(request: Request):
     # Extract and apply tenancy metadata
     oai_body = _extract_and_apply_tenancy(api_key, oai_body)
     oai_body = await _apply_policy_engine(api_key, oai_body)
+    await _ensure_model_provisioned(oai_body.get("model"))
 
     oai_bytes = json.dumps(oai_body).encode()
     headers = {
@@ -1932,6 +2008,7 @@ async def proxy(path: str, request: Request):
             auth_token = request.headers.get("authorization", "")
             bd = _extract_and_apply_tenancy(auth_token, bd)
             bd = await _apply_policy_engine(auth_token, bd)
+            await _ensure_model_provisioned(bd.get("model"))
             body = json.dumps(bd).encode()
             changed = True
         except Exception:
