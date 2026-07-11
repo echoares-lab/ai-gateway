@@ -22,12 +22,12 @@ before large feature work. Ship as atomic PRs; do not reopen closed security epi
 
 | Slice | Scope | Status |
 |-------|--------|--------|
-| Docs / Gate B–C truth | Align AGENTS, TESTING, APPENDIX, BRANCH_PROTECTION; retire mock stubs | In progress on `feat/stability-foundation` |
-| Config + safety | Unify `core/config.py` env aliases; cache tenant safety; compose hygiene; `/health/ready` | Planned |
-| Modularization | Kill `_main_override`; split `proxy_router` / `admin_routes`; stream error contract | Planned |
-| Observability polish | `IN_FLIGHT` Gauge; WS mock; cheap drift in CI; lint expansion | Planned |
+| Docs / Gate B–C truth | Align AGENTS, TESTING, APPENDIX, BRANCH_PROTECTION; retire mock stubs | Done on `feat/stability-foundation` |
+| Config + safety | Unify `core/config.py` env aliases; cache tenant safety; compose hygiene; `/health/ready` | Done on `feat/stability-foundation` |
+| Modularization | Split `proxy_router` / `admin_routes`; stream error contract (`_main_override` kept for test patching) | Done on `feat/stability-foundation` |
+| Observability polish | `IN_FLIGHT` Gauge; WS mock; cheap drift in CI; lint expansion | Done on `feat/stability-foundation` |
 
-Claim child issues / PRs under this track only. Parked tenancy anchors remain blocked.
+Track implementation is on `feat/stability-foundation` (awaiting PR merge). Parked tenancy anchors remain blocked.
 
 To start other product work: promote an item from [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 into this file and open atomic GitHub issues with `status:ready`.

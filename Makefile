@@ -10,8 +10,8 @@ clean-db:
 
 # Lint the gateway-engine and credential-prober (mirrors the CI fast tier).
 lint:
-	ruff check services/gateway-engine/ services/credential-prober/
-	ruff format --check services/gateway-engine/ services/credential-prober/
+	ruff check services/gateway-engine/ services/credential-prober/ scripts/
+	ruff format --check services/gateway-engine/ services/credential-prober/ scripts/
 
 # Regression tests for sync-models probe classification (429 must preserve catalog).
 test-sync-models-probe:
@@ -29,6 +29,9 @@ test-compose-config:
 	fi
 	@if grep -n 'command:.*uvicorn.*--reload' docker-compose.yml >/dev/null; then \
 	  echo 'ERROR: gateway-engine must not use uvicorn --reload in docker-compose.yml' >&2; exit 1; \
+	fi
+	@if grep -nE './services/gateway-engine:/app' docker-compose.yml >/dev/null; then \
+	  echo 'ERROR: gateway-engine must not bind-mount ./services/gateway-engine:/app in docker-compose.yml' >&2; exit 1; \
 	fi
 
 # Unit tests: build the gateway-engine image and run the fully-mocked suite (parallel, CI parity).
