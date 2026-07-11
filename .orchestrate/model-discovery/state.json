@@ -72,7 +72,7 @@
     {
       "name": "verify-cheap-drift",
       "type": "verifier",
-      "branch": "orch/model-discovery/verify-cheap-drift",
+      "branch": "orch/model-discovery/cheap-drift",
       "startingRef": "orch/model-discovery/cheap-drift",
       "dependsOn": [
         "cheap-drift"
@@ -80,12 +80,12 @@
       "agentId": "bc-4ec2e528-1972-48f2-8b77-9424aa97fc8f",
       "runId": "run-4de39c44-9775-4f9f-bcfb-09769e2b17b6",
       "parentAgentId": "bc-a21d1355-2c1b-4fcd-9d56-8e3134cbd9ad",
-      "status": "running",
-      "resultStatus": null,
-      "handoffPath": null,
+      "status": "handed-off",
+      "resultStatus": "finished",
+      "handoffPath": "handoffs/verify-cheap-drift.md",
       "startedAt": "2026-07-11T09:38:30.619Z",
-      "finishedAt": null,
-      "lastUpdate": "2026-07-11T09:38:34.958Z",
+      "finishedAt": "2026-07-11T09:40:47.978Z",
+      "lastUpdate": "2026-07-11T09:40:47.978Z",
       "note": null,
       "slackTs": null,
       "prNumber": null,
