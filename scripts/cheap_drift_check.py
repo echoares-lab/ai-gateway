@@ -31,6 +31,8 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 def load_litellm_aliases(path: Path) -> set[str]:
     data = _load_yaml(path)
     model_list = data.get("model_list", [])
+    if model_list is None:
+        return set()
     if not isinstance(model_list, list):
         raise ValueError(f"Expected model_list to be a list in {path}")
     aliases: set[str] = set()
@@ -48,6 +50,8 @@ def load_registry_aliases(path: Path) -> set[str]:
         return set()
     data = _load_yaml(path)
     models = data.get("models", [])
+    if models is None:
+        return set()
     if not isinstance(models, list):
         raise ValueError(f"Expected models to be a list in {path}")
     aliases: set[str] = set()
