@@ -6,39 +6,65 @@ This file documents the GitHub branch protection settings that should be applied
 
 Recommended:
 - Require a pull request before merging
-- Require at least 1 approval
-- Dismiss stale pull request approvals when new commits are pushed
+- **No approving review required** (solo-dev / self-merge workflow — GitHub does not allow authors to approve their own PRs; use PR + CI instead of external review)
+- Dismiss stale pull request approvals when new commits are pushed (applies if reviews are added voluntarily)
 - Require status checks to pass before merging
 - Require branches to be up to date before merging
-- Required checks (must match CI job names exactly — see repo appendix):
-  - `lint-and-syntax`
-  - `unit-tests`
-  - `multi-repo-isolation`
-  - `mock-integration`
+- Required checks (must match [`.github/workflows/ci.yml`](workflows/ci.yml) job names exactly):
+  - `lint-and-syntax` — **Required — Fast (Gate A)**
+  - `unit-tests` — **Required — Fast (Gate A)** (builds the gateway-engine image as part of the job)
+  - `multi-repo-isolation` — **Required — Conditional** (isolation script paths)
+  - `mock-integration` — **Required — Conditional (Gate B)** (runtime paths)
 - Require conversation resolution before merging
 - Restrict direct pushes
 - Allow auto-merge only when all checks pass
 - Do not allow force pushes
 - Do not allow deletions
 
-**Not required (Gate C — hybrid):**
-- `real-provider-e2e` — runs on `workflow_dispatch`, PR label `run-e2e`, or nightly schedule
+### Conditionally required (path-filtered; skipped counts as pass)
 
-## Optional integration branch
+| Job | Gate | Triggers when |
+|-----|------|---------------|
+| `credential-prober` | A | `services/credential-prober/**` changes |
+| `multi-repo-isolation` | A | isolation script paths change |
+| `mock-integration` | B | runtime paths change |
 
-If the repo uses a separate integration branch, document it in `REPO_IMPROVEMENT_APPENDIX.md`.
+There is **no** `build-gateway-engine` or `policy-engine-tests` job in current CI.
 
-Recommended:
-- Require status checks to pass before merging
-- Required checks: same Gate A + B jobs as `main` (use appendix for exact names)
-- Do not allow force pushes
-- Prefer PRs for risky changes
+### Gate C opt-in (not required for merge)
+
+Gate C (`real-provider-e2e`) is **not** a required check. It runs only when opted in:
+
+- PR label `run-e2e`
+- Manual `workflow_dispatch` on the CI workflow
+
+Hotspot paths do not auto-require Gate C in CI. Use the label or dispatch when real-provider smoke is needed. Prefer Gate C locally (`make test-e2e`) for high-risk auth/config/compose/cliproxy changes.
+
+### Docs-only PRs
+
+When a PR touches only documentation and non-runtime paths, `mock-integration` and other conditional jobs may **skip**. GitHub treats skipped required checks as passing. Maintainers may use a `docs-only` label for audit visibility (optional ruleset bypass).
+
+### Advisory (not required for merge)
+
+**Do not add these to required status checks.** They are comment bots or report-only jobs; requiring them blocks merges when runners queue or stall.
+
+- `Reminder :: Hotspot Check` (`hotspot-e2e-reminder` workflow) — PR comment bot only; runs on `ubuntu-latest`
+- `real-provider-e2e` — Gate C real-provider smoke (opt-in via `run-e2e` label or `workflow_dispatch`)
+- `nightly-integration` — scheduled Gate C matrix (report-only)
+- `post-merge-gate-d` — post-merge stable smoke on `main` (advisory)
+
+## GitHub rulesets (optional)
+
+For orgs using rulesets instead of classic branch protection:
+
+- Create a **required** ruleset on `main` listing the checks above.
+- Consider a separate ruleset or bypass for trusted `docs-only` automation.
 
 ## Notes
 
 These settings are not stored in git; they must be configured in GitHub repo settings.
-Use this file as the source of truth when re-creating repo settings in another repository.
-If the repo does not use a separate integration branch, create feature worktrees or branches from
-`main`, test there, and merge back to `main` through protected PRs.
+Use this file as the source of truth when re-creating repo settings.
 
-See `TESTING_AND_PROMOTION_POLICY.md` for gate definitions (A/B/C/D).
+This repo uses **`main` only** (no long-lived integration branch). Feature worktrees branch from `main` and merge back via PR.
+
+See [`TESTING_AND_PROMOTION_POLICY.md`](../TESTING_AND_PROMOTION_POLICY.md), [`docs/TESTING.md`](../docs/TESTING.md), and [`REPO_IMPROVEMENT_APPENDIX.md`](../REPO_IMPROVEMENT_APPENDIX.md) for gate commands.

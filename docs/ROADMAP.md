@@ -10,16 +10,26 @@ issues only — never parent epics, and never items that exist only in
 | **This file** | Approved Now / Next / Parked / Completed |
 | [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) | Ideas **not** approved — document only until promoted here |
 
-Last reviewed: 2026-07-11 (post cutover housekeep).
+Last reviewed: 2026-07-11 (stability foundation track promoted).
 
 ---
 
-## Now — no approved implementation track
+## Now — Stability Foundation
 
-The cutover / durability / thin-ops wave is **complete**. There is currently
-**nothing ready to claim** except parked tenancy anchors (do not claim those).
+Approved track to harden docs/CI truth, config safety, and request-path modularization
+before large feature work. Ship as atomic PRs; do not reopen closed security epics
+(#305–#323) in place.
 
-To start new work: promote an item from [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
+| Slice | Scope | Status |
+|-------|--------|--------|
+| Docs / Gate B–C truth | Align AGENTS, TESTING, APPENDIX, BRANCH_PROTECTION; retire mock stubs | In progress on `feat/stability-foundation` |
+| Config + safety | Unify `core/config.py` env aliases; cache tenant safety; compose hygiene; `/health/ready` | Planned |
+| Modularization | Kill `_main_override`; split `proxy_router` / `admin_routes`; stream error contract | Planned |
+| Observability polish | `IN_FLIGHT` Gauge; WS mock; cheap drift in CI; lint expansion | Planned |
+
+Claim child issues / PRs under this track only. Parked tenancy anchors remain blocked.
+
+To start other product work: promote an item from [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 into this file and open atomic GitHub issues with `status:ready`.
 
 ---
