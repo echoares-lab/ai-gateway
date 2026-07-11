@@ -10,42 +10,17 @@ issues only — never parent epics, and never items that exist only in
 | **This file** | Approved Now / Next / Parked / Completed |
 | [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) | Ideas **not** approved — document only until promoted here |
 
-Last reviewed: 2026-07-11.
+Last reviewed: 2026-07-11 (post cutover housekeep).
 
 ---
 
-## Now — production cutover and durability
+## Now — no approved implementation track
 
-Finish making the k3s deployment the durable production path.
+The cutover / durability / thin-ops wave is **complete**. There is currently
+**nothing ready to claim** except parked tenancy anchors (do not claim those).
 
-| Epic / issue | Role |
-|--------------|------|
-| [#352](https://github.com/echoares-lab/ai-gateway/issues/352) | Durability & GitOps hygiene (parent) |
-| [#358](https://github.com/echoares-lab/ai-gateway/issues/358) | arc-dind runner cache → storage-fast PVC |
-| [#360](https://github.com/echoares-lab/ai-gateway/issues/360) | Velero backups for ClickHouse + MinIO |
-| [#361](https://github.com/echoares-lab/ai-gateway/issues/361) | Pin image tags + rollout automation |
-| [#353](https://github.com/echoares-lab/ai-gateway/issues/353) | Production cutover & decommission (parent) |
-| [#364](https://github.com/echoares-lab/ai-gateway/issues/364) | Decommission old compose host + classic runners |
-
-Agents should only claim the open child issues above (or other approved children
-of these epics). Do not claim parent epics directly.
-
----
-
-## Next — thin ops / credential intelligence
-
-After cutover/durability, the only approved capability track is a **thin** ops
-wave:
-
-| Issue | Role |
-|-------|------|
-| [#348](https://github.com/echoares-lab/ai-gateway/issues/348) | Unit tests for `GET /admin/quota/status` (parent epic [#345](https://github.com/echoares-lab/ai-gateway/issues/345)) |
-
-Optional small polish of the merged quota/status admin surface is in scope only
-if needed to make #348 meaningful. **Not** in this wave: credential pool
-orchestration, multi-account load balancing, remediation automation, or
-chargeback — those live in [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
-(C-CRED-*).
+To start new work: promote an item from [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
+into this file and open atomic GitHub issues with `status:ready`.
 
 ---
 
@@ -63,17 +38,31 @@ Expanded tenancy scope: [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) (C-TEN-
 
 ---
 
-## Completed (current and prior waves)
+## Completed (2026-07 wave)
 
-### Current wave
+### Production cutover and durability
 
-- **Observability — wire tracing + centralize data services**
-  ([#351](https://github.com/echoares-lab/ai-gateway/issues/351)): children
-  #354–#356 done; epic closed 2026-07-11.
-- **OAuth quota status endpoint** ([#345](https://github.com/echoares-lab/ai-gateway/issues/345)):
-  route shipped via PR #349; remains open only until #348 tests land.
-- Cutover children already done: Cloudflare edge (#362), Gate D on k8s (#363),
-  and durability children #357 / #359.
+| Item | Status |
+|------|--------|
+| Observability epic [#351](https://github.com/echoares-lab/ai-gateway/issues/351) (#354–#356) | Closed |
+| Cloudflare edge → k8s [#362](https://github.com/echoares-lab/ai-gateway/issues/362) | Closed |
+| Gate D smokes k8s [#363](https://github.com/echoares-lab/ai-gateway/issues/363) | Closed |
+| arc-dind storage-fast PVC [#358](https://github.com/echoares-lab/ai-gateway/issues/358) | Closed |
+| Velero CH/MinIO schedules [#360](https://github.com/echoares-lab/ai-gateway/issues/360) | Closed (verify first successful backup) |
+| Image pins + promote automation [#361](https://github.com/echoares-lab/ai-gateway/issues/361) | Closed |
+| Durability epic [#352](https://github.com/echoares-lab/ai-gateway/issues/352) | Closed |
+| PROD compose decommission + classic runner VMs [#364](https://github.com/echoares-lab/ai-gateway/issues/364) / [#353](https://github.com/echoares-lab/ai-gateway/issues/353) | Closed |
+
+Local **dev** stacks (`./dev-env.sh` / `TESTING-*`) remain for development. Production is k8s only.
+
+### Thin ops / credential intelligence
+
+| Item | Status |
+|------|--------|
+| Quota status endpoint [#345](https://github.com/echoares-lab/ai-gateway/issues/345) / PR #349 | Closed |
+| Quota unit tests [#348](https://github.com/echoares-lab/ai-gateway/issues/348) / PR #373 | Closed |
+
+Broader credential-pool work remains candidate-only (C-CRED-*).
 
 ### Earlier roadmap themes (closed for documented scope)
 
