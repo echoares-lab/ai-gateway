@@ -221,3 +221,26 @@ Apply repo-managed LiteLLM schema migrations to an existing stack:
 ```
 
 Notable: `search_tools` and MCP tool configs live in `LiteLLM_ToolTable` / `LiteLLM_SearchToolsTable`. These have caused issues before (intercepting tool-bearing requests). If Cursor Agent mode starts 500-ing, check these tables.
+
+## Kubernetes / k3s deployment
+
+Beyond `docker compose`, the stack deploys to the `k3s-01` cluster via ArgoCD/Kustomize. This
+repo holds the design specs + config-generation tooling; the live manifests live in the
+external `k3s-01` GitOps repo.
+
+- `docs/CICD_PHASE2_CD_K3S.md` — **production** overlay (namespace `ai-gateway`, OpenBao
+  `prod/workloads/ai-gateway/*`, ingress `gateway.infra.plexplease.com`, `litellm` +
+  `langfuse` databases on shared `platform-postgres`).
+- `docs/CICD_PHASE2_STAGING.md` — **staging** overlay (namespace `ai-gateway-staging`, OpenBao
+  `staging/workloads/ai-gateway/*`, ingress `gateway-staging.infra.plexplease.com`,
+  `litellm_staging` + `langfuse_staging` databases, `:latest`/dev images, and the staging →
+  prod promotion flow).
+
+Regenerate the staging `litellm-config` ConfigMap (namespace `ai-gateway-staging`) from the
+repo config with:
+
+```bash
+scripts/generate-staging-configmap.sh > /tmp/litellm-config.staging.yaml
+```
+
+It is POSIX sh + python3 (stdlib `yaml`) and validates the embedded YAML parses before output.
