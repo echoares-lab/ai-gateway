@@ -1,0 +1,13 @@
+{
+  "data": [
+    {
+      "id": "gpt-5.4"
+    },
+    {
+      "id": "claude-sonnet-4-6"
+    },
+    {
+      "id": "gemini-3-flash"
+    }
+  ]
+}

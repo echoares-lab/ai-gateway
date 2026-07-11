@@ -437,6 +437,22 @@ See `docs/TESTING.md`, `TESTING_AND_PROMOTION_POLICY.md`, and `REPO_IMPROVEMENT_
 
 ---
 
+## Kubernetes / k3s deployment
+
+The stack also runs on the `k3s-01` cluster via ArgoCD/Kustomize. The design specs live in
+this repo; the authoritative manifests live in the external `k3s-01` GitOps repo.
+
+- `docs/CICD_PHASE2_CD_K3S.md` — **production** deployment (namespace `ai-gateway`,
+  OpenBao `prod/workloads/ai-gateway/*`, ingress `gateway.infra.plexplease.com`).
+- `docs/CICD_PHASE2_STAGING.md` — **staging** deployment (namespace `ai-gateway-staging`,
+  OpenBao `staging/workloads/ai-gateway/*`, ingress `gateway-staging.infra.plexplease.com`,
+  `litellm_staging` + `langfuse_staging` databases, `:latest`/dev images, and the
+  staging → prod promotion flow).
+- `scripts/generate-staging-configmap.sh` renders `litellm-config.yaml` into the staging
+  `litellm-config` ConfigMap (namespace `ai-gateway-staging`) and validates the embedded YAML.
+
+---
+
 ## Architecture (brief)
 
 ```

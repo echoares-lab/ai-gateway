@@ -12,6 +12,8 @@ The index lists every OpenAPI spec mounted from `docs/openapi/`. Direct links:
 - **LiteLLM API**: `http://localhost:8002/docs/litellm.yaml`
 - **CPA Manager API**: `http://localhost:8002/docs/cpa-manager.yaml`
 
+Gateway runtime model mutation endpoints (`POST /model/new`, `POST /model/delete`) are documented in `docs/openapi/gateway-engine.yaml`.
+
 ### Historical / Internal Specifications
 
 - **Policy Engine API**: `http://localhost:8002/docs/policy-engine.yaml` is

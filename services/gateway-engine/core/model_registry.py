@@ -147,6 +147,33 @@ class ModelRegistryWriteRequest(BaseModel):
         )
 
 
+class LiteLLMRuntimeMutationResult(BaseModel):
+    ok: bool
+    status_code: int | None = None
+    body: dict[str, Any] | None = None
+    reason: str | None = None
+
+
+class ModelRuntimeMutationResponse(BaseModel):
+    accepted: bool = True
+    partial_success: bool = False
+    registry_available: bool
+    model: ModelRegistryRecord | None = None
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ModelHotAddResponse(ModelRuntimeMutationResponse):
+    litellm_add: LiteLLMRuntimeMutationResult
+
+
+class ModelDeleteRequest(BaseModel):
+    model_id: str
+
+
+class ModelHotDeleteResponse(ModelRuntimeMutationResponse):
+    litellm_delete: LiteLLMRuntimeMutationResult
+
+
 class ModelRegistryPatchRequest(BaseModel):
     provider: str | None = None
     family: str | None = None
