@@ -13,6 +13,8 @@ Process and PR-handling references:
 - `REPO_IMPROVEMENT_APPENDIX.md` — repo-specific branch, env, and test commands.
 - `AGENT_DISPATCH.md` — agent dispatch prompt for claim → implement → PR → auto-merge → closeout.
 - `packages/repo-improvement-kit/` — portable kit source and deployment guide.
+- `docs/ROADMAP.md` — approved Now / Next / Parked work (claim only from here).
+- `docs/FEATURE_CANDIDATES.md` — unapproved feature inventory (do not claim).
 
 ## Development Workflow (REQUIRED)
 
