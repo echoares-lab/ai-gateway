@@ -190,13 +190,19 @@ jobs:
         if: steps.should_push.outputs.push == 'true'
         run: |
           set -euo pipefail
-          for svc in credential-prober docs-server; do
-            docker build -t "${{ env.DOCKER_REGISTRY }}/${svc}:${{ env.GIT_SHA }}" \
-              -t "${{ env.DOCKER_REGISTRY }}/${svc}:latest" \
-              "./services/${svc}"
-            docker push "${{ env.DOCKER_REGISTRY }}/${svc}:${{ env.GIT_SHA }}"
-            docker push "${{ env.DOCKER_REGISTRY }}/${svc}:latest"
-          done
+          # credential-prober Dockerfile is self-contained under services/credential-prober
+          docker build -t "${{ env.DOCKER_REGISTRY }}/credential-prober:${{ env.GIT_SHA }}" \
+            -t "${{ env.DOCKER_REGISTRY }}/credential-prober:latest" \
+            "./services/credential-prober"
+          docker push "${{ env.DOCKER_REGISTRY }}/credential-prober:${{ env.GIT_SHA }}"
+          docker push "${{ env.DOCKER_REGISTRY }}/credential-prober:latest"
+          # docs-server COPY docs/openapi — must use repo-root context (matches compose)
+          docker build -f services/docs-server/Dockerfile \
+            -t "${{ env.DOCKER_REGISTRY }}/docs-server:${{ env.GIT_SHA }}" \
+            -t "${{ env.DOCKER_REGISTRY }}/docs-server:latest" \
+            .
+          docker push "${{ env.DOCKER_REGISTRY }}/docs-server:${{ env.GIT_SHA }}"
+          docker push "${{ env.DOCKER_REGISTRY }}/docs-server:latest"
           echo "Pushed credential-prober and docs-server :${{ env.GIT_SHA }} (and :latest)."
           echo "Promote pins with workflow promote-k3s-images (git_sha=${{ env.GIT_SHA }})."
 
