@@ -107,13 +107,13 @@
       "handoffPath": "handoffs/model-new-hot-add.md",
       "startedAt": "2026-07-11T09:34:43.705Z",
       "finishedAt": "2026-07-11T09:41:10.312Z",
-      "lastUpdate": "2026-07-11T09:41:10.312Z",
+      "lastUpdate": "2026-07-11T09:41:11.203Z",
       "note": "respawned by local-cli (was error; attempts=1)",
       "attempts": 2,
       "slackTs": null,
       "prNumber": null,
       "failureMode": null,
-      "verification": null
+      "verification": "unit-test-verified"
     },
     {
       "name": "verify-model-new-hot-add",
@@ -126,17 +126,18 @@
       "agentId": null,
       "runId": null,
       "parentAgentId": null,
-      "status": "pending",
+      "status": "running",
       "resultStatus": null,
       "handoffPath": null,
-      "startedAt": null,
+      "startedAt": "2026-07-11T09:41:15.427Z",
       "finishedAt": null,
-      "lastUpdate": null,
+      "lastUpdate": "2026-07-11T09:41:15.427Z",
       "note": null,
       "slackTs": null,
       "prNumber": null,
       "failureMode": null,
-      "verification": null
+      "verification": null,
+      "attempts": 1
     }
   ],
   "attention": [
@@ -163,6 +164,10 @@
     {
       "at": "2026-07-11T09:38:25.002Z",
       "message": "cheap-drift: verification self-reported (unit-test-verified)"
+    },
+    {
+      "at": "2026-07-11T09:41:11.203Z",
+      "message": "model-new-hot-add: verification self-reported (unit-test-verified)"
     }
   ]
 }
