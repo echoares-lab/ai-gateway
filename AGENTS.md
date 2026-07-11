@@ -451,3 +451,38 @@ Client → gateway-engine:4000 → litellm:4000 (internal) → cliproxy:8317
 The `gateway-engine` is the real entry point. It handles format translation
 (Responses API → Chat Completions, Gemini CLI format, Claude Messages API)
 and adds the `AI-Gateway:` model prefix. See `CLAUDE.md` for full detail.
+
+---
+
+## Cursor Cloud specific instructions
+
+The Docker-based workflow above (`docker compose`, `./dev-env.sh`, `./cliproxy-setup.sh`,
+worktrees/slots) is the canonical dev path, but the Cursor Cloud VM has **no Docker daemon**
+and **no provider OAuth** (`~/.cli-proxy-api/`). The full stack additionally needs the external
+CLIProxy fork image from Nexus (built by the `CLIProxyAPI` repo). So the Docker full stack and
+the real-provider tiers (**Gate C `make test-e2e`, Gate D `./cliproxy-setup.sh` smokes**) are
+**not runnable here** — don't try to run them in the cloud VM.
+
+What *does* run here is a Python-only local workflow that covers lint, both test tiers, and the
+flagship `gateway-engine` service:
+
+- The update script provisions a venv at `.venv-ci/` (Python 3.12). Prefix commands with
+  `.venv-ci/bin/` (or activate it). Deps mirror `requirements/ci-runner-venv.txt` plus
+  `redis[asyncio]` and `pytest-xdist`.
+- **Lint (Gate A):** `.venv-ci/bin/ruff check services/gateway-engine/` and
+  `.venv-ci/bin/ruff format --check services/gateway-engine/` (this is what `make lint` runs).
+- **Mock integration (Gate B):** `.venv-ci/bin/python -m pytest tests/integration/ -m mock -v`
+  — in-memory ASGI, no Docker/OAuth. Equivalent to `make test-mock`.
+- **Unit tests (Gate A):** `make test-unit` builds a Docker image and won't work here. Run the
+  same suite directly instead: `cd services/gateway-engine && /workspace/.venv-ci/bin/python -m
+  pytest test_gateway_engine*.py test_token_analytics.py -n auto -v`.
+- Other non-Docker `make test-fast` pieces also work via the venv:
+  `scripts/validate_policy_profiles.py`, `pytest tests/test_sync_models_probe_classify.py`,
+  `pytest tests/test_litellm_compose_migration.py`. The `docker compose ... config` half of
+  `test-compose-config` needs Docker and is skipped here.
+- **Run the flagship service locally (no Docker):** from `services/gateway-engine`,
+  `LITELLM_URL=<upstream> CACHE_ENABLED=false POLICY_ENGINE_ENABLED=false /workspace/.venv-ci/bin/uvicorn main:app --host 127.0.0.1 --port 4000`.
+  It needs a LiteLLM-compatible upstream (real one is unavailable here; use a small mock that
+  answers `GET /v1/models` and `POST /v1/chat/completions`). Redis is optional and only used when
+  `CACHE_ENABLED=true`. The gateway adds the `AI-Gateway:` prefix on `/v1/models`, strips it before
+  forwarding, and translates `/v1/messages` (Claude) and `/v1/responses` (Codex) to Chat Completions.

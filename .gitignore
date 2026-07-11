@@ -24,3 +24,7 @@ Thumbs.db
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Local dev/CI virtualenv
+.venv-ci/
+.venv/
