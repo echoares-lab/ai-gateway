@@ -41,11 +41,11 @@
       "finishedAt": "2026-07-11T09:39:04.082Z",
       "lastUpdate": "2026-07-11T09:39:04.082Z",
       "note": null,
+      "attempts": 1,
       "slackTs": null,
       "prNumber": null,
       "failureMode": null,
-      "verification": null,
-      "attempts": 1
+      "verification": null
     },
     {
       "name": "cheap-drift",
@@ -87,11 +87,11 @@
       "finishedAt": "2026-07-11T09:40:47.978Z",
       "lastUpdate": "2026-07-11T09:40:47.978Z",
       "note": null,
+      "attempts": 1,
       "slackTs": null,
       "prNumber": null,
       "failureMode": null,
-      "verification": null,
-      "attempts": 1
+      "verification": null
     },
     {
       "name": "model-new-hot-add",
@@ -133,11 +133,11 @@
       "finishedAt": "2026-07-11T09:43:58.260Z",
       "lastUpdate": "2026-07-11T09:43:58.260Z",
       "note": null,
+      "attempts": 1,
       "slackTs": null,
       "prNumber": null,
       "failureMode": null,
-      "verification": null,
-      "attempts": 1
+      "verification": null
     }
   ],
   "attention": [
