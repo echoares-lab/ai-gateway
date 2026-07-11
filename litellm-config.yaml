@@ -228,7 +228,45 @@ model_list:
       supports_function_calling: true
       disable_background_health_check: true  # ~25-50 req/day limit; health checks waste quota
 
+  - model_name: gemini-3.1-pro
+    litellm_params:
+      model: gemini-3.1-pro-preview
+      custom_llm_provider: openai
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+      max_tokens: 65536
+    model_info:
+      base_model: gemini-3.1-pro-preview
+      input_cost_per_token: 2.00e-06
+      output_cost_per_token: 1.20e-05
+      cache_read_input_token_cost: 2.00e-07
+      max_input_tokens: 1048576
+      max_output_tokens: 65536
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
+      disable_background_health_check: true
+
   - model_name: gemini-3-1-pro-preview
+    litellm_params:
+      model: gemini-3.1-pro-preview
+      custom_llm_provider: openai
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+      max_tokens: 65536
+    model_info:
+      base_model: gemini-3.1-pro-preview
+      input_cost_per_token: 2.00e-06
+      output_cost_per_token: 1.20e-05
+      cache_read_input_token_cost: 2.00e-07
+      max_input_tokens: 1048576
+      max_output_tokens: 65536
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
+      disable_background_health_check: true
+
+  - model_name: gemini-3.1-pro-preview
     litellm_params:
       model: gemini-3.1-pro-preview
       custom_llm_provider: openai
@@ -375,7 +413,43 @@ model_list:
       supports_vision: true
       supports_function_calling: true
 
+  - model_name: gemini-3.1-flash-lite
+    litellm_params:
+      model: gemini-3.1-flash-lite
+      custom_llm_provider: openai
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+      max_tokens: 65536
+    model_info:
+      base_model: gemini-3.1-flash-lite-preview
+      input_cost_per_token: 2.50e-07
+      output_cost_per_token: 1.50e-06
+      cache_read_input_token_cost: 2.50e-08
+      max_input_tokens: 1048576
+      max_output_tokens: 65536
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
+
   - model_name: gemini-3-1-flash-lite-preview
+    litellm_params:
+      model: gemini-3.1-flash-lite-preview
+      custom_llm_provider: openai
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+      max_tokens: 65536
+    model_info:
+      base_model: gemini-3.1-flash-lite-preview
+      input_cost_per_token: 2.50e-07
+      output_cost_per_token: 1.50e-06
+      cache_read_input_token_cost: 2.50e-08
+      max_input_tokens: 1048576
+      max_output_tokens: 65536
+      supports_prompt_caching: true
+      supports_vision: true
+      supports_function_calling: true
+
+  - model_name: gemini-3.1-flash-lite-preview
     litellm_params:
       model: gemini-3.1-flash-lite-preview
       custom_llm_provider: openai
