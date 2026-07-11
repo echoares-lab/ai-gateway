@@ -117,6 +117,9 @@ jobs:
         run: |
           .venv-ci/bin/python -m pytest tests/test_sync_models_probe_classify.py -v
           bash tests/test-sync-models-probe.sh
+      - name: promote-k3s-images script tests
+        run: |
+          PYTHONPATH=. .venv-ci/bin/python -m pytest tests/test_promote_k3s_images.py -v
       - name: Validate litellm-config.yaml
         run: |
           .venv-ci/bin/python3 - <<'PY'
@@ -183,6 +186,19 @@ jobs:
           docker tag ai-gateway-engine-test:latest ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
           docker push ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.GIT_SHA }}
           docker push ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
+      - name: Build and push credential-prober + docs-server (immutable sha tags)
+        if: steps.should_push.outputs.push == 'true'
+        run: |
+          set -euo pipefail
+          for svc in credential-prober docs-server; do
+            docker build -t "${{ env.DOCKER_REGISTRY }}/${svc}:${{ env.GIT_SHA }}" \
+              -t "${{ env.DOCKER_REGISTRY }}/${svc}:latest" \
+              "./services/${svc}"
+            docker push "${{ env.DOCKER_REGISTRY }}/${svc}:${{ env.GIT_SHA }}"
+            docker push "${{ env.DOCKER_REGISTRY }}/${svc}:latest"
+          done
+          echo "Pushed credential-prober and docs-server :${{ env.GIT_SHA }} (and :latest)."
+          echo "Promote pins with workflow promote-k3s-images (git_sha=${{ env.GIT_SHA }})."
 
   credential-prober:
     needs: changes
