@@ -16,6 +16,12 @@ Repo improvement and PR processing are governed by:
 - `AGENT_DISPATCH.md` — the copy-paste prompt agents run to claim an issue and ship it.
 - `infra/repo-improvement/` — portable source for the above; see its `README.md` for deployment.
 
+**Roadmap vs candidates:** Claim work only from approved items in
+[`docs/ROADMAP.md`](docs/ROADMAP.md) (and their ready GitHub child issues).
+[`docs/FEATURE_CANDIDATES.md`](docs/FEATURE_CANDIDATES.md) is an unapproved
+inventory — do not claim or implement from it until an item is promoted into
+the roadmap and atomic issues are opened.
+
 ---
 
 ## Stack at a glance

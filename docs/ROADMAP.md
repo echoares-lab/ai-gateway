@@ -1,100 +1,102 @@
 # Roadmap Status
 
-This page records roadmap coordination decisions that should be visible in the
-repo, not only in GitHub issue comments. Implementation work still follows
-`REPO_IMPROVEMENT_WORKFLOW.md`: agents may only claim approved, unassigned,
-atomic issues and should not implement parent epics directly.
+Approved coordination decisions for what agents may claim. Implementation still
+follows `REPO_IMPROVEMENT_WORKFLOW.md`: claim approved, unassigned, atomic
+issues only — never parent epics, and never items that exist only in
+[FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md).
+
+| Doc | Role |
+|-----|------|
+| **This file** | Approved Now / Next / Parked / Completed |
+| [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) | Ideas **not** approved — document only until promoted here |
+
+Last reviewed: 2026-07-11.
 
 ---
 
-## Active roadmap areas
+## Now — production cutover and durability
 
-The current active roadmap focus is:
+Finish making the k3s deployment the durable production path.
 
-- **Local MCP hosting and tool gateway** ([#29](https://github.com/echoares-lab/ai-gateway/issues/29)):
-  LiteLLM-centered MCP control plane, local MCP services, and safe operator
-  workflow.
-- **Adaptive provider intelligence** ([#31](https://github.com/echoares-lab/ai-gateway/issues/31)):
-  provider health, latency, error, and fallback signals for adaptive routing.
+| Epic / issue | Role |
+|--------------|------|
+| [#352](https://github.com/echoares-lab/ai-gateway/issues/352) | Durability & GitOps hygiene (parent) |
+| [#358](https://github.com/echoares-lab/ai-gateway/issues/358) | arc-dind runner cache → storage-fast PVC |
+| [#360](https://github.com/echoares-lab/ai-gateway/issues/360) | Velero backups for ClickHouse + MinIO |
+| [#361](https://github.com/echoares-lab/ai-gateway/issues/361) | Pin image tags + rollout automation |
+| [#353](https://github.com/echoares-lab/ai-gateway/issues/353) | Production cutover & decommission (parent) |
+| [#364](https://github.com/echoares-lab/ai-gateway/issues/364) | Decommission old compose host + classic runners |
 
-Agents should only claim approved child issues. Do not claim parent epics
-directly.
-
----
-
-## Completed roadmap areas
-
-These parent epics are closed for their current documented scope. Future work in
-the same area should be opened as new atomic issues with fresh acceptance
-criteria.
-
-- **Unified admin console** ([#32](https://github.com/echoares-lab/ai-gateway/issues/32)):
-  read-only status aggregator, dashboard, routing/fallback events, and the data
-  contract are complete for the first implementation wave. Tenant/team panels
-  remain deferred.
-- **First-class client compatibility and integration profiles** ([#36](https://github.com/echoares-lab/ai-gateway/issues/36)):
-  supported-client matrix, integration profiles, contract-test gaps, and
-  per-client config snippets are complete.
-- **Evaluation-driven routing quality loop** ([#37](https://github.com/echoares-lab/ai-gateway/issues/37)):
-  design scope is complete in [EVAL_DRIVEN_ROUTING.md](./EVAL_DRIVEN_ROUTING.md).
-  Runtime quality-routing work is deferred until explicitly reopened through
-  child issues.
+Agents should only claim the open child issues above (or other approved children
+of these epics). Do not claim parent epics directly.
 
 ---
 
-## Deferred tenant and onboarding areas
+## Next — thin ops / credential intelligence
 
-Tenant-related work is intentionally deferred as of 2026-06-16. These issues may
-remain open as coordination anchors, but they should not be treated as
-ready-to-claim implementation work until the roadmap is refreshed and child
-issues are approved.
+After cutover/durability, the only approved capability track is a **thin** ops
+wave:
 
-- **Multi-tenant workspace management** ([#30](https://github.com/echoares-lab/ai-gateway/issues/30)):
-  foundational pieces already exist on `main`: tenancy model docs, `ak-*`
-  metadata extraction, tenant-aware bootstrap helpers, and budget/rate-limit
-  foundations. Remaining work should be narrowed before implementation, likely
-  around runtime MCP visibility, admin visibility, and tenant lifecycle gaps.
-- **Self-service onboarding for repos, apps, and AI clients** ([#34](https://github.com/echoares-lab/ai-gateway/issues/34)):
-  tenant registration and client/bootstrap helpers exist, but the broader
-  self-service flow needs a refreshed design before new implementation work.
-- **Admin tenant/team panel** ([#109](https://github.com/echoares-lab/ai-gateway/issues/109)):
-  keep deferred until tenant/workspace work is active again and the admin data
-  contract is refreshed.
+| Issue | Role |
+|-------|------|
+| [#348](https://github.com/echoares-lab/ai-gateway/issues/348) | Unit tests for `GET /admin/quota/status` (parent epic [#345](https://github.com/echoares-lab/ai-gateway/issues/345)) |
+
+Optional small polish of the merged quota/status admin surface is in scope only
+if needed to make #348 meaningful. **Not** in this wave: credential pool
+orchestration, multi-account load balancing, remediation automation, or
+chargeback — those live in [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
+(C-CRED-*).
 
 ---
 
-## Deferred platform-control areas
+## Parked — multi-tenant / onboarding (decision unclear)
 
-The following platform-control epics are intentionally deferred and should not be
-treated as active next-priority work:
+Keep these open as coordination anchors with `status:blocked`. Do **not** claim
+or expand them until a tenancy decision is made and the items are promoted with
+fresh child issues.
 
-- **Credential pool orchestration and account health automation** ([#33](https://github.com/echoares-lab/ai-gateway/issues/33)).
-- **Environment promotion and config release channels** ([#35](https://github.com/echoares-lab/ai-gateway/issues/35)).
-- **RBAC and identity integration**.
-- **Budgeting, quota governance, and chargeback**.
-- **Policy engine for model, tool, and request controls**.
+- **Multi-tenant workspace management** ([#30](https://github.com/echoares-lab/ai-gateway/issues/30))
+- **Self-service onboarding** ([#34](https://github.com/echoares-lab/ai-gateway/issues/34))
+- **Admin tenant/team panel** ([#109](https://github.com/echoares-lab/ai-gateway/issues/109))
 
-They are deferred because current work should focus first on MCP/local tool
-hosting and the accepted active roadmap items above. Starting these areas before
-the tenancy and control-plane foundations are settled would create premature
-contracts around identity, ownership, enforcement, and billing semantics.
-
-When revisited, each deferred area should be opened as a formal roadmap epic with
-clear dependencies on the tenancy model, admin/control-plane decisions, and any
-operator workflow needed to enforce the feature safely. Do not implement any of
-these areas from this note alone; create approved child issues with acceptance
-criteria before execution.
+Expanded tenancy scope: [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) (C-TEN-*).
 
 ---
 
-## Post-audit hardening and deferred backlog (2026-06-13)
+## Completed (current and prior waves)
 
-See [issues/post-audit-backlog-2026-06-13.md](../issues/post-audit-backlog-2026-06-13.md) and GitHub epics #305, #309, #313, #317, #320.
+### Current wave
+
+- **Observability — wire tracing + centralize data services**
+  ([#351](https://github.com/echoares-lab/ai-gateway/issues/351)): children
+  #354–#356 done; epic closed 2026-07-11.
+- **OAuth quota status endpoint** ([#345](https://github.com/echoares-lab/ai-gateway/issues/345)):
+  route shipped via PR #349; remains open only until #348 tests land.
+- Cutover children already done: Cloudflare edge (#362), Gate D on k8s (#363),
+  and durability children #357 / #359.
+
+### Earlier roadmap themes (closed for documented scope)
+
+Future work in these areas needs new atomic issues after promotion from
+candidates — do not reopen these epics in place.
+
+- **Local MCP hosting and tool gateway** ([#29](https://github.com/echoares-lab/ai-gateway/issues/29))
+- **Adaptive provider intelligence** ([#31](https://github.com/echoares-lab/ai-gateway/issues/31)) — design/telemetry; runtime in candidates (C-RT-1)
+- **Unified admin console** ([#32](https://github.com/echoares-lab/ai-gateway/issues/32)) — tenant panel parked via #109
+- **First-class client compatibility** ([#36](https://github.com/echoares-lab/ai-gateway/issues/36))
+- **Evaluation-driven routing quality loop** ([#37](https://github.com/echoares-lab/ai-gateway/issues/37)) — design done; runtime in candidates (C-RT-2)
+- **Credential pool orchestration** ([#33](https://github.com/echoares-lab/ai-gateway/issues/33)) — candidates C-CRED-*
+- **Environment promotion / config channels** ([#35](https://github.com/echoares-lab/ai-gateway/issues/35)) — candidates C-MDL-2
+- Security-hardening / modularization tracks (#305, #309, #313, #317, #320) and
+  mock-integration in-memory refactor (#336)
 
 ---
 
 ## Related docs
 
-- [Architecture Decision Record - MCP Control Plane Hosting](./ARCHITECTURE.md)
-- [Adaptive Provider Routing - Design & Telemetry Plan](./ADAPTIVE_ROUTING.md)
+- [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) — unapproved inventory
+- [CREDENTIAL_HEALTH.md](./CREDENTIAL_HEALTH.md)
+- [CICD_PHASE2_CD_K3S.md](./CICD_PHASE2_CD_K3S.md)
+- [CICD_PHASE2_STAGING.md](./CICD_PHASE2_STAGING.md)
+- [issues/post-audit-backlog-2026-06-13.md](../issues/post-audit-backlog-2026-06-13.md)
 - [Repo Improvement Workflow](../REPO_IMPROVEMENT_WORKFLOW.md)
