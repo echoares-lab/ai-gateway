@@ -9,6 +9,8 @@
 .cli-proxy-api/
 *.json
 !gemini-model-map.json
+# Orchestrate workspace: keep planner-authored plan + synced task state tracked
+!.orchestrate/**/*.json
 
 # Local config overrides
 docker-compose.override.yml

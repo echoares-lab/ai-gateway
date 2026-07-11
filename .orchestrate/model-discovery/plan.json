@@ -1,0 +1,95 @@
+{
+  "$schema": "/home/ubuntu/.cursor/plugins/cache/cursor-public/9333/a8145426e541afa424a403e3866496216c1b8142/skills/orchestrate/schemas/plan.schema.json",
+  "goal": "Execute model discovery plan: k3s staging, cheap drift, /model/new hot-add",
+  "summary": "smoke test of the orchestrate substrate across three model-discovery slices: k3s staging, cheap catalog-drift detection, and /model/new hot-add",
+  "dispatcher": { "firstName": "Dev" },
+  "rootSlug": "model-discovery",
+  "baseBranch": "main",
+  "prBase": "main",
+  "repoUrl": "https://github.com/echoares-lab/ai-gateway",
+  "selfAgentId": "bc-a21d1355-2c1b-4fcd-9d56-8e3134cbd9ad",
+  "syncStateToGit": true,
+  "acceptanceCriteria": [
+    "A k3s staging deployment path is specified and its litellm-config ConfigMap is generatable in-repo",
+    "A cheap (no-completion-probe) model-catalog drift detector exists, is CI-runnable, and is unit-tested",
+    "gateway-engine exposes an admin-key-protected /model/new hot-add endpoint that upserts the registry and pushes the model live to LiteLLM without a full restart, documented under docs/openapi/"
+  ],
+  "tasks": [
+    {
+      "name": "k3s-staging",
+      "type": "worker",
+      "openPR": true,
+      "model": "claude-opus-4-8",
+      "scopedGoal": "Add a STAGING deployment path for the ai-gateway k3s deployment, mirroring the production design in docs/CICD_PHASE2_CD_K3S.md but for an isolated staging environment. This repo (echoares-lab/ai-gateway) holds the design spec + config-generation tooling that the external k3s-01 GitOps repo consumes; it does NOT hold the live cluster manifests, so do not try to reach a cluster. Deliver: (1) docs/CICD_PHASE2_STAGING.md describing the staging overlay — namespace `ai-gateway-staging`, OpenBao secrets path `staging/workloads/ai-gateway/*` via External Secrets, ingress host `gateway-staging.infra.plexplease.com` (Traefik + cert-manager letsencrypt-cloudflare), shared platform-postgres with `litellm_staging` + `langfuse_staging` databases, `:latest`/dev images, and how staging promotes to prod; (2) a repeatable helper `scripts/generate-staging-configmap.sh` that renders the repo's litellm-config.yaml into a Kubernetes ConfigMap manifest (name `litellm-config`, namespace `ai-gateway-staging`) on stdout and validates the embedded YAML parses; keep it POSIX sh + python3 for YAML validation, no new deps; (3) link the new staging doc from the k3s section of AGENTS.md and CLAUDE.md. Do NOT modify gateway-engine Python, litellm-config.yaml model entries, docs/openapi/**, or CI workflows. Commit to your cloud-agent branch, push, and open a draft PR against main.",
+      "pathsAllowed": ["docs/**", "scripts/generate-staging-configmap.sh", "AGENTS.md", "CLAUDE.md"],
+      "pathsForbidden": ["docs/openapi/**", "services/**", "litellm-config.yaml", ".github/**"],
+      "acceptance": [
+        "docs/CICD_PHASE2_STAGING.md exists and specifies namespace, OpenBao secrets path, ingress host, staging databases, images, and prod-promotion flow for staging",
+        "scripts/generate-staging-configmap.sh renders a valid k8s ConfigMap (namespace ai-gateway-staging) from litellm-config.yaml and validates the embedded YAML parses",
+        "The staging doc is linked from the k3s sections of AGENTS.md and CLAUDE.md",
+        "A draft PR against main is opened"
+      ],
+      "verify": "## Setup\n- Pure repo change; no cluster or stack needed. Use python3 (stdlib yaml) for validation.\n\n## Automated\n- Run `bash scripts/generate-staging-configmap.sh > /tmp/staging-cm.yaml` and confirm exit 0.\n- Run `python3 -c \"import yaml,sys; d=list(yaml.safe_load_all(open('/tmp/staging-cm.yaml'))); cm=[x for x in d if x and x.get('kind')=='ConfigMap'][0]; assert cm['metadata']['namespace']=='ai-gateway-staging'; import yaml as y; y.safe_load(list(cm['data'].values())[0]); print('ok')\"` and confirm it prints ok.\n\n## Manual\n- Read docs/CICD_PHASE2_STAGING.md and confirm it covers namespace, secrets path, ingress host, staging DBs, images, and promotion to prod.\n- Confirm AGENTS.md and CLAUDE.md link the new staging doc.\n\n## Gotchas\n- Staging must be isolated from prod (`ai-gateway` ns): different namespace, secrets path, ingress host, and database names."
+    },
+    {
+      "name": "verify-k3s-staging",
+      "type": "verifier",
+      "verifies": "k3s-staging",
+      "model": "claude-opus-4-8",
+      "scopedGoal": "Verify the k3s-staging worker against every acceptance criterion: run scripts/generate-staging-configmap.sh, validate the emitted ConfigMap YAML (namespace ai-gateway-staging, embedded litellm config parses), and read docs/CICD_PHASE2_STAGING.md plus the AGENTS.md/CLAUDE.md links for completeness and prod-isolation. Report a `## Verification` verdict with execution evidence.",
+      "acceptance": ["Verification section includes execution evidence for all k3s-staging acceptance criteria"]
+    },
+    {
+      "name": "cheap-drift",
+      "type": "worker",
+      "openPR": true,
+      "model": "gpt-5.5-high-fast",
+      "scopedGoal": "Implement a CHEAP model-catalog drift detector for ai-gateway. 'Cheap' means it compares set membership only and issues NO chat-completion probes (zero token cost) — contrast with the existing per-model probe in services/gateway-engine/api/admin_routes.py. Deliver scripts/cheap_drift_check.py (python3, stdlib + pyyaml which is already a dep) that: (1) loads configured model aliases from litellm-config.yaml (model_list[].model_name) and optionally config/model-registry.yaml; (2) obtains the served catalog either from CLIProxy `GET {CLIPROXY_URL}/v1/models` using `CLIPROXY_API_KEY` (bearer) OR, for CI/offline/tests, from a `--catalog-file <path>` JSON file in the OpenAI /v1/models shape ({\"data\":[{\"id\":...}]}); (3) computes drift sets `configured_not_served` and `served_not_configured`; (4) prints a JSON report to stdout; (5) exits non-zero when total drift count exceeds `--threshold` (default 0), zero otherwise. Add a Make target `drift-cheap` that runs it (offline against a committed fixture is fine). Add a pytest module `tests/test_cheap_drift_check.py` covering: no-drift (exit 0), drift-over-threshold (non-zero exit), and offline --catalog-file parsing. Do NOT add any completion/probe HTTP calls and do NOT edit services/**. Commit, push, open a draft PR against main.",
+      "pathsAllowed": ["scripts/cheap_drift_check.py", "tests/**", "Makefile"],
+      "pathsForbidden": ["services/**", "docs/**", "litellm-config.yaml", ".github/**"],
+      "acceptance": [
+        "scripts/cheap_drift_check.py compares configured vs served model sets with zero chat-completion calls",
+        "Offline mode via --catalog-file works and is covered by a passing pytest in tests/",
+        "`make drift-cheap` runs the checker",
+        "Exit code is non-zero when drift exceeds --threshold and zero when within it",
+        "A draft PR against main is opened"
+      ],
+      "verify": "## Setup\n- python3 with pyyaml (already available). No running stack required.\n\n## Automated\n- Run the new pytest: `cd services/gateway-engine 2>/dev/null; python3 -m pytest ../../tests/test_cheap_drift_check.py -q` (or from repo root `python3 -m pytest tests/test_cheap_drift_check.py -q`) and confirm all pass.\n- Run `make drift-cheap` and confirm it executes the checker.\n- Confirm a no-drift catalog fixture yields exit 0 and a drifted fixture over threshold yields non-zero, and that `rg -n 'chat/completions|max_tokens' scripts/cheap_drift_check.py` finds nothing (no probing).\n\n## Manual\n- Skim scripts/cheap_drift_check.py to confirm the drift is pure set membership and the JSON report includes configured_not_served and served_not_configured.\n\n## Gotchas\n- Alias normalization: litellm uses dashes (gpt-5-4) while upstream uses dots (gpt-5.4); the checker must compare on the same normalization it documents."
+    },
+    {
+      "name": "verify-cheap-drift",
+      "type": "verifier",
+      "verifies": "cheap-drift",
+      "model": "claude-opus-4-8",
+      "scopedGoal": "Verify the cheap-drift worker against every acceptance criterion: run tests/test_cheap_drift_check.py, run `make drift-cheap`, confirm exit-code behaviour for over/under threshold with fixture catalogs, and grep the script to confirm NO chat-completion probing was added. Report a `## Verification` verdict with execution evidence.",
+      "acceptance": ["Verification section includes execution evidence for all cheap-drift acceptance criteria"]
+    },
+    {
+      "name": "model-new-hot-add",
+      "type": "worker",
+      "openPR": true,
+      "model": "gpt-5.5-high-fast",
+      "scopedGoal": "Add a /model/new HOT-ADD capability to gateway-engine so an operator can register a new model into the RUNNING stack without a full restart. Implement `POST /model/new` (admin-key protected, reusing `_require_admin_key` exactly as the existing /admin/models routes in services/gateway-engine/api/admin_routes.py and services/gateway-engine/admin_api.py do — return the same 503 admin_key_required shape when unauthenticated) that: (1) upserts the model into the gateway-engine model registry via ModelRegistryStore (reuse ModelRegistryWriteRequest / to_record), and (2) proxies the add to LiteLLM's runtime model API by POSTing to `{litellm_url}/model/new` (LiteLLM's runtime add endpoint) so the model becomes live in LiteLLM's in-memory router immediately, forwarding the LITELLM_MASTER_KEY bearer. Also add a symmetric `POST /model/delete`. Return a structured JSON result with the registry record and the LiteLLM add outcome; if LiteLLM is unreachable, DEGRADE gracefully to a partial-success payload (registry updated, litellm_add: failed with reason) rather than a 500. Register the routes in services/gateway-engine/main.py alongside the existing admin routers. Add a pytest module (mirror the fakes in services/gateway-engine/test_gateway_engine_model_registry.py) covering success (registry upsert + LiteLLM /model/new called), missing-admin-key (503), and litellm-unreachable (partial success, no crash). Document the new endpoint under docs/openapi/ and register it per the repo's mandatory API-doc rule (see AGENTS.md / docs/API_DOCUMENTATION.md). Do NOT edit scripts/** or litellm-config.yaml. Commit, push, open a draft PR against main.",
+      "pathsAllowed": ["services/gateway-engine/**", "docs/openapi/**", "docs/API_DOCUMENTATION.md"],
+      "pathsForbidden": ["scripts/**", "litellm-config.yaml", "docs/CICD_PHASE2_STAGING.md", "docs/CICD_PHASE2_CD_K3S.md"],
+      "acceptance": [
+        "POST /model/new requires the admin key and returns the existing 503 admin_key_required shape without it",
+        "Happy path upserts the ModelRegistryStore record AND POSTs to {litellm_url}/model/new with the master key",
+        "POST /model/delete is implemented symmetrically",
+        "LiteLLM-unreachable path returns a graceful partial-success payload (no 500 crash)",
+        "A pytest module covers success, missing-admin-key, and litellm-unreachable paths and passes",
+        "The endpoint is documented under docs/openapi/ and registered per the repo API-doc rule",
+        "A draft PR against main is opened"
+      ],
+      "verify": "## Setup\n- `cd services/gateway-engine`. Unit tests use FastAPI TestClient with fake httpx clients; no live LiteLLM needed.\n\n## Automated\n- Run the new pytest module (e.g. `python3 -m pytest services/gateway-engine/test_gateway_engine_model_hot_add.py -q`) and confirm all pass.\n- Confirm `POST /model/new` without an admin key returns 503 code `admin_key_required`.\n- Confirm the happy path both upserts the registry record and issues a POST to `{litellm_url}/model/new` (assert on the fake client call).\n- Confirm a raising/unreachable fake LiteLLM client yields a graceful partial-success payload, not a 500.\n\n## Manual\n- Confirm routes are registered in services/gateway-engine/main.py and the endpoint is documented under docs/openapi/.\n\n## Gotchas\n- Reuse the exact `_require_admin_key` / admin_key_required semantics; don't invent a new auth path.\n- Registry may be unavailable (no DATABASE_URL) — handle the registry_unavailable case like the existing /admin/models POST does."
+    },
+    {
+      "name": "verify-model-new-hot-add",
+      "type": "verifier",
+      "verifies": "model-new-hot-add",
+      "model": "claude-opus-4-8",
+      "scopedGoal": "Verify the model-new-hot-add worker against every acceptance criterion: run its pytest module, exercise the three paths (success upserts registry + calls LiteLLM /model/new, missing-admin-key -> 503 admin_key_required, litellm-unreachable -> graceful partial success), confirm /model/delete exists, confirm routes are registered in main.py, and confirm the endpoint is documented under docs/openapi/. Report a `## Verification` verdict with execution evidence.",
+      "acceptance": ["Verification section includes execution evidence for all model-new-hot-add acceptance criteria"]
+    }
+  ]
+}
