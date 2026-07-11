@@ -46,7 +46,7 @@ services:
     # Pulled from Nexus by default (CLIProxyAPI fork CI). To iterate on the fork locally,
     # use `./dev-env.sh rebuild-cliproxy <slot>`, which layers docker-compose.cliproxy-build.yml
     # to build from ${CLIPROXY_BUILD_CONTEXT:-/home/dev/repos/CLIProxyAPI}.
-    image: ${CLIPROXY_IMAGE:-nexus-docker.infra.plexplease.com/cli-proxy-api:latest}
+    image: ${CLIPROXY_IMAGE:-nexus-docker.infra.plexplease.com/cli-proxy-api:6cf6e68}
     command:
     - ./CLIProxyAPI
     - --config
