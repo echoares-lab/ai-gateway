@@ -61,13 +61,13 @@
       "handoffPath": "handoffs/cheap-drift.md",
       "startedAt": "2026-07-11T09:34:35.654Z",
       "finishedAt": "2026-07-11T09:38:24.110Z",
-      "lastUpdate": "2026-07-11T09:38:24.110Z",
+      "lastUpdate": "2026-07-11T09:38:25.002Z",
       "note": "respawned by local-cli (was error; attempts=1)",
       "attempts": 2,
       "slackTs": null,
       "prNumber": 368,
       "failureMode": null,
-      "verification": null
+      "verification": "unit-test-verified"
     },
     {
       "name": "verify-cheap-drift",
@@ -80,17 +80,18 @@
       "agentId": null,
       "runId": null,
       "parentAgentId": null,
-      "status": "pending",
+      "status": "running",
       "resultStatus": null,
       "handoffPath": null,
-      "startedAt": null,
+      "startedAt": "2026-07-11T09:38:30.619Z",
       "finishedAt": null,
-      "lastUpdate": null,
+      "lastUpdate": "2026-07-11T09:38:30.619Z",
       "note": null,
       "slackTs": null,
       "prNumber": null,
       "failureMode": null,
-      "verification": null
+      "verification": null,
+      "attempts": 1
     },
     {
       "name": "model-new-hot-add",
@@ -158,6 +159,10 @@
     {
       "at": "2026-07-11T09:37:20.353Z",
       "message": "k3s-staging: verification self-reported (unit-test-verified)"
+    },
+    {
+      "at": "2026-07-11T09:38:25.002Z",
+      "message": "cheap-drift: verification self-reported (unit-test-verified)"
     }
   ]
 }
