@@ -41,7 +41,6 @@ class _FakeQuotaHttpClient:
 
     async def get(self, url, headers=None, timeout=None):
         self.requests.append({"url": url, "headers": headers, "timeout": timeout})
-        path = url.rsplit("/", 1)[-1]
         # Distinguish .../quota-status vs .../quota-status/full
         if url.rstrip("/").endswith("/quota-status/full") or url.endswith("quota-status/full"):
             key = "full"
