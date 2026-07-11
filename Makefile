@@ -1,4 +1,4 @@
-.PHONY: lint test-unit test-mock test-fast test-e2e validate-policy-profiles test-sync-models-probe test-compose-config test-dev-env clean-db
+.PHONY: lint test-unit test-mock test-fast test-e2e validate-policy-profiles test-sync-models-probe test-compose-config test-dev-env drift-cheap clean-db
 
 CONTAINER_PREFIX ?= PROD-
 
@@ -37,6 +37,10 @@ test-mock:
 # Offline schema check for git-tracked policy profile promotion (P0-7).
 validate-policy-profiles:
 	python3 scripts/validate_policy_profiles.py
+
+# Cheap drift detector: set-membership only, no completion probes.
+drift-cheap:
+	python3 scripts/cheap_drift_check.py --litellm-config tests/fixtures/cheap_drift/litellm-config.yaml --model-registry tests/fixtures/cheap_drift/model-registry.yaml --catalog-file tests/fixtures/cheap_drift/catalog-no-drift.json
 
 # Fast tier = Gate A + B locally (no OAuth, no real LLM).
 # Note: multi-repo-isolation is CI path-filtered only — run manually when touching dev-env.sh / cliproxy-setup.sh:
