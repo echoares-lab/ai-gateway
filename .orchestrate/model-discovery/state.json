@@ -15,13 +15,13 @@
       "handoffPath": "handoffs/k3s-staging.md",
       "startedAt": "2026-07-11T09:32:36.169Z",
       "finishedAt": "2026-07-11T09:37:19.509Z",
-      "lastUpdate": "2026-07-11T09:37:19.509Z",
+      "lastUpdate": "2026-07-11T09:37:20.353Z",
       "note": null,
       "attempts": 1,
       "slackTs": null,
       "prNumber": null,
       "failureMode": null,
-      "verification": null
+      "verification": "unit-test-verified"
     },
     {
       "name": "verify-k3s-staging",
@@ -34,17 +34,18 @@
       "agentId": null,
       "runId": null,
       "parentAgentId": null,
-      "status": "pending",
+      "status": "running",
       "resultStatus": null,
       "handoffPath": null,
-      "startedAt": null,
+      "startedAt": "2026-07-11T09:37:27.119Z",
       "finishedAt": null,
-      "lastUpdate": null,
+      "lastUpdate": "2026-07-11T09:37:27.119Z",
       "note": null,
       "slackTs": null,
       "prNumber": null,
       "failureMode": null,
-      "verification": null
+      "verification": null,
+      "attempts": 1
     },
     {
       "name": "cheap-drift",
@@ -153,6 +154,10 @@
     {
       "at": "2026-07-11T09:34:26.186Z",
       "message": "model-new-hot-add: respawned by local-cli (was error)"
+    },
+    {
+      "at": "2026-07-11T09:37:20.353Z",
+      "message": "k3s-staging: verification self-reported (unit-test-verified)"
     }
   ]
 }
