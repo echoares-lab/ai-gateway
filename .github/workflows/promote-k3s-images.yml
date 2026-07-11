@@ -1,0 +1,166 @@
+name: Promote k3s-01 image pins
+
+# After app images are pushed to Nexus with immutable :${GIT_SHA} (or digests),
+# this workflow opens a one-commit PR on echoares-lab/k3s-01 updating the
+# ai-gateway overlay `images:` pins so ArgoCD rolls out.
+#
+# Requires repository secret GH_PAT_AUTO_APPROVE (or K3S_GITOPS_TOKEN) with
+# contents:write + pull-requests:write on echoares-lab/k3s-01.
+
+on:
+  workflow_dispatch:
+    inputs:
+      gateway_engine:
+        description: "gateway-engine image tag (short git sha) or sha256 digest"
+        required: false
+        type: string
+      credential_prober:
+        description: "credential-prober tag or sha256 digest"
+        required: false
+        type: string
+      docs_server:
+        description: "docs-server tag or sha256 digest"
+        required: false
+        type: string
+      cliproxy:
+        description: "cli-proxy-api tag (optional)"
+        required: false
+        type: string
+      git_sha:
+        description: "If set, promote gateway-engine/credential-prober/docs-server to this short sha"
+        required: false
+        type: string
+  workflow_run:
+    workflows: ["CI Suite"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: arc
+    steps:
+      - name: Resolve token
+        id: token
+        env:
+          PAT: ${{ secrets.K3S_GITOPS_TOKEN || secrets.GH_PAT_AUTO_APPROVE }}
+        run: |
+          if [[ -z "${PAT}" ]]; then
+            echo "::error::Missing K3S_GITOPS_TOKEN or GH_PAT_AUTO_APPROVE secret; cannot open k3s-01 promote PR."
+            exit 1
+          fi
+          echo "token=${PAT}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout ai-gateway (for promote script)
+        uses: actions/checkout@v4
+
+      - name: Resolve image pins
+        id: pins
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_GIT_SHA: ${{ inputs.git_sha }}
+          INPUT_GE: ${{ inputs.gateway_engine }}
+          INPUT_CP: ${{ inputs.credential_prober }}
+          INPUT_DS: ${{ inputs.docs_server }}
+          INPUT_CLIPROXY: ${{ inputs.cliproxy }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          SHA=""
+          if [[ -n "${INPUT_GIT_SHA}" ]]; then
+            SHA="${INPUT_GIT_SHA}"
+          elif [[ "${EVENT_NAME}" == "workflow_run" ]]; then
+            SHA="$(echo "${RUN_HEAD_SHA}" | cut -c1-7)"
+          fi
+
+          GE="${INPUT_GE:-}"
+          CP="${INPUT_CP:-}"
+          DS="${INPUT_DS:-}"
+          CLIPROXY="${INPUT_CLIPROXY:-}"
+
+          if [[ -n "${SHA}" ]]; then
+            # Auto promote from CI Suite always updates gateway-engine. Other app
+            # images are included when explicitly requested via workflow_dispatch
+            # git_sha / per-image inputs (sha tags are pushed from main CI).
+            GE="${GE:-$SHA}"
+            if [[ "${EVENT_NAME}" == "workflow_dispatch" && -n "${INPUT_GIT_SHA}" ]]; then
+              CP="${CP:-$SHA}"
+              DS="${DS:-$SHA}"
+            fi
+          fi
+
+          if [[ -z "${GE}${CP}${DS}${CLIPROXY}" ]]; then
+            echo "::error::No image pins to promote (pass git_sha or per-image inputs)."
+            exit 1
+          fi
+
+          echo "gateway_engine=${GE}" >> "$GITHUB_OUTPUT"
+          echo "credential_prober=${CP}" >> "$GITHUB_OUTPUT"
+          echo "docs_server=${DS}" >> "$GITHUB_OUTPUT"
+          echo "cliproxy=${CLIPROXY}" >> "$GITHUB_OUTPUT"
+          echo "branch_suffix=${SHA:-manual-$(date -u +%Y%m%d%H%M%S)}" >> "$GITHUB_OUTPUT"
+          echo "Promoting GE=${GE} CP=${CP} DS=${DS} CLIPROXY=${CLIPROXY}"
+
+      - name: Checkout k3s-01
+        uses: actions/checkout@v4
+        with:
+          repository: echoares-lab/k3s-01
+          ref: production
+          path: k3s-01
+          token: ${{ steps.token.outputs.token }}
+
+      - name: Apply pin updates
+        run: |
+          set -euo pipefail
+          ARGS=(--k3s-repo k3s-01)
+          GE='${{ steps.pins.outputs.gateway_engine }}'
+          CP='${{ steps.pins.outputs.credential_prober }}'
+          DS='${{ steps.pins.outputs.docs_server }}'
+          CLIPROXY='${{ steps.pins.outputs.cliproxy }}'
+          [[ -n "${GE}" ]] && ARGS+=(--gateway-engine "${GE}")
+          [[ -n "${CP}" ]] && ARGS+=(--credential-prober "${CP}")
+          [[ -n "${DS}" ]] && ARGS+=(--docs-server "${DS}")
+          [[ -n "${CLIPROXY}" ]] && ARGS+=(--cliproxy "${CLIPROXY}")
+          python3 scripts/promote_k3s_images.py "${ARGS[@]}"
+          kubectl kustomize k3s-01/kubernetes/workloads/home/ai-gateway/overlays/k3s-01 >/dev/null
+
+      - name: Create promote PR on k3s-01
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          cd k3s-01
+          if git diff --quiet; then
+            echo "No pin changes (already up to date)."
+            exit 0
+          fi
+          BRANCH="chore/promote-ai-gateway-images-${{ steps.pins.outputs.branch_suffix }}"
+          git config user.name "ai-gateway-ci"
+          git config user.email "ci@echoares-lab.invalid"
+          git checkout -b "$BRANCH"
+          git add kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml
+          git commit -m "chore(ai-gateway): promote immutable image pins"
+          git push -u origin "$BRANCH"
+          gh pr create --repo echoares-lab/k3s-01 --base production --head "$BRANCH" \
+            --title "chore(ai-gateway): promote immutable image pins" \
+            --body "$(cat <<EOF
+          ## Summary
+          Automated image-pin promotion from ai-gateway CI (issue #361).
+
+          - gateway-engine: \`${{ steps.pins.outputs.gateway_engine }}\`
+          - credential-prober: \`${{ steps.pins.outputs.credential_prober }}\`
+          - docs-server: \`${{ steps.pins.outputs.docs_server }}\`
+          - cliproxy: \`${{ steps.pins.outputs.cliproxy }}\`
+
+          ## Test plan
+          - [ ] \`kubectl kustomize kubernetes/workloads/home/ai-gateway/overlays/k3s-01\`
+          - [ ] After merge, confirm ArgoCD sync and pod imageIDs
+          EOF
+          )"
