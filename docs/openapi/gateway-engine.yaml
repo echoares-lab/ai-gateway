@@ -211,6 +211,95 @@ paths:
       responses:
         '501':
           description: Targeted credential probe is not supported by current CLIProxy management API
+  /model/new:
+    post:
+      summary: Hot-add a model to registry and LiteLLM runtime router
+      description: Upserts the gateway-engine model registry record, then calls LiteLLM runtime `/model/new` so the model is immediately available without restarting.
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            example:
+              model_id: "gpt-5-6-sol-high"
+              upstream_model: "gpt-5.6-sol-high"
+              litellm_model: "openai/gpt-5.6-sol-high"
+              supports_tools: true
+      responses:
+        '200':
+          description: Registry updated; LiteLLM add may be full success or partial success
+          content:
+            application/json:
+              example:
+                accepted: true
+                partial_success: false
+                registry_available: true
+                model:
+                  model_id: "gpt-5-6-sol-high"
+                  provider: "openai"
+                  family: "openai"
+                  upstream_model: "gpt-5.6-sol-high"
+                  litellm_model: "openai/gpt-5.6-sol-high"
+                  enabled: true
+                  status: "UNKNOWN"
+                litellm_add:
+                  ok: true
+                  status_code: 200
+                  body:
+                    message: "model added"
+                  reason: null
+                errors: []
+        '403':
+          description: Invalid admin key
+        '503':
+          description: Admin mutations disabled when GATEWAY_ENGINE_ADMIN_KEY is unset
+  /model/delete:
+    post:
+      summary: Hot-delete a model from registry and LiteLLM runtime router
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            example:
+              model_id: "gpt-5-6-sol-high"
+      responses:
+        '200':
+          description: Registry deletion executed; LiteLLM delete may be full success or partial success
+          content:
+            application/json:
+              example:
+                accepted: true
+                partial_success: true
+                registry_available: true
+                model:
+                  model_id: "gpt-5-6-sol-high"
+                  provider: "openai"
+                  family: "openai"
+                  upstream_model: "gpt-5.6-sol-high"
+                  litellm_model: "openai/gpt-5.6-sol-high"
+                  enabled: true
+                  status: "UNKNOWN"
+                litellm_delete:
+                  ok: false
+                  status_code: null
+                  body: null
+                  reason: "ConnectError: [Errno 111] Connection refused"
+                errors:
+                  - code: "litellm_runtime_delete_failed"
+                    source: "litellm:/model/delete"
+        '403':
+          description: Invalid admin key
+        '404':
+          description: Model not found in registry
+        '503':
+          description: Admin mutations disabled when GATEWAY_ENGINE_ADMIN_KEY is unset
   /admin/models:
     get:
       summary: List gateway-engine-owned model registry records

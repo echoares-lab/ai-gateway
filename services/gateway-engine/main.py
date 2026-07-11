@@ -62,6 +62,7 @@ from api.admin_routes import (
 from api.admin_routes import (
     router as extracted_admin_router,
 )
+from api.model_runtime_routes import router as model_runtime_router
 from api.ws_router import (
     WsRouterDeps,
     _codex_ws_upstream_headers,  # noqa: F401 - re-exported for existing tests
@@ -406,6 +407,7 @@ configure_admin_routes(
     )
 )
 app.include_router(extracted_admin_router)
+app.include_router(model_runtime_router)
 
 configure_proxy_routes(
     ProxyRouterDeps(
