@@ -55,14 +55,14 @@
       "agentId": null,
       "runId": null,
       "parentAgentId": null,
-      "status": "pending",
+      "status": "running",
       "resultStatus": null,
       "handoffPath": null,
-      "startedAt": null,
+      "startedAt": "2026-07-11T09:34:35.654Z",
       "finishedAt": null,
-      "lastUpdate": "2026-07-11T09:34:24.079Z",
+      "lastUpdate": "2026-07-11T09:34:35.654Z",
       "note": "respawned by local-cli (was error; attempts=1)",
-      "attempts": 1,
+      "attempts": 2,
       "slackTs": null,
       "prNumber": null,
       "failureMode": null,
@@ -149,6 +149,10 @@
     {
       "at": "2026-07-11T09:34:25.074Z",
       "message": "cheap-drift: respawned by local-cli (was error)"
+    },
+    {
+      "at": "2026-07-11T09:34:26.186Z",
+      "message": "model-new-hot-add: respawned by local-cli (was error)"
     }
   ]
 }
