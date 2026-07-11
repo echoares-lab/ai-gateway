@@ -202,9 +202,7 @@ def test_admin_quota_status_missing_management_key_graceful_error(monkeypatch):
 def test_admin_quota_status_unknown_provider_falls_back_to_raw(monkeypatch):
     fake = _FakeQuotaHttpClient(
         quota_status={
-            "credentials": [
-                _sample_quota_cred(id="cred-x", provider="moonshot-custom", label="m@example.com")
-            ]
+            "credentials": [_sample_quota_cred(id="cred-x", provider="moonshot-custom", label="m@example.com")]
         },
         quota_status_full={"credentials": [{"id": "cred-x", "windows": {}}]},
         auth_files={"files": [{"id": "cred-x", "email": "m@example.com", "status": "active"}]},
