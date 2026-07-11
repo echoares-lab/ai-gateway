@@ -654,6 +654,17 @@ class TestCodexCliFormat:
         body = resp.json()
         assert body.get("object") == "response.compaction"
 
+    @pytest.mark.asyncio
     @pytest.mark.mock
-    def test_websocket_multiturn(self, client):
-        pytest.skip("Websocket in-memory test not yet implemented")
+    async def test_websocket_unauthorized_rejected(self):
+        """In-memory ASGI WebSocket: missing auth is rejected after accept (close 1008)."""
+        from starlette.testclient import TestClient
+        from starlette.websockets import WebSocketDisconnect
+
+        from main import app
+
+        with TestClient(app) as sync_client:
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                with sync_client.websocket_connect("/v1/responses") as ws:
+                    ws.receive_text()
+            assert exc_info.value.code == 1008

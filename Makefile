@@ -8,10 +8,10 @@ clean-db:
 	docker volume prune -f
 
 
-# Lint the gateway-engine (mirrors the CI fast tier).
+# Lint the gateway-engine and credential-prober (mirrors the CI fast tier).
 lint:
-	ruff check services/gateway-engine/
-	ruff format --check services/gateway-engine/
+	ruff check services/gateway-engine/ services/credential-prober/
+	ruff format --check services/gateway-engine/ services/credential-prober/
 
 # Regression tests for sync-models probe classification (429 must preserve catalog).
 test-sync-models-probe:
@@ -24,6 +24,12 @@ test-dev-env:
 test-compose-config:
 	python3 -m pytest tests/test_litellm_compose_migration.py -v
 	docker compose -f docker-compose.yml config >/dev/null
+	@if grep -q 'cli-proxy-api:latest' docker-compose.yml; then \
+	  echo 'ERROR: docker-compose.yml must not default CLIPROXY_IMAGE to :latest' >&2; exit 1; \
+	fi
+	@if grep -n 'command:.*uvicorn.*--reload' docker-compose.yml >/dev/null; then \
+	  echo 'ERROR: gateway-engine must not use uvicorn --reload in docker-compose.yml' >&2; exit 1; \
+	fi
 
 # Unit tests: build the gateway-engine image and run the fully-mocked suite (parallel, CI parity).
 test-unit:
@@ -45,7 +51,7 @@ drift-cheap:
 # Fast tier = Gate A + B locally (no OAuth, no real LLM).
 # Note: multi-repo-isolation is CI path-filtered only — run manually when touching dev-env.sh / cliproxy-setup.sh:
 #   bash tests/test-multi-repo-isolation.sh
-test-fast: lint test-unit validate-policy-profiles test-sync-models-probe test-compose-config test-mock
+test-fast: lint test-unit validate-policy-profiles drift-cheap test-sync-models-probe test-compose-config test-mock
 
 # Full real-provider E2E. Needs real OAuth in ~/.cli-proxy-api (slot 1 -> :4010).
 # Runs only the slim `smoke` subset.
