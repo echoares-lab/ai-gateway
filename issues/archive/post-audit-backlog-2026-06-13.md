@@ -29,6 +29,18 @@ github_issue: null
 audit_ref: origin/main @ 50da01c (2026-06-13)
 ---
 
+> **ARCHIVED (historical only).** GitHub issues + `docs/ROADMAP.md` /
+> `docs/FEATURE_CANDIDATES.md` are the SSOT. Do not claim work from this file.
+>
+> **Superseded / done (do not reopen):** D-5, D-8, D-13; security-hardening epics
+> #305–#323; Stability Foundation track (#377). Remaining useful leftovers are
+> folded into `docs/FEATURE_CANDIDATES.md` under **C-AUD-***.
+>
+> Original body retained below for archaeology.
+
+---
+
+
 # Post-Audit Backlog — Deferred Items (2026-06-13)
 
 Audit baseline: **228 unit tests passing**, CI green on `main`, lint clean on

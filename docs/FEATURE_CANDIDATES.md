@@ -87,11 +87,16 @@ Cheap-drift check and `/model/new` / `/model/delete` hot-add shipped on `main`
 
 ---
 
-## Post-audit hardening leftovers
+## Post-audit hardening leftovers (C-AUD-*)
 
-Notable open gaps from
-[issues/post-audit-backlog-2026-06-13.md](../issues/post-audit-backlog-2026-06-13.md).
-Promote individually; do not treat the backlog file as claimable work.
+Historical backlog:
+[`issues/archive/post-audit-backlog-2026-06-13.md`](../issues/archive/post-audit-backlog-2026-06-13.md)
+(archived). Promote individually; do not claim from the archive.
+
+**Done / superseded (do not reopen):** D-5 (policy lives in
+`services/gateway-engine/core/policy/`), D-8 (Gate C opt-in documented), D-13
+(test naming sweep), security-hardening epics #305–#323, Stability Foundation
+[#377](https://github.com/echoares-lab/ai-gateway/issues/377).
 
 | ID | Summary | Effort | Risk | Need/fit | Audit ref | Status |
 |----|---------|--------|------|----------|-----------|--------|
@@ -101,6 +106,10 @@ Promote individually; do not treat the backlog file as claimable work.
 | C-AUD-4 | Dev-env compose project collision preflight | S | L | med | D-12 | candidate |
 | C-AUD-5 | Narrow broad `except Exception` handlers in gateway-engine | M | M | med | D-6 | candidate |
 | C-AUD-6 | Optional WebSocket policy evaluation parity | M | M | med | D-4 | candidate |
+| C-AUD-7 | Extend ruff to credential-prober and `scripts/` beyond current Make targets | S | L | med | D-3 | candidate |
+| C-AUD-8 | Extract remaining policy hooks from request path / routers | M | M | med | D-7 | candidate |
+| C-AUD-9 | Faster local mock iteration (optional skip of heavy clean-db) | S | L | low | D-9 | candidate |
+| C-AUD-10 | Integration coverage for catch-all proxy edge cases | M | M | med | D-10 | candidate |
 
 ---
 
