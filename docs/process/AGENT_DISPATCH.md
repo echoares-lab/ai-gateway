@@ -236,7 +236,7 @@ gh pr create \
 
 ## Test plan
 - [ ] Gateway Engine unit tests pass (41/41)
-- [ ] Mock integration tier passes with 0 skips (`./dev-env.sh test-mock 9` or `make test-mock`)
+- [ ] Mock integration tier passes with 0 skips (`make test-mock`)
 - [ ] Real-provider integration / `run-e2e` label used only when needed
 - [ ] Health check passes
 - [ ] Claude E2E: ./cliproxy-setup.sh test claude-sonnet-4-6 (if real E2E needed)
@@ -387,7 +387,7 @@ before closing epics or ending a multi-agent session.
 |---------|------|
 | `docker exec aidev<slot>-gateway-engine-1 pytest test_gateway_engine*.py -v` | Gate A — after every significant change |
 | `make test-fast` | Gate A + B — local equivalent of required CI fast tier |
-| `make test-mock` | Gate B only — mock stack, 0 skips |
+| `make test-mock` | Gate B only — in-memory ASGI, 0 skips |
 | `./dev-env.sh test <slot>` | Gate C — real-provider integration when broader coverage needed |
 | `gh pr edit <pr> --add-label run-e2e` | Trigger Gate C in CI (`real-provider-e2e`) |
 | `./cliproxy-setup.sh health` | Gate D — before and after merge on stable |

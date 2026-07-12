@@ -93,5 +93,5 @@ candidates — do not reopen these epics in place.
 - [CREDENTIAL_HEALTH.md](./CREDENTIAL_HEALTH.md)
 - [CICD_PHASE2_CD_K3S.md](./CICD_PHASE2_CD_K3S.md)
 - [CICD_PHASE2_STAGING.md](./CICD_PHASE2_STAGING.md)
-- [issues/archive/post-audit-backlog-2026-06-13.md](../issues/post-audit-backlog-2026-06-13.md)
+- [issues/archive/post-audit-backlog-2026-06-13.md](../issues/archive/post-audit-backlog-2026-06-13.md)
 - [Repo Improvement Workflow](process/REPO_IMPROVEMENT_WORKFLOW.md)
