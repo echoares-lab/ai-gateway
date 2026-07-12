@@ -1,3 +1,5 @@
+> **Historical backlog.** Prefer `docs/FEATURE_CANDIDATES.md` and `docs/ROADMAP.md` for current planning. Entries below may be stale relative to `main`.
+
 # Unmerged Features Backlog
 
 ## Follow-up audit - 2026-06-13

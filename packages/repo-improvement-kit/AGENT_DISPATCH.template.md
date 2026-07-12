@@ -15,8 +15,8 @@ policy, and service slots belong in `REPO_IMPROVEMENT_APPENDIX.md`.
 
 You are an AI coding agent working on `<OWNER>/<REPO>` at `<LOCAL_REPO_PATH>`.
 
-Read `AGENTS.md`, `REPO_IMPROVEMENT_WORKFLOW.md`, and
-`REPO_IMPROVEMENT_APPENDIX.md` before doing anything else. They contain required
+Read `AGENTS.md`, `docs/process/REPO_IMPROVEMENT_WORKFLOW.md` (or root stubs),
+and `docs/process/REPO_IMPROVEMENT_APPENDIX.md` before doing anything else. They contain required
 workflow rules you must follow.
 
 Your job is to:
@@ -124,6 +124,11 @@ git commit -m "<type>(<scope>): <short imperative description>"
 ```
 
 ---
+
+## Gate B / Gate C
+
+- Gate B: `make test-mock` (in-memory; 0 skips). Prefer `make test-fast` before PR.
+- Gate C: opt-in only (`make test-e2e` or PR label `run-e2e`).
 
 ## Step 5 — Final pre-PR validation
 

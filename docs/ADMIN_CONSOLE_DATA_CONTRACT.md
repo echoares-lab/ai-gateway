@@ -1,5 +1,7 @@
 # Admin Console Data Contract
 
+> **Design / candidate document.** Not an approved implementation track by itself. Runtime policy and routing live in `services/gateway-engine/core/policy/` (and gateway-engine request paths). Promote via ROADMAP + GitHub issues before claiming.
+
 > **Status:** Contract design (no runtime behavior change). Child issue for
 > [#32 — Unified admin console](https://github.com/echoares-lab/ai-gateway/issues/32),
 > based on [`docs/ADMIN_CONSOLE.md`](./ADMIN_CONSOLE.md). This document defines

@@ -25,14 +25,14 @@ Risk level: **low / medium / high** (see `docs/process/TESTING_AND_PROMOTION_POL
 ### Required — Fast (Gate A) — every PR
 
 - [ ] `make lint` pass
-- [ ] `make test-unit` pass (gateway-engine + policy-engine; `-n auto`)
+- [ ] `make test-unit` pass (gateway-engine; `-n auto`)
 - [ ] YAML validation pass (if `litellm-config.yaml` changed)
 
 ### Required — Conditional (Gate A/B) — when matching paths change
 
 - [ ] `make test-mock` pass (0 skips; runtime paths)
 - [ ] `bash tests/test-multi-repo-isolation.sh` (isolation script paths)
-- [ ] Policy-engine / credential-prober tests (service paths)
+- [ ] credential-prober tests (when `services/credential-prober/**` changes)
 
 ### Gate C — real providers (opt-in; high-risk only)
 
@@ -55,7 +55,7 @@ Not required to merge (Gate C paused pending e2e refactor). Opt in via label or 
 
 ### CI required checks
 
-- [ ] `lint-and-syntax`, `unit-tests`, `build-gateway-engine`
+- [ ] `lint-and-syntax`, `unit-tests` (image build is inside `unit-tests`)
 - [ ] `mock-integration` (runtime paths; skipped OK on docs-only)
 
 ## Risk / rollback

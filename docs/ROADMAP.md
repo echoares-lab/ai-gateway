@@ -10,27 +10,16 @@ issues only — never parent epics, and never items that exist only in
 | **This file** | Approved Now / Next / Parked / Completed |
 | [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) | Ideas **not** approved — document only until promoted here |
 
-Last reviewed: 2026-07-11 (stability foundation track promoted).
+Last reviewed: 2026-07-12 (Stability Foundation completed via #377).
 
 ---
 
-## Now — Stability Foundation
+## Now
 
-Approved track to harden docs/CI truth, config safety, and request-path modularization
-before large feature work. Ship as atomic PRs; do not reopen closed security epics
-(#305–#323) in place.
-
-| Slice | Scope | Status |
-|-------|--------|--------|
-| Docs / Gate B–C truth | Align AGENTS, TESTING, APPENDIX, BRANCH_PROTECTION; retire mock stubs | Done on `feat/stability-foundation` |
-| Config + safety | Unify `core/config.py` env aliases; cache tenant safety; compose hygiene; `/health/ready` | Done on `feat/stability-foundation` |
-| Modularization | Split `proxy_router` / `admin_routes`; stream error contract (`_main_override` kept for test patching) | Done on `feat/stability-foundation` |
-| Observability polish | `IN_FLIGHT` Gauge; WS mock; cheap drift in CI; lint expansion | Done on `feat/stability-foundation` |
-
-Track implementation is on `feat/stability-foundation` (awaiting PR merge). Parked tenancy anchors remain blocked.
-
-To start other product work: promote an item from [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
-into this file and open atomic GitHub issues with `status:ready`.
+*No active Now track.* Parked tenancy anchors remain blocked pending a multi-tenant
+decision (see Parked). To start product work: promote an item from
+[FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) into this file and open atomic
+GitHub issues with `status:ready`.
 
 ---
 
@@ -49,6 +38,13 @@ Expanded tenancy scope: [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) (C-TEN-
 ---
 
 ## Completed (2026-07 wave)
+
+### Stability Foundation ([#377](https://github.com/echoares-lab/ai-gateway/issues/377))
+
+Hardened docs/CI truth (Gate B in-memory / Gate C opt-in), config safety, request-path
+modularization (`proxy_router` / `admin_routes`), and observability polish. Do not
+reopen closed security epics (#305–#323) in place.
+
 
 ### Production cutover and durability
 

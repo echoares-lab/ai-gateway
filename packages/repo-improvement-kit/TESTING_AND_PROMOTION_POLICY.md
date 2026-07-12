@@ -22,7 +22,7 @@ with `REPO_IMPROVEMENT_WORKFLOW.md` (process) and `REPO_IMPROVEMENT_APPENDIX.md`
 | Tier | CI jobs | Blocks merge? | When |
 |------|---------|---------------|------|
 | **Required — Fast (A)** | `lint-and-syntax`, `unit-tests` | Yes | Every PR |
-| **Required — Conditional (A/B)** | `multi-repo-isolation`, `credential-prober`, `mock-integration`, `policy-engine-tests` | Yes | When matching paths change (skipped = pass) |
+| **Required — Conditional (A/B)** | `multi-repo-isolation`, `credential-prober`, `mock-integration` | Yes | When matching paths change (skipped = pass) |
 | **Advisory — Gate C** | `real-provider-e2e` | No | Opt-in via `run-e2e` label or `workflow_dispatch` (hotspot auto-trigger paused) |
 | **Advisory** | `nightly-integration`, `hotspot-e2e-reminder`, `post-merge-gate-d` | No | Signal, schedule, or post-merge |
 
@@ -63,8 +63,8 @@ Each active claim must own a unique **isolation triple**:
 
 **Mock vs real stack**
 
-- Use the mock/canned stack for Gate B during development.
-- Start a real-provider stack only for Gate C or manual provider verification.
+- Gate B is **in-memory / canned** (`make test-mock` or equivalent) — no OAuth, no live providers.
+- Start a real-provider stack only for Gate C (opt-in) or manual provider verification.
 
 **Claim comment must include:** `Claim-ID`, branch, worktree path, slot (if applicable), mock vs real.
 

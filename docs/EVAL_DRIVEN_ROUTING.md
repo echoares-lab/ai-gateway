@@ -1,5 +1,7 @@
 # Evaluation-Driven Routing — Design Stub
 
+> **Design / candidate document.** Not an approved implementation track by itself. Runtime policy and routing live in `services/gateway-engine/core/policy/` (and gateway-engine request paths). Promote via ROADMAP + GitHub issues before claiming.
+
 > **Status:** Design only (no runtime behavior change). Implements the Phase 5
 > optional scope for Epic #38 issue 38-19 ([#138](https://github.com/echoares-lab/ai-gateway/issues/138)),
 > child of roadmap epic [#37](https://github.com/echoares-lab/ai-gateway/issues/37).
@@ -114,7 +116,7 @@ Langfuse traces + routing_decisions_log
 ```
 
 Job runs on schedule (e.g. nightly); not on request hot path. Uses existing
-Postgres + Langfuse API credentials documented in RUNBOOK.md.
+Postgres + Langfuse API credentials documented in docs/ops/RUNBOOK.md.
 
 ---
 

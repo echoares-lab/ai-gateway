@@ -39,7 +39,7 @@ CI uses **GitHub Actions cache** (`type=gha`) for Docker layers plus optional lo
 
 The composite action [`.github/actions/setup-python-venv`](../.github/actions/setup-python-venv/action.yml) caches `~/.cache/pip` and `.venv-ci` keyed on requirements files.
 
-Docker builds use [`.github/actions/build-docker-cached`](../.github/actions/build-docker-cached/action.yml) with scoped GHA cache (`gateway-engine`, `cliproxy-mock`, `policy-engine-mock`). Mock-stack compose images are built via [`scripts/ci-build-mock-services.sh`](../scripts/ci-build-mock-services.sh) with path-filtered skip when the tagged image already exists locally.
+Docker builds use [`.github/actions/build-docker-cached`](../.github/actions/build-docker-cached/action.yml) with scoped GHA cache (primarily `gateway-engine`). Gate B mock integration is in-memory (`make test-mock` / `pytest tests/integration/ -m mock`) — there is no mock compose image build step.
 
 ---
 
@@ -50,7 +50,7 @@ Docker builds use [`.github/actions/build-docker-cached`](../.github/actions/bui
 | Layer | Group key | Effect |
 |-------|-----------|--------|
 | Workflow | `ci-CI Suite-<PR number or ref>` | Different PRs (and `main` pushes) run CI concurrently across the dev runner group |
-| Fast jobs | (none) | `lint-and-syntax`, `unit-tests`, `build-gateway-engine`, path-filtered jobs fan out to any idle runner |
+| Fast jobs | (none) | `lint-and-syntax`, `unit-tests` (image build is inside this job), path-filtered jobs fan out to any idle runner |
 | Docker jobs | `ci-docker-host-ports` | One mock or Gate C stack at a time globally (port collision guard; `runner.name` is not allowed in job concurrency groups) |
 
 Workflow concurrency is **per ref**: a new push to the same PR cancels the in-progress run for that PR only. Other PRs are unaffected.
@@ -59,21 +59,16 @@ Workflow concurrency is **per ref**: a new push to the same PR cancels the in-pr
 
 | Constraint | Reason |
 |------------|--------|
-| Job concurrency `ci-docker-host-ports` | Mock + Gate C stacks bind fixed host ports 4010, 4011, 18080 |
-| Stable stack `:4000` / `:8080` | Must not collide with CI mock stack on the same host |
+| Job concurrency for Docker-heavy steps | Gate C (`real-provider-e2e`) uses fixed host ports (e.g. 4010/4011) |
+| Stable stack `:4000` | Must not collide with a Gate C stack on the same host |
 
-Only **one** `mock-integration` or `real-provider-e2e` stack at a time across the runner group (workflow-level per-PR concurrency still allows fast jobs to run in parallel).
+Fast jobs and in-memory Gate B can fan out; only one Gate C Docker stack should bind host ports at a time.
 
 ---
 
-## Mock stack volume policy
+## Port / volume cleanup helpers
 
-| Variable | Effect |
-|----------|--------|
-| `CI_MOCK_FRESH_DB=1` | Drop `aidevmock` Postgres volume before mock stack start (default on PR CI) |
-| `CI_MOCK_DOWN_VOLUMES=1` | Same as above — alias used by `scripts/ci/ci-free-mock-host-ports.sh` |
-
-Fresh volumes are slower (re-seed from `db/seed-litellm-mock.sql`) but prevent cross-run DB pollution.
+Gate B no longer starts a mock Docker stack. `CI_MOCK_FRESH_DB` / `CI_MOCK_DOWN_VOLUMES` and `scripts/ci/ci-free-mock-host-ports.sh` remain for Gate C / legacy host-port cleanup when a real-provider stack was left running.
 
 ---
 
@@ -92,14 +87,14 @@ See [`.github/actions/pre-clean-self-hosted`](../.github/actions/pre-clean-self-
 ## Job dependency graph (fast-fail)
 
 ```
-changes ─┬─► lint-and-syntax ──┬─► mock-integration
-         │                     └─► real-provider-e2e (hotspot paths)
-         ├─► build-gateway-engine ─► unit-tests ──┘
+changes ─┬─► lint-and-syntax ──┬─► mock-integration (in-memory Gate B)
+         │                     └─► real-provider-e2e (opt-in Gate C)
+         ├─► unit-tests (builds gateway-engine image)
          ├─► credential-prober (path-filtered)
          └─► multi-repo-isolation (path-filtered)
 ```
 
-Heavy Docker jobs (`mock-integration`, `real-provider-e2e`) wait for **lint-and-syntax** and **unit-tests** to pass first.
+`mock-integration` and opt-in `real-provider-e2e` wait for **lint-and-syntax** and **unit-tests** to pass first. Gate C does not auto-run on hotspot paths.
 
 ---
 

@@ -1,4 +1,4 @@
-"""Canned routing decisions for Gate B mock integration (mirrors tests/mock-policy-engine)."""
+"""Canned routing decisions for Gate B mock integration (in-memory Gate B canned decisions)."""
 
 from __future__ import annotations
 
