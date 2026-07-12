@@ -24,7 +24,7 @@ echo "generating ${OUT} from ${POSTGRES_CONTAINER} (${count} prisma migrations) 
 {
     cat <<EOF
 -- Pre-migrated LiteLLM schema for mock/CI/dev stacks.
--- Regenerate: scripts/generate-litellm-mock-seed.sh
+-- Regenerate: scripts/ops/generate-litellm-mock-seed.sh
 -- LiteLLM image: ${LITELLM_IMAGE}
 \\connect litellm
 EOF

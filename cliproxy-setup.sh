@@ -214,7 +214,7 @@ alias_in_config() {
 classify_probe_response() {
   local http_code="$1"
   local body="$2"
-  python3 "$SCRIPT_DIR/scripts/sync_models_probe_classify.py" "$http_code" <<< "$body"
+  python3 "$SCRIPT_DIR/scripts/cliproxy/sync_models_probe_classify.py" "$http_code" <<< "$body"
 }
 
 # Probe a model via CLIProxyAPI.
@@ -802,7 +802,7 @@ print(m.group(1) if m else '')
     probe_model "$upstream" || status=$?
 
     local consecutive
-    consecutive=$(python3 "$SCRIPT_DIR/scripts/track_probe_failures.py" "$alias" "$status")
+    consecutive=$(python3 "$SCRIPT_DIR/scripts/cliproxy/track_probe_failures.py" "$alias" "$status")
 
     if [ "$status" = "0" ]; then
       echo "  OK   $alias"

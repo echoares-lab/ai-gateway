@@ -1,6 +1,6 @@
 # Git-tracked policy profile source (P0-7, Epic #35).
-# Validate: python3 scripts/validate_policy_profiles.py
-# Promote:   python3 scripts/promote_policy_profiles.py --apply
+# Validate: python3 scripts/policy/validate_policy_profiles.py
+# Promote:   python3 scripts/policy/promote_policy_profiles.py --apply
 
 version: 1
 

@@ -288,8 +288,8 @@ override quota-aware deprioritization.
 ```bash
 source .env
 export CLIPROXY_PRIORITY_SYNC_ENABLED=true
-./scripts/sync-cliproxy-pool-priority.sh          # push priorities + write backup
-./scripts/sync-cliproxy-pool-priority.sh --dry-run  # preview without PATCH
+./scripts/cliproxy/sync-cliproxy-pool-priority.sh          # push priorities + write backup
+./scripts/cliproxy/sync-cliproxy-pool-priority.sh --dry-run  # preview without PATCH
 ```
 
 Tier defaults when `credential_pool_members.priority = 0`: `native=100`,
@@ -303,8 +303,8 @@ pool config so rollback is reproducible.
 
 ```bash
 export CLIPROXY_PRIORITY_SYNC_ENABLED=true
-./scripts/sync-cliproxy-pool-priority.sh rollback
-./scripts/sync-cliproxy-pool-priority.sh rollback --backup ~/.cliproxy/priority-backups/pool-sync-20260605T120000Z.json
+./scripts/cliproxy/sync-cliproxy-pool-priority.sh rollback
+./scripts/cliproxy/sync-cliproxy-pool-priority.sh rollback --backup ~/.cliproxy/priority-backups/pool-sync-20260605T120000Z.json
 ```
 
 ### Manual fallback (management API unavailable)

@@ -242,7 +242,7 @@ Regenerate the staging `litellm-config` ConfigMap (namespace `ai-gateway-staging
 repo config with:
 
 ```bash
-scripts/generate-staging-configmap.sh > /tmp/litellm-config.staging.yaml
+scripts/ops/generate-staging-configmap.sh > /tmp/litellm-config.staging.yaml
 ```
 
 It is POSIX sh + python3 (stdlib `yaml`) and validates the embedded YAML parses before output.

@@ -14,7 +14,7 @@ echo "── runner config ──"
 if [[ -f "$RUNNER_ROOT/.runner" ]]; then
   echo "configured: yes ($RUNNER_ROOT/.runner)"
 else
-  echo "configured: NO — run scripts/ci-runner-reregister.sh"
+  echo "configured: NO — run scripts/ci/ci-runner-reregister.sh"
 fi
 
 echo ""

@@ -455,7 +455,7 @@ this repo; the authoritative manifests live in the external `k3s-01` GitOps repo
   OpenBao `staging/workloads/ai-gateway/*`, ingress `gateway-staging.infra.plexplease.com`,
   `litellm_staging` + `langfuse_staging` databases, `:latest`/dev images, and the
   staging → prod promotion flow).
-- `scripts/generate-staging-configmap.sh` renders `litellm-config.yaml` into the staging
+- `scripts/ops/generate-staging-configmap.sh` renders `litellm-config.yaml` into the staging
   `litellm-config` ConfigMap (namespace `ai-gateway-staging`) and validates the embedded YAML.
 
 ---
@@ -500,7 +500,7 @@ flagship `gateway-engine` service:
   same suite directly instead: `cd services/gateway-engine && /workspace/.venv-ci/bin/python -m
   pytest test_gateway_engine*.py test_token_analytics.py -n auto -v`.
 - Other non-Docker `make test-fast` pieces also work via the venv:
-  `scripts/validate_policy_profiles.py`, `pytest tests/test_sync_models_probe_classify.py`,
+  `scripts/policy/validate_policy_profiles.py`, `pytest tests/test_sync_models_probe_classify.py`,
   `pytest tests/test_litellm_compose_migration.py`. The `docker compose ... config` half of
   `test-compose-config` needs Docker and is skipped here.
 - **Run the flagship service locally (no Docker):** from `services/gateway-engine`,

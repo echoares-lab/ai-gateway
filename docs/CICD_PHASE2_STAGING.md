@@ -130,11 +130,11 @@ new images roll out automatically; prod stays on pinned/gated rollouts.
 ## Config generation
 
 The staging `litellm-config` ConfigMap is generated from this repo's `litellm-config.yaml`
-using [`scripts/generate-staging-configmap.sh`](../scripts/generate-staging-configmap.sh):
+using [`scripts/ops/generate-staging-configmap.sh`](../scripts/ops/generate-staging-configmap.sh):
 
 ```bash
 # Render the ai-gateway-staging ConfigMap and validate the embedded YAML parses.
-scripts/generate-staging-configmap.sh > /tmp/litellm-config.staging.yaml
+scripts/ops/generate-staging-configmap.sh > /tmp/litellm-config.staging.yaml
 ```
 
 The script:

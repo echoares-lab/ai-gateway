@@ -71,7 +71,7 @@ Only **one** `mock-integration` or `real-provider-e2e` stack at a time across th
 | Variable | Effect |
 |----------|--------|
 | `CI_MOCK_FRESH_DB=1` | Drop `aidevmock` Postgres volume before mock stack start (default on PR CI) |
-| `CI_MOCK_DOWN_VOLUMES=1` | Same as above — alias used by `scripts/ci-free-mock-host-ports.sh` |
+| `CI_MOCK_DOWN_VOLUMES=1` | Same as above — alias used by `scripts/ci/ci-free-mock-host-ports.sh` |
 
 Fresh volumes are slower (re-seed from `db/seed-litellm-mock.sql`) but prevent cross-run DB pollution.
 
@@ -110,7 +110,7 @@ Heavy Docker jobs (`mock-integration`, `real-provider-e2e`) wait for **lint-and-
 - [ ] `CLIPROXY_AUTH_TAR_B64` secret set for Gate C
 - [ ] Branch protection required checks match [`.github/BRANCH_PROTECTION_POLICY.md`](../.github/BRANCH_PROTECTION_POLICY.md)
 - [ ] Stable stack on `:4000` healthy for post-merge Gate D workflow
-- [ ] `scripts/ci-runner-status.sh` shows runner `online` and systemd `active`
+- [ ] `scripts/ci/ci-runner-status.sh` shows runner `online` and systemd `active`
 
 ---
 
@@ -121,7 +121,7 @@ Heavy Docker jobs (`mock-integration`, `real-provider-e2e`) wait for **lint-and-
 **Common cause:** the self-hosted runner on `dev-01` is offline or was unregistered. Check:
 
 ```bash
-scripts/ci-runner-status.sh
+scripts/ci/ci-runner-status.sh
 # or on the runner host:
 sudo systemctl status actions.runner.echoares-lab-ai-gateway.dev-01.service
 sudo ls /home/github-runner/actions-runner/.runner   # must exist
@@ -130,7 +130,7 @@ sudo ls /home/github-runner/actions-runner/.runner   # must exist
 **Fix (on dev-01):**
 
 ```bash
-sudo ./scripts/ci-runner-reregister.sh
+sudo ./scripts/ci/ci-runner-reregister.sh
 ```
 
 This fetches a repo registration token via `gh`, runs `config.sh --replace`, installs the systemd service, and starts the listener.

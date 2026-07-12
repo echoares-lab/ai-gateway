@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CLASSIFY_SCRIPT = REPO_ROOT / "scripts" / "sync_models_probe_classify.py"
+CLASSIFY_SCRIPT = REPO_ROOT / "scripts" / "cliproxy" / "sync_models_probe_classify.py"
 
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "cliproxy"))
 from sync_models_probe_classify import (  # noqa: E402
     OUTCOME_MISSING_MODEL,
     OUTCOME_PRESERVE,

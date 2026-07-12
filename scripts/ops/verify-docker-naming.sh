@@ -37,7 +37,7 @@ if [ -z "$running_test" ]; then
 fi
 
 echo "--- Running cleanup script ---"
-./scripts/docker-cleanup.sh
+./scripts/ops/docker-cleanup.sh
 
 echo "--- Verifying cleanup ---"
 remaining=$(docker ps -a --format "{{.Names}}" | grep -E "^(PROD-|TESTING-)" || true)

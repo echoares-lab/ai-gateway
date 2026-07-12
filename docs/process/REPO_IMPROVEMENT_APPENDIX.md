@@ -179,12 +179,12 @@ Dev stacks avoid ~15 min LiteLLM `proxy_extras` migrations on fresh Postgres vol
 
 1. **`init-db-bootstrap.sql`** — creates `litellm` / `langfuse` databases only (no tables).
 2. **`db/seed-litellm-mock.sql`** — pre-migrated LiteLLM schema + `_prisma_migrations` rows (~150 KB).
-   Loaded at first volume init (`docker-entrypoint-initdb.d/02`) or via `scripts/load-mock-data.sh`
+   Loaded at first volume init (`docker-entrypoint-initdb.d/02`) or via `scripts/ops/load-mock-data.sh`
    when reusing an older empty volume.
 3. **`db/apply-migrations.sh`** — gateway tables (`credential_inventory`, policy profiles).
 4. **`LITELLM_MIGRATIONS=None`** — LiteLLM skips Prisma migrations (schema already present).
 
-Regenerate seed after LiteLLM image bump: `scripts/generate-litellm-mock-seed.sh` (requires stable
+Regenerate seed after LiteLLM image bump: `scripts/ops/generate-litellm-mock-seed.sh` (requires stable
 `ai-postgres-1` with migrations applied).
 
 **CI flake:** If `mock-integration` fails in CI but `make test-mock` passes locally, note it in the PR and retry.

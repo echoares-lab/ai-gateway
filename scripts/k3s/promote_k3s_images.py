@@ -5,7 +5,7 @@ Edits kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml
 `images:` entries so ArgoCD sees a Git diff and rolls out new tags/digests.
 
 Usage:
-  python3 scripts/promote_k3s_images.py \\
+  python3 scripts/k3s/promote_k3s_images.py \\
     --k3s-repo /path/to/k3s-01 \\
     --gateway-engine d4a621b \\
     --credential-prober sha256:abc... \\
