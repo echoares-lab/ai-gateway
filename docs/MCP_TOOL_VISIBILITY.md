@@ -1,5 +1,7 @@
 # MCP Tool Visibility — Design Stub
 
+> **Design / candidate document.** Not an approved implementation track by itself. Runtime policy and routing live in `services/gateway-engine/core/policy/` (and gateway-engine request paths). Promote via ROADMAP + GitHub issues before claiming.
+
 > **Status:** Phase 5b runtime resolver in policy-engine (`allowed_mcp_servers` /
 > `denied_mcp_servers` on `RoutingDecision`). LiteLLM tool-list filter (5c) pending.
 > Implements the Phase 5
@@ -152,5 +154,5 @@ wire but MCP filter can prototype on policy-engine + mock integration first.
 
 - [TENANCY.md](./TENANCY.md) — §4.3 MCP Tool Access, §5 child issue TENANCY-4
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — LiteLLM MCP control plane ADR
-- [RUNBOOK.md](../RUNBOOK.md) — MCP server registration
+- [RUNBOOK.md](ops/RUNBOOK.md) — MCP server registration
 - `issues/policy-engine-38-20-mcp-visibility.md` — issue tracker

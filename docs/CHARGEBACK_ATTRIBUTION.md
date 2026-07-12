@@ -1,5 +1,7 @@
 # Chargeback Attribution — Design Stub
 
+> **Design / candidate document.** Not an approved implementation track by itself. Runtime policy and routing live in `services/gateway-engine/core/policy/` (and gateway-engine request paths). Promote via ROADMAP + GitHub issues before claiming.
+
 > **Status:** Design only (no runtime behavior change). Implements the Phase 5
 > optional scope for Epic #38 issue 38-21 ([#140](https://github.com/echoares-lab/ai-gateway/issues/140)).
 > Builds on the routing decision audit log (38-16), budget gates (38-09), and
@@ -159,7 +161,7 @@ Export formats (phase 2): CSV for finance, JSON API for admin console.
 
 **Dependencies:** 38-16 audit log (done), TENANCY metadata in gateway-engine
 ([#79](https://github.com/echoares-lab/ai-gateway/pull/79)), Langfuse credentials
-in RUNBOOK.md, [TOKEN_USAGE_ANALYTICS.md](./TOKEN_USAGE_ANALYTICS.md) panel schema.
+in docs/ops/RUNBOOK.md, [TOKEN_USAGE_ANALYTICS.md](./TOKEN_USAGE_ANALYTICS.md) panel schema.
 
 **Blocked by:** none for design; runtime **5b** benefits from 38-04 gateway-engine
 wire; **5c** requires stable `request_id` join path.

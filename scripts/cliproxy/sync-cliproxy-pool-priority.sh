@@ -3,7 +3,7 @@
 # Feature-flagged: set CLIPROXY_PRIORITY_SYNC_ENABLED=true to enable pushes.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 if [[ -f "${ROOT}/.env" ]]; then
   # shellcheck disable=SC1091
@@ -11,4 +11,4 @@ if [[ -f "${ROOT}/.env" ]]; then
 fi
 
 cd "${ROOT}/services/gateway-engine"
-exec python3 "${ROOT}/scripts/pool_sync.py" "$@"
+exec python3 "${ROOT}/scripts/cliproxy/pool_sync.py" "$@"

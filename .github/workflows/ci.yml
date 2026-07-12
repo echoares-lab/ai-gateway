@@ -47,7 +47,6 @@ jobs:
               - 'services/gateway-engine/**'
             litellm_config:
               - 'litellm-config.yaml'
-              - 'tests/litellm-config-mock.yaml'
             compose:
               - 'docker-compose*.yml'
               - 'Dockerfile*'
@@ -76,8 +75,6 @@ jobs:
             integration_tests:
               - 'tests/integration/**'
               - 'tests/test-gateway-e2e.sh'
-              - 'tests/litellm-config-mock.yaml'
-              - 'tests/mock-policy-engine/**'
             hotspot:
               - 'services/gateway-engine/**'
               - 'litellm-config.yaml'
@@ -106,8 +103,7 @@ jobs:
           bash -n db/apply-migrations.sh
           bash -n dev-env.sh
           bash -n gen-client-config.sh
-          bash -n scripts/ci-build-mock-services.sh
-          bash -n scripts/ci-free-mock-host-ports.sh
+          bash -n scripts/ci/ci-free-mock-host-ports.sh
           bash -n tests/test-dev-env.sh
           bash -n tests/test-multi-repo-isolation.sh
           bash -n tests/test-gateway-e2e.sh
@@ -146,7 +142,7 @@ jobs:
           print(f"✓ litellm-config.yaml: {len(data.get('model_list') or [])} models validated")
           PY
       - name: Validate policy-profiles.yaml
-        run: PYTHONPATH=services/gateway-engine .venv-ci/bin/python3 scripts/validate_policy_profiles.py
+        run: PYTHONPATH=services/gateway-engine .venv-ci/bin/python3 scripts/policy/validate_policy_profiles.py
       - name: Check for hardcoded API keys
         run: CHECK_ALL=1 bash .githooks/prevent-hardcoded-keys.sh
 
@@ -321,7 +317,7 @@ jobs:
       - name: Free dev slot ports (avoid stable :8080 collision)
         run: |
           ./dev-env.sh stop 1 || true
-          bash scripts/ci-free-mock-host-ports.sh "$GITHUB_WORKSPACE" || true
+          bash scripts/ci/ci-free-mock-host-ports.sh "$GITHUB_WORKSPACE" || true
       - name: Determine if we should push
         id: should_push
         run: |

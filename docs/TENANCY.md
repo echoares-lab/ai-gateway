@@ -114,4 +114,4 @@ To maintain context efficiency and velocity, the following are explicitly marked
 ## 6. References
 - [Roadmap Status](./ROADMAP.md)
 - [Architecture Decision Record -- MCP Control Plane](./ARCHITECTURE.md)
-- [Repo Improvement Workflow](../REPO_IMPROVEMENT_WORKFLOW.md)
+- [Repo Improvement Workflow](process/REPO_IMPROVEMENT_WORKFLOW.md)

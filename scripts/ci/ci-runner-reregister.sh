@@ -52,4 +52,4 @@ fi
 ./svc.sh status
 
 echo ""
-echo "Runner re-registered. Verify with: scripts/ci-runner-status.sh"
+echo "Runner re-registered. Verify with: scripts/ci/ci-runner-status.sh"

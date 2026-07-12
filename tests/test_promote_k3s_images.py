@@ -1,4 +1,4 @@
-"""Tests for scripts/promote_k3s_images.py."""
+"""Tests for scripts/k3s/promote_k3s_images.py."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.promote_k3s_images import _set_image_pin, main
+from scripts.k3s.promote_k3s_images import _set_image_pin, main
 
 
 FIXTURE = """apiVersion: kustomize.config.k8s.io/v1beta1
@@ -56,7 +56,7 @@ def test_main_updates_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(
         "sys.argv",
         [
-            "promote_k3s_images.py",
+            "scripts/k3s/promote_k3s_images.py",
             "--k3s-repo",
             str(repo),
             "--gateway-engine",

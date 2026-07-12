@@ -6,8 +6,8 @@ This repository manages a production-grade AI Gateway using **LiteLLM**, **Langf
 
 ## Core Components
 
-### 1. LiteLLM (The Gateway)
-Acts as a universal adapter for LLMs.
+### 1. gateway-engine + LiteLLM
+**Clients hit `gateway-engine` on port 4000** (format translation, model prefix, policy). LiteLLM runs behind it as the model router/adapter.
 *   **Unified API:** Access OpenAI, Anthropic, Gemini, and more via a single OpenAI-compatible format.
 *   **Reliability:** Handles fallbacks (e.g., "if GPT-4 fails, try Claude 3"), retries, and load balancing.
 *   **Model Agnostic:** Swap providers by changing one line of config without refactoring application logic.
@@ -73,7 +73,7 @@ To use this gateway in Cursor, follow these steps:
 
 1.  **Open Settings:** Go to `Cursor Settings` -> `Models`.
 2.  **Configure OpenAI API:**
-    *   **API Base URL:** `http://localhost:4000/v1`
+    *   **API Base URL:** `http://localhost:4000/v1` (gateway-engine, not LiteLLM directly)
     *   **API Key:** Use the `LITELLM_MASTER_KEY` from your [`.env`](.env.example) file.
 3.  **Manage Models:**
     *   **Disable default models** (like Cursor's built-in Claude) to ensure all traffic routes through your local gateway for tracking and cost management.
@@ -86,10 +86,12 @@ To use this gateway in Cursor, follow these steps:
 5.  **Verify Connection:** Use the `Cursor Chat` and ask a question. Check your **Langfuse dashboard** (`http://localhost:3000`) to verify the request was captured.
 
 ## Documentation Index
+*   [docs/process/](./docs/process/): Agent workflow, testing/promotion policy, worktrees, dispatch.
+*   [docs/ops/RUNBOOK.md](./docs/ops/RUNBOOK.md): Commands for setup, maintenance, and troubleshooting.
 *   [docs/TENANCY.md](./docs/TENANCY.md): Foundational tenancy and workspace domain model design.
 *   [docs/CLIENT_COMPATIBILITY.md](./docs/CLIENT_COMPATIBILITY.md): Supported client compatibility matrix and integration profiles.
-*   [MODELS.md](./MODELS.md): Detailed reference for available models, rate limits, and authentication.
-*   [RUNBOOK.md](./RUNBOOK.md): Commands for setup, maintenance, and troubleshooting.
+*   [docs/MODELS.md](./docs/MODELS.md): Detailed reference for available models, rate limits, and authentication.
+*   [docs/ops/RUNBOOK.md](./docs/ops/RUNBOOK.md): Commands for setup, maintenance, and troubleshooting.
 *   [docs/ROADMAP.md](./docs/ROADMAP.md): Active roadmap focus and explicitly deferred platform-control areas.
 *   [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md): MCP control-plane architecture decision record.
 *   [docs/ADAPTIVE_ROUTING.md](./docs/ADAPTIVE_ROUTING.md): Adaptive provider routing design, telemetry plan, and implementation roadmap.
@@ -102,7 +104,8 @@ To use this gateway in Cursor, follow these steps:
 
 ```mermaid
 graph TD
-    User[User / Client] --> LiteLLM[LiteLLM Gateway :4000]
+    User[User / Client] --> GE[gateway-engine :4000]
+    GE --> LiteLLM[LiteLLM internal]
     LiteLLM --> Langfuse[Langfuse Observability]
     LiteLLM --> Cache[(Redis Cache)]
     LiteLLM --> CLIProxy[CLIProxyAPI :8317]
@@ -111,5 +114,5 @@ graph TD
     CLIProxy --> Google[Google / Antigravity]
     CLIProxy --> xAI[xAI / Grok]
     CLIProxy --> Kimi[Moonshot / Kimi]
-    LiteLLM --> MCP[MCP Servers / Tools]
+    GE --> MCP[MCP Servers / Tools]
 ```

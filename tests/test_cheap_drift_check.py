@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_PATH = REPO_ROOT / "scripts" / "cheap_drift_check.py"
+SCRIPT_PATH = REPO_ROOT / "scripts" / "policy" / "cheap_drift_check.py"
 
 
 def _write_litellm_config(path: Path, model_names: list[str]) -> None:

@@ -128,7 +128,7 @@ jobs:
           [[ -n "${CP}" ]] && ARGS+=(--credential-prober "${CP}")
           [[ -n "${DS}" ]] && ARGS+=(--docs-server "${DS}")
           [[ -n "${CLIPROXY}" ]] && ARGS+=(--cliproxy "${CLIPROXY}")
-          python3 scripts/promote_k3s_images.py "${ARGS[@]}"
+          python3 scripts/k3s/promote_k3s_images.py "${ARGS[@]}"
           kubectl kustomize k3s-01/kubernetes/workloads/home/ai-gateway/overlays/k3s-01 >/dev/null
 
       - name: Create promote PR on k3s-01

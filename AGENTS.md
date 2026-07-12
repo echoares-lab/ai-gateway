@@ -2,19 +2,19 @@
 
 See the [API Documentation System](docs/API_DOCUMENTATION.md) for technical endpoint references.
 **Mandatory**: Any new API endpoints created or discovered must be documented in `docs/openapi/` and registered in the system.
-`REPO_IMPROVEMENT_APPENDIX.md` and `docs/TESTING.md`.
+See [`docs/process/REPO_IMPROVEMENT_APPENDIX.md`](docs/process/REPO_IMPROVEMENT_APPENDIX.md) and [`docs/TESTING.md`](docs/TESTING.md).
 
 These instructions apply to **any AI coding agent** working in this repo
 (Claude Code, Cursor Agent, Codex, Amp, or similar). For deep-dive detail
 on architecture and commands, see `CLAUDE.md`. For operational procedures,
-see `RUNBOOK.md`.
+see [`docs/ops/RUNBOOK.md`](docs/ops/RUNBOOK.md) (root stub: `RUNBOOK.md`).
 
 Repo improvement and PR processing are governed by:
-- `REPO_IMPROVEMENT_WORKFLOW.md` — process rules (discovery, approval, claim, PR, merge, closeout).
-- `TESTING_AND_PROMOTION_POLICY.md` — gate definitions (A/B/C/D), risk tiers, parallel-agent isolation, and the new [Epic-Based Development and Release Policy](#epic-based-development-and-release-policy).
-- `REPO_IMPROVEMENT_APPENDIX.md` — this repo's branch policy, environment slots, and test commands.
-- `AGENT_DISPATCH.md` — the copy-paste prompt agents run to claim an issue and ship it.
-- `infra/repo-improvement/` — portable source for the above; see its `README.md` for deployment.
+- [`docs/process/REPO_IMPROVEMENT_WORKFLOW.md`](docs/process/REPO_IMPROVEMENT_WORKFLOW.md) — process rules (discovery, approval, claim, PR, merge, closeout).
+- [`docs/process/TESTING_AND_PROMOTION_POLICY.md`](docs/process/TESTING_AND_PROMOTION_POLICY.md) — gate definitions (A/B/C/D), risk tiers, parallel-agent isolation, and the new [Epic-Based Development and Release Policy](#epic-based-development-and-release-policy).
+- [`docs/process/REPO_IMPROVEMENT_APPENDIX.md`](docs/process/REPO_IMPROVEMENT_APPENDIX.md) — this repo's branch policy, environment slots, and test commands.
+- [`docs/process/AGENT_DISPATCH.md`](docs/process/AGENT_DISPATCH.md) — the copy-paste prompt agents run to claim an issue and ship it.
+- [`packages/repo-improvement-kit/`](packages/repo-improvement-kit/) — portable source for the above; see its `README.md` for deployment.
 
 **Roadmap vs candidates:** Claim work only from approved items in
 [`docs/ROADMAP.md`](docs/ROADMAP.md) (and their ready GitHub child issues).
@@ -47,7 +47,7 @@ The stable production stack runs on port 4000. Dev stacks use slots (port 4010, 
 
 - `.env` must exist (copy from `.env.example`); it is gitignored — never commit it
 - `~/.cliproxy/config.yaml` and `~/.cli-proxy-api/` must exist for cliproxy volume mounts
-- On a remote server: open SSH port forwards before OAuth login (see `RUNBOOK.md`)
+- On a remote server: open SSH port forwards before OAuth login (see [`docs/ops/RUNBOOK.md`](docs/ops/RUNBOOK.md))
 
 ---
 
@@ -63,7 +63,7 @@ agents must follow it.
 
 ## Development workflow
 
-Every session follows this sequence. Do not skip steps. This workflow is designed to align with the [Epic-Based Development and Release Policy](#epic-based-development-and-release-policy) in `TESTING_AND_PROMOTION_POLICY.md` and the detailed worktree instructions in `WORKTREES.md`.
+Every session follows this sequence. Do not skip steps. This workflow is designed to align with the [Epic-Based Development and Release Policy](#epic-based-development-and-release-policy) in [`docs/process/TESTING_AND_PROMOTION_POLICY.md`](docs/process/TESTING_AND_PROMOTION_POLICY.md) and the detailed worktree instructions in [`docs/process/WORKTREES.md`](docs/process/WORKTREES.md).
 
 ### Step 1 — Create a feature worktree
 
@@ -177,7 +177,7 @@ Wait for required CI checks to pass:
 - `lint-and-syntax`, `unit-tests`, `multi-repo-isolation`, `mock-integration`
 
 If `main` moved since your last green CI (e.g. a dependency PR merged), rebase first —
-see `WORKTREES.md` and `TESTING_AND_PROMOTION_POLICY.md` for detailed rebase guidance in an epic-based workflow.
+see [`docs/process/WORKTREES.md`](docs/process/WORKTREES.md) and [`docs/process/TESTING_AND_PROMOTION_POLICY.md`](docs/process/TESTING_AND_PROMOTION_POLICY.md) for detailed rebase guidance in an epic-based workflow.
 
 Then merge:
 
@@ -254,7 +254,7 @@ comment records the cleanup.
 
 ## Parallel agents, rebase, and stacking
 
-When multiple agents work the same repo concurrently, enforce **one issue = one agent = one slot = one worktree**. For a full explanation of the workflow, including dependencies and rebasing, refer to `WORKTREES.md` and the [Epic-Based Development and Release Policy](#epic-based-development-and-release-policy) in `TESTING_AND_PROMOTION_POLICY.md`.
+When multiple agents work the same repo concurrently, enforce **one issue = one agent = one slot = one worktree**. For a full explanation of the workflow, including dependencies and rebasing, refer to [`docs/process/WORKTREES.md`](docs/process/WORKTREES.md) and the [Epic-Based Development and Release Policy](#epic-based-development-and-release-policy) in [`docs/process/TESTING_AND_PROMOTION_POLICY.md`](docs/process/TESTING_AND_PROMOTION_POLICY.md).
 
 ### Slot and claim rules
 
@@ -381,7 +381,7 @@ docs: update stale AGENTS/WORKTREES/RUNBOOK to reflect current state
 
 - ❌ **Do not push directly to `main`** — always via PR with CI passing
 - ❌ **Do not edit files in the stable worktree** (`/home/dev/repos/ai-gateway`) during development
-- ❌ **Do not create feature worktrees under `/home/dev/repos/` or inside the repo** (use `/home/dev/worktrees/ai-gateway-<feature>` — see `WORKTREES.md`)
+- ❌ **Do not create feature worktrees under `/home/dev/repos/` or inside the repo** (use `/home/dev/worktrees/ai-gateway-<feature>` — see [`docs/process/WORKTREES.md`](docs/process/WORKTREES.md))
 - ❌ **Do not skip unit tests** after changes to `services/gateway-engine/main.py`
 - ❌ **Do not hardcode API keys** in `litellm-config.yaml` — use `os.environ/CLIPROXY_API_KEY`
 - ❌ **Do not set `CACHE_ENABLED=true`** in production — LiteLLM's auth-aware cache is preferred
@@ -417,7 +417,7 @@ CI (GitHub Actions `.github/workflows/ci.yml`) uses tiered gates on every push/P
 - **Advisory (Gate C — opt-in):** `real-provider-e2e` via `run-e2e` label or `workflow_dispatch` only
 - **Advisory:** `nightly-integration`, `post-merge-gate-d`, `hotspot-e2e-reminder`
 
-See `docs/TESTING.md`, `TESTING_AND_PROMOTION_POLICY.md`, and `REPO_IMPROVEMENT_APPENDIX.md` for full gate mapping.
+See `docs/TESTING.md`, `docs/process/TESTING_AND_PROMOTION_POLICY.md`, and `docs/process/REPO_IMPROVEMENT_APPENDIX.md` for full gate mapping.
 
 ---
 
@@ -455,7 +455,7 @@ this repo; the authoritative manifests live in the external `k3s-01` GitOps repo
   OpenBao `staging/workloads/ai-gateway/*`, ingress `gateway-staging.infra.plexplease.com`,
   `litellm_staging` + `langfuse_staging` databases, `:latest`/dev images, and the
   staging → prod promotion flow).
-- `scripts/generate-staging-configmap.sh` renders `litellm-config.yaml` into the staging
+- `scripts/ops/generate-staging-configmap.sh` renders `litellm-config.yaml` into the staging
   `litellm-config` ConfigMap (namespace `ai-gateway-staging`) and validates the embedded YAML.
 
 ---
@@ -500,7 +500,7 @@ flagship `gateway-engine` service:
   same suite directly instead: `cd services/gateway-engine && /workspace/.venv-ci/bin/python -m
   pytest test_gateway_engine*.py test_token_analytics.py -n auto -v`.
 - Other non-Docker `make test-fast` pieces also work via the venv:
-  `scripts/validate_policy_profiles.py`, `pytest tests/test_sync_models_probe_classify.py`,
+  `scripts/policy/validate_policy_profiles.py`, `pytest tests/test_sync_models_probe_classify.py`,
   `pytest tests/test_litellm_compose_migration.py`. The `docker compose ... config` half of
   `test-compose-config` needs Docker and is skipped here.
 - **Run the flagship service locally (no Docker):** from `services/gateway-engine`,

@@ -1,5 +1,7 @@
 # Policy Engine and Routing Refactor
 
+> **Design / candidate document.** Runtime policy lives in `services/gateway-engine/core/policy/` — there is no standalone `services/policy-engine/` deployment. Treat paths below that say `services/policy-engine/` as historical design names unless noted otherwise.
+
 > **Status:** In progress (Epic [#38](https://github.com/echoares-lab/ai-gateway/issues/38)).
 > Hybrid architecture: `policy-engine` evaluates rules; LiteLLM and CLIProxy execute routing.
 > Fail-open to static `litellm-config.yaml` when policy-engine is unavailable.

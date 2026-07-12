@@ -2,7 +2,7 @@
 
 # docker-cleanup.sh
 # Cleans up Docker containers associated with this project.
-# Usage: ./scripts/docker-cleanup.sh [--testing-only | --all | --check-non-standard]
+# Usage: ./scripts/ops/docker-cleanup.sh [--testing-only | --all | --check-non-standard]
 
 set -e
 

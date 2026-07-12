@@ -1,4 +1,4 @@
--- Pre-migrated LiteLLM schema for mock/CI/dev stacks (regenerate: scripts/generate-litellm-mock-seed.sh)
+-- Pre-migrated LiteLLM schema for mock/CI/dev stacks (regenerate: scripts/ops/generate-litellm-mock-seed.sh)
 -- LiteLLM image: ghcr.io/berriai/litellm:v1.87.1
 \connect litellm
 --

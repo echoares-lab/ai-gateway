@@ -2,7 +2,7 @@
 
 How to run tests, choose the right gate, and mock external dependencies without flakiness.
 
-See also: [`TESTING_AND_PROMOTION_POLICY.md`](../TESTING_AND_PROMOTION_POLICY.md), [`REPO_IMPROVEMENT_APPENDIX.md`](../REPO_IMPROVEMENT_APPENDIX.md), [`CI_SELF_HOSTED.md`](CI_SELF_HOSTED.md).
+See also: [`docs/process/TESTING_AND_PROMOTION_POLICY.md`](process/TESTING_AND_PROMOTION_POLICY.md), [`docs/process/REPO_IMPROVEMENT_APPENDIX.md`](process/REPO_IMPROVEMENT_APPENDIX.md), [`CI_SELF_HOSTED.md`](CI_SELF_HOSTED.md).
 
 ---
 

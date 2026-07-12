@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLASSIFY="$SCRIPT_DIR/scripts/sync_models_probe_classify.py"
+CLASSIFY="$SCRIPT_DIR/scripts/cliproxy/sync_models_probe_classify.py"
 
 PASS=0
 FAIL=0
@@ -14,7 +14,7 @@ fail() { echo "  ✗ $1"; FAIL=$((FAIL + 1)); }
 probe_exit_for_http() {
   local http_code="$1"
   local body="$2"
-  PYTHONPATH="$SCRIPT_DIR/scripts" python3 - "$http_code" "$body" <<'PY'
+  PYTHONPATH="$SCRIPT_DIR/scripts/cliproxy" python3 - "$http_code" "$body" <<'PY'
 import sys
 from sync_models_probe_classify import classify_probe_response, probe_exit_code
 http_code, body = sys.argv[1], sys.argv[2]
@@ -24,7 +24,7 @@ PY
 
 should_remove() {
   local exit_code="$1"
-  PYTHONPATH="$SCRIPT_DIR/scripts" python3 - "$exit_code" <<'PY'
+  PYTHONPATH="$SCRIPT_DIR/scripts/cliproxy" python3 - "$exit_code" <<'PY'
 import sys
 from sync_models_probe_classify import should_remove_model_from_config
 print("yes" if should_remove_model_from_config(int(sys.argv[1])) else "no")

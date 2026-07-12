@@ -60,7 +60,7 @@ Primary operator tasks:
    - Warn if MCP server entries reference missing env vars.
 
 6. **Runbook shortcuts**
-   - Link or expose common actions from `RUNBOOK.md` / `cliproxy-setup.sh`:
+   - Link or expose common actions from `docs/ops/RUNBOOK.md` / `cliproxy-setup.sh`:
      health, quota summary, model sync, model E2E tests, auth refresh commands.
 
 ### 2.2 Future tenant/workspace operator
@@ -222,7 +222,7 @@ read-only.
 
 ## 8. References
 
-- [`RUNBOOK.md`](../RUNBOOK.md) — health, model tests, auth, MCP operations.
+- [`docs/ops/RUNBOOK.md`](ops/RUNBOOK.md) — health, model tests, auth, MCP operations.
 - [`CLAUDE.md`](../CLAUDE.md) — stack architecture, ports, CPA-Manager notes.
 - [`docs/ADAPTIVE_ROUTING.md`](./ADAPTIVE_ROUTING.md) — routing signals and fallback strategy.
 - [`docs/ADMIN_CONSOLE_DATA_CONTRACT.md`](./ADMIN_CONSOLE_DATA_CONTRACT.md) — read-only panel schema for the first admin console aggregator/UI.
