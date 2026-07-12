@@ -207,36 +207,22 @@ cmd_test() {
 # --- Mock tier: real gateway-engine + litellm + canned upstream, no OAuth ---------
 
 cmd_start_mock() {
-    local slot
-    slot="$(require_slot "${1:-9}")"
-    slot_ports "$slot"
-    echo "starting MOCK slot ${slot}: gateway-engine=:${GATEWAY_ENGINE_PORT} (no OAuth, canned upstream)"
-    # No seed_auth_volume — the mock upstream needs no credentials.
-    echo ""
-    echo "mock slot ${slot} is up: gateway-engine http://localhost:${GATEWAY_ENGINE_PORT}/health"
+    echo "error: compose mock slots are retired." >&2
+    echo "Gate B is in-memory ASGI. Use: make test-mock" >&2
+    echo "(or: python3 -m pytest tests/integration/ -m mock -v)" >&2
+    exit 1
 }
 
 cmd_test_mock() {
-    local slot
-    slot="$(require_slot "${1:-9}")"
     shift 1 2>/dev/null || true
-    slot_ports "$slot"
-    local gateway_url="http://localhost:${GATEWAY_ENGINE_PORT}"
-    local master_key="sk-ci-mock"
-    if [[ -f "$ENV_FILE" ]]; then
-        master_key="$(grep -E '^LITELLM_MASTER_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' || echo sk-ci-mock)"
-    fi
-    echo "running MOCK-tier tests against ${gateway_url} (ALLOW_MODEL_SKIP=0) ..."
-    # shellcheck disable=SC2086
-    GATEWAY_URL="$gateway_url" LITELLM_MASTER_KEY="$master_key" ALLOW_MODEL_SKIP=0 \
-        python3 -m pytest "${SCRIPT_DIR}/tests/integration/" -m mock -v "$@"
+    echo "running Gate B mock tests via in-memory ASGI (make test-mock) ..."
+    ALLOW_MODEL_SKIP=0 python3 -m pytest "${SCRIPT_DIR}/tests/integration/" -m mock -v "$@"
 }
 
 cmd_stop_mock() {
-    local slot
-    slot="$(require_slot "${1:-9}")"
-    echo "stopping MOCK slot ${slot} ..."
-    echo "mock slot ${slot} stopped"
+    echo "error: compose mock slots are retired. Nothing to stop." >&2
+    echo "Gate B uses: make test-mock" >&2
+    exit 1
 }
 
 cmd_list() {

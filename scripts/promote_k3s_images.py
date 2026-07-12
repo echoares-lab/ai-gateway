@@ -20,10 +20,7 @@ import re
 import sys
 from pathlib import Path
 
-
-DEFAULT_REL = Path(
-    "kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml"
-)
+DEFAULT_REL = Path("kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml")
 
 IMAGE_KEYS = {
     "cliproxy": "nexus-docker.infra.plexplease.com/cli-proxy-api",
@@ -45,7 +42,7 @@ def _set_image_pin(text: str, image_name: str, *, tag: str | None, digest: str |
         rf"(?:    newTag: \"[^\"]+\"\n|    digest: sha256:[0-9a-f]+\n)",
         re.MULTILINE,
     )
-    replacement = f'  - name: {image_name}\n'
+    replacement = f"  - name: {image_name}\n"
     if tag:
         replacement += f'    newTag: "{tag}"\n'
     else:

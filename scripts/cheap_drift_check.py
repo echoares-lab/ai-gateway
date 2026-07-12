@@ -139,9 +139,7 @@ def build_report(
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Detect model catalog drift by set membership only (no probe calls)."
-    )
+    parser = argparse.ArgumentParser(description="Detect model catalog drift by set membership only (no probe calls).")
     parser.add_argument(
         "--litellm-config",
         default="litellm-config.yaml",
@@ -154,7 +152,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--catalog-file",
-        help="Offline JSON file in OpenAI /v1/models format: {\"data\":[{\"id\":\"...\"}]}",
+        help='Offline JSON file in OpenAI /v1/models format: {"data":[{"id":"..."}]}',
     )
     parser.add_argument(
         "--cliproxy-url",

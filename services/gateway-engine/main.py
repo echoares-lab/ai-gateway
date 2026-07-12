@@ -98,6 +98,20 @@ log = logging.getLogger("gateway-engine")
 
 UPSTREAM_TIMEOUT = config.UPSTREAM_TIMEOUT
 ENABLE_VIRTUAL_PROVIDERS = config.ENABLE_VIRTUAL_PROVIDERS
+POLICY_ENGINE_ENABLED = config.POLICY_ENGINE_ENABLED
+TEAM_BUDGET_SNAPSHOT_ENABLED = config.TEAM_BUDGET_SNAPSHOT_ENABLED
+TEAM_BUDGET_CACHE_TTL_SEC = config.TEAM_BUDGET_CACHE_TTL_SEC
+LITELLM_ADMIN_URL = config.LITELLM_ADMIN_URL.rstrip("/")
+ADMIN_POLICY_TRACE_ENABLED = config.ADMIN_POLICY_TRACE_ENABLED
+GATEWAY_ENGINE_CREDENTIAL_SYNC_ENABLED = config.CREDENTIAL_SYNC_ENABLED
+GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC = config.CREDENTIAL_SYNC_INTERVAL_SEC
+GATEWAY_ENGINE_CREDENTIAL_SYNC_INITIAL_DELAY_SEC = config.CREDENTIAL_SYNC_INITIAL_DELAY_SEC
+GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN = config.CREDENTIAL_SYNC_DRY_RUN
+CACHE_ENABLED = config.CACHE_ENABLED
+CACHE_TTL = config.CACHE_TTL
+MAX_REQUEST_BYTES = config.MAX_REQUEST_BYTES
+HTTPX_MAX_KEEPALIVE = config.HTTPX_MAX_KEEPALIVE
+HTTPX_MAX_CONNECTIONS = config.HTTPX_MAX_CONNECTIONS
 
 
 @asynccontextmanager
@@ -107,11 +121,11 @@ async def _lifespan(application: FastAPI):
     _client = httpx.AsyncClient(
         timeout=httpx.Timeout(UPSTREAM_TIMEOUT, connect=10.0),
         limits=httpx.Limits(
-            max_keepalive_connections=int(os.environ.get("HTTPX_MAX_KEEPALIVE", "20")),
-            max_connections=int(os.environ.get("HTTPX_MAX_CONNECTIONS", "100")),
+            max_keepalive_connections=HTTPX_MAX_KEEPALIVE,
+            max_connections=HTTPX_MAX_CONNECTIONS,
         ),
     )
-    redis_url = os.environ.get("REDIS_URL", "")
+    redis_url = config.REDIS_URL or os.environ.get("REDIS_URL", "")
     if CACHE_ENABLED and redis_url:
         try:
             _redis = aioredis.from_url(redis_url, encoding="utf-8", decode_responses=True)
@@ -211,45 +225,6 @@ _build_routing_context = proxy_routes._build_routing_context
 _evaluate_policy_engine = proxy_routes._evaluate_policy_engine
 _apply_policy_engine = proxy_routes._apply_policy_engine
 _model_registry_metadata_for_policy = proxy_routes._model_registry_metadata_for_policy
-POLICY_ENGINE_ENABLED = os.environ.get("POLICY_ENGINE_ENABLED", "false").lower() not in (
-    "0",
-    "false",
-    "no",
-)
-TEAM_BUDGET_SNAPSHOT_ENABLED = os.environ.get("TEAM_BUDGET_SNAPSHOT_ENABLED", "true").lower() not in (
-    "0",
-    "false",
-    "no",
-)
-TEAM_BUDGET_CACHE_TTL_SEC = int(os.environ.get("TEAM_BUDGET_CACHE_TTL_SEC", "30"))
-LITELLM_ADMIN_URL = os.environ.get("LITELLM_ADMIN_URL", LITELLM).rstrip("/")
-ADMIN_POLICY_TRACE_ENABLED = os.environ.get("ADMIN_POLICY_TRACE_ENABLED", "true").lower() not in (
-    "0",
-    "false",
-    "no",
-)
-GATEWAY_ENGINE_CREDENTIAL_SYNC_ENABLED = os.environ.get(
-    "GATEWAY_ENGINE_CREDENTIAL_SYNC_ENABLED", "false"
-).lower() not in (
-    "0",
-    "false",
-    "no",
-)
-GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC = max(
-    1,
-    int(os.environ.get("GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC", "300")),
-)
-GATEWAY_ENGINE_CREDENTIAL_SYNC_INITIAL_DELAY_SEC = max(
-    0,
-    int(os.environ.get("GATEWAY_ENGINE_CREDENTIAL_SYNC_INITIAL_DELAY_SEC", "30")),
-)
-GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN = os.environ.get(
-    "GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN", "false"
-).lower() not in (
-    "0",
-    "false",
-    "no",
-)
 
 
 _policy_version_hint: str | None = None
@@ -266,20 +241,23 @@ _client: httpx.AsyncClient | None = None
 # LiteLLM's cache includes Authorization header in its cache key, preventing cross-user responses.
 # Gateway Engine caching layer is redundant when multi-team virtual keys are in use.
 # Set CACHE_ENABLED=true only if LiteLLM's cache is unavailable or disabled.
-CACHE_ENABLED = os.environ.get("CACHE_ENABLED", "false").lower() not in (
-    "0",
-    "false",
-    "no",
-)
-CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "60"))
+# When enabled, _cache_key requires auth_fingerprint so keys never cross tenants.
 _redis: aioredis.Redis | None = None
 _policy_evaluator: PolicyEvaluator | None = None
 
 
-def _cache_key(model: str, messages: list, tools: list | None = None) -> str | None:
+def _cache_key(
+    model: str,
+    messages: list,
+    tools: list | None = None,
+    *,
+    auth_fingerprint: str | None = None,
+) -> str | None:
     if not CACHE_ENABLED or _redis is None:
         return None
-    key_data: dict = {"m": model, "msgs": messages}
+    if not auth_fingerprint:
+        return None
+    key_data: dict = {"m": model, "msgs": messages, "a": auth_fingerprint}
     if tools:
         key_data["tools"] = tools
     digest = hashlib.sha256(json.dumps(key_data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -306,7 +284,7 @@ async def _cache_set(key: str, lines: list[str], ttl: int = CACHE_TTL) -> None:
 @app.middleware("http")
 async def _limit_request_size(request: Request, call_next):
     """Reject requests larger than MAX_REQUEST_BYTES to prevent memory exhaustion."""
-    max_bytes = int(os.environ.get("MAX_REQUEST_BYTES", 50 * 1024 * 1024))  # 50MB default
+    max_bytes = MAX_REQUEST_BYTES
     if request.headers.get("content-length"):
         try:
             content_length = int(request.headers["content-length"])
@@ -338,7 +316,13 @@ async def _log_requests(request: Request, call_next):
     IN_FLIGHT.inc()
     _record_format(request.url.path)
     start = time.monotonic()
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        IN_FLIGHT.dec()
+        raise
+    else:
+        IN_FLIGHT.dec()
     elapsed = time.monotonic() - start
     REQUEST_COUNT.labels(request.method, request.url.path, str(response.status_code)).inc()
     REQUEST_LATENCY.labels(request.method, request.url.path).observe(elapsed)
@@ -362,7 +346,59 @@ def _record_format(path: str) -> None:
 
 @app.get("/health")
 async def health():
+    """Liveness probe — process is up. Prefer /health/ready for dependency checks (k8s)."""
     return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """Readiness probe — LiteLLM reachable; Redis ping when REDIS_URL is set."""
+    failures: dict[str, str] = {}
+    litellm_url = LITELLM.rstrip("/")
+    client = _client
+    close_client = False
+    if client is None:
+        client = httpx.AsyncClient(timeout=httpx.Timeout(3.0, connect=2.0))
+        close_client = True
+    try:
+        litellm_ok = False
+        last_exc: Exception | None = None
+        for path in ("/health/readiness", "/health"):
+            try:
+                resp = await client.get(f"{litellm_url}{path}", timeout=3.0)
+                if resp.status_code < 500:
+                    litellm_ok = True
+                    break
+                last_exc = RuntimeError(f"status {resp.status_code}")
+            except Exception as exc:
+                last_exc = exc
+        if not litellm_ok:
+            failures["litellm"] = str(last_exc) if last_exc else "unreachable"
+    finally:
+        if close_client:
+            await client.aclose()
+
+    redis_url = config.REDIS_URL or os.environ.get("REDIS_URL", "")
+    if redis_url:
+        redis_client = _redis
+        close_redis = False
+        try:
+            if redis_client is None:
+                redis_client = aioredis.from_url(redis_url, encoding="utf-8", decode_responses=True)
+                close_redis = True
+            await redis_client.ping()
+        except Exception as exc:
+            failures["redis"] = str(exc)
+        finally:
+            if close_redis and redis_client is not None:
+                await redis_client.aclose()
+
+    if failures:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "failures": failures},
+        )
+    return {"status": "ready", "litellm": "ok", "redis": "ok" if redis_url else "skipped"}
 
 
 def _policy_mock_scenarios_enabled() -> bool:

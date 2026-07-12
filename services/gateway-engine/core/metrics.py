@@ -1,4 +1,4 @@
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 REQUEST_COUNT = Counter(
     "gateway_engine_requests_total",
@@ -30,9 +30,9 @@ FORMAT_REQUESTS = Counter(
     "Requests by translated API format",
     ["format"],
 )
-IN_FLIGHT = Counter(
-    "gateway_engine_in_flight_total",
-    "Total requests entering gateway-engine middleware",
+IN_FLIGHT = Gauge(
+    "gateway_engine_in_flight",
+    "In-flight gateway-engine HTTP requests",
 )
 
 # ── Per-provider / per-model routing signals (issue #59) ──────────────────────

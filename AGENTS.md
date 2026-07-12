@@ -102,7 +102,7 @@ Dev slots map to ports:
 Run unit tests inside the dev gateway-engine container or via Make:
 
 ```bash
-docker exec aidev1-gateway-engine-1 pytest test_gateway-engine*.py -v
+docker exec aidev1-gateway-engine-1 pytest test_gateway_engine*.py -v
 # or locally without a running stack:
 make test-unit
 ```
@@ -112,7 +112,7 @@ All unit tests must pass before continuing. Fix failures before moving on.
 For mock integration during development (Gate B):
 
 ```bash
-make test-mock    # mock stack on slot 9, 0 skips enforced
+make test-mock    # in-memory ASGI; no compose / no OAuth
 ```
 
 ### Step 5 — Commit checkpoints
@@ -135,7 +135,8 @@ Before opening a PR, run the fast local tier (mirrors required CI):
 make test-fast    # lint + unit + mock integration
 ```
 
-For **high-risk** changes (auth, `litellm-config.yaml`, compose, cliproxy), also run Gate C:
+For **high-risk** changes (auth, `litellm-config.yaml`, compose, cliproxy), also run Gate C
+(recommended; CI does not require it to merge):
 
 ```bash
 make test-e2e     # real OAuth stack + smoke subset
@@ -161,7 +162,7 @@ Risk level: medium
 ### Gate A + B (required)
 - [ ] `make test-fast` pass (lint, unit, mock integration)
 
-### Gate C (high-risk only)
+### Gate C (high-risk — recommended, opt-in in CI)
 - [ ] `make test-e2e` or PR label `run-e2e`
 
 ### Gate D (post-merge — not pre-merge)
@@ -411,9 +412,9 @@ runs `make lint && make test-unit` before each push.
 
 CI (GitHub Actions `.github/workflows/ci.yml`) uses tiered gates on every push/PR to `main`:
 
-- **Required — Fast (A):** `lint-and-syntax`, `unit-tests`, `build-gateway-engine`
-- **Required — Conditional:** `mock-integration`, `multi-repo-isolation`, path-filtered service tests
-- **Advisory (Gate C — opt-in):** `real-provider-e2e` via `run-e2e` label or `workflow_dispatch` only (hotspot auto-trigger paused pending e2e refactor)
+- **Required — Fast (A):** `lint-and-syntax`, `unit-tests` (image build is inside `unit-tests`)
+- **Required — Conditional:** `mock-integration`, `multi-repo-isolation`, `credential-prober` (path-filtered)
+- **Advisory (Gate C — opt-in):** `real-provider-e2e` via `run-e2e` label or `workflow_dispatch` only
 - **Advisory:** `nightly-integration`, `post-merge-gate-d`, `hotspot-e2e-reminder`
 
 See `docs/TESTING.md`, `TESTING_AND_PROMOTION_POLICY.md`, and `REPO_IMPROVEMENT_APPENDIX.md` for full gate mapping.
@@ -427,7 +428,7 @@ See `docs/TESTING.md`, `TESTING_AND_PROMOTION_POLICY.md`, and `REPO_IMPROVEMENT_
 | Broken YAML config | Pre-commit hook + CI `lint-and-syntax` |
 | Hardcoded secrets committed | `.githooks/prevent-hardcoded-keys.sh` |
 | Lint regressions | `ruff` in CI on every push |
-| Gateway Engine logic broken | Unit tests (`test_gateway-engine*.py`) in CI |
+| Gateway Engine logic broken | Unit tests (`test_gateway_engine*.py`) in CI |
 | Multi-repo isolation broken | `multi-repo-isolation` job in CI |
 | Wire-format / routing broken | `mock-integration` job (0 skips) |
 | Real provider regressions | Gate C: opt-in via `run-e2e` label or nightly schedule |

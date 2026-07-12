@@ -12,8 +12,7 @@ Recommended:
 - Require branches to be up to date before merging
 - Required checks (must match [`.github/workflows/ci.yml`](workflows/ci.yml) job names exactly):
   - `lint-and-syntax` — **Required — Fast (Gate A)**
-  - `unit-tests` — **Required — Fast (Gate A)**
-  - `build-gateway-engine` — builds shared gateway-engine image (required dependency)
+  - `unit-tests` — **Required — Fast (Gate A)** (builds the gateway-engine image as part of the job)
   - `multi-repo-isolation` — **Required — Conditional** (isolation script paths)
   - `mock-integration` — **Required — Conditional (Gate B)** (runtime paths)
 - Require conversation resolution before merging
@@ -27,18 +26,19 @@ Recommended:
 | Job | Gate | Triggers when |
 |-----|------|---------------|
 | `credential-prober` | A | `services/credential-prober/**` changes |
-| `policy-engine-tests` | A | `services/policy-engine/**` changes |
 | `multi-repo-isolation` | A | isolation script paths change |
 | `mock-integration` | B | runtime paths change |
 
+There is **no** `build-gateway-engine` or `policy-engine-tests` job in current CI.
+
 ### Gate C opt-in (not required for merge)
 
-Gate C (`real-provider-e2e`) is **paused as a required check** pending an e2e refactor. It runs only when opted in:
+Gate C (`real-provider-e2e`) is **not** a required check. It runs only when opted in:
 
 - PR label `run-e2e`
 - Manual `workflow_dispatch` on the CI workflow
 
-Hotspot paths no longer auto-trigger Gate C in CI. Use the label or dispatch when real-provider smoke is needed.
+Hotspot paths do not auto-require Gate C in CI. Use the label or dispatch when real-provider smoke is needed. Prefer Gate C locally (`make test-e2e`) for high-risk auth/config/compose/cliproxy changes.
 
 ### Docs-only PRs
 

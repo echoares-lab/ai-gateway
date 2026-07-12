@@ -90,8 +90,8 @@ services:
   cliproxy:
     container_name: PROD-cliproxy
     # Patched echoares-lab fork, built and pushed to Nexus by the CLIProxyAPI repo CI.
-    # Pin CLIPROXY_IMAGE to a released tag in production (e.g. :v7.1.50) for reproducibility.
-    image: ${CLIPROXY_IMAGE:-nexus-docker.infra.plexplease.com/cli-proxy-api:latest}
+    # Pin CLIPROXY_IMAGE to a released tag/sha in production for reproducibility.
+    image: ${CLIPROXY_IMAGE:-nexus-docker.infra.plexplease.com/cli-proxy-api:6cf6e68}
     command:
     - ./CLIProxyAPI
     - --config
@@ -136,7 +136,7 @@ services:
       args:
         GIT_SHA: ${GIT_SHA:-unknown}
         ENVIRONMENT: ${ENVIRONMENT:-production}
-    command: uvicorn main:app --host 0.0.0.0 --port 4000 --reload --workers 1
+    command: uvicorn main:app --host 0.0.0.0 --port 4000 --workers 1
     restart: always
     depends_on:
       litellm:
@@ -145,6 +145,12 @@ services:
         condition: service_healthy
     ports:
     - 4000:4000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/ready')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     environment:
     - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
     - REDIS_URL=redis://:${REDIS_AUTH:-myredissecret}@redis:6379
@@ -162,7 +168,6 @@ services:
     - UPSTREAM_TIMEOUT=${UPSTREAM_TIMEOUT:-30.0}
     - LITELLM_CONFIG_PATH=/config/litellm-config.yaml
     volumes:
-    - ./services/gateway-engine:/app
     - ./litellm-config.yaml:/config/litellm-config.yaml:ro
   litellm:
     container_name: PROD-litellm
