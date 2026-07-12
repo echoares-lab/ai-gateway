@@ -601,6 +601,6 @@ Future aggregator issue (#69) must follow these contract rules:
 - [`docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md`](./POLICY_ENGINE_AND_ROUTING_REFACTOR.md) — policy-engine architecture, `RoutingDecision` schema, gateway-engine injection, and admin trace (38-15).
 - [`docs/ADAPTIVE_ROUTING.md`](./ADAPTIVE_ROUTING.md) — routing inputs and provider signals.
 - [`docs/openapi/policy-engine.yaml`](./openapi/policy-engine.yaml) — OpenAPI schema for `RoutingDecision`.
-- [`RUNBOOK.md`](../RUNBOOK.md) — operational command sources.
+- [`RUNBOOK.md`](ops/RUNBOOK.md) — operational command sources.
 - [`litellm-config.yaml`](../litellm-config.yaml) — model, router, fallback, and MCP config.
 - Child implementation issue: #69 (read-only status aggregator).

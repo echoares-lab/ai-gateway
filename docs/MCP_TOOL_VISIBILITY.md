@@ -152,5 +152,5 @@ wire but MCP filter can prototype on policy-engine + mock integration first.
 
 - [TENANCY.md](./TENANCY.md) — §4.3 MCP Tool Access, §5 child issue TENANCY-4
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — LiteLLM MCP control plane ADR
-- [RUNBOOK.md](../RUNBOOK.md) — MCP server registration
+- [RUNBOOK.md](ops/RUNBOOK.md) — MCP server registration
 - `issues/policy-engine-38-20-mcp-visibility.md` — issue tracker

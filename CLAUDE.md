@@ -9,9 +9,9 @@ Every session: **worktree → dev stack → code → unit test → commit → E2
 Full workflow details are in `AGENTS.md`. This file has the deep-dive on commands, architecture, and edge cases.
 
 Process and PR-handling references:
-- `REPO_IMPROVEMENT_WORKFLOW.md` — process rules.
-- `REPO_IMPROVEMENT_APPENDIX.md` — repo-specific branch, env, and test commands.
-- `AGENT_DISPATCH.md` — agent dispatch prompt for claim → implement → PR → auto-merge → closeout.
+- `docs/process/REPO_IMPROVEMENT_WORKFLOW.md` — process rules.
+- `docs/process/REPO_IMPROVEMENT_APPENDIX.md` — repo-specific branch, env, and test commands.
+- `docs/process/AGENT_DISPATCH.md` — agent dispatch prompt for claim → implement → PR → auto-merge → closeout.
 - `packages/repo-improvement-kit/` — portable kit source and deployment guide.
 - `docs/ROADMAP.md` — approved Now / Next / Parked work (claim only from here).
 - `docs/FEATURE_CANDIDATES.md` — unapproved feature inventory (do not claim).
@@ -139,7 +139,7 @@ External client (Cursor, curl, SDK)
 
 ## Working in Worktrees
 
-Feature work goes in git worktrees under `/home/dev/worktrees/` — not as siblings of the stable repo and not inside hidden repo paths (see `WORKTREES.md`):
+Feature work goes in git worktrees under `/home/dev/worktrees/` — not as siblings of the stable repo and not inside hidden repo paths (see [`docs/process/WORKTREES.md`](docs/process/WORKTREES.md)):
 
 ```bash
 mkdir -p /home/dev/worktrees
@@ -163,7 +163,7 @@ Each **slot N** maps to dedicated ports (slot 0 = stable, reserved):
 | cliproxy | :8317 | :8327 | :8337 |
 
 ```bash
-# One-time: create a feature worktree (see WORKTREES.md for location rules)
+# One-time: create a feature worktree (see docs/process/WORKTREES.md for location rules)
 mkdir -p /home/dev/worktrees
 git worktree add /home/dev/worktrees/ai-gateway-feat-X -b feat/X
 ln -s /home/dev/repos/ai-gateway/.env /home/dev/worktrees/ai-gateway-feat-X/.env

@@ -9,7 +9,7 @@ Promotion path:
    Parked as appropriate.
 2. Open atomic GitHub child issues with acceptance criteria and
    `status:ready` / `status:approved`.
-3. Only then may agents claim those issues under `REPO_IMPROVEMENT_WORKFLOW.md`.
+3. Only then may agents claim those issues under `docs/process/REPO_IMPROVEMENT_WORKFLOW.md`.
 
 Scoring keys:
 
@@ -107,6 +107,6 @@ Promote individually; do not treat the backlog file as claimable work.
 ## Related docs
 
 - [ROADMAP.md](./ROADMAP.md) — approved Now / Next / Parked only
-- [REPO_IMPROVEMENT_WORKFLOW.md](../REPO_IMPROVEMENT_WORKFLOW.md)
+- [REPO_IMPROVEMENT_WORKFLOW.md](process/REPO_IMPROVEMENT_WORKFLOW.md)
 - [UNMERGED_FEATURES.md](./UNMERGED_FEATURES.md)
 - [SCRIPT_TO_SERVICE_ROADMAP.md](./SCRIPT_TO_SERVICE_ROADMAP.md)

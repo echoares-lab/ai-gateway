@@ -74,7 +74,7 @@ body:
     id: tests
     attributes:
       label: Required tests
-      description: Which gates apply? See TESTING_AND_PROMOTION_POLICY.md (A/B/C/D)
+      description: Which gates apply? See docs/process/TESTING_AND_PROMOTION_POLICY.md (A/B/C/D)
       placeholder: |
         Gate A: make test-unit
         Gate B: make test-mock (required for runtime changes)

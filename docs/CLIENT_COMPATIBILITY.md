@@ -103,4 +103,4 @@ To close the identified contract-test gaps and finalize client compatibility:
 - [Tenancy & Workspace Domain Model](./TENANCY.md)
 - [Roadmap Status](./ROADMAP.md)
 - [Architecture Decision Record — MCP Control Plane](./ARCHITECTURE.md)
-- [Repo Improvement Workflow](../REPO_IMPROVEMENT_WORKFLOW.md)
+- [Repo Improvement Workflow](process/REPO_IMPROVEMENT_WORKFLOW.md)

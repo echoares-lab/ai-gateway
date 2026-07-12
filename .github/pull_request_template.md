@@ -20,7 +20,7 @@
 
 ## Test plan (tiered gates)
 
-Risk level: **low / medium / high** (see `TESTING_AND_PROMOTION_POLICY.md` and `docs/TESTING.md`)
+Risk level: **low / medium / high** (see `docs/process/TESTING_AND_PROMOTION_POLICY.md` and `docs/TESTING.md`)
 
 ### Required — Fast (Gate A) — every PR
 

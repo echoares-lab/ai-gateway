@@ -1,7 +1,7 @@
 # Roadmap Status
 
 Approved coordination decisions for what agents may claim. Implementation still
-follows `REPO_IMPROVEMENT_WORKFLOW.md`: claim approved, unassigned, atomic
+follows `docs/process/REPO_IMPROVEMENT_WORKFLOW.md`: claim approved, unassigned, atomic
 issues only — never parent epics, and never items that exist only in
 [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md).
 
@@ -98,4 +98,4 @@ candidates — do not reopen these epics in place.
 - [CICD_PHASE2_CD_K3S.md](./CICD_PHASE2_CD_K3S.md)
 - [CICD_PHASE2_STAGING.md](./CICD_PHASE2_STAGING.md)
 - [issues/post-audit-backlog-2026-06-13.md](../issues/post-audit-backlog-2026-06-13.md)
-- [Repo Improvement Workflow](../REPO_IMPROVEMENT_WORKFLOW.md)
+- [Repo Improvement Workflow](process/REPO_IMPROVEMENT_WORKFLOW.md)
