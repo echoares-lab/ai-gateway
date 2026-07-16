@@ -52,14 +52,11 @@ _MODEL_REGISTRY: dict[str, dict[str, Any]] = {
     "gpt-5-5": {"family": "openai", "tools": True, "vision": False, "cost": 3},
     "gemini-3-flash": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
     "gemini-3-flash-preview": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
-    "gemini-3-flash-via-gcli": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
     "gemini-3-flash-agent": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
     "gemini-3-1-flash-lite": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
-    "gemini-3-1-flash-lite-via-gcli": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
     "gemini-2-5-flash": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
     "gemini-2-5-flash-lite": {"family": "gemini", "tools": True, "vision": False, "cost": 1},
     "gemini-3-1-pro": {"family": "gemini", "tools": True, "vision": False, "cost": 2},
-    "gemini-3-1-pro-via-gcli": {"family": "gemini", "tools": True, "vision": False, "cost": 2},
     "gemini-3-pro": {"family": "gemini", "tools": True, "vision": False, "cost": 2},
     "gemini-3-pro-high": {"family": "gemini", "tools": True, "vision": False, "cost": 3},
     "gemini-2-5-pro": {"family": "gemini", "tools": True, "vision": False, "cost": 3},
@@ -68,11 +65,11 @@ _MODEL_REGISTRY: dict[str, dict[str, Any]] = {
 
 # Embedded subset of litellm-config.yaml fallbacks for offline/unit-test safety.
 _EMBEDDED_BASELINE: dict[str, list[str]] = {
-    "claude-sonnet-4-6": ["gemini-3-flash", "gemini-3-flash-via-gcli", "gpt-5-4"],
-    "claude-haiku-4-5": ["gemini-3-flash", "gemini-3-flash-via-gcli", "gpt-5-4-mini"],
-    "gpt-5-4": ["gemini-3-flash", "gemini-3-flash-via-gcli", "claude-sonnet-4-6"],
-    "gpt-5-4-mini": ["gemini-3-flash", "gemini-3-flash-via-gcli", "claude-haiku-4-5"],
-    "gemini-3-flash": ["gemini-3-flash-via-gcli", "claude-haiku-4-5", "gpt-5-4-mini"],
+    "claude-sonnet-4-6": ["gemini-3-flash", "gpt-5-4"],
+    "claude-haiku-4-5": ["gemini-3-flash", "gpt-5-4-mini"],
+    "gpt-5-4": ["gemini-3-flash", "claude-sonnet-4-6"],
+    "gpt-5-4-mini": ["gemini-3-flash", "claude-haiku-4-5"],
+    "gemini-3-flash": ["claude-haiku-4-5", "gpt-5-4-mini"],
 }
 
 

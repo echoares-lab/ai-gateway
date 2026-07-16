@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # CLIProxyAPI setup and management script
-# Wraps Claude Pro, ChatGPT Plus/Codex, and Gemini CLI as a Docker-managed OpenAI-compatible API
+# Wraps consumer LLM providers as a Docker-managed OpenAI-compatible API
 # LiteLLM talks to the cliproxy container via Docker network: http://cliproxy:8317
 #
 # WARNING: Using consumer subscriptions via automated relay may violate provider ToS.
@@ -1013,7 +1013,7 @@ if expired:
 else:
     age = ''
 
-login_cmd = {'claude': 'login-claude', 'codex': 'login-codex', 'gemini': 'login-gemini'}.get(ptype, 'login-all')
+login_cmd = {'claude': 'login-claude', 'codex': 'login-codex'}.get(ptype, 'login-all')
 print(f"  [{ptype:6}] {email}  {status}  last_refresh={last_ref[:19]}  {age}")
 print(f"           If seeing 401 errors → ./cliproxy-setup.sh {login_cmd}")
 PYEOF
@@ -1028,7 +1028,7 @@ PYEOF
   echo ""
   echo "  Note: 401 errors in LiteLLM logs mean a provider token needs refresh."
   echo "  OAuth tokens auto-refresh every ~15min while the container is running."
-  echo "  Force re-auth with: ./cliproxy-setup.sh login-claude | login-codex | login-gemini"
+  echo "  Force re-auth with: ./cliproxy-setup.sh login-claude | login-codex | login-antigravity"
   echo ""
   echo "  For re-auth on a remote server, open SSH port forwards first (local terminal):"
   echo "    ssh -L 54545:127.0.0.1:54545 -L 1455:127.0.0.1:1455 -L 8085:127.0.0.1:8085 user@gateway-host.example -p 22"
@@ -1101,12 +1101,6 @@ case "$cmd" in
     "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --codex-login
     ;;
 
-  login-gemini)
-    require_bin
-    echo "Opening browser for Gemini / Google account OAuth..."
-    "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --login
-    ;;
-
   login-antigravity)
     require_bin
     echo "Opening browser for Antigravity / Google account OAuth..."
@@ -1146,11 +1140,10 @@ case "$cmd" in
     case "$PROVIDER" in
       claude)       "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --no-browser --claude-login ;;
       codex)        "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --no-browser --codex-login ;;
-      gemini)       "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --no-browser --login ;;
       antigravity)  "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --no-browser --antigravity-login ;;
       grok)         "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --no-browser --grok-login ;;
       kimi)         "$CLIPROXY_BIN" -config "$CLIPROXY_CONFIG" --no-browser --kimi-login ;;
-      *) echo "Unknown provider: $PROVIDER (use: claude, codex, gemini, antigravity, grok, kimi)"; exit 1 ;;
+      *) echo "Unknown provider: $PROVIDER (use: claude, codex, antigravity, grok, kimi)"; exit 1 ;;
     esac
     ;;
 
@@ -1232,12 +1225,11 @@ Setup:
   install              Download CLIProxyAPI binary to ~/.cliproxy/
   login-claude         Authenticate Claude Pro/Max (browser OAuth, port 54545)
   login-codex          Authenticate ChatGPT Plus/Pro (browser OAuth, port 1455)
-  login-gemini         Authenticate Gemini / Google account (browser OAuth)
   login-antigravity    Authenticate Antigravity / Google account (browser OAuth)
   login-grok           Authenticate Grok / X Premium (browser OAuth)
   login-kimi           Authenticate Kimi (browser OAuth)
   login-all            Authenticate all providers sequentially
-  login-headless <p>   Headless OAuth for SSH servers (p: claude|codex|gemini|antigravity|grok|kimi)
+  login-headless <p>   Headless OAuth for SSH servers (p: claude|codex|antigravity|grok|kimi)
 
 Operations:
   apply                Full update workflow: upgrade → sync-models → health
