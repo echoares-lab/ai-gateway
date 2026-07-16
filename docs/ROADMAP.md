@@ -10,7 +10,7 @@ issues only — never parent epics, and never items that exist only in
 | **This file** | Approved Now / Next / Parked / Completed |
 | [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) | Ideas **not** approved — document only until promoted here |
 
-Last reviewed: 2026-07-12 (Stability Foundation completed via #377).
+Last reviewed: 2026-07-16 (release identity/versioning promoted via #380).
 
 ---
 
@@ -20,6 +20,29 @@ Last reviewed: 2026-07-12 (Stability Foundation completed via #377).
 decision (see Parked). To start product work: promote an item from
 [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) into this file and open atomic
 GitHub issues with `status:ready`.
+
+---
+
+## Next — Release identity and versioning
+
+Approve atomic implementation issue
+[#379](https://github.com/echoares-lab/ai-gateway/issues/379) after this roadmap
+promotion merges. The release contract keeps human readability and immutable
+traceability together:
+
+- use SemVer as the human release version and the full Git commit SHA as the
+  immutable source identity;
+- expose `display_version` as `<semver>+sha.<short-sha>`;
+- publish OCI version/revision labels plus human-readable SemVer and immutable
+  SHA tags without replacing digest-pinned promotion;
+- propagate the release version through `app.kubernetes.io/version` in the
+  authoritative Kubernetes deployment flow; and
+- add and document a Gateway Engine `GET /version` endpoint returning `version`,
+  `git_sha`, and `display_version`.
+
+Issue #379 remains blocked and unclaimable until the roadmap-promotion PR for
+[#380](https://github.com/echoares-lab/ai-gateway/issues/380) merges. Runtime,
+CI, image, OpenAPI, and deployment changes belong to #379, not the promotion PR.
 
 ---
 
