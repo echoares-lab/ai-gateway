@@ -41,13 +41,14 @@ run_summary() {
 
 echo "── quota-summary helper ──"
 
-output=$(run_summary accounts "https://gateway.example.test/") || true
+production_url="https://gateway.infra.plexplease.com"
+output=$(run_summary accounts "$production_url/") || true
 args=$(cat "$TMP_DIR/curl-args")
-if contains "$args" "https://gateway.example.test/admin/quota/status" && \
+if contains "$args" "$production_url/admin/quota/status" && \
    ! contains "$args" "x-admin-key"; then
-  pass "uses the selected Gateway Engine URL without an empty admin header"
+  pass "uses the exact production Gateway Engine URL without an empty admin header"
 else
-  fail "expected Gateway Engine quota URL and no admin header (args: $args)"
+  fail "expected production Gateway Engine quota URL and no admin header (args: $args)"
 fi
 
 if contains "$output" "[Claude]" && contains "$output" "operator@example.com" && \
@@ -74,6 +75,15 @@ if contains "$output" "no accounts found"; then
   pass "handles an empty account list"
 else
   fail "expected an empty-account explanation (output: $output)"
+fi
+
+help_output=$(HOME="$TMP_DIR/home" PATH="$TMP_DIR/bin:$PATH" bash "$TMP_DIR/cliproxy-setup.sh" help)
+if contains "$help_output" "quota-summary" && \
+   contains "$help_output" "Per-account quota windows and reset timing" && \
+   ! contains "$help_output" "Per-credential request counts and last-refresh timestamps"; then
+  pass "describes quota-summary account windows and reset timing in help"
+else
+  fail "expected accurate quota-summary help text (output: $help_output)"
 fi
 
 set +e

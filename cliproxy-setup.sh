@@ -1227,7 +1227,7 @@ Operations:
   upgrade              Download newer binary + rebuild Docker image if available
   health               Show per-provider auth status and container state
   models               List models grouped by provider from CLIProxyAPI
-  quota-summary        Per-credential request counts and last-refresh timestamps
+  quota-summary        Per-account quota windows and reset timing
   test [model]         Test model end-to-end through LiteLLM
   test-direct [model]  Test model directly against CLIProxyAPI
   test-all             Test one model per provider; reports pass/fail/skip
