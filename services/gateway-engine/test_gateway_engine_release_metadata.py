@@ -1,9 +1,7 @@
 """Release identity contract for the Gateway Engine."""
 
-from fastapi.testclient import TestClient
-
 from core.release_metadata import release_metadata
-
+from fastapi.testclient import TestClient
 
 FULL_SHA = "0123456789abcdef0123456789abcdef01234567"
 
