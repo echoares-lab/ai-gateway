@@ -28,14 +28,14 @@ routing:
 ### LiteLLM: Model-Level Fallback
 LiteLLM handles failovers when an entire provider pool in CLIProxy goes down or if the model doesn't exist.
 - It uses `litellm_settings.fallbacks` to chain models.
-- **Cross-provider tiering**: To fail over to a different provider for the *same* underlying model family (e.g., Antigravity Gemini → Gemini CLI), CLIProxy exposes special aliases (like `gemini-3-flash-via-gcli`). LiteLLM tries `gemini-3-flash` (Antigravity), and if it fails, it falls back to `gemini-3-flash-via-gcli` (Gemini CLI provider), before finally degrading to Claude or GPT.
+- **Cross-provider tiering**: Gemini routes use Antigravity first, then degrade
+  directly to capability-equivalent Claude and GPT models.
 
 ## 2. Scaling (Adding More Accounts/Providers)
 
 The architecture scales horizontally simply by adding more OAuth credentials to the `~/.cli-proxy-api/` directory.
 
 - **Adding more native API keys or Antigravity accounts**: Drop a new JSON file into the folder. CLIProxy automatically adds it to the provider pool. If you assign it a priority, it slots exactly where you want it in the `fill-first` drain order. If priorities match, it sorts deterministically by credential ID.
-- **Multi-Project Gemini Accounts**: If a single Gemini CLI file contains multiple GCP project IDs (or you have multiple files), CLIProxy automatically creates "virtual parent" credential groups. It will drain one project, then seamlessly fall over to the next project, creating massive headroom without any config changes.
 - **Adding New Providers**: Adding a provider like OpenRouter simply requires defining it in `litellm-config.yaml` and appending it to the end of the `fallbacks` arrays.
 
 ## 3. Potential Improvements
@@ -45,7 +45,6 @@ The architecture scales horizontally simply by adding more OAuth credentials to 
 - **TTL Tuning**: If upstream providers aggressively evict caches (Anthropic evicts at 5 mins), a `24h` session affinity TTL might unnecessarily bind a session to an exhausted key if the user walks away for an hour. Lowering the TTL to `1h` might balance cache locality with load distribution better.
 
 ### Patching the Stack
-- **Native Cross-Provider Aliasing in CLIProxy**: Currently, Tier-1 to Tier-2 failover (Antigravity → Gemini CLI) requires LiteLLM to maintain parallel model entries (`-via-gcli`). Patching CLIProxy to allow `oauth-model-alias` to pool across different underlying providers would simplify `litellm-config.yaml` massively. 
 
 ### Middleware Adjustments
 - **Capability Polyfilling**: Adding a middleware layer in `main.py` that can strip or polyfill unsupported parameters across families.
