@@ -129,6 +129,29 @@ EOF
 
   GATEWAY_QUOTA_RAW="$raw" python3 - <<'PYEOF'
 import os, json, sys
+from datetime import datetime, timezone
+
+_GO_ZERO_TIME = "0001-01-01T00:00:00Z"
+_UNIX_EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _is_sentinel_reset(val):
+    if val is None or val == "":
+        return False
+    if not isinstance(val, str):
+        return False
+    if val == _GO_ZERO_TIME:
+        return True
+    try:
+        parsed = datetime.fromisoformat(val.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    else:
+        parsed = parsed.astimezone(timezone.utc)
+    return parsed.year <= 1 or parsed == _UNIX_EPOCH_UTC
+
 
 try:
     data = json.loads(os.environ["GATEWAY_QUOTA_RAW"])
@@ -142,6 +165,12 @@ if not isinstance(data, dict) or data.get("status") != "ok" or not isinstance(da
 
 accounts = data["accounts"]
 print("=== Per-account quota summary ===")
+if data.get("partial") is True:
+    print(
+        "WARNING: response is partial — one or more active credentials have "
+        "live_status missing or error",
+        file=sys.stderr,
+    )
 if not accounts:
     print("  (no accounts found)")
     sys.exit(0)
@@ -158,16 +187,36 @@ try:
             email = account.get("email") or account.get("credential_id", "?")
             status = account.get("account_status", "unknown")
             plan = account.get("plan_type") or "-"
-            print(f"    {email}  status={status}  plan={plan}")
-            for name, window in account.get("quota", {}).get("windows", {}).items():
+            quota = account.get("quota") or {}
+            live_status = quota.get("live_status")
+            live_text = f"  live_status={live_status}" if live_status else ""
+            print(f"    {email}  status={status}  plan={plan}{live_text}")
+            if live_status in ("missing", "error"):
+                detail = quota.get("full_quota_error")
+                suffix = f": {detail}" if detail else ""
+                print(
+                    f"WARNING: {email} live_status={live_status}{suffix}",
+                    file=sys.stderr,
+                )
+            for name, window in quota.get("windows", {}).items():
                 if not isinstance(window, dict):
                     continue
                 utilization = window.get("utilization_pct")
                 utilization_text = "-" if utilization is None else f"{utilization}%"
-                resets_at = window.get("resets_at") or "-"
+                resets_at = window.get("resets_at")
+                if _is_sentinel_reset(resets_at):
+                    print(
+                        f"WARNING: {email} {name} sentinel reset suppressed",
+                        file=sys.stderr,
+                    )
+                    resets_at = None
+                resets_at_text = resets_at or "-"
                 resets_in = window.get("resets_in")
                 relative = f"  resets_in={resets_in}" if resets_in else ""
-                print(f"      {name}: utilization={utilization_text}  resets_at={resets_at}{relative}")
+                print(
+                    f"      {name}: utilization={utilization_text}  "
+                    f"resets_at={resets_at_text}{relative}"
+                )
 except (AttributeError, TypeError, ValueError):
     print("ERROR: Gateway Engine response could not be rendered", file=sys.stderr)
     sys.exit(1)

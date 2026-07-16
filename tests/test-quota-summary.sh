@@ -20,10 +20,20 @@ done
 case "$FAKE_CURL_SCENARIO" in
   accounts)
     cat <<'JSON'
-{"status":"ok","accounts":[{"email":"operator@example.com","provider":"claude","provider_label":"Claude","plan_type":"max","account_status":"active","quota":{"windows":{"five_hour":{"utilization_pct":10.0,"resets_at":"2026-07-11T15:00:00Z"},"seven_day":{"utilization_pct":20.0,"resets_at":"2026-07-18T10:00:00Z"},"binding":{"utilization_pct":45.0,"resets_at":"2026-07-11T12:00:00Z","resets_in":"2h30m"}}}}]}
+{"status":"ok","partial":false,"accounts":[{"email":"operator@example.com","provider":"claude","provider_label":"Claude","plan_type":"max","account_status":"active","disabled":false,"quota":{"live_status":"fresh","live_fetched_at":"2026-07-11T10:00:00Z","windows":{"five_hour":{"utilization_pct":10.0,"resets_at":"2026-07-11T15:00:00Z"},"seven_day":{"utilization_pct":20.0,"resets_at":"2026-07-18T10:00:00Z"},"binding":{"utilization_pct":45.0,"resets_at":"2026-07-11T12:00:00Z","resets_in":"2h30m"}}}}]}
 JSON
     ;;
-  empty) printf '%s\n' '{"status":"ok","accounts":[]}' ;;
+  partial_live_error)
+    cat <<'JSON'
+{"status":"ok","partial":true,"accounts":[{"email":"broken@example.com","provider":"claude","provider_label":"Claude","plan_type":"max","account_status":"active","disabled":false,"quota":{"live_status":"error","full_quota_error":"anthropic returned 503","windows":{"five_hour":{"utilization_pct":10.0,"resets_at":"2026-07-11T15:00:00Z"},"seven_day":{"utilization_pct":null,"resets_at":null},"binding":{"utilization_pct":45.0,"resets_at":null,"resets_in":null}}}},{"email":"ok@example.com","provider":"claude","provider_label":"Claude","plan_type":"max","account_status":"active","disabled":false,"quota":{"live_status":"fresh","live_fetched_at":"2026-07-11T10:00:00Z","windows":{"five_hour":{"utilization_pct":5.0,"resets_at":"2026-07-11T15:00:00Z"},"seven_day":{"utilization_pct":8.0,"resets_at":"2026-07-18T10:00:00Z"},"binding":{"utilization_pct":12.0,"resets_at":"2026-07-11T12:00:00Z","resets_in":"1h"}}}}]}
+JSON
+    ;;
+  sentinel_resets)
+    cat <<'JSON'
+{"status":"ok","partial":false,"accounts":[{"email":"sentinel@example.com","provider":"claude","provider_label":"Claude","plan_type":"max","account_status":"active","disabled":false,"quota":{"live_status":"fresh","live_fetched_at":"2026-07-11T10:00:00Z","windows":{"five_hour":{"utilization_pct":10.0,"resets_at":"0001-01-01T00:00:00Z"},"seven_day":{"utilization_pct":20.0,"resets_at":"1970-01-01T00:00:00Z"},"binding":{"utilization_pct":45.0,"resets_at":"0001-01-01T00:00:00Z","resets_in":null}}}}]}
+JSON
+    ;;
+  empty) printf '%s\n' '{"status":"ok","partial":false,"accounts":[]}' ;;
   malformed) printf '%s\n' 'this is not JSON' ;;
   error_shape) printf '%s\n' '{"status":"error","errors":[{"message":"upstream unavailable"}]}' ;;
   failure) exit 22 ;;
@@ -64,11 +74,24 @@ success = operation["responses"]["200"]["content"]["application/json"]
 example = success["example"]
 account = example["accounts"][0]
 assert example["captured_at"]
+assert example["partial"] is False, "fresh success example must set partial=false"
 assert account["email"] and account["account_status"]
 assert account["quota"]["windows"]["five_hour"]["utilization_pct"] == 10.0
 assert account["quota"]["windows"]["binding"]["resets_in"] == "3h59m"
+assert account["quota"]["live_status"] == "fresh"
+assert account["quota"]["live_fetched_at"]
 assert "models" not in account["quota"], "success example must omit absent optional models"
 assert "full_quota_error" not in account["quota"], "success example must omit absent optional full_quota_error"
+
+examples = success.get("examples") or {}
+assert "partialLiveError" in examples, "partial/live-error example is not documented"
+partial_example = examples["partialLiveError"]["value"]
+assert partial_example["partial"] is True
+partial_account = next(
+    item for item in partial_example["accounts"] if item["quota"]["live_status"] == "error"
+)
+assert partial_account["quota"]["full_quota_error"]
+assert "live_fetched_at" not in partial_account["quota"]
 
 for status in ("403", "502", "503"):
     assert status in operation["responses"], f"response {status} is not documented"
@@ -91,7 +114,12 @@ assert set(dependency_error_item["required"]) == {"code", "message", "location"}
 assert dependency_error["example"]["status"] == "error"
 assert dependency_error["example"]["errors"][0]["code"] == "cliproxy_fetch_error"
 
-quota_properties = success["schema"]["properties"]["accounts"]["items"]["properties"]["quota"]["properties"]
+schema_props = success["schema"]["properties"]
+assert "partial" in schema_props, "top-level partial is not documented"
+assert schema_props["partial"]["type"] == "boolean"
+assert "partial" in success["schema"]["required"], "partial must be required on success responses"
+
+quota_properties = schema_props["accounts"]["items"]["properties"]["quota"]["properties"]
 for field in (
     "captured_at",
     "stale",
@@ -102,9 +130,21 @@ for field in (
     "requests_limit",
     "models",
     "full_quota_error",
+    "live_status",
+    "live_fetched_at",
 ):
     assert field in quota_properties, f"quota field {field} is not documented"
-assert "errors" in success["schema"]["properties"], "partial errors are not documented"
+assert set(quota_properties["live_status"]["enum"]) == {
+    "fresh",
+    "unsupported",
+    "missing",
+    "error",
+}
+assert "live_status" in schema_props["accounts"]["items"]["properties"]["quota"]["required"]
+assert "errors" in schema_props, "partial errors are not documented"
+description = operation.get("description") or ""
+assert "partial" in description.lower()
+assert "live_status" in description
 PY
 pass "documents the production quota endpoint contract and examples"
 
@@ -192,6 +232,49 @@ if [[ "$status" -ne 0 ]] && contains "$output" "ERROR:" && \
   pass "reports Gateway Engine HTTP failures and exits nonzero"
 else
   fail "expected a nonzero Gateway Engine failure (status=$status; output: $output)"
+fi
+
+set +e
+output=$(run_summary partial_live_error "https://gateway.example.test")
+status=$?
+set -e
+if [[ "$status" -eq 0 ]] && \
+   contains "$output" "WARNING:" && contains "$output" "partial" && \
+   contains "$output" "broken@example.com" && \
+   contains "$output" "live_status=error" && \
+   contains "$output" "anthropic returned 503" && \
+   contains "$output" "ok@example.com" && \
+   contains "$output" "Per-account quota summary"; then
+  pass "warns on partial responses and live errors without aborting the summary"
+else
+  fail "expected partial/live-error warnings with rendered accounts (status=$status; output: $output)"
+fi
+
+set +e
+output=$(run_summary sentinel_resets "https://gateway.example.test")
+status=$?
+set -e
+if [[ "$status" -eq 0 ]] && \
+   contains "$output" "WARNING:" && contains "$output" "sentinel" && \
+   contains "$output" "sentinel@example.com" && \
+   ! contains "$output" "0001-01-01T00:00:00Z" && \
+   ! contains "$output" "1970-01-01T00:00:00Z" && \
+   contains "$output" "resets_at=-"; then
+  pass "suppresses sentinel reset timestamps and warns operators"
+else
+  fail "expected sentinel reset suppression with warning (status=$status; output: $output)"
+fi
+
+set +e
+output=$(run_summary accounts "$production_url")
+status=$?
+set -e
+if [[ "$status" -eq 0 ]] && \
+   contains "$output" "live_status=fresh" && \
+   ! contains "$output" "WARNING:"; then
+  pass "renders fresh live_status without spurious warnings"
+else
+  fail "expected clean fresh summary without warnings (status=$status; output: $output)"
 fi
 
 echo
