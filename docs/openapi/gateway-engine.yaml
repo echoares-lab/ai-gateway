@@ -4,6 +4,8 @@ info:
   description: Translation proxy for multiple AI CLI formats to LiteLLM (OpenAI Chat Completions).
   version: 1.0.0
 servers:
+  - url: https://gateway.infra.plexplease.com
+    description: Production k3s Gateway Engine
   - url: http://localhost:4000
     description: Stable local gateway-engine
   - url: http://localhost:4010
@@ -72,6 +74,208 @@ paths:
       responses:
         '200':
           description: Success
+  /admin/quota/status:
+    get:
+      summary: Get aggregated OAuth account quota status
+      description: >-
+        Aggregates CLIProxy passive quota state, live full-window state, and
+        credential metadata. The live provider refresh can take up to 30 seconds.
+        When GATEWAY_ENGINE_ADMIN_READ_AUTH is enabled, x-admin-key is required;
+        otherwise the endpoint is readable without the header. A successful
+        response can contain partial dependency errors alongside account data.
+      security:
+        - {}
+        - AdminKey: []
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: false
+          description: Required only when Gateway Engine admin read authentication is enabled.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Aggregated account quota state, optionally with partial errors
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, source, captured_at, accounts]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  source:
+                    type: string
+                  captured_at:
+                    type: string
+                    format: date-time
+                  accounts:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - credential_id
+                        - email
+                        - provider
+                        - provider_label
+                        - account_status
+                        - disabled
+                        - applies_to_models
+                        - quota
+                      properties:
+                        credential_id: {type: string}
+                        email: {type: string}
+                        provider: {type: string}
+                        provider_label: {type: string}
+                        plan_type: {type: string, nullable: true}
+                        account_status: {type: string}
+                        disabled: {type: boolean}
+                        applies_to_models: {type: string}
+                        quota:
+                          type: object
+                          required:
+                            - source
+                            - stale
+                            - captured_at
+                            - windows
+                            - tokens_remaining
+                            - tokens_limit
+                            - requests_remaining
+                            - requests_limit
+                          properties:
+                            source: {type: string}
+                            stale: {type: boolean}
+                            captured_at: {type: string, format: date-time, nullable: true}
+                            windows:
+                              type: object
+                              description: >-
+                                Named utilization windows. five_hour, seven_day, and
+                                binding are always present; provider-specific windows
+                                can also be included.
+                              additionalProperties:
+                                type: object
+                                properties:
+                                  utilization_pct: {type: number, format: float, nullable: true}
+                                  resets_at: {type: string, format: date-time, nullable: true}
+                                  resets_in: {type: string, nullable: true}
+                            tokens_remaining: {type: integer, nullable: true}
+                            tokens_limit: {type: integer, nullable: true}
+                            requests_remaining: {type: integer, nullable: true}
+                            requests_limit: {type: integer, nullable: true}
+                            models:
+                              description: Provider-specific per-model quota breakdown.
+                              nullable: true
+                            full_quota_error:
+                              description: Non-fatal error returned by the live full-window lookup.
+                              nullable: true
+                  errors:
+                    type: array
+                    description: Non-fatal dependency errors when some account data remains available.
+                    items:
+                      type: object
+                      properties:
+                        code: {type: string}
+                        message: {type: string}
+                        location: {type: string}
+              example:
+                status: "ok"
+                source: "cliproxy:/v0/management/quota-status + /quota-status/full"
+                captured_at: "2026-07-11T10:00:01Z"
+                accounts:
+                  - credential_id: "cred-claude-1"
+                    email: "operator@example.com"
+                    provider: "claude"
+                    provider_label: "Claude"
+                    plan_type: "max"
+                    account_status: "active"
+                    disabled: false
+                    applies_to_models: "All Claude models"
+                    quota:
+                      source: "unified"
+                      stale: false
+                      captured_at: "2026-07-11T10:00:00Z"
+                      windows:
+                        five_hour:
+                          utilization_pct: 10.0
+                          resets_at: "2026-07-11T15:00:00Z"
+                        seven_day:
+                          utilization_pct: 20.0
+                          resets_at: "2026-07-18T10:00:00Z"
+                        binding:
+                          utilization_pct: 45.0
+                          resets_at: "2026-07-11T14:00:00Z"
+                          resets_in: "3h59m"
+                      tokens_remaining: 1100000
+                      tokens_limit: 2000000
+                      requests_remaining: null
+                      requests_limit: null
+                errors:
+                  - code: "cliproxy_fetch_error"
+                    message: "TimeoutError: live quota refresh timed out"
+                    location: "cliproxy:/v0/management/quota-status/full"
+        '403':
+          description: Admin read authentication is enabled and x-admin-key is missing or invalid
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: object
+                    required: [message, code]
+                    properties:
+                      message: {type: string}
+                      code: {type: string, enum: [admin_key_required]}
+              example:
+                error:
+                  message: "gateway-engine admin mutations are disabled or unauthorized"
+                  code: "admin_key_required"
+        '502':
+          description: CLIProxy quota dependencies failed and no account quota state is available
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, errors]
+                properties:
+                  status:
+                    type: string
+                    enum: [error]
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      required: [code, message, location]
+                      properties:
+                        code: {type: string}
+                        message: {type: string}
+                        location: {type: string}
+              example:
+                status: "error"
+                errors:
+                  - code: "cliproxy_fetch_error"
+                    message: "ConnectError: CLIProxy unreachable"
+                    location: "cliproxy:/v0/management/quota-status"
+        '503':
+          description: Admin read authentication is enabled but no Gateway Engine admin key is configured
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: object
+                    required: [message, code]
+                    properties:
+                      message: {type: string}
+                      code: {type: string, enum: [admin_key_required]}
+              example:
+                error:
+                  message: "GATEWAY_ENGINE_ADMIN_KEY not configured"
+                  code: "admin_key_required"
   /admin/status:
     get:
       summary: Read-only operator status aggregator
@@ -537,3 +741,9 @@ paths:
       responses:
         '200':
           description: HTML dashboard page
+components:
+  securitySchemes:
+    AdminKey:
+      type: apiKey
+      in: header
+      name: x-admin-key

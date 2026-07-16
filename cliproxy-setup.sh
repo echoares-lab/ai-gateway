@@ -109,48 +109,68 @@ get_gateway_engine_admin_key() {
 }
 
 cmd_quota_summary() {
-  local mgmt_key
-  mgmt_key=$(get_mgmt_key)
-  if [ -z "$mgmt_key" ]; then
-    echo "ERROR: management key not found. Set CLIPROXY_MANAGEMENT_KEY in .env or ~/.cliproxy/config.yaml"
-    exit 1
+  local admin_key raw
+  local -a curl_args=(-sf "${GATEWAY_ENGINE_URL%/}/admin/quota/status")
+  admin_key=$(get_gateway_engine_admin_key)
+  if [ -n "$admin_key" ]; then
+    raw=$(curl "${curl_args[@]}" -H @- 2>/dev/null <<EOF
+x-admin-key: $admin_key
+EOF
+    ) || {
+      echo "ERROR: Gateway Engine quota endpoint request failed at ${GATEWAY_ENGINE_URL%/}/admin/quota/status"
+      exit 1
+    }
+  else
+    raw=$(curl "${curl_args[@]}" 2>/dev/null) || {
+      echo "ERROR: Gateway Engine quota endpoint request failed at ${GATEWAY_ENGINE_URL%/}/admin/quota/status"
+      exit 1
+    }
   fi
 
-  local raw
-  raw=$(curl -sf "http://localhost:$CLIPROXY_PORT/v0/management/auth-files" \
-    -H "X-Management-Key: $mgmt_key" 2>/dev/null) || {
-    echo "ERROR: CLIProxy management API not reachable on port $CLIPROXY_PORT"
-    exit 1
-  }
-
-  echo "=== Per-credential quota summary ==="
-  CLIPROXY_QUOTA_RAW="$raw" python3 - <<'PYEOF'
+  GATEWAY_QUOTA_RAW="$raw" python3 - <<'PYEOF'
 import os, json, sys
 
-data = json.loads(os.environ["CLIPROXY_QUOTA_RAW"])
-files = data.get("files", [])
-if not files:
-    print("  (no credentials found)")
+try:
+    data = json.loads(os.environ["GATEWAY_QUOTA_RAW"])
+except (json.JSONDecodeError, TypeError):
+    print("ERROR: Gateway Engine response was not valid quota data", file=sys.stderr)
+    sys.exit(1)
+
+if not isinstance(data, dict) or data.get("status") != "ok" or not isinstance(data.get("accounts"), list):
+    print("ERROR: Gateway Engine response was not valid quota data", file=sys.stderr)
+    sys.exit(1)
+
+accounts = data["accounts"]
+print("=== Per-account quota summary ===")
+if not accounts:
+    print("  (no accounts found)")
     sys.exit(0)
 
-# Group by provider
-by_provider = {}
-for f in files:
-    p = f.get("provider", "?")
-    by_provider.setdefault(p, []).append(f)
+try:
+    by_provider = {}
+    for account in accounts:
+        provider = account.get("provider_label") or account.get("provider", "?")
+        by_provider.setdefault(provider, []).append(account)
 
-for provider, creds in sorted(by_provider.items()):
-    print(f"\n  [{provider}]")
-    for c in creds:
-        email      = c.get("email", c.get("account", "?"))
-        disabled   = c.get("disabled", False)
-        last_ref   = (c.get("last_refresh") or "-")[:19]
-        recent     = c.get("recent_requests", [])
-        success    = sum(r.get("success", 0) for r in recent)
-        failed     = sum(r.get("failed", 0) for r in recent)
-        status     = "DISABLED" if disabled else "active"
-        print(f"    {email:<45}  {status:<8}  last_refresh={last_ref}  "
-              f"recent: ok={success} err={failed}")
+    for provider, provider_accounts in sorted(by_provider.items()):
+        print(f"\n  [{provider}]")
+        for account in provider_accounts:
+            email = account.get("email") or account.get("credential_id", "?")
+            status = account.get("account_status", "unknown")
+            plan = account.get("plan_type") or "-"
+            print(f"    {email}  status={status}  plan={plan}")
+            for name, window in account.get("quota", {}).get("windows", {}).items():
+                if not isinstance(window, dict):
+                    continue
+                utilization = window.get("utilization_pct")
+                utilization_text = "-" if utilization is None else f"{utilization}%"
+                resets_at = window.get("resets_at") or "-"
+                resets_in = window.get("resets_in")
+                relative = f"  resets_in={resets_in}" if resets_in else ""
+                print(f"      {name}: utilization={utilization_text}  resets_at={resets_at}{relative}")
+except (AttributeError, TypeError, ValueError):
+    print("ERROR: Gateway Engine response could not be rendered", file=sys.stderr)
+    sys.exit(1)
 PYEOF
 }
 
@@ -1226,7 +1246,7 @@ Operations:
   upgrade              Download newer binary + rebuild Docker image if available
   health               Show per-provider auth status and container state
   models               List models grouped by provider from CLIProxyAPI
-  quota-summary        Per-credential request counts and last-refresh timestamps
+  quota-summary        Per-account quota windows and reset timing
   test [model]         Test model end-to-end through LiteLLM
   test-direct [model]  Test model directly against CLIProxyAPI
   test-all             Test one model per provider; reports pass/fail/skip

@@ -1,4 +1,4 @@
-.PHONY: lint test-unit test-mock test-fast test-e2e validate-policy-profiles test-sync-models-probe test-compose-config test-dev-env drift-cheap clean-db
+.PHONY: lint test-unit test-mock test-fast test-e2e test-scripts validate-policy-profiles test-sync-models-probe test-compose-config test-dev-env drift-cheap clean-db
 
 CONTAINER_PREFIX ?= PROD-
 
@@ -20,6 +20,9 @@ test-sync-models-probe:
 
 test-dev-env:
 	bash tests/test-dev-env.sh
+
+test-scripts:
+	bash tests/test-quota-summary.sh
 
 test-compose-config:
 	python3 -m pytest tests/test_litellm_compose_migration.py -v
