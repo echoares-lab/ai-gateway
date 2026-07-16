@@ -149,6 +149,21 @@ jobs:
           python3 scripts/k3s/promote_k3s_images.py "${ARGS[@]}"
           kubectl kustomize k3s-01/kubernetes/workloads/home/ai-gateway/overlays/k3s-01 >/dev/null
 
+      - name: Install verified GitHub CLI for PR creation
+        run: |
+          set -euo pipefail
+          GH_CLI_VERSION=2.46.0
+          GH_CLI_SHA256=c671d450d7c0e95c84fbc6996591fc851d396848acd53e589ee388031cee9330
+          ARCHIVE="gh_${GH_CLI_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL \
+            "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/${ARCHIVE}" \
+            -o "${RUNNER_TEMP}/${ARCHIVE}"
+          echo "${GH_CLI_SHA256}  ${RUNNER_TEMP}/${ARCHIVE}" | sha256sum --check --status
+          tar -xzf "${RUNNER_TEMP}/${ARCHIVE}" -C "${RUNNER_TEMP}"
+          GH_BIN="${RUNNER_TEMP}/gh_${GH_CLI_VERSION}_linux_amd64/bin"
+          echo "${GH_BIN}" >> "$GITHUB_PATH"
+          PATH="${GH_BIN}:${PATH}" gh --version
+
       - name: Create promote PR on k3s-01
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}

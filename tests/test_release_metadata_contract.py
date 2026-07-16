@@ -62,3 +62,15 @@ def test_k3s_promotion_keeps_full_sha_and_updates_gateway_version() -> None:
     assert 'GATEWAY_VERSION="${INPUT_GATEWAY_VERSION:-$(tr -d' in workflow
     assert '--gateway-version "${GATEWAY_VERSION}"' in workflow
     assert "core-workloads.yaml" in workflow
+
+
+def test_k3s_promotion_installs_verified_gh_before_pr_creation() -> None:
+    workflow = (ROOT / ".github/workflows/promote-k3s-images.yml").read_text(encoding="utf-8")
+    setup_index = workflow.index("GH_CLI_VERSION=2.46.0")
+    checksum_index = workflow.index(
+        "c671d450d7c0e95c84fbc6996591fc851d396848acd53e589ee388031cee9330",
+        setup_index,
+    )
+    verify_index = workflow.index('gh --version', checksum_index)
+    create_index = workflow.index("gh pr create", verify_index)
+    assert setup_index < checksum_index < verify_index < create_index
