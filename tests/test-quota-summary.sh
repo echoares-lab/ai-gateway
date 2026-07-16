@@ -58,9 +58,29 @@ assert example["captured_at"]
 assert account["email"] and account["account_status"]
 assert account["quota"]["windows"]["five_hour"]["utilization_pct"] == 10.0
 assert account["quota"]["windows"]["binding"]["resets_in"] == "3h59m"
+assert "models" not in account["quota"], "success example must omit absent optional models"
+assert "full_quota_error" not in account["quota"], "success example must omit absent optional full_quota_error"
 
 for status in ("403", "502", "503"):
     assert status in operation["responses"], f"response {status} is not documented"
+
+for status in ("403", "503"):
+    error_response = operation["responses"][status]["content"]["application/json"]
+    error_schema = error_response["schema"]
+    assert set(error_schema["required"]) == {"error"}
+    error_properties = error_schema["properties"]["error"]
+    assert set(error_properties["required"]) == {"message", "code"}
+    assert set(error_properties["properties"]) >= {"message", "code"}
+    assert error_response["example"]["error"]["code"] == "admin_key_required"
+
+dependency_error = operation["responses"]["502"]["content"]["application/json"]
+dependency_schema = dependency_error["schema"]
+assert set(dependency_schema["required"]) == {"status", "errors"}
+assert dependency_schema["properties"]["status"]["enum"] == ["error"]
+dependency_error_item = dependency_schema["properties"]["errors"]["items"]
+assert set(dependency_error_item["required"]) == {"code", "message", "location"}
+assert dependency_error["example"]["status"] == "error"
+assert dependency_error["example"]["errors"][0]["code"] == "cliproxy_fetch_error"
 
 quota_properties = success["schema"]["properties"]["accounts"]["items"]["properties"]["quota"]["properties"]
 for field in (

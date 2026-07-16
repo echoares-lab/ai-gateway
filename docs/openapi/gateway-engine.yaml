@@ -210,8 +210,6 @@ paths:
                       tokens_limit: 2000000
                       requests_remaining: null
                       requests_limit: null
-                      models: null
-                      full_quota_error: null
                 errors:
                   - code: "cliproxy_fetch_error"
                     message: "TimeoutError: live quota refresh timed out"
@@ -220,6 +218,16 @@ paths:
           description: Admin read authentication is enabled and x-admin-key is missing or invalid
           content:
             application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: object
+                    required: [message, code]
+                    properties:
+                      message: {type: string}
+                      code: {type: string, enum: [admin_key_required]}
               example:
                 error:
                   message: "gateway-engine admin mutations are disabled or unauthorized"
@@ -228,6 +236,22 @@ paths:
           description: CLIProxy quota dependencies failed and no account quota state is available
           content:
             application/json:
+              schema:
+                type: object
+                required: [status, errors]
+                properties:
+                  status:
+                    type: string
+                    enum: [error]
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      required: [code, message, location]
+                      properties:
+                        code: {type: string}
+                        message: {type: string}
+                        location: {type: string}
               example:
                 status: "error"
                 errors:
@@ -238,6 +262,16 @@ paths:
           description: Admin read authentication is enabled but no Gateway Engine admin key is configured
           content:
             application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: object
+                    required: [message, code]
+                    properties:
+                      message: {type: string}
+                      code: {type: string, enum: [admin_key_required]}
               example:
                 error:
                   message: "GATEWAY_ENGINE_ADMIN_KEY not configured"
