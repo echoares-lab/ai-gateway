@@ -6,9 +6,11 @@ Set GATEWAY_URL (default: http://localhost:4010) and LITELLM_MASTER_KEY before r
 
 import json
 import os
+from pathlib import Path
 
 import httpx
 import pytest
+import yaml
 
 pytestmark = [pytest.mark.integration]
 
@@ -76,6 +78,44 @@ async def test_models_have_prefix(asgi_client, mock_litellm_router):
     assert models, "no models returned"
     for m in models:
         assert m["id"].startswith("AI-Gateway:"), f"model missing prefix: {m['id']}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.mock
+@pytest.mark.smoke
+async def test_deployment_catalog_endpoint_has_no_via_gcli_models(asgi_client, mock_litellm_router):
+    """Exercise /v1/models with the deployment's configured model catalog."""
+    config_path = Path(__file__).resolve().parents[2] / "litellm-config.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    configured_models = [entry["model_name"] for entry in config["model_list"]]
+    mock_litellm_router.get("/v1/models").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": model} for model in configured_models]})
+    )
+
+    resp = await asgi_client.get("/v1/models")
+
+    assert resp.status_code == 200
+    model_ids = [model["id"] for model in resp.json()["data"]]
+    assert model_ids
+    assert not [model_id for model_id in model_ids if "via-gcli" in model_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.mock
+@pytest.mark.smoke
+async def test_admin_status_endpoint_fallbacks_have_no_via_gcli_references(asgi_client):
+    """Exercise the public admin contract that exposes configured fallbacks."""
+    resp = await asgi_client.get("/admin/status")
+
+    assert resp.status_code == 200
+    fallbacks = resp.json()["panels"]["routing"]["data"]["fallbacks"]
+    references = [
+        model
+        for fallback in fallbacks
+        for model in (fallback["model"], *fallback["targets"])
+        if "via-gcli" in model
+    ]
+    assert not references
 
 
 @pytest.mark.asyncio

@@ -261,7 +261,6 @@ for f in json.load(sys.stdin).get('files', []):
 | `antigravity-{email}.json` | Google Antigravity (Gemini OAuth) |
 | `claude-{email}.json` | Anthropic Claude OAuth |
 | `codex-{email}-plus.json` | OpenAI Codex OAuth |
-| `gemini-{email}-{project}.json` | Gemini CLI OAuth |
 
 ---
 
