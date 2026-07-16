@@ -10,6 +10,13 @@ cp "$REPO_DIR/cliproxy-setup.sh" "$TMP_DIR/cliproxy-setup.sh"
 cat >"$TMP_DIR/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >"$FAKE_CURL_ARGS"
+: >"$FAKE_CURL_STDIN"
+for arg in "$@"; do
+  if [[ "$arg" == "@-" ]]; then
+    cat >"$FAKE_CURL_STDIN"
+    break
+  fi
+done
 case "$FAKE_CURL_SCENARIO" in
   accounts)
     cat <<'JSON'
@@ -17,6 +24,8 @@ case "$FAKE_CURL_SCENARIO" in
 JSON
     ;;
   empty) printf '%s\n' '{"status":"ok","accounts":[]}' ;;
+  malformed) printf '%s\n' 'this is not JSON' ;;
+  error_shape) printf '%s\n' '{"status":"error","errors":[{"message":"upstream unavailable"}]}' ;;
   failure) exit 22 ;;
 esac
 EOF
@@ -103,6 +112,7 @@ run_summary() {
   local scenario="$1" url="$2" key="${3:-}"
   FAKE_CURL_SCENARIO="$scenario" \
   FAKE_CURL_ARGS="$TMP_DIR/curl-args" \
+  FAKE_CURL_STDIN="$TMP_DIR/curl-stdin" \
   GATEWAY_ENGINE_URL="$url" \
   GATEWAY_ENGINE_ADMIN_KEY="$key" \
   HOME="$TMP_DIR/home" \
@@ -136,10 +146,13 @@ fi
 secret="admin-secret-that-must-not-print"
 output=$(run_summary empty "http://localhost:4010" "$secret") || true
 args=$(cat "$TMP_DIR/curl-args")
-if contains "$args" "x-admin-key: $secret" && ! contains "$output" "$secret"; then
-  pass "conditionally sends the admin key without printing it"
+curl_stdin=$(cat "$TMP_DIR/curl-stdin")
+if contains "$args" "-H" && contains "$args" "@-" && \
+   ! contains "$args" "$secret" && contains "$curl_stdin" "x-admin-key: $secret" && \
+   ! contains "$output" "$secret"; then
+  pass "sends the admin key through curl stdin, never argv or output"
 else
-  fail "expected a private x-admin-key header (args: $args; output: $output)"
+  fail "expected a stdin-only x-admin-key header (args: $args; stdin: $curl_stdin; output: $output)"
 fi
 
 if contains "$output" "no accounts found"; then
@@ -156,6 +169,19 @@ if contains "$help_output" "quota-summary" && \
 else
   fail "expected accurate quota-summary help text (output: $help_output)"
 fi
+
+for scenario in malformed error_shape; do
+  set +e
+  output=$(run_summary "$scenario" "https://gateway.example.test")
+  status=$?
+  set -e
+  if [[ "$status" -ne 0 ]] && contains "$output" "ERROR: Gateway Engine response" && \
+     ! contains "$output" "Traceback" && ! contains "$output" "Per-account quota summary"; then
+    pass "rejects $scenario 2xx payload without traceback or premature summary"
+  else
+    fail "expected concise rejection for $scenario payload (status=$status; output: $output)"
+  fi
+done
 
 set +e
 output=$(run_summary failure "https://gateway.example.test")

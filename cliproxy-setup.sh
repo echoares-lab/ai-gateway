@@ -113,45 +113,64 @@ cmd_quota_summary() {
   local -a curl_args=(-sf "${GATEWAY_ENGINE_URL%/}/admin/quota/status")
   admin_key=$(get_gateway_engine_admin_key)
   if [ -n "$admin_key" ]; then
-    curl_args+=(-H "x-admin-key: $admin_key")
+    raw=$(curl "${curl_args[@]}" -H @- 2>/dev/null <<EOF
+x-admin-key: $admin_key
+EOF
+    ) || {
+      echo "ERROR: Gateway Engine quota endpoint request failed at ${GATEWAY_ENGINE_URL%/}/admin/quota/status"
+      exit 1
+    }
+  else
+    raw=$(curl "${curl_args[@]}" 2>/dev/null) || {
+      echo "ERROR: Gateway Engine quota endpoint request failed at ${GATEWAY_ENGINE_URL%/}/admin/quota/status"
+      exit 1
+    }
   fi
 
-  raw=$(curl "${curl_args[@]}" 2>/dev/null) || {
-    echo "ERROR: Gateway Engine quota endpoint request failed at ${GATEWAY_ENGINE_URL%/}/admin/quota/status"
-    exit 1
-  }
-
-  echo "=== Per-account quota summary ==="
   GATEWAY_QUOTA_RAW="$raw" python3 - <<'PYEOF'
 import os, json, sys
 
-data = json.loads(os.environ["GATEWAY_QUOTA_RAW"])
-accounts = data.get("accounts", [])
+try:
+    data = json.loads(os.environ["GATEWAY_QUOTA_RAW"])
+except (json.JSONDecodeError, TypeError):
+    print("ERROR: Gateway Engine response was not valid quota data", file=sys.stderr)
+    sys.exit(1)
+
+if not isinstance(data, dict) or data.get("status") != "ok" or not isinstance(data.get("accounts"), list):
+    print("ERROR: Gateway Engine response was not valid quota data", file=sys.stderr)
+    sys.exit(1)
+
+accounts = data["accounts"]
+print("=== Per-account quota summary ===")
 if not accounts:
     print("  (no accounts found)")
     sys.exit(0)
 
-by_provider = {}
-for account in accounts:
-    provider = account.get("provider_label") or account.get("provider", "?")
-    by_provider.setdefault(provider, []).append(account)
+try:
+    by_provider = {}
+    for account in accounts:
+        provider = account.get("provider_label") or account.get("provider", "?")
+        by_provider.setdefault(provider, []).append(account)
 
-for provider, provider_accounts in sorted(by_provider.items()):
-    print(f"\n  [{provider}]")
-    for account in provider_accounts:
-        email = account.get("email") or account.get("credential_id", "?")
-        status = account.get("account_status", "unknown")
-        plan = account.get("plan_type") or "-"
-        print(f"    {email}  status={status}  plan={plan}")
-        for name, window in account.get("quota", {}).get("windows", {}).items():
-            if not isinstance(window, dict):
-                continue
-            utilization = window.get("utilization_pct")
-            utilization_text = "-" if utilization is None else f"{utilization}%"
-            resets_at = window.get("resets_at") or "-"
-            resets_in = window.get("resets_in")
-            relative = f"  resets_in={resets_in}" if resets_in else ""
-            print(f"      {name}: utilization={utilization_text}  resets_at={resets_at}{relative}")
+    for provider, provider_accounts in sorted(by_provider.items()):
+        print(f"\n  [{provider}]")
+        for account in provider_accounts:
+            email = account.get("email") or account.get("credential_id", "?")
+            status = account.get("account_status", "unknown")
+            plan = account.get("plan_type") or "-"
+            print(f"    {email}  status={status}  plan={plan}")
+            for name, window in account.get("quota", {}).get("windows", {}).items():
+                if not isinstance(window, dict):
+                    continue
+                utilization = window.get("utilization_pct")
+                utilization_text = "-" if utilization is None else f"{utilization}%"
+                resets_at = window.get("resets_at") or "-"
+                resets_in = window.get("resets_in")
+                relative = f"  resets_in={resets_in}" if resets_in else ""
+                print(f"      {name}: utilization={utilization_text}  resets_at={resets_at}{relative}")
+except (AttributeError, TypeError, ValueError):
+    print("ERROR: Gateway Engine response could not be rendered", file=sys.stderr)
+    sys.exit(1)
 PYEOF
 }
 
