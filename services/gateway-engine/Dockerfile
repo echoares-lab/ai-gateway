@@ -1,9 +1,13 @@
 FROM python:3.12-slim
 
 ARG GIT_SHA=unknown
+ARG APP_VERSION=0.0.0-dev
+ARG BUILD_DATE=unknown
 ARG ENVIRONMENT=production
-LABEL org.opencontainers.image.source="https://github.com/your-org/ai-gateway" \
+LABEL org.opencontainers.image.source="https://github.com/echoares-lab/ai-gateway" \
+      org.opencontainers.image.version=$APP_VERSION \
       org.opencontainers.image.revision=$GIT_SHA \
+      org.opencontainers.image.created=$BUILD_DATE \
       ai-gateway.service="gateway-engine" \
       ai-gateway.environment=$ENVIRONMENT
 
@@ -20,7 +24,9 @@ COPY orchestrator ./orchestrator/
 COPY providers ./providers/
 COPY utils ./utils/
 
-ENV GATEWAY_ENGINE_PORT=4000
+ENV APP_VERSION=$APP_VERSION \
+    GIT_SHA=$GIT_SHA \
+    GATEWAY_ENGINE_PORT=4000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD ["sh", "-c", "python -c \"import urllib.request, os; port = os.getenv('GATEWAY_ENGINE_PORT', '4000'); urllib.request.urlopen(f'http://localhost:{port}/health')\""]
 

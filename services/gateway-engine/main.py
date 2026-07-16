@@ -88,6 +88,7 @@ from core.policy import PolicyEvaluator
 from core.policy import policy_version as in_process_policy_version
 from core.policy.evaluate import process_credential_event_async
 from core.policy.schemas import CredentialEvent
+from core.release_metadata import release_metadata
 from core.state import _policy_history, _policy_trace, record_policy_history
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse, Response
@@ -348,6 +349,12 @@ def _record_format(path: str) -> None:
 async def health():
     """Liveness probe — process is up. Prefer /health/ready for dependency checks (k8s)."""
     return {"status": "ok"}
+
+
+@app.get("/version")
+async def version():
+    """Return the human release version and immutable source revision."""
+    return release_metadata()
 
 
 @app.get("/health/ready")

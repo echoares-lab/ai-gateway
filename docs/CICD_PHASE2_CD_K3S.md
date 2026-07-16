@@ -103,6 +103,23 @@ CLIProxy refreshes OAuth tokens at runtime and writes them back to `~/.cli-proxy
 - `litellm-config.yaml` shipped as a ConfigMap (generated from the repo file).
 - Namespace `ai-gateway` labeled `app.kubernetes.io/managed-by: argocd`.
 
+## Release identity and image promotion
+
+Gateway Engine releases carry complementary human and immutable identities:
+
+- `VERSION` supplies the human SemVer (currently `1.2.1`), published as an OCI
+  version label and image tag.
+- The full Git SHA is published as the immutable image tag and OCI revision;
+  the deployed image SHA/digest remains the rollback identity.
+- `GET /version` reports `version`, the full `git_sha`, and
+  `display_version` (`1.2.1+sha.<short-sha>`).
+- Promotion updates the immutable image pin and both Gateway Engine
+  `app.kubernetes.io/version` labels in the same k3s-01 PR. Version labels are
+  intentionally excluded from Deployment selectors.
+
+The promotion workflow installs kubectl v1.34.1 before running
+`kubectl kustomize`; the minimal runner image does not provide kubectl.
+
 ## Verification
 
 1. ArgoCD `k3s-01` app Synced/Healthy; `ai-gateway` namespace resources reconciled.

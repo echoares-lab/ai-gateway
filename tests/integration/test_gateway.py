@@ -51,6 +51,24 @@ async def test_health(asgi_client):
 @pytest.mark.asyncio
 @pytest.mark.mock
 @pytest.mark.smoke
+async def test_version_contract(asgi_client, monkeypatch):
+    full_sha = "0123456789abcdef0123456789abcdef01234567"
+    monkeypatch.setenv("APP_VERSION", "1.2.1")
+    monkeypatch.setenv("GIT_SHA", full_sha)
+
+    resp = await asgi_client.get("/version")
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "version": "1.2.1",
+        "git_sha": full_sha,
+        "display_version": "1.2.1+sha.0123456",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.mock
+@pytest.mark.smoke
 async def test_models_have_prefix(asgi_client, mock_litellm_router):
     resp = await asgi_client.get("/v1/models")
     assert resp.status_code == 200

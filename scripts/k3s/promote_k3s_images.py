@@ -7,7 +7,8 @@ Edits kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml
 Usage:
   python3 scripts/k3s/promote_k3s_images.py \\
     --k3s-repo /path/to/k3s-01 \\
-    --gateway-engine d4a621b \\
+    --gateway-engine 0123456789abcdef0123456789abcdef01234567 \\
+    --gateway-version 1.2.1 \\
     --credential-prober sha256:abc... \\
     --docs-server sha256:def... \\
     --cliproxy 6cf6e68
@@ -21,6 +22,7 @@ import sys
 from pathlib import Path
 
 DEFAULT_REL = Path("kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml")
+DEFAULT_WORKLOAD_REL = Path("kubernetes/workloads/home/ai-gateway/overlays/k3s-01/core-workloads.yaml")
 
 IMAGE_KEYS = {
     "cliproxy": "nexus-docker.infra.plexplease.com/cli-proxy-api",
@@ -54,12 +56,39 @@ def _set_image_pin(text: str, image_name: str, *, tag: str | None, digest: str |
     return new_text
 
 
+def _set_gateway_version(text: str, version: str) -> str:
+    """Update only Gateway Engine Deployment and pod-template version labels."""
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+        raise ValueError("gateway version must be a Kubernetes-label-safe SemVer core")
+
+    deployment_pattern = re.compile(
+        r"(apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: gateway-engine\n.*?)"
+        r"(?=\n---|\Z)",
+        re.DOTALL,
+    )
+    match = deployment_pattern.search(text)
+    if match is None:
+        raise RuntimeError("failed to find gateway-engine Deployment")
+
+    deployment = match.group(1)
+    updated, count = re.subn(
+        r"app\.kubernetes\.io/version: [^\s]+",
+        f"app.kubernetes.io/version: {version}",
+        deployment,
+    )
+    if count != 2:
+        raise RuntimeError(f"expected two gateway-engine version labels, found {count}")
+    return text[: match.start(1)] + updated + text[match.end(1) :]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--k3s-repo", type=Path, required=True)
     parser.add_argument("--overlay", type=Path, default=DEFAULT_REL)
+    parser.add_argument("--workloads", type=Path, default=DEFAULT_WORKLOAD_REL)
     parser.add_argument("--cliproxy")
     parser.add_argument("--gateway-engine")
+    parser.add_argument("--gateway-version")
     parser.add_argument("--credential-prober", help="short sha tag OR sha256:digest")
     parser.add_argument("--docs-server", help="short sha tag OR sha256:digest")
     parser.add_argument("--dry-run", action="store_true")
@@ -71,6 +100,7 @@ def main() -> int:
         return 2
 
     text = path.read_text(encoding="utf-8")
+    workload_path = args.k3s_repo / args.workloads
     updates: list[tuple[str, str | None, str | None]] = []
 
     def add(key: str, value: str | None) -> None:
@@ -93,11 +123,20 @@ def main() -> int:
     for image_name, tag, digest in updates:
         text = _set_image_pin(text, image_name, tag=tag, digest=digest)
 
+    workload_text: str | None = None
+    if args.gateway_version:
+        if not workload_path.is_file():
+            print(f"missing workloads file: {workload_path}", file=sys.stderr)
+            return 2
+        workload_text = _set_gateway_version(workload_path.read_text(encoding="utf-8"), args.gateway_version)
+
     if args.dry_run:
         sys.stdout.write(text)
         return 0
 
     path.write_text(text, encoding="utf-8")
+    if workload_text is not None:
+        workload_path.write_text(workload_text, encoding="utf-8")
     print(f"updated {path}")
     return 0
 
