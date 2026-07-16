@@ -10,16 +10,47 @@ issues only — never parent epics, and never items that exist only in
 | **This file** | Approved Now / Next / Parked / Completed |
 | [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) | Ideas **not** approved — document only until promoted here |
 
-Last reviewed: 2026-07-16 (release identity/versioning promoted via #380).
+Last reviewed: 2026-07-16 (Gemini CLI retirement and quota reliability promoted via #389).
 
 ---
 
 ## Now
 
-*No active Now track.* Parked tenancy anchors remain blocked pending a multi-tenant
-decision (see Parked). To start product work: promote an item from
-[FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) into this file and open atomic
-GitHub issues with `status:ready`.
+### Gemini CLI retirement and quota reliability
+
+Approve coordination epic
+[#386](https://github.com/echoares-lab/ai-gateway/issues/386) and its six atomic
+children. This release removes Gemini CLI from this gateway deployment while
+preserving generic CLIProxy compatibility, repairs quota and credential delivery,
+and introduces an isolated staging-to-production promotion path.
+
+| Order | Atomic issue | Repository | State / dependency |
+|------:|--------------|------------|--------------------|
+| 1 | [Staging foundation #58](https://github.com/echoares-lab/k3s-01/issues/58) | `k3s-01` | Ready; branch from `production` |
+| 1 | [CLIProxy quota contract #5](https://github.com/echoares-lab/CLIProxyAPI/issues/5) | `CLIProxyAPI` | Ready; branch from `main` |
+| 1 | [Gemini CLI routing retirement #387](https://github.com/echoares-lab/ai-gateway/issues/387) | `ai-gateway` | Ready; branch from `main` |
+| 2 | [Staging workloads #59](https://github.com/echoares-lab/k3s-01/issues/59) | `k3s-01` | Depends on staging foundation #58 |
+| 2 | [Gateway quota and prober reliability #388](https://github.com/echoares-lab/ai-gateway/issues/388) | `ai-gateway` | Depends on CLIProxyAPI #5 and #387 |
+| 3 | [Staging validation and production promotion #60](https://github.com/echoares-lab/k3s-01/issues/60) | `k3s-01` | Depends on all implementation issues |
+
+Release invariants:
+
+- one atomic issue per claim, agent, branch, external worktree, and isolated dev
+  slot where a live stack is required;
+- serialize changes to `litellm-config.yaml` and Gateway Engine hotspots;
+- staging uses dedicated OAuth state and `staging/workloads/ai-gateway/*` secrets,
+  never production credentials or token storage;
+- validate immutable image digests and the merged LiteLLM config in staging, then
+  promote exactly those artifacts to production;
+- remove every deployment-specific `via-gcli` model, fallback, alias, seed
+  reference, and operator instruction while retaining generic CLIProxy and
+  database compatibility; and
+- record Gate evidence, digests, ArgoCD revisions, credential archive and rollback
+  references, production verification, and post-merge cleanup in issue closeouts.
+
+The encrypted Gemini CLI credential archive is retained for seven days after
+successful production verification, then deleted through a separately recorded
+closeout action.
 
 ---
 
