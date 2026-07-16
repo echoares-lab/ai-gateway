@@ -18,7 +18,6 @@ from api.admin_credential_sync import (  # noqa: F401
     _sync_credentials_from_cliproxy,
 )
 from api.admin_panels import (  # noqa: F401
-    _GO_ZERO_TIME,
     _PROVIDER_LABELS,
     _PROVIDER_MODEL_SCOPE,
     ADMIN_ERROR_MAXLEN,
@@ -50,8 +49,10 @@ from api.admin_panels import (  # noqa: F401
     _fetch_cliproxy_models_for_registry,
     _fetch_cliproxy_quota_status,
     _fetch_cliproxy_quota_status_full,
+    _live_status_from_full,
     _load_model_registry_with_config_fallback,
     _model_registry_store,
+    _nullify_sentinel_reset,
     _probe_model_via_litellm,
     _read_text_file_for_reconcile,
     _record_policy_trace,
@@ -191,12 +192,9 @@ async def admin_quota_status(request: Request):
         auth = auth_by_id.get(cred_id, {})
         full = full_by_id.get(cred_id, {})
 
-        def _nullify_zero_time(val: str | None) -> str | None:
-            return None if val == _GO_ZERO_TIME else val
-
         utilization_pct_raw = cred.get("utilization_pct")
-        resets_at = _nullify_zero_time(cred.get("resets_at"))
-        captured_at = _nullify_zero_time(cred.get("captured_at"))
+        resets_at = _nullify_sentinel_reset(cred.get("resets_at"))
+        captured_at = _nullify_sentinel_reset(cred.get("captured_at"))
         resets_in = cred.get("resets_in")
         stale = bool(cred.get("stale"))
         utilization_pct = None if stale and utilization_pct_raw == 0 else utilization_pct_raw
@@ -207,7 +205,10 @@ async def admin_quota_status(request: Request):
         def _window(key: str) -> dict:
             w = full_windows.get(key)
             if w and isinstance(w, dict):
-                return {"utilization_pct": w.get("utilization_pct"), "resets_at": w.get("resets_at")}
+                return {
+                    "utilization_pct": w.get("utilization_pct"),
+                    "resets_at": _nullify_sentinel_reset(w.get("resets_at")),
+                }
             return {"utilization_pct": None, "resets_at": None}
 
         windows: dict = {
@@ -217,7 +218,10 @@ async def admin_quota_status(request: Request):
         # Include non-null named sub-windows (opus, sonnet, oauth_apps, etc.)
         for key, w in full_windows.items():
             if key not in ("five_hour", "seven_day") and w is not None:
-                windows[key] = {"utilization_pct": w.get("utilization_pct"), "resets_at": w.get("resets_at")}
+                windows[key] = {
+                    "utilization_pct": w.get("utilization_pct"),
+                    "resets_at": _nullify_sentinel_reset(w.get("resets_at")),
+                }
         # Binding constraint from passive headers (always present, even before full data arrives)
         windows["binding"] = {
             "utilization_pct": utilization_pct,
@@ -225,6 +229,7 @@ async def admin_quota_status(request: Request):
             "resets_in": resets_in,
         }
 
+        live_status = _live_status_from_full(full)
         quota_entry: dict = {
             "source": cred.get("quota_source", ""),
             "stale": stale,
@@ -234,7 +239,11 @@ async def admin_quota_status(request: Request):
             "tokens_limit": None if stale else cred.get("tokens_limit"),
             "requests_remaining": None if stale else cred.get("requests_remaining"),
             "requests_limit": None if stale else cred.get("requests_limit"),
+            "live_status": live_status,
         }
+        # fetched_at is success-only upstream; only surface on fresh live results
+        if live_status == "fresh" and full.get("fetched_at"):
+            quota_entry["live_fetched_at"] = full["fetched_at"]
         # Per-model breakdown for Antigravity
         if full.get("models"):
             quota_entry["models"] = full["models"]
@@ -258,11 +267,18 @@ async def admin_quota_status(request: Request):
 
     accounts.sort(key=lambda a: (a["provider"], a["email"]))
 
+    # partial only for active (non-disabled) credentials in missing/error live states
+    partial = any(
+        (not account["disabled"]) and account["quota"].get("live_status") in ("missing", "error")
+        for account in accounts
+    )
+
     return JSONResponse(
         content={
             "status": "ok",
             "source": "cliproxy:/v0/management/quota-status + /quota-status/full",
             "captured_at": datetime.now(timezone.utc).isoformat(),
+            "partial": partial,
             "accounts": accounts,
             **({"errors": all_errors} if all_errors else {}),
         }

@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 
 import httpx
 import yaml
@@ -931,6 +932,50 @@ _PROVIDER_MODEL_SCOPE: dict[str, str] = {
 
 # CLIProxy zero-time sentinel meaning "no data captured yet"
 _GO_ZERO_TIME = "0001-01-01T00:00:00Z"
+_UNIX_EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _nullify_sentinel_reset(val: str | None) -> str | None:
+    """Normalize Go year-1 and Unix-epoch reset timestamps to null."""
+    if val is None or val == "":
+        return None
+    if not isinstance(val, str):
+        return val
+    if val == _GO_ZERO_TIME:
+        return None
+    try:
+        parsed = datetime.fromisoformat(val.replace("Z", "+00:00"))
+    except ValueError:
+        return val
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    else:
+        parsed = parsed.astimezone(timezone.utc)
+    if parsed.year <= 1 or parsed == _UNIX_EPOCH_UTC:
+        return None
+    return val
+
+
+def _live_status_from_full(full: dict) -> str:
+    """Map CLIProxy full-entry live outcome; tolerate pre-status payloads."""
+    status = full.get("status")
+    if status in ("fresh", "unsupported", "missing", "error"):
+        return status
+    if not full:
+        return "missing"
+    # Prefer error over leftover windows/models/fetched_at (stale success fields).
+    if full.get("error"):
+        err = str(full["error"]).lower()
+        if "does not support" in err:
+            return "unsupported"
+        if "access_token" in err or "no access token" in err:
+            return "missing"
+        return "error"
+    if full.get("fetched_at"):
+        return "fresh"
+    if full.get("windows") or full.get("models"):
+        return "fresh"
+    return "missing"
 
 
 async def _fetch_cliproxy_quota_status() -> tuple[list[dict], list[dict]]:

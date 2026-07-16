@@ -18,7 +18,12 @@ Gateway runtime model mutation endpoints (`POST /model/new`, `POST /model/delete
 
 `GET /admin/quota/status` combines CLIProxy passive quota state, a live
 full-window refresh, and credential metadata into per-account quota windows.
-Query the production Gateway Engine directly:
+Successful responses always include `partial` (true only when an active
+credential has `live_status` of `missing` or `error`), and each account's
+`quota` includes `live_status` (`fresh|unsupported|missing|error`).
+`live_fetched_at` appears only for fresh live results. Year-1 and Unix-epoch
+reset timestamps are normalized to `null`. Query the production Gateway Engine
+directly:
 
 ```bash
 curl -fsS https://gateway.infra.plexplease.com/admin/quota/status
@@ -40,9 +45,11 @@ GATEWAY_ENGINE_URL=https://gateway.infra.plexplease.com \
 ```
 
 The helper also reads `GATEWAY_ENGINE_ADMIN_KEY` from the environment or
-`.env` and sends it when present. Because the endpoint performs a live provider
-refresh, allow up to 30 seconds for a response before treating the request as
-timed out.
+`.env` and sends it when present. It prints `WARNING` lines for `partial`
+responses, per-account live `missing`/`error` (including `full_quota_error`),
+and any leaked sentinel reset timestamps, while still rendering available
+windows. Because the endpoint performs a live provider refresh, allow up to
+30 seconds for a response before treating the request as timed out.
 
 ### Historical / Internal Specifications
 

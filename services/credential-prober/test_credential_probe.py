@@ -10,6 +10,8 @@ from credential_probe import (
     build_policy_engine_event_payload,
     build_transition_payload,
     compute_cool_down_until,
+    filter_syncable_auth_files,
+    is_syncable_auth_file,
     map_auth_file_status,
     normalize_provider,
     should_emit_transition,
@@ -23,7 +25,108 @@ class TestCredentialProbeHelpers(unittest.TestCase):
         self.assertEqual(normalize_provider("codex"), "openai")
         self.assertEqual(normalize_provider("gemini-cli"), "gemini")
         self.assertEqual(normalize_provider("anthropic"), "anthropic")
+        self.assertEqual(normalize_provider("kimi"), "moonshot")
         self.assertEqual(normalize_provider(None), "unknown")
+
+    def test_is_syncable_auth_file_keeps_valid_credentials(self):
+        self.assertTrue(
+            is_syncable_auth_file(
+                {
+                    "id": "file-1.json",
+                    "provider": "claude",
+                    "status": "active",
+                }
+            )
+        )
+        self.assertTrue(
+            is_syncable_auth_file(
+                {
+                    "id": "file-2.json",
+                    "provider": "xai",
+                    "status": "active",
+                    "runtime_only": False,
+                }
+            )
+        )
+        self.assertTrue(
+            is_syncable_auth_file(
+                {
+                    "id": "file-kimi.json",
+                    "provider": "kimi",
+                    "status": "active",
+                }
+            )
+        )
+        self.assertEqual(normalize_provider("kimi"), "moonshot")
+
+    def test_is_syncable_auth_file_skips_malformed_incomplete_records(self):
+        self.assertFalse(is_syncable_auth_file(None))
+        self.assertFalse(is_syncable_auth_file("not-a-dict"))
+        self.assertFalse(is_syncable_auth_file({"provider": "anthropic", "status": "active"}))
+        self.assertFalse(is_syncable_auth_file({"id": "", "provider": "anthropic"}))
+        self.assertFalse(is_syncable_auth_file({"id": "   ", "provider": "anthropic"}))
+        self.assertFalse(is_syncable_auth_file({"id": "file-1.json", "status": "active"}))
+        self.assertFalse(is_syncable_auth_file({"id": "file-1.json", "provider": ""}))
+
+    def test_is_syncable_auth_file_skips_internal_and_unknown_providers(self):
+        self.assertFalse(
+            is_syncable_auth_file(
+                {
+                    "id": "runtime-channel",
+                    "provider": "aistudio",
+                    "runtime_only": True,
+                    "status": "active",
+                }
+            )
+        )
+        self.assertFalse(
+            is_syncable_auth_file(
+                {
+                    "id": "sys-1",
+                    "provider": "internal",
+                    "status": "active",
+                }
+            )
+        )
+        self.assertFalse(
+            is_syncable_auth_file(
+                {
+                    "id": "sys-2",
+                    "provider": "system",
+                    "status": "active",
+                }
+            )
+        )
+        self.assertFalse(
+            is_syncable_auth_file(
+                {
+                    "id": "file-unknown.json",
+                    "provider": "unknown",
+                    "status": "active",
+                }
+            )
+        )
+        self.assertFalse(
+            is_syncable_auth_file(
+                {
+                    "id": "file-bogus.json",
+                    "provider": "not-a-real-provider",
+                    "status": "active",
+                }
+            )
+        )
+
+    def test_filter_syncable_auth_files_drops_invalid_keeps_valid(self):
+        files = [
+            {"id": "keep.json", "provider": "anthropic", "status": "active"},
+            {"id": "", "provider": "anthropic"},
+            {"id": "runtime", "provider": "aistudio", "runtime_only": True},
+            {"id": "bad-provider.json", "provider": "unknown"},
+            {"provider": "openai", "status": "active"},
+            {"id": "keep-mapped.json", "provider": "codex", "status": "active"},
+        ]
+        kept = filter_syncable_auth_files(files)
+        self.assertEqual([f["id"] for f in kept], ["keep.json", "keep-mapped.json"])
 
     def test_map_auth_file_status_preserves_existing_mapping(self):
         self.assertEqual(map_auth_file_status({"disabled": True, "status": "active"}), "SUSPENDED")

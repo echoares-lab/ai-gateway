@@ -452,6 +452,16 @@ configure_admin_routes(
 app.include_router(extracted_admin_router)
 app.include_router(model_runtime_router)
 
+
+# Credential events must be registered before the catch-all proxy so they are
+# not forwarded upstream as an unknown OpenAI-compatible path (#388).
+@app.post("/v1/events/credential")
+async def handle_policy_credential_event(event: CredentialEvent):
+    """Handle external credential events (cooldowns/prober) in-process (issue 183)."""
+    await process_credential_event_async(event)
+    return {"accepted": True}
+
+
 configure_proxy_routes(
     ProxyRouterDeps(
         get_http_client=lambda: _client,
@@ -492,10 +502,3 @@ app.include_router(
         )
     )
 )
-
-
-@app.post("/v1/events/credential")
-async def handle_policy_credential_event(event: CredentialEvent):
-    """Handle external credential events (cooldowns/prober) in-process (issue 183)."""
-    await process_credential_event_async(event)
-    return {"accepted": True}
