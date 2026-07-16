@@ -19,7 +19,7 @@ Last reviewed: 2026-07-16 (Gemini CLI retirement and quota reliability promoted 
 ### Gemini CLI retirement and quota reliability
 
 Approve coordination epic
-[#386](https://github.com/echoares-lab/ai-gateway/issues/386) and its six atomic
+[#386](https://github.com/echoares-lab/ai-gateway/issues/386) and its seven atomic
 children. This release removes Gemini CLI from this gateway deployment while
 preserving generic CLIProxy compatibility, repairs quota and credential delivery,
 and introduces an isolated staging-to-production promotion path.
@@ -27,11 +27,12 @@ and introduces an isolated staging-to-production promotion path.
 | Order | Atomic issue | Repository | State / dependency |
 |------:|--------------|------------|--------------------|
 | 1 | [Staging foundation #58](https://github.com/echoares-lab/k3s-01/issues/58) | `k3s-01` | Ready; branch from `production` |
-| 1 | [CLIProxy quota contract #5](https://github.com/echoares-lab/CLIProxyAPI/issues/5) | `CLIProxyAPI` | Ready; branch from `main` |
+| 1 | [CLIProxy quota foundation #6](https://github.com/echoares-lab/CLIProxyAPI/issues/6) | `CLIProxyAPI` | Ready; branch from `main` |
 | 1 | [Gemini CLI routing retirement #387](https://github.com/echoares-lab/ai-gateway/issues/387) | `ai-gateway` | Ready; branch from `main` |
 | 2 | [Staging workloads #59](https://github.com/echoares-lab/k3s-01/issues/59) | `k3s-01` | Depends on staging foundation #58 |
-| 2 | [Gateway quota and prober reliability #388](https://github.com/echoares-lab/ai-gateway/issues/388) | `ai-gateway` | Depends on CLIProxyAPI #5 and #387 |
-| 3 | [Staging validation and production promotion #60](https://github.com/echoares-lab/k3s-01/issues/60) | `k3s-01` | Depends on all implementation issues |
+| 2 | [CLIProxy quota contract #5](https://github.com/echoares-lab/CLIProxyAPI/issues/5) | `CLIProxyAPI` | Depends on quota foundation #6 |
+| 3 | [Gateway quota and prober reliability #388](https://github.com/echoares-lab/ai-gateway/issues/388) | `ai-gateway` | Depends on CLIProxyAPI #5 and #387 |
+| 4 | [Staging validation and production promotion #60](https://github.com/echoares-lab/k3s-01/issues/60) | `k3s-01` | Depends on all implementation issues |
 
 Release invariants:
 
