@@ -482,9 +482,7 @@ def test_admin_quota_status_full_endpoint_failure_keeps_accounts_not_502(monkeyp
     body = resp.json()
     assert len(body["accounts"]) == 1
     assert body["errors"]
-    assert any(
-        "quota-status/full" in (e.get("source") or e.get("location") or "") for e in body["errors"]
-    )
+    assert any("quota-status/full" in (e.get("source") or e.get("location") or "") for e in body["errors"])
     # Without a live full entry, treat active credential as missing for partial.
     assert body["accounts"][0]["quota"]["live_status"] == "missing"
     assert body["partial"] is True
