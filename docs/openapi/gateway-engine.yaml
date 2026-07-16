@@ -109,6 +109,11 @@ paths:
         When GATEWAY_ENGINE_ADMIN_READ_AUTH is enabled, x-admin-key is required;
         otherwise the endpoint is readable without the header. A successful
         response can contain partial dependency errors alongside account data.
+        Top-level partial is true only when at least one non-disabled credential
+        has live_status missing or error. Per-account quota.live_status is one of
+        fresh, unsupported, missing, or error; quota.live_fetched_at is present
+        only for fresh live results. Year-1 and Unix-epoch reset timestamps are
+        normalized to null.
       security:
         - {}
         - AdminKey: []
@@ -121,12 +126,12 @@ paths:
             type: string
       responses:
         '200':
-          description: Aggregated account quota state, optionally with partial errors
+          description: Aggregated account quota state, optionally with partial live failures or dependency errors
           content:
             application/json:
               schema:
                 type: object
-                required: [status, source, captured_at, accounts]
+                required: [status, source, captured_at, partial, accounts]
                 properties:
                   status:
                     type: string
@@ -136,6 +141,12 @@ paths:
                   captured_at:
                     type: string
                     format: date-time
+                  partial:
+                    type: boolean
+                    description: >-
+                      True when any active (non-disabled) credential has
+                      live_status missing or error. Disabled or unsupported-only
+                      credentials do not set this flag.
                   accounts:
                     type: array
                     items:
@@ -169,16 +180,26 @@ paths:
                             - tokens_limit
                             - requests_remaining
                             - requests_limit
+                            - live_status
                           properties:
                             source: {type: string}
                             stale: {type: boolean}
                             captured_at: {type: string, format: date-time, nullable: true}
+                            live_status:
+                              type: string
+                              enum: [fresh, unsupported, missing, error]
+                              description: Live full-window lookup outcome for this credential.
+                            live_fetched_at:
+                              type: string
+                              format: date-time
+                              description: Present only when live_status is fresh.
                             windows:
                               type: object
                               description: >-
                                 Named utilization windows. five_hour, seven_day, and
                                 binding are always present; provider-specific windows
-                                can also be included.
+                                can also be included. Sentinel year-1 and Unix-epoch
+                                resets_at values are normalized to null.
                               additionalProperties:
                                 type: object
                                 properties:
@@ -208,6 +229,7 @@ paths:
                 status: "ok"
                 source: "cliproxy:/v0/management/quota-status + /quota-status/full"
                 captured_at: "2026-07-11T10:00:01Z"
+                partial: false
                 accounts:
                   - credential_id: "cred-claude-1"
                     email: "operator@example.com"
@@ -221,6 +243,8 @@ paths:
                       source: "unified"
                       stale: false
                       captured_at: "2026-07-11T10:00:00Z"
+                      live_status: "fresh"
+                      live_fetched_at: "2026-07-11T10:00:00Z"
                       windows:
                         five_hour:
                           utilization_pct: 10.0
@@ -240,6 +264,81 @@ paths:
                   - code: "cliproxy_fetch_error"
                     message: "TimeoutError: live quota refresh timed out"
                     location: "cliproxy:/v0/management/quota-status/full"
+              examples:
+                freshSuccess:
+                  summary: Fresh live quota for active credentials
+                  value:
+                    status: "ok"
+                    source: "cliproxy:/v0/management/quota-status + /quota-status/full"
+                    captured_at: "2026-07-11T10:00:01Z"
+                    partial: false
+                    accounts:
+                      - credential_id: "cred-claude-1"
+                        email: "operator@example.com"
+                        provider: "claude"
+                        provider_label: "Claude"
+                        plan_type: "max"
+                        account_status: "active"
+                        disabled: false
+                        applies_to_models: "All Claude models"
+                        quota:
+                          source: "unified"
+                          stale: false
+                          captured_at: "2026-07-11T10:00:00Z"
+                          live_status: "fresh"
+                          live_fetched_at: "2026-07-11T10:00:00Z"
+                          windows:
+                            five_hour:
+                              utilization_pct: 10.0
+                              resets_at: "2026-07-11T15:00:00Z"
+                            seven_day:
+                              utilization_pct: 20.0
+                              resets_at: "2026-07-18T10:00:00Z"
+                            binding:
+                              utilization_pct: 45.0
+                              resets_at: "2026-07-11T14:00:00Z"
+                              resets_in: "3h59m"
+                          tokens_remaining: 1100000
+                          tokens_limit: 2000000
+                          requests_remaining: null
+                          requests_limit: null
+                partialLiveError:
+                  summary: Active credential live lookup failed (partial=true)
+                  value:
+                    status: "ok"
+                    source: "cliproxy:/v0/management/quota-status + /quota-status/full"
+                    captured_at: "2026-07-11T10:00:01Z"
+                    partial: true
+                    accounts:
+                      - credential_id: "cred-claude-broken"
+                        email: "broken@example.com"
+                        provider: "claude"
+                        provider_label: "Claude"
+                        plan_type: "max"
+                        account_status: "active"
+                        disabled: false
+                        applies_to_models: "All Claude models"
+                        quota:
+                          source: "unified"
+                          stale: false
+                          captured_at: "2026-07-11T10:00:00Z"
+                          live_status: "error"
+                          windows:
+                            five_hour:
+                              utilization_pct: 10.0
+                              resets_at: "2026-07-11T15:00:00Z"
+                            seven_day:
+                              utilization_pct: null
+                              resets_at: null
+                            binding:
+                              utilization_pct: 45.0
+                              resets_at: null
+                              resets_in: null
+                          tokens_remaining: 1100000
+                          tokens_limit: 2000000
+                          requests_remaining: null
+                          requests_limit: null
+                          full_quota_error: "anthropic returned 503"
         '403':
           description: Admin read authentication is enabled and x-admin-key is missing or invalid
           content:
