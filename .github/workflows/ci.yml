@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set GIT_SHA
-        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -89,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set GIT_SHA
-        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
       - uses: ./.github/actions/setup-python-venv
         with:
           extra-packages: ruff pyyaml pydantic pytest
@@ -151,8 +151,16 @@ jobs:
     runs-on: arc-dind
     steps:
       - uses: actions/checkout@v4
-      - name: Set GIT_SHA
-        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - name: Set release metadata
+        run: |
+          APP_VERSION=$(tr -d '[:space:]' < VERSION)
+          if ! grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' <<< "$APP_VERSION"; then
+            echo "::error::VERSION must contain a Docker-tag-safe SemVer core (for example 1.2.1)"
+            exit 1
+          fi
+          echo "GIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
       - name: Log in to Nexus registry
         run: echo "$NEXUS_PASSWORD" | docker login nexus-docker.infra.plexplease.com -u "$NEXUS_USERNAME" --password-stdin
       - name: Set up Docker Buildx
@@ -172,15 +180,19 @@ jobs:
           scope: gateway-engine
           push: false
           build-args: |
+            APP_VERSION=${{ env.APP_VERSION }}
             GIT_SHA=${{ env.GIT_SHA }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
       - name: Run gateway-engine unit tests (parallel)
         run: docker run --rm ai-gateway-engine-test:latest sh -c 'pytest test_gateway_engine*.py -n auto -v'
       - name: Push gateway-engine to Nexus
         if: steps.should_push.outputs.push == 'true'
         run: |
           docker tag ai-gateway-engine-test:latest ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.GIT_SHA }}
+          docker tag ai-gateway-engine-test:latest ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.APP_VERSION }}
           docker tag ai-gateway-engine-test:latest ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
           docker push ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.GIT_SHA }}
+          docker push ${{ env.DOCKER_REGISTRY }}/gateway-engine:${{ env.APP_VERSION }}
           docker push ${{ env.DOCKER_REGISTRY }}/gateway-engine:latest
       - name: Build and push credential-prober + docs-server (immutable sha tags)
         if: steps.should_push.outputs.push == 'true'
@@ -211,7 +223,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set GIT_SHA
-        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
       - uses: ./.github/actions/setup-python-venv
         with:
           requirements-files: services/credential-prober/requirements-test.txt
@@ -268,7 +280,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set GIT_SHA
-        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
       - uses: ./.github/actions/setup-python-venv
         with:
           requirements-files: tests/integration/requirements.txt
@@ -292,7 +304,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set GIT_SHA
-        run: echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
       - name: Mask injected CI secrets
         run: |
           [ -n "${CLIPROXY_AUTH_TAR_B64:-}" ] && echo "::add-mask::$CLIPROXY_AUTH_TAR_B64" || true

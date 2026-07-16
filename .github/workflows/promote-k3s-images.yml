@@ -116,6 +116,11 @@ jobs:
           path: k3s-01
           token: ${{ steps.token.outputs.token }}
 
+      - name: Install kubectl for Kustomize validation
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.34.1
+
       - name: Apply pin updates
         run: |
           set -euo pipefail

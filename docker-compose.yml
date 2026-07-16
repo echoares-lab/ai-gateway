@@ -134,7 +134,9 @@ services:
       context: ./services/gateway-engine
       dockerfile: Dockerfile
       args:
+        APP_VERSION: ${APP_VERSION:-0.0.0-dev}
         GIT_SHA: ${GIT_SHA:-unknown}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
         ENVIRONMENT: ${ENVIRONMENT:-production}
     command: uvicorn main:app --host 0.0.0.0 --port 4000 --workers 1
     restart: always
