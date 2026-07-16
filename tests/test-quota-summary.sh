@@ -28,6 +28,57 @@ pass() { echo "  ✓ $1"; PASS=$((PASS + 1)); }
 fail() { echo "  ✗ $1"; FAIL=$((FAIL + 1)); }
 contains() { [[ "$1" == *"$2"* ]]; }
 
+echo "── quota endpoint OpenAPI ──"
+
+python3 - "$REPO_DIR/docs/openapi/gateway-engine.yaml" <<'PY'
+import sys
+
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as spec_file:
+    spec = yaml.safe_load(spec_file)
+
+assert any(
+    server.get("url") == "https://gateway.infra.plexplease.com"
+    for server in spec["servers"]
+), "production Gateway Engine server is not documented"
+
+operation = spec["paths"]["/admin/quota/status"]["get"]
+admin_key = next(
+    parameter
+    for parameter in operation["parameters"]
+    if parameter["name"] == "x-admin-key" and parameter["in"] == "header"
+)
+assert admin_key["required"] is False, "x-admin-key must be documented as optional"
+
+success = operation["responses"]["200"]["content"]["application/json"]
+example = success["example"]
+account = example["accounts"][0]
+assert example["captured_at"]
+assert account["email"] and account["account_status"]
+assert account["quota"]["windows"]["five_hour"]["utilization_pct"] == 10.0
+assert account["quota"]["windows"]["binding"]["resets_in"] == "3h59m"
+
+for status in ("403", "502", "503"):
+    assert status in operation["responses"], f"response {status} is not documented"
+
+quota_properties = success["schema"]["properties"]["accounts"]["items"]["properties"]["quota"]["properties"]
+for field in (
+    "captured_at",
+    "stale",
+    "windows",
+    "tokens_remaining",
+    "tokens_limit",
+    "requests_remaining",
+    "requests_limit",
+    "models",
+    "full_quota_error",
+):
+    assert field in quota_properties, f"quota field {field} is not documented"
+assert "errors" in success["schema"]["properties"], "partial errors are not documented"
+PY
+pass "documents the production quota endpoint contract and examples"
+
 run_summary() {
   local scenario="$1" url="$2" key="${3:-}"
   FAKE_CURL_SCENARIO="$scenario" \
