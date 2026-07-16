@@ -18,10 +18,56 @@ CLIPROXY_PROVIDER_MAP = {
     "gemini-cli": "gemini",
 }
 
+# Must stay aligned with credential_inventory_provider_check (init-db / migration 002).
+INVENTORY_PROVIDERS = frozenset(
+    {
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "moonshot",
+        "antigravity",
+        "gemini-cli",
+        "codex",
+        "claude",
+    }
+)
+
+_INTERNAL_PROVIDERS = frozenset({"internal", "system"})
+
 
 def normalize_provider(cliproxy_provider: str | None) -> str:
     provider = (cliproxy_provider or "unknown").lower()
     return CLIPROXY_PROVIDER_MAP.get(provider, provider)
+
+
+def is_internal_auth_file(file_data: dict[str, Any]) -> bool:
+    """True for runtime-only / system auth rows that must not enter inventory."""
+    runtime_only = file_data.get("runtime_only")
+    if runtime_only is True:
+        return True
+    if isinstance(runtime_only, str) and runtime_only.strip().lower() in {"1", "true", "yes", "on"}:
+        return True
+    raw_provider = (file_data.get("provider") or file_data.get("type") or "").strip().lower()
+    return raw_provider in _INTERNAL_PROVIDERS
+
+
+def is_syncable_auth_file(file_data: Any) -> bool:
+    """Return True when an auth-files inventory row is safe to upsert."""
+    if not isinstance(file_data, dict):
+        return False
+    cred_id = file_data.get("id")
+    if not isinstance(cred_id, str) or not cred_id.strip():
+        return False
+    if is_internal_auth_file(file_data):
+        return False
+    provider = normalize_provider(file_data.get("provider"))
+    return provider in INVENTORY_PROVIDERS
+
+
+def filter_syncable_auth_files(files: list[Any]) -> list[dict[str, Any]]:
+    """Drop internal/malformed/unknown records before DB work."""
+    return [f for f in files if is_syncable_auth_file(f)]
 
 
 # CLIProxy sets status="error" for transient quota/rate limits as well as hard auth failures.

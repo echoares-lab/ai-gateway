@@ -11,6 +11,7 @@ from credential_probe import (
     build_inventory_payload,
     build_transition_payload,
     compute_cool_down_until,
+    filter_syncable_auth_files,
     map_auth_file_status,
     normalize_provider,
     should_emit_transition,
@@ -72,6 +73,17 @@ def sync_inventory():
         log.warning("No auth files retrieved, skipping sync.")
         return
 
+    syncable = filter_syncable_auth_files(files)
+    skipped = len(files) - len(syncable)
+    if skipped:
+        log.info(
+            "Skipping %s internal/malformed/unknown auth records before inventory sync.",
+            skipped,
+        )
+    if not syncable:
+        log.warning("No syncable auth files after filtering, skipping sync.")
+        return
+
     try:
         conn = psycopg2.connect(DB_URL)
         cur = conn.cursor()
@@ -79,7 +91,7 @@ def sync_inventory():
         existing_statuses = {row[0]: row[1] for row in cur.fetchall()}
         now = datetime.now(timezone.utc)
 
-        for f in files:
+        for f in syncable:
             payload = build_inventory_payload(
                 f,
                 now=now,
@@ -140,7 +152,7 @@ def sync_inventory():
         conn.commit()
         cur.close()
         conn.close()
-        log.info(f"Successfully synced {len(files)} credentials to inventory.")
+        log.info(f"Successfully synced {len(syncable)} credentials to inventory.")
     except Exception as e:
         log.error(f"Database sync failed: {e}")
 
