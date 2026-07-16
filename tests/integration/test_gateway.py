@@ -103,12 +103,19 @@ async def test_deployment_catalog_endpoint_has_no_via_gcli_models(asgi_client, m
 @pytest.mark.asyncio
 @pytest.mark.mock
 @pytest.mark.smoke
-async def test_admin_status_endpoint_fallbacks_have_no_via_gcli_references(asgi_client):
+async def test_admin_status_endpoint_fallbacks_have_no_via_gcli_references(asgi_client, monkeypatch):
     """Exercise the public admin contract that exposes configured fallbacks."""
+    import main as gateway_engine_main
+
+    config_path = Path(__file__).resolve().parents[2] / "litellm-config.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    monkeypatch.setattr(gateway_engine_main, "_admin_load_litellm_config", lambda: (config, []))
+
     resp = await asgi_client.get("/admin/status")
 
     assert resp.status_code == 200
     fallbacks = resp.json()["panels"]["routing"]["data"]["fallbacks"]
+    assert fallbacks, "deployment fallback graph was not loaded by /admin/status"
     references = [
         model
         for fallback in fallbacks
