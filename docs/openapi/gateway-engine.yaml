@@ -11,6 +11,32 @@ servers:
   - url: http://localhost:4010
     description: Development slot 1 gateway-engine
 paths:
+  /version:
+    get:
+      summary: Get Gateway Engine release identity
+      description: Returns the human SemVer release and immutable Git source revision baked into the running image.
+      responses:
+        '200':
+          description: Release identity
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, git_sha, display_version]
+                properties:
+                  version:
+                    type: string
+                    example: "1.2.1"
+                  git_sha:
+                    type: string
+                    example: "0123456789abcdef0123456789abcdef01234567"
+                  display_version:
+                    type: string
+                    example: "1.2.1+sha.0123456"
+              example:
+                version: "1.2.1"
+                git_sha: "0123456789abcdef0123456789abcdef01234567"
+                display_version: "1.2.1+sha.0123456"
   /v1/chat/completions:
     post:
       summary: Proxy for Cursor/OpenAI hybrid formats
