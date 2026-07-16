@@ -184,3 +184,10 @@ Staging is the pre-prod gate. The promotion flow:
 
 The invariant: **the same commit/config validated on staging is what gets pinned to prod.**
 Staging floats on `:latest`; prod advances only by pinning a staging-validated digest.
+
+For Gateway Engine, `VERSION` supplies the human SemVer image tag and OCI
+version label, while the full Git SHA/digest remains the immutable promotion
+and rollback identity. The production GitOps promotion changes that immutable
+pin together with `app.kubernetes.io/version`; the runtime exposes the same
+release through `GET /version`, with `display_version` in
+`<semver>+sha.<short-sha>` form.

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.k3s.promote_k3s_images import _set_image_pin, main
+from scripts.k3s.promote_k3s_images import _set_gateway_version, _set_image_pin, main
 
 
 FIXTURE = """apiVersion: kustomize.config.k8s.io/v1beta1
@@ -20,6 +20,22 @@ images:
     digest: sha256:6193e710b4992d6e6feb71959da25f93259697bd844f382f4e3916facf867540
   - name: nexus-docker.infra.plexplease.com/ai-gateway/docs-server
     digest: sha256:8709f4f019a32a4195dfd5b973585f704d8066a28b1c41b4b22b53826cb0ce33
+"""
+
+WORKLOAD_FIXTURE = """apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-engine
+  namespace: ai-gateway
+  labels:
+    app.kubernetes.io/version: 1.2.0
+spec:
+  selector: { matchLabels: { app: gateway-engine } }
+  template:
+    metadata:
+      labels:
+        app: gateway-engine
+        app.kubernetes.io/version: 1.2.0
 """
 
 
@@ -46,12 +62,28 @@ def test_set_image_pin_digest_from_tag() -> None:
     assert 'newTag: "d4a621b"' not in out
 
 
+def test_set_gateway_version_updates_deployment_and_pod_without_selector() -> None:
+    out = _set_gateway_version(WORKLOAD_FIXTURE, "1.2.1")
+
+    assert out.count("app.kubernetes.io/version: 1.2.1") == 2
+    assert "app.kubernetes.io/version: 1.2.0" not in out
+    assert "selector: { matchLabels: { app: gateway-engine } }" in out
+
+
+@pytest.mark.parametrize("version", ["v1.2.1", "1.2", "1.2.1+build", "latest"])
+def test_set_gateway_version_rejects_non_label_semver(version: str) -> None:
+    with pytest.raises(ValueError, match="SemVer core"):
+        _set_gateway_version(WORKLOAD_FIXTURE, version)
+
+
 def test_main_updates_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = tmp_path / "k3s-01"
     overlay = repo / "kubernetes/workloads/home/ai-gateway/overlays/k3s-01"
     overlay.mkdir(parents=True)
     path = overlay / "kustomization.yaml"
     path.write_text(FIXTURE, encoding="utf-8")
+    workload_path = overlay / "core-workloads.yaml"
+    workload_path.write_text(WORKLOAD_FIXTURE, encoding="utf-8")
 
     monkeypatch.setattr(
         "sys.argv",
@@ -61,6 +93,8 @@ def test_main_updates_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
             str(repo),
             "--gateway-engine",
             "deadbee",
+            "--gateway-version",
+            "1.2.1",
             "--credential-prober",
             "cafebabe",
         ],
@@ -69,3 +103,4 @@ def test_main_updates_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     text = path.read_text(encoding="utf-8")
     assert 'newTag: "deadbee"' in text
     assert 'newTag: "cafebabe"' in text
+    assert workload_path.read_text(encoding="utf-8").count("app.kubernetes.io/version: 1.2.1") == 2

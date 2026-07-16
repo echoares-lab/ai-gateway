@@ -54,3 +54,11 @@ def test_k3s_promotion_installs_pinned_kubectl_before_rendering() -> None:
     version_index = workflow.index("version: v1.34.1", setup_index)
     render_index = workflow.index("kubectl kustomize", version_index)
     assert setup_index < version_index < render_index
+
+
+def test_k3s_promotion_keeps_full_sha_and_updates_gateway_version() -> None:
+    workflow = (ROOT / ".github/workflows/promote-k3s-images.yml").read_text(encoding="utf-8")
+    assert 'SHA="${RUN_HEAD_SHA}"' in workflow
+    assert 'GATEWAY_VERSION="${INPUT_GATEWAY_VERSION:-$(tr -d' in workflow
+    assert '--gateway-version "${GATEWAY_VERSION}"' in workflow
+    assert "core-workloads.yaml" in workflow

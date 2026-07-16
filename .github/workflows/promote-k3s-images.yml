@@ -11,7 +11,11 @@ on:
   workflow_dispatch:
     inputs:
       gateway_engine:
-        description: "gateway-engine image tag (short git sha) or sha256 digest"
+        description: "gateway-engine image tag (full git sha) or sha256 digest"
+        required: false
+        type: string
+      gateway_version:
+        description: "gateway-engine SemVer label (defaults to repository VERSION)"
         required: false
         type: string
       credential_prober:
@@ -27,7 +31,7 @@ on:
         required: false
         type: string
       git_sha:
-        description: "If set, promote gateway-engine/credential-prober/docs-server to this short sha"
+        description: "If set, promote gateway-engine/credential-prober/docs-server to this full sha"
         required: false
         type: string
   workflow_run:
@@ -67,6 +71,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_GIT_SHA: ${{ inputs.git_sha }}
           INPUT_GE: ${{ inputs.gateway_engine }}
+          INPUT_GATEWAY_VERSION: ${{ inputs.gateway_version }}
           INPUT_CP: ${{ inputs.credential_prober }}
           INPUT_DS: ${{ inputs.docs_server }}
           INPUT_CLIPROXY: ${{ inputs.cliproxy }}
@@ -77,13 +82,14 @@ jobs:
           if [[ -n "${INPUT_GIT_SHA}" ]]; then
             SHA="${INPUT_GIT_SHA}"
           elif [[ "${EVENT_NAME}" == "workflow_run" ]]; then
-            SHA="$(echo "${RUN_HEAD_SHA}" | cut -c1-7)"
+            SHA="${RUN_HEAD_SHA}"
           fi
 
           GE="${INPUT_GE:-}"
           CP="${INPUT_CP:-}"
           DS="${INPUT_DS:-}"
           CLIPROXY="${INPUT_CLIPROXY:-}"
+          GATEWAY_VERSION="${INPUT_GATEWAY_VERSION:-$(tr -d '[:space:]' < VERSION)}"
 
           if [[ -n "${SHA}" ]]; then
             # Auto promote from CI Suite always updates gateway-engine. Other app
@@ -102,11 +108,17 @@ jobs:
           fi
 
           echo "gateway_engine=${GE}" >> "$GITHUB_OUTPUT"
+          echo "gateway_version=${GATEWAY_VERSION}" >> "$GITHUB_OUTPUT"
           echo "credential_prober=${CP}" >> "$GITHUB_OUTPUT"
           echo "docs_server=${DS}" >> "$GITHUB_OUTPUT"
           echo "cliproxy=${CLIPROXY}" >> "$GITHUB_OUTPUT"
-          echo "branch_suffix=${SHA:-manual-$(date -u +%Y%m%d%H%M%S)}" >> "$GITHUB_OUTPUT"
-          echo "Promoting GE=${GE} CP=${CP} DS=${DS} CLIPROXY=${CLIPROXY}"
+          if [[ -n "${SHA}" ]]; then
+            BRANCH_SUFFIX="${SHA:0:7}"
+          else
+            BRANCH_SUFFIX="manual-$(date -u +%Y%m%d%H%M%S)"
+          fi
+          echo "branch_suffix=${BRANCH_SUFFIX}" >> "$GITHUB_OUTPUT"
+          echo "Promoting GE=${GE} VERSION=${GATEWAY_VERSION} CP=${CP} DS=${DS} CLIPROXY=${CLIPROXY}"
 
       - name: Checkout k3s-01
         uses: actions/checkout@v4
@@ -126,10 +138,11 @@ jobs:
           set -euo pipefail
           ARGS=(--k3s-repo k3s-01)
           GE='${{ steps.pins.outputs.gateway_engine }}'
+          GATEWAY_VERSION='${{ steps.pins.outputs.gateway_version }}'
           CP='${{ steps.pins.outputs.credential_prober }}'
           DS='${{ steps.pins.outputs.docs_server }}'
           CLIPROXY='${{ steps.pins.outputs.cliproxy }}'
-          [[ -n "${GE}" ]] && ARGS+=(--gateway-engine "${GE}")
+          [[ -n "${GE}" ]] && ARGS+=(--gateway-engine "${GE}" --gateway-version "${GATEWAY_VERSION}")
           [[ -n "${CP}" ]] && ARGS+=(--credential-prober "${CP}")
           [[ -n "${DS}" ]] && ARGS+=(--docs-server "${DS}")
           [[ -n "${CLIPROXY}" ]] && ARGS+=(--cliproxy "${CLIPROXY}")
@@ -150,8 +163,10 @@ jobs:
           git config user.name "ai-gateway-ci"
           git config user.email "ci@echoares-lab.invalid"
           git checkout -b "$BRANCH"
-          git add kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml
-          git commit -m "chore(ai-gateway): promote immutable image pins"
+          git add \
+            kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml \
+            kubernetes/workloads/home/ai-gateway/overlays/k3s-01/core-workloads.yaml
+          git commit -m "chore(ai-gateway): promote image and release metadata"
           git push -u origin "$BRANCH"
           gh pr create --repo echoares-lab/k3s-01 --base production --head "$BRANCH" \
             --title "chore(ai-gateway): promote immutable image pins" \
@@ -160,6 +175,7 @@ jobs:
           Automated image-pin promotion from ai-gateway CI (issue #361).
 
           - gateway-engine: \`${{ steps.pins.outputs.gateway_engine }}\`
+          - gateway version: \`${{ steps.pins.outputs.gateway_version }}\`
           - credential-prober: \`${{ steps.pins.outputs.credential_prober }}\`
           - docs-server: \`${{ steps.pins.outputs.docs_server }}\`
           - cliproxy: \`${{ steps.pins.outputs.cliproxy }}\`
