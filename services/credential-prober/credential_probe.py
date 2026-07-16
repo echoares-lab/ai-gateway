@@ -16,6 +16,7 @@ CLIPROXY_PROVIDER_MAP = {
     "claude": "anthropic",
     "codex": "openai",
     "gemini-cli": "gemini",
+    "kimi": "moonshot",
 }
 
 # Must stay aligned with credential_inventory_provider_check (init-db / migration 002).

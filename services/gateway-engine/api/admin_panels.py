@@ -963,10 +963,7 @@ def _live_status_from_full(full: dict) -> str:
         return status
     if not full:
         return "missing"
-    if full.get("fetched_at"):
-        return "fresh"
-    if full.get("windows") or full.get("models"):
-        return "fresh"
+    # Prefer error over leftover windows/models/fetched_at (stale success fields).
     if full.get("error"):
         err = str(full["error"]).lower()
         if "does not support" in err:
@@ -974,6 +971,10 @@ def _live_status_from_full(full: dict) -> str:
         if "access_token" in err or "no access token" in err:
             return "missing"
         return "error"
+    if full.get("fetched_at"):
+        return "fresh"
+    if full.get("windows") or full.get("models"):
+        return "fresh"
     return "missing"
 
 

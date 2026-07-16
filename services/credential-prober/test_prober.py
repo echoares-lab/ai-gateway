@@ -37,6 +37,7 @@ def test_normalize_provider_maps_cliproxy_names():
     assert prober.normalize_provider("codex") == "openai"
     assert prober.normalize_provider("gemini-cli") == "gemini"
     assert prober.normalize_provider("anthropic") == "anthropic"
+    assert prober.normalize_provider("kimi") == "moonshot"
 
 
 @patch("prober.notify_policy_engine")

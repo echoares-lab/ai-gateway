@@ -301,6 +301,50 @@ def test_admin_quota_status_live_fetched_at_omitted_unless_success(monkeypatch):
     assert quota["full_quota_error"] == "anthropic returned 503"
 
 
+def test_admin_quota_status_error_with_leftover_windows_is_error_not_fresh(monkeypatch):
+    """Pre-status payloads with error + leftover windows must not look fresh."""
+    fake = _FakeQuotaHttpClient(
+        quota_status={"credentials": [_sample_quota_cred()]},
+        quota_status_full={
+            "credentials": [
+                {
+                    "id": "cred-claude-1",
+                    # No explicit status — legacy/pre-status shape
+                    "error": "TimeoutError: live quota refresh timed out",
+                    "windows": {
+                        "five_hour": {
+                            "utilization_pct": 10.0,
+                            "resets_at": "2026-07-11T15:00:00Z",
+                        },
+                    },
+                }
+            ]
+        },
+        auth_files={
+            "files": [
+                {
+                    "id": "cred-claude-1",
+                    "email": "operator@example.com",
+                    "status": "active",
+                    "disabled": False,
+                }
+            ]
+        },
+    )
+    _configure(monkeypatch, fake)
+
+    client = TestClient(t.app)
+    resp = client.get("/admin/quota/status")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["partial"] is True
+    quota = body["accounts"][0]["quota"]
+    assert quota["live_status"] == "error"
+    assert quota.get("live_fetched_at") is None
+    assert quota["full_quota_error"] == "TimeoutError: live quota refresh timed out"
+
+
 def test_admin_quota_status_normalizes_sentinel_resets_to_null(monkeypatch):
     fake = _FakeQuotaHttpClient(
         quota_status={

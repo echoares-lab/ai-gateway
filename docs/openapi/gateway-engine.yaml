@@ -260,10 +260,6 @@ paths:
                       tokens_limit: 2000000
                       requests_remaining: null
                       requests_limit: null
-                errors:
-                  - code: "cliproxy_fetch_error"
-                    message: "TimeoutError: live quota refresh timed out"
-                    location: "cliproxy:/v0/management/quota-status/full"
               examples:
                 freshSuccess:
                   summary: Fresh live quota for active credentials

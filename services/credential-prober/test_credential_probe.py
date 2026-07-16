@@ -25,6 +25,7 @@ class TestCredentialProbeHelpers(unittest.TestCase):
         self.assertEqual(normalize_provider("codex"), "openai")
         self.assertEqual(normalize_provider("gemini-cli"), "gemini")
         self.assertEqual(normalize_provider("anthropic"), "anthropic")
+        self.assertEqual(normalize_provider("kimi"), "moonshot")
         self.assertEqual(normalize_provider(None), "unknown")
 
     def test_is_syncable_auth_file_keeps_valid_credentials(self):
@@ -47,6 +48,16 @@ class TestCredentialProbeHelpers(unittest.TestCase):
                 }
             )
         )
+        self.assertTrue(
+            is_syncable_auth_file(
+                {
+                    "id": "file-kimi.json",
+                    "provider": "kimi",
+                    "status": "active",
+                }
+            )
+        )
+        self.assertEqual(normalize_provider("kimi"), "moonshot")
 
     def test_is_syncable_auth_file_skips_malformed_incomplete_records(self):
         self.assertFalse(is_syncable_auth_file(None))
