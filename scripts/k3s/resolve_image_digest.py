@@ -159,9 +159,7 @@ def fetch_manifest_digest(
             )
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
-            raise ResolveImageDigestError(
-                f"manifest not found for {registry}/{repository}:{tag}"
-            ) from exc
+            raise ResolveImageDigestError(f"manifest not found for {registry}/{repository}:{tag}") from exc
         raise ResolveImageDigestError(
             f"registry lookup failed for {registry}/{repository}:{tag}: HTTP {exc.code}"
         ) from exc

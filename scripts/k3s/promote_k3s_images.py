@@ -42,9 +42,7 @@ def require_cliproxy_digest_pin(value: str | None) -> str:
     """Production promotion requires an immutable cliproxy digest."""
     candidate = require_cliproxy_candidate(value)
     if not is_digest(candidate):
-        raise ResolveImageDigestError(
-            "cliproxy production pins must be immutable sha256 digests, not tags"
-        )
+        raise ResolveImageDigestError("cliproxy production pins must be immutable sha256 digests, not tags")
     return candidate
 
 
