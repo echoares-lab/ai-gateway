@@ -914,8 +914,6 @@ _PROVIDER_LABELS: dict[str, str] = {
     "claude": "Claude",
     "antigravity": "Antigravity",
     "codex": "Codex",
-    "gemini": "Gemini",
-    "gemini-cli": "Gemini CLI",
     "kimi": "Kimi",
     "openai": "OpenAI",
 }
@@ -924,11 +922,16 @@ _PROVIDER_MODEL_SCOPE: dict[str, str] = {
     "claude": "All Claude models",
     "antigravity": "Gemini and Claude/GPT models",
     "codex": "All GPT/Codex models",
-    "gemini": "Gemini models",
-    "gemini-cli": "Gemini CLI models",
     "kimi": "Kimi models",
     "openai": "All OpenAI models",
 }
+
+# CLIProxy provider tags to exclude from /admin/quota/status entirely. `gemini-cli`
+# is the deployment's retired Gemini CLI OAuth tier (docs/ROADMAP.md "Gemini CLI
+# retirement", issue #386); `gemini` covers legacy bare Gemini API-key auth files
+# that are not part of gateway routing. Antigravity Gemini OAuth credentials use
+# the distinct `antigravity` provider tag and are unaffected by this filter.
+_QUOTA_STATUS_HIDDEN_PROVIDERS: frozenset[str] = frozenset({"gemini", "gemini-cli"})
 
 # CLIProxy zero-time sentinel meaning "no data captured yet"
 _GO_ZERO_TIME = "0001-01-01T00:00:00Z"

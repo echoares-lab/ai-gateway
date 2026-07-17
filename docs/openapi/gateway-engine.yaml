@@ -113,7 +113,10 @@ paths:
         has live_status missing or error. Per-account quota.live_status is one of
         fresh, unsupported, missing, or error; quota.live_fetched_at is present
         only for fresh live results. Year-1 and Unix-epoch reset timestamps are
-        normalized to null.
+        normalized to null. Accounts for the retired Gemini CLI OAuth tier
+        (`gemini-cli`) and orphaned bare Gemini API-key auth files (`gemini`)
+        are excluded from the accounts array; Antigravity Gemini OAuth accounts
+        (`antigravity`) are unaffected.
       security:
         - {}
         - AdminKey: []
