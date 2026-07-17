@@ -385,8 +385,9 @@ Maintainers should periodically check for new releases and pin them in the repo 
 > **Canonical inventory:** [`docs/DEPENDENCY_INVENTORY.md`](../DEPENDENCY_INVENTORY.md) lists every
 > third-party runtime pin, risk tier, Renovate policy, and rollback target. Renovate opens PRs
 > from [`.github/renovate.json`](../../.github/renovate.json). The step-by-step update playbook
-> is #417 (`docs/ops/DEPENDENCY_UPDATES.md`). CLIProxy updates flow through the weekly
-> upstream-track job (#11), not Renovate.
+> is [`docs/ops/DEPENDENCY_UPDATES.md`](DEPENDENCY_UPDATES.md) (#417) — gates, staging
+> deep-smoke promote path, per-component rollback, and the dependency PR checklist. CLIProxy
+> updates flow through the weekly upstream-track job (#11), not Renovate.
 
 ### 1. Check for new releases
 - **CLIProxyAPI**: [GitHub Releases](https://github.com/router-for-me/CLIProxyAPI/releases)

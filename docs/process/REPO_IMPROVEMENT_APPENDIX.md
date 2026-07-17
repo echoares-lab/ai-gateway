@@ -80,7 +80,7 @@ Advisory:
 - Inventory and risk tiers: [`docs/DEPENDENCY_INVENTORY.md`](../DEPENDENCY_INVENTORY.md)
 - Renovate config: [`.github/renovate.json`](../../.github/renovate.json)
 - CLIProxy image updates: CLIProxyAPI weekly upstream-track (#11), promoted via k3s workflow (#415) — **not** Renovate
-- Per-component playbook: #417 (`docs/ops/DEPENDENCY_UPDATES.md`)
+- Per-component playbook: [`docs/ops/DEPENDENCY_UPDATES.md`](../ops/DEPENDENCY_UPDATES.md) (#417)
 
 Renovate PRs for **high**-risk components (LiteLLM) and **all majors** never auto-merge. Merge only after the gates listed in the inventory row for that component.
 
