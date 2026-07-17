@@ -17,11 +17,16 @@
 #   --full                 --quick plus: tagged API-shape checks for
 #                           /v1/chat/completions, /v1/responses, and
 #                           /v1/messages; one SSE streaming chat completion;
-#                           and cheap completions for the claude/gpt/gemini
-#                           provider-family allowlist. Soft admin/quota,
+#                           cheap completions for the claude/gpt/gemini
+#                           provider-family allowlist; and read-mostly admin
+#                           checks (GET /admin/status 2xx, GET
+#                           /admin/credentials non-error, and a SOFT GET
+#                           /admin/quota/status check — 2xx + JSON object
+#                           only, no field contracts asserted; see
+#                           check_admin_quota_payload in deep_smoke.py).
 #                           SpendLogs, cluster Jobs, and Langfuse checks are
-#                           tracked separately under bundle #396 (issues
-#                           #400-#401) and are not part of --full yet.
+#                           tracked separately under bundle #396 (issue
+#                           #401) and are not part of --full yet.
 #   --strict               treat soft warnings (e.g. missing kubectl) as
 #                           failures instead of warnings
 #   --allow-mutating-admin reserved for future --full admin probes; no
@@ -30,7 +35,10 @@
 # Env vars (placeholders documented in .env.example, never commit secrets):
 #   DEEP_SMOKE_GATEWAY_URL      override default staging/prod gateway URL
 #   DEEP_SMOKE_API_KEY          bearer key used for /v1 requests
-#   DEEP_SMOKE_ADMIN_KEY        x-admin-key (reserved for --full admin checks)
+#   DEEP_SMOKE_ADMIN_KEY        x-admin-key sent with --full admin checks
+#                               (/admin/status, /admin/credentials,
+#                               /admin/quota/status); omit if
+#                               GATEWAY_ENGINE_ADMIN_READ_AUTH is not enabled
 #   DEEP_SMOKE_K8S_NAMESPACE    override target kube namespace
 #   DEEP_SMOKE_KUBE_CONTEXT     optional kubectl context
 #   DEEP_SMOKE_MODELS           comma-separated model id override; first
@@ -74,7 +82,7 @@ STRICT=0
 ALLOW_MUTATING_ADMIN=0
 
 usage() {
-  sed -n '2,57p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,65p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 while [ $# -gt 0 ]; do
@@ -130,6 +138,7 @@ GATEWAY_URL="${DEEP_SMOKE_GATEWAY_URL:-$DEFAULT_URL}"
 GATEWAY_URL="${GATEWAY_URL%/}"
 NAMESPACE="${DEEP_SMOKE_K8S_NAMESPACE:-$DEFAULT_NAMESPACE}"
 API_KEY="${DEEP_SMOKE_API_KEY:-}"
+ADMIN_KEY="${DEEP_SMOKE_ADMIN_KEY:-}"
 KUBE_CONTEXT="${DEEP_SMOKE_KUBE_CONTEXT:-}"
 SMOKE_TAG="deep-smoke-$(date -u +%Y%m%dT%H%M%SZ)"
 
@@ -166,19 +175,31 @@ parse_response() {
 }
 
 # GET/POST $2 (path) against $GATEWAY_URL, optionally with a JSON body ($3).
-# Always succeeds (never trips `set -e`) — the caller inspects the trailing
-# HTTP status line produced by `-w '\n%{http_code}'`.
+# Pass $4=1 to also send x-admin-key (when DEEP_SMOKE_ADMIN_KEY is set) for
+# admin routes. Always succeeds (never trips `set -e`) — the caller inspects
+# the trailing HTTP status line produced by `-w '\n%{http_code}'`.
 http_call() {
-  local method="$1" path="$2" data="${3:-}"
+  local method="$1" path="$2" data="${3:-}" want_admin_key="${4:-0}"
   local curl_args=(-sS --max-time 20 -w '\n%{http_code}' -X "$method")
   if [ -n "$API_KEY" ]; then
     curl_args+=(-H "Authorization: Bearer $API_KEY")
+  fi
+  if [ "$want_admin_key" = "1" ] && [ -n "$ADMIN_KEY" ]; then
+    curl_args+=(-H "x-admin-key: $ADMIN_KEY")
   fi
   if [ -n "$data" ]; then
     curl_args+=(-H "Content-Type: application/json" -d "$data")
   fi
   curl_args+=("$GATEWAY_URL$path")
   "$CURL_BIN" "${curl_args[@]}" 2>/dev/null || true
+}
+
+# True (rc 0) when $1 is a 2xx HTTP status code string.
+is_2xx() {
+  case "$1" in
+    2??) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # Runs `deep_smoke.py $subcmd` with $input piped to stdin. Sets
@@ -334,6 +355,47 @@ check_provider_families() {
   done
 }
 
+# Read-mostly admin checks (issue #400, bundle #396). /admin/status and
+# /admin/credentials require 2xx + non-error JSON; /admin/quota/status is
+# SOFT — 2xx + JSON object only, no field contracts (schema still in flux,
+# hardening tracked as issue #403). See check_admin_*_payload in
+# deep_smoke.py for the exact soft-contract semantics.
+check_admin_status() {
+  local raw
+  raw=$(http_call GET "/admin/status" "" 1)
+  parse_response "$raw"
+  if ! is_2xx "$code"; then
+    record "admin_status" FAIL "GET /admin/status -> ${code:-000}"
+    return
+  fi
+  py_check check-admin-status "$body"
+  record "admin_status" "$(map_rc_to_status "$CAPTURED_RC")" "$CAPTURED_OUT"
+}
+
+check_admin_credentials() {
+  local raw
+  raw=$(http_call GET "/admin/credentials" "" 1)
+  parse_response "$raw"
+  if ! is_2xx "$code"; then
+    record "admin_credentials" FAIL "GET /admin/credentials -> ${code:-000}"
+    return
+  fi
+  py_check check-admin-credentials "$body"
+  record "admin_credentials" "$(map_rc_to_status "$CAPTURED_RC")" "$CAPTURED_OUT"
+}
+
+check_admin_quota() {
+  local raw
+  raw=$(http_call GET "/admin/quota/status" "" 1)
+  parse_response "$raw"
+  if ! is_2xx "$code"; then
+    record "admin_quota" FAIL "GET /admin/quota/status -> ${code:-000}"
+    return
+  fi
+  py_check check-admin-quota "$body"
+  record "admin_quota" "$(map_rc_to_status "$CAPTURED_RC")" "$CAPTURED_OUT"
+}
+
 check_pods() {
   if [ "${DEEP_SMOKE_SKIP_PODS:-0}" = "1" ]; then
     record "pods" WARN "skipped via DEEP_SMOKE_SKIP_PODS=1"
@@ -381,6 +443,9 @@ run_full() {
   check_messages_shape
   check_stream
   check_provider_families
+  check_admin_status
+  check_admin_credentials
+  check_admin_quota
 }
 
 print_summary() {

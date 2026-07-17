@@ -10,12 +10,24 @@ Exit code convention for every ``check-*`` subcommand:
     0 = pass, 1 = fail, 2 = warn (soft — non-fatal unless the caller runs
     with ``--strict``).
 
-The ``--quick`` checks (health/ready/version/models/completion/pods) and the
+The ``--quick`` checks (health/ready/version/models/completion/pods), the
 ``--full`` API-shape/streaming/provider-family checks (chat completions,
 Responses API, Claude Messages API, one SSE stream, claude/gpt/gemini
-allowlist) are implemented here. Soft admin/quota, SpendLogs, cluster Jobs,
-and Langfuse checks remain out of scope for this issue (bundle #396, issues
-#400-#401).
+allowlist), and the ``--full`` read-mostly admin checks (``/admin/status``,
+``/admin/credentials``, soft ``/admin/quota/status``) are implemented here.
+SpendLogs, cluster Jobs, and Langfuse checks remain out of scope for this
+issue (bundle #396, issue #401).
+
+**Soft quota contract** (issue #400): ``GET /admin/quota/status`` is only
+asserted to return an HTTP 2xx status with a JSON object body. The quota
+schema is still moving (see docs/API_DOCUMENTATION.md and the quota-alert
+work in progress), so no field contracts are enforced here — not
+``status``, ``accounts`` shape, per-window breakdowns, ``live_status``, nor
+Apprise/alert-tier fields. ``check_admin_quota_payload`` only *notes*
+whether the optional soft extras (top-level ``status`` in ``("ok",)`` and
+an ``accounts`` list) look as expected; it never fails or warns on them.
+Follow-up issue #403 will replace this with schema-validated asserts once
+the quota OpenAPI schema is frozen.
 """
 
 from __future__ import annotations
@@ -251,6 +263,74 @@ def check_pods_payload(payload: object, allowlist: list[str] | None = None) -> C
     return CheckOutcome("pass", f"{checked} pod(s) checked, all ready{suffix}")
 
 
+def check_admin_status_payload(payload: object) -> CheckOutcome:
+    """Validate a GET /admin/status body — read-mostly, 2xx + JSON object.
+
+    Deliberately shallow: does not assert the ``panels``/``schema_version``
+    shape, only that the body is a JSON object and does not carry a
+    top-level ``error`` key.
+    """
+    if not isinstance(payload, dict):
+        return CheckOutcome("fail", "expected a JSON object from GET /admin/status")
+    if payload.get("error"):
+        return CheckOutcome("fail", f"/admin/status returned an error: {payload.get('error')}")
+    schema_version = payload.get("schema_version", "unknown")
+    return CheckOutcome("pass", f"/admin/status ok (schema_version={schema_version})")
+
+
+def check_admin_credentials_payload(payload: object) -> CheckOutcome:
+    """Validate a GET /admin/credentials body — non-error, JSON object.
+
+    Soft: only checks for a top-level ``error`` key and, when present,
+    that ``credentials`` is a list. Does not assert per-record fields.
+    """
+    if not isinstance(payload, dict):
+        return CheckOutcome("fail", "expected a JSON object from GET /admin/credentials")
+    if "error" in payload:
+        err = payload.get("error")
+        detail = err.get("message") if isinstance(err, dict) else err
+        return CheckOutcome("fail", f"/admin/credentials returned an error: {detail}")
+    credentials = payload.get("credentials")
+    if credentials is not None and not isinstance(credentials, list):
+        return CheckOutcome("fail", "/admin/credentials 'credentials' field is present but not a list")
+    count = len(credentials) if isinstance(credentials, list) else 0
+    return CheckOutcome("pass", f"/admin/credentials ok ({count} credential(s))")
+
+
+def check_admin_quota_payload(payload: object) -> CheckOutcome:
+    """Soft GET /admin/quota/status check (issue #400) — 2xx + JSON object ONLY.
+
+    The quota response schema is still moving (bundle #396; hardening is
+    tracked separately as issue #403), so this deliberately does not assert
+    field contracts for windows, live_status, Apprise, or alert tiers. The
+    caller is responsible for the "2xx" half of the contract (this function
+    only ever sees bodies the shell wrapper already decided were behind a
+    2xx status code); this function's job is just "is it a JSON object".
+
+    When the optional soft extras from the design doc are present (top-level
+    ``status`` and ``accounts``), a short note about whether they look sane
+    is appended to the message — but this is purely informational and never
+    changes the pass/fail/warn outcome.
+    """
+    if not isinstance(payload, dict):
+        return CheckOutcome("fail", "expected a JSON object from GET /admin/quota/status")
+
+    notes: list[str] = []
+    status = payload.get("status")
+    if status is not None and status != "ok":
+        notes.append(f"status={status!r} (soft, not asserted)")
+    accounts = payload.get("accounts")
+    if accounts is not None and not isinstance(accounts, list):
+        notes.append("'accounts' present but not a list (soft, not asserted)")
+    elif isinstance(accounts, list):
+        notes.append(f"{len(accounts)} account(s)")
+
+    detail = "/admin/quota/status ok (2xx, JSON object; soft contract only)"
+    if notes:
+        detail += " — " + "; ".join(notes)
+    return CheckOutcome("pass", detail)
+
+
 def _read_stdin_json() -> tuple[object | None, str | None]:
     return parse_json(sys.stdin.read())
 
@@ -299,6 +379,27 @@ def cli_check_stream() -> int:
     return _emit(check_stream_payload(sys.stdin.read()))
 
 
+def cli_check_admin_status() -> int:
+    payload, err = _read_stdin_json()
+    if err:
+        return _emit(CheckOutcome("fail", err))
+    return _emit(check_admin_status_payload(payload))
+
+
+def cli_check_admin_credentials() -> int:
+    payload, err = _read_stdin_json()
+    if err:
+        return _emit(CheckOutcome("fail", err))
+    return _emit(check_admin_credentials_payload(payload))
+
+
+def cli_check_admin_quota() -> int:
+    payload, err = _read_stdin_json()
+    if err:
+        return _emit(CheckOutcome("fail", err))
+    return _emit(check_admin_quota_payload(payload))
+
+
 def cli_check_pods(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="deep_smoke.py check-pods")
     parser.add_argument(
@@ -319,7 +420,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args:
         print(
             "usage: deep_smoke.py <check-version|check-models|check-completion|"
-            "check-responses|check-messages|check-stream|check-pods> [options]",
+            "check-responses|check-messages|check-stream|check-pods|"
+            "check-admin-status|check-admin-credentials|check-admin-quota> [options]",
             file=sys.stderr,
         )
         return 2
@@ -339,6 +441,12 @@ def main(argv: list[str] | None = None) -> int:
         return cli_check_stream()
     if cmd == "check-pods":
         return cli_check_pods(rest)
+    if cmd == "check-admin-status":
+        return cli_check_admin_status()
+    if cmd == "check-admin-credentials":
+        return cli_check_admin_credentials()
+    if cmd == "check-admin-quota":
+        return cli_check_admin_quota()
 
     print(f"unknown subcommand: {cmd}", file=sys.stderr)
     return 2
