@@ -20,9 +20,8 @@
 #                           cheap completions for the claude/gpt/gemini
 #                           provider-family allowlist; read-mostly admin
 #                           checks (GET /admin/status 2xx, GET
-#                           /admin/credentials non-error, and a SOFT GET
-#                           /admin/quota/status check — 2xx + JSON object
-#                           only, no field contracts asserted; see
+#                           /admin/credentials non-error, and OpenAPI-hardened
+#                           GET /admin/quota/status (issue #403; see
 #                           check_admin_quota_payload in deep_smoke.py);
 #                           a cluster Jobs check (bootstrap/migration Jobs,
 #                           e.g. litellm-migrate/gateway-migrate, must not be
@@ -426,9 +425,7 @@ check_provider_families() {
 
 # Read-mostly admin checks (issue #400, bundle #396). /admin/status and
 # /admin/credentials require 2xx + non-error JSON; /admin/quota/status is
-# SOFT — 2xx + JSON object only, no field contracts (schema still in flux,
-# hardening tracked as issue #403). See check_admin_*_payload in
-# deep_smoke.py for the exact soft-contract semantics.
+# OpenAPI-hardened (issue #403) — see check_admin_quota_payload.
 check_admin_status() {
   local raw
   raw=$(http_call GET "/admin/status" "" 1)

@@ -57,29 +57,29 @@ closeout action.
 
 ## Next — Staging deep-smoke promote gate
 
-Approve coordination epic
-[#396](https://github.com/echoares-lab/ai-gateway/issues/396) and its atomic
-children. Staging `--full` deep-smoke is the human/process promote gate before
-pinning digests to production. It covers gaps CI and thin Gate D miss (API
-shapes, streaming, admin soft checks, cluster readiness, `LiteLLM_SpendLogs`).
+Coordination epic
+[#396](https://github.com/echoares-lab/ai-gateway/issues/396) and children are
+**done**. Staging `--full` deep-smoke is the CI-enforced promote gate before
+pinning digests to production (API shapes, streaming, OpenAPI-hardened quota,
+cluster readiness, `LiteLLM_SpendLogs`).
 
-| Order | Atomic issue | State / dependency |
-|------:|--------------|--------------------|
-| 0 | [ROADMAP + design/plan #397](https://github.com/echoares-lab/ai-gateway/issues/397) | Ready; docs-only |
-| 1 | [`--quick` scaffold #398](https://github.com/echoares-lab/ai-gateway/issues/398) | Depends on #397 |
-| 2 | [`--full` HTTP shapes #399](https://github.com/echoares-lab/ai-gateway/issues/399) | Depends on #398 |
-| 2 | [Soft admin + quota #400](https://github.com/echoares-lab/ai-gateway/issues/400) | Depends on #398; soft asserts only |
-| 3 | [SpendLogs + cluster #401](https://github.com/echoares-lab/ai-gateway/issues/401) | Depends on #399 |
-| 3 | [Promote checklist docs #402](https://github.com/echoares-lab/ai-gateway/issues/402) | Depends on #398 |
-| 4 | [CI gate promote on deep-smoke #410](https://github.com/echoares-lab/ai-gateway/issues/410) | Depends on #401 |
-| 5 | [Harden quota asserts #403](https://github.com/echoares-lab/ai-gateway/issues/403) | Blocked on #400 + OpenAPI freeze |
+| Order | Atomic issue | State |
+|------:|--------------|-------|
+| 0 | [ROADMAP + design/plan #397](https://github.com/echoares-lab/ai-gateway/issues/397) | Done |
+| 1 | [`--quick` scaffold #398](https://github.com/echoares-lab/ai-gateway/issues/398) | Done |
+| 2 | [`--full` HTTP shapes #399](https://github.com/echoares-lab/ai-gateway/issues/399) | Done |
+| 2 | [Soft admin + quota #400](https://github.com/echoares-lab/ai-gateway/issues/400) | Done (superseded by #403) |
+| 3 | [SpendLogs + cluster #401](https://github.com/echoares-lab/ai-gateway/issues/401) | Done |
+| 3 | [Promote checklist docs #402](https://github.com/echoares-lab/ai-gateway/issues/402) | Done |
+| 4 | [CI gate promote on deep-smoke #410](https://github.com/echoares-lab/ai-gateway/issues/410) | Done |
+| 5 | [Harden quota asserts #403](https://github.com/echoares-lab/ai-gateway/issues/403) | Done |
 
 Invariants:
 
 - do **not** replace advisory `post-merge-gate-d.yml`;
 - default `--env staging`; prod `--quick` is optional/incident-only;
 - serialize `scripts/ops/deep-smoke.*`;
-- keep `/admin/quota/status` checks soft until #403 (quota schema still moving).
+- `/admin/quota/status` asserts match OpenAPI (`docs/openapi/gateway-engine.yaml`).
 
 Spec: [`docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md`](./superpowers/specs/2026-07-17-staging-deep-smoke-design.md).  
 Plan: [`docs/superpowers/plans/2026-07-17-staging-deep-smoke.md`](./superpowers/plans/2026-07-17-staging-deep-smoke.md).

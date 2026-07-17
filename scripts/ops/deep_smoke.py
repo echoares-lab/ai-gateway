@@ -14,11 +14,11 @@ The ``--quick`` checks (health/ready/version/models/completion/pods), the
 ``--full`` API-shape/streaming/provider-family checks (chat completions,
 Responses API, Claude Messages API, one SSE stream, claude/gpt/gemini
 allowlist), the ``--full`` read-mostly admin checks (``/admin/status``,
-``/admin/credentials``, soft ``/admin/quota/status``), the ``--full``
+``/admin/credentials``, OpenAPI-hardened ``/admin/quota/status``), the ``--full``
 cluster Job check (bootstrap/migration Jobs not ``Failed`` when present),
 and the ``--full`` ``LiteLLM_SpendLogs`` DB side-effect check are
-implemented here (bundle #396; Jobs/SpendLogs are issue #401). Langfuse
-checks remain out of scope for this issue.
+implemented here (bundle #396; Jobs/SpendLogs are issue #401; quota harden
+is issue #403). Langfuse checks remain out of scope for this helper.
 
 **SpendLogs matching** (issue #401): after a tagged completion, deep-smoke.sh
 polls ``public."LiteLLM_SpendLogs"`` (see db/seed-litellm-mock.sql) via
@@ -30,16 +30,11 @@ depending on what the API surface under test forwards — see the
 match older than the window never counts, to avoid false positives from
 stale rows that happen to share a smoke tag from a previous run.
 
-**Soft quota contract** (issue #400): ``GET /admin/quota/status`` is only
-asserted to return an HTTP 2xx status with a JSON object body. The quota
-schema is still moving (see docs/API_DOCUMENTATION.md and the quota-alert
-work in progress), so no field contracts are enforced here — not
-``status``, ``accounts`` shape, per-window breakdowns, ``live_status``, nor
-Apprise/alert-tier fields. ``check_admin_quota_payload`` only *notes*
-whether the optional soft extras (top-level ``status`` in ``("ok",)`` and
-an ``accounts`` list) look as expected; it never fails or warns on them.
-Follow-up issue #403 will replace this with schema-validated asserts once
-the quota OpenAPI schema is frozen.
+**Quota contract** (issue #403): ``GET /admin/quota/status`` is validated
+against ``docs/openapi/gateway-engine.yaml`` (status/source/captured_at/
+partial/accounts, per-account required fields, live_status enum, core
+windows). Apprise/alert-loop fields are not part of the HTTP API and are
+not asserted.
 """
 
 from __future__ import annotations
@@ -476,38 +471,119 @@ def check_admin_credentials_payload(payload: object) -> CheckOutcome:
     return CheckOutcome("pass", f"/admin/credentials ok ({count} credential(s))")
 
 
+_QUOTA_TOP_REQUIRED = ("status", "source", "captured_at", "partial", "accounts")
+_QUOTA_ACCOUNT_REQUIRED = (
+    "credential_id",
+    "email",
+    "provider",
+    "provider_label",
+    "account_status",
+    "disabled",
+    "applies_to_models",
+    "quota",
+)
+_QUOTA_ENTRY_REQUIRED = (
+    "source",
+    "stale",
+    "captured_at",
+    "windows",
+    "tokens_remaining",
+    "tokens_limit",
+    "requests_remaining",
+    "requests_limit",
+    "live_status",
+)
+_QUOTA_LIVE_STATUS = frozenset({"fresh", "unsupported", "missing", "error"})
+_QUOTA_CORE_WINDOWS = ("five_hour", "seven_day", "binding")
+
+
 def check_admin_quota_payload(payload: object) -> CheckOutcome:
-    """Soft GET /admin/quota/status check (issue #400) — 2xx + JSON object ONLY.
+    """Hardened GET /admin/quota/status check against OpenAPI (issue #403).
 
-    The quota response schema is still moving (bundle #396; hardening is
-    tracked separately as issue #403), so this deliberately does not assert
-    field contracts for windows, live_status, Apprise, or alert tiers. The
-    caller is responsible for the "2xx" half of the contract (this function
-    only ever sees bodies the shell wrapper already decided were behind a
-    2xx status code); this function's job is just "is it a JSON object".
-
-    When the optional soft extras from the design doc are present (top-level
-    ``status`` and ``accounts``), a short note about whether they look sane
-    is appended to the message — but this is purely informational and never
-    changes the pass/fail/warn outcome.
+    Asserts the frozen contract in ``docs/openapi/gateway-engine.yaml``:
+    top-level ``status/source/captured_at/partial/accounts``, per-account
+    required fields, and per-quota ``live_status`` + core windows. Does not
+    assert Apprise / alert-loop fields (those are not part of the HTTP API).
     """
     if not isinstance(payload, dict):
         return CheckOutcome("fail", "expected a JSON object from GET /admin/quota/status")
 
-    notes: list[str] = []
-    status = payload.get("status")
-    if status is not None and status != "ok":
-        notes.append(f"status={status!r} (soft, not asserted)")
+    missing_top = [key for key in _QUOTA_TOP_REQUIRED if key not in payload]
+    if missing_top:
+        return CheckOutcome(
+            "fail",
+            f"/admin/quota/status missing keys: {', '.join(missing_top)}",
+        )
+    if payload.get("status") != "ok":
+        return CheckOutcome(
+            "fail",
+            f"/admin/quota/status status must be 'ok' (got {payload.get('status')!r})",
+        )
+    if not isinstance(payload.get("source"), str) or not payload["source"]:
+        return CheckOutcome("fail", "/admin/quota/status 'source' must be a non-empty string")
+    if not isinstance(payload.get("captured_at"), str) or not payload["captured_at"]:
+        return CheckOutcome("fail", "/admin/quota/status 'captured_at' must be a non-empty string")
+    if not isinstance(payload.get("partial"), bool):
+        return CheckOutcome("fail", "/admin/quota/status 'partial' must be a boolean")
     accounts = payload.get("accounts")
-    if accounts is not None and not isinstance(accounts, list):
-        notes.append("'accounts' present but not a list (soft, not asserted)")
-    elif isinstance(accounts, list):
-        notes.append(f"{len(accounts)} account(s)")
+    if not isinstance(accounts, list):
+        return CheckOutcome("fail", "/admin/quota/status 'accounts' must be a list")
 
-    detail = "/admin/quota/status ok (2xx, JSON object; soft contract only)"
-    if notes:
-        detail += " — " + "; ".join(notes)
-    return CheckOutcome("pass", detail)
+    for idx, account in enumerate(accounts):
+        if not isinstance(account, dict):
+            return CheckOutcome("fail", f"/admin/quota/status accounts[{idx}] must be an object")
+        missing_acct = [key for key in _QUOTA_ACCOUNT_REQUIRED if key not in account]
+        if missing_acct:
+            return CheckOutcome(
+                "fail",
+                f"/admin/quota/status accounts[{idx}] missing keys: {', '.join(missing_acct)}",
+            )
+        if not isinstance(account.get("disabled"), bool):
+            return CheckOutcome(
+                "fail",
+                f"/admin/quota/status accounts[{idx}].disabled must be a boolean",
+            )
+        quota = account.get("quota")
+        if not isinstance(quota, dict):
+            return CheckOutcome(
+                "fail",
+                f"/admin/quota/status accounts[{idx}].quota must be an object",
+            )
+        missing_q = [key for key in _QUOTA_ENTRY_REQUIRED if key not in quota]
+        if missing_q:
+            return CheckOutcome(
+                "fail",
+                f"/admin/quota/status accounts[{idx}].quota missing keys: {', '.join(missing_q)}",
+            )
+        live_status = quota.get("live_status")
+        if live_status not in _QUOTA_LIVE_STATUS:
+            return CheckOutcome(
+                "fail",
+                f"/admin/quota/status accounts[{idx}].quota.live_status "
+                f"must be one of {sorted(_QUOTA_LIVE_STATUS)} (got {live_status!r})",
+            )
+        if not isinstance(quota.get("stale"), bool):
+            return CheckOutcome(
+                "fail",
+                f"/admin/quota/status accounts[{idx}].quota.stale must be a boolean",
+            )
+        windows = quota.get("windows")
+        if not isinstance(windows, dict):
+            return CheckOutcome(
+                "fail",
+                f"/admin/quota/status accounts[{idx}].quota.windows must be an object",
+            )
+        missing_win = [key for key in _QUOTA_CORE_WINDOWS if key not in windows]
+        if missing_win:
+            return CheckOutcome(
+                "fail",
+                f"/admin/quota/status accounts[{idx}].quota.windows missing core keys: {', '.join(missing_win)}",
+            )
+
+    return CheckOutcome(
+        "pass",
+        f"/admin/quota/status ok (OpenAPI contract; {len(accounts)} account(s))",
+    )
 
 
 def _read_stdin_json() -> tuple[object | None, str | None]:

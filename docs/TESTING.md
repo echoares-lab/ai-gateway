@@ -26,9 +26,10 @@ gate** (epic [#396](https://github.com/echoares-lab/ai-gateway/issues/396)) — 
 streaming, admin surfaces, cluster/DB checks — and must pass **before** opening the k3s-01
 digest-pin PR. It is **CI-enforced** by `promote-k3s-images.yml` → `staging-deep-smoke.yml`
 (issue #410); local operator runs remain supported. Not required on every merge to `main`
-outside the promote path. Langfuse checks are **warn-only** unless `--strict` is set. Quota is a
-**soft** check (2xx + parseable JSON only; no field-contract asserts while the schema is in flux —
-see [`docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md`](superpowers/specs/2026-07-17-staging-deep-smoke-design.md)).
+outside the promote path. Langfuse checks are **warn-only** unless `--strict` is set. Quota is
+**OpenAPI-hardened** (issue #403): required top-level/account fields and `live_status` enums —
+see [`docs/openapi/gateway-engine.yaml`](openapi/gateway-engine.yaml) and
+[`docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md`](superpowers/specs/2026-07-17-staging-deep-smoke-design.md).
 
 ---
 
