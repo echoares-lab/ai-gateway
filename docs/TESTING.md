@@ -13,11 +13,21 @@ See also: [`docs/process/TESTING_AND_PROMOTION_POLICY.md`](process/TESTING_AND_P
 | **A** | `make lint` / `make test-unit` | Gateway Engine Docker image only | Every change |
 | **B** | `make test-mock` | In-memory ASGI (no compose, no OAuth) | Runtime / integration changes |
 | **C** | `make test-e2e` or PR label `run-e2e` | Real OAuth slot 1 → `:4010` | High-risk / when opted in |
-| **D** | `./cliproxy-setup.sh test <model>` | Stable `:4000` (or k8s edge) | Post-merge on `main` |
+| **D** | `./cliproxy-setup.sh test <model>` | Stable `:4000` (or k8s prod edge) | Post-merge on `main` (thin) |
+| **Deep smoke** | `./scripts/ops/deep-smoke.sh --env staging --full` | Staging k8s (`ai-gateway-staging`) | **Promote gate** before prod digest pin |
 
 Fast pre-push loop: `make test-fast` (Gate A + B locally).
 
 **Gate C policy (encoded once):** CI `real-provider-e2e` is **opt-in only** (`run-e2e` label or `workflow_dispatch`). It is **not** required to merge. Hotspot path auto-trigger is paused. Use Gate C for high-risk auth/config/compose/cliproxy changes; nightly + post-merge Gate D cover the rest.
+
+**Gate D vs deep smoke:** Gate D is a **thin** post-merge advisory smoke (health + a few model
+completions on stable `:4000` or prod k8s edge). **Deep smoke `--full`** is the **staging promote
+gate** (epic [#396](https://github.com/echoares-lab/ai-gateway/issues/396)) — multi-API shapes,
+streaming, admin surfaces, cluster/DB checks — and must pass **before** opening the k3s-01
+digest-pin PR. It is operator-run (kubectl + DB access required), not CI-blocking on every merge.
+Langfuse checks are **warn-only** unless `--strict` is set. Quota is a **soft** check (2xx +
+parseable JSON only; no field-contract asserts while the schema is in flux — see
+[`docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md`](superpowers/specs/2026-07-17-staging-deep-smoke-design.md)).
 
 ---
 

@@ -163,7 +163,9 @@ staging overlay; ArgoCD reconciles it into the cluster.
 
 ## Promotion from staging to prod
 
-Staging is the pre-prod gate. The promotion flow:
+Staging is the pre-prod gate. The promotion flow (see also epic
+[#396](https://github.com/echoares-lab/ai-gateway/issues/396) and
+[`docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md`](superpowers/specs/2026-07-17-staging-deep-smoke-design.md)):
 
 1. **Merge to `main`** in this repo — application/config changes (including
    `litellm-config.yaml`) land on `main` via PR with CI green.
@@ -171,19 +173,40 @@ Staging is the pre-prod gate. The promotion flow:
    auto-sync.
 3. **Validate on staging** — run the [Verification](#verification) steps against
    `gateway-staging.infra.plexplease.com`. Confirm health, model catalog, an end-to-end
-   completion, and Langfuse traces. Run any Gate C/D smokes here rather than on prod.
-4. **Regenerate the prod ConfigMap** from the same `litellm-config.yaml` (production's
+   completion, and Langfuse traces.
+4. **Deep smoke (promote gate)** — before opening the prod digest-pin PR, run the full staging
+   deep-smoke from an operator machine with kubectl and DB access:
+
+   ```bash
+   ./scripts/ops/deep-smoke.sh --env staging --full
+   ```
+
+   This is the human/process promote gate: multi-API shapes, streaming, admin surfaces,
+   cluster readiness, and `LiteLLM_SpendLogs` side effects that CI and thin post-merge Gate D
+   do not cover. Paste the markdown summary into the GitOps PR or issue closeout.
+
+   - **Langfuse** — best-effort / warn-only when credentials are unset; use `--strict` to
+     promote warnings (including missing Langfuse) to failures.
+   - **Quota** — soft check only (`GET /admin/quota/status` → 2xx + parseable JSON). Do not
+     assert field contracts until the quota schema is frozen (follow-up #403).
+   - **Prod quick smoke** — optional incident path only:
+     `./scripts/ops/deep-smoke.sh --env prod --quick`
+
+   Do **not** open or merge the k3s-01 digest-pin PR until staging `--full` is green.
+5. **Regenerate the prod ConfigMap** from the same `litellm-config.yaml` (production's
    generator / the existing prod overlay) and open a PR in the `k3s-01` GitOps repo pinning
-   the **digest that was validated on staging**.
-5. **Promote** by merging the GitOps PR: prod's ArgoCD app syncs the validated digest into the
+   the **exact digest validated by step 4**.
+6. **Promote** by merging the GitOps PR: prod's ArgoCD app syncs the validated digest into the
    `ai-gateway` namespace. Prod stays on pinned digests (not `:latest`) so promotion is an
    explicit, reviewed change.
-6. **Gate D on prod** — run the stable smokes from
+7. **Gate D on prod (thin)** — after prod sync, run the advisory post-merge smokes from
    [`CICD_PHASE2_CD_K3S.md` § Verification](CICD_PHASE2_CD_K3S.md#verification) against
-   `gateway.infra.plexplease.com`.
+   `gateway.infra.plexplease.com`. Gate D stays intentionally thin; deep coverage belongs on
+   staging step 4.
 
-The invariant: **the same commit/config validated on staging is what gets pinned to prod.**
-Staging floats on `:latest`; prod advances only by pinning a staging-validated digest.
+The invariant: **the same commit/config validated on staging (including deep smoke) is what
+gets pinned to prod.** Staging floats on `:latest`; prod advances only by pinning a
+staging-validated digest.
 
 For Gateway Engine, `VERSION` supplies the human SemVer image tag and OCI
 version label, while the full Git SHA/digest remains the immutable promotion
