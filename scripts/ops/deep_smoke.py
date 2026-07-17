@@ -77,15 +77,29 @@ def parse_json(text: str) -> tuple[object | None, str | None]:
         return None, f"invalid JSON: {exc}"
 
 
-def check_version_payload(payload: object) -> CheckOutcome:
+def check_version_payload(
+    payload: object,
+    *,
+    expect_git_sha: str | None = None,
+) -> CheckOutcome:
     if not isinstance(payload, dict):
         return CheckOutcome("fail", "expected a JSON object from GET /version")
     missing = [key for key in REQUIRED_VERSION_KEYS if key not in payload]
     if missing:
         return CheckOutcome("fail", f"/version missing keys: {', '.join(missing)}")
+    git_sha = str(payload.get("git_sha") or "")
+    if expect_git_sha:
+        expected = expect_git_sha.strip()
+        # Accept full SHA or unique prefix (promote often has the full SHA;
+        # staging /version may expose full or abbreviated depending on build).
+        if not git_sha or not (git_sha == expected or git_sha.startswith(expected) or expected.startswith(git_sha)):
+            return CheckOutcome(
+                "fail",
+                f"/version git_sha={git_sha!r} does not match expected {expected!r}",
+            )
     return CheckOutcome(
         "pass",
-        f"version={payload.get('version')} git_sha={payload.get('git_sha')}",
+        f"version={payload.get('version')} git_sha={git_sha}",
     )
 
 
@@ -505,11 +519,19 @@ def _emit(outcome: CheckOutcome) -> int:
     return outcome.exit_code
 
 
-def cli_check_version() -> int:
+def cli_check_version(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="deep_smoke.py check-version")
+    parser.add_argument(
+        "--expect-git-sha",
+        default="",
+        help="optional: require /version git_sha to match (full SHA or unique prefix)",
+    )
+    args = parser.parse_args(argv if argv is not None else [])
     payload, err = _read_stdin_json()
     if err:
         return _emit(CheckOutcome("fail", err))
-    return _emit(check_version_payload(payload))
+    expect = args.expect_git_sha.strip() or None
+    return _emit(check_version_payload(payload, expect_git_sha=expect))
 
 
 def cli_check_models() -> int:
@@ -633,7 +655,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cmd, rest = args[0], args[1:]
     if cmd == "check-version":
-        return cli_check_version()
+        return cli_check_version(rest)
     if cmd == "check-models":
         return cli_check_models()
     if cmd == "check-completion":

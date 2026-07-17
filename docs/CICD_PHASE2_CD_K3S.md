@@ -135,7 +135,8 @@ The promotion workflow installs kubectl v1.34.1 before running
 
 **Deep smoke `--full` runs on staging, not prod**, as the promote gate before a digest-pin PR
 ([`CICD_PHASE2_STAGING.md` § Promotion](CICD_PHASE2_STAGING.md#promotion-from-staging-to-prod),
-epic [#396](https://github.com/echoares-lab/ai-gateway/issues/396)). Operator command:
+epic [#396](https://github.com/echoares-lab/ai-gateway/issues/396)). **CI-enforced** by
+`promote-k3s-images.yml` → `staging-deep-smoke.yml` (issue #410). Operator command:
 
 ```bash
 ./scripts/ops/deep-smoke.sh --env staging --full
