@@ -14,22 +14,37 @@
 #   --env staging|prod     target environment (default: staging)
 #   --quick                health, ready, version, models, one tagged cheap
 #                           completion, kubectl pods Ready (default mode)
-#   --full                 NOT YET IMPLEMENTED — tracked under bundle #396
-#                           (issues #399-#401: API shapes/streaming, soft
-#                           admin/quota, SpendLogs/cluster checks). Exits 3.
+#   --full                 --quick plus: tagged API-shape checks for
+#                           /v1/chat/completions, /v1/responses, and
+#                           /v1/messages; one SSE streaming chat completion;
+#                           and cheap completions for the claude/gpt/gemini
+#                           provider-family allowlist. Soft admin/quota,
+#                           SpendLogs, cluster Jobs, and Langfuse checks are
+#                           tracked separately under bundle #396 (issues
+#                           #400-#401) and are not part of --full yet.
 #   --strict               treat soft warnings (e.g. missing kubectl) as
 #                           failures instead of warnings
-#   --allow-mutating-admin reserved for --full admin probes; no effect on
-#                           --quick
+#   --allow-mutating-admin reserved for future --full admin probes; no
+#                           effect on --quick or the current --full checks
 #
 # Env vars (placeholders documented in .env.example, never commit secrets):
 #   DEEP_SMOKE_GATEWAY_URL      override default staging/prod gateway URL
 #   DEEP_SMOKE_API_KEY          bearer key used for /v1 requests
-#   DEEP_SMOKE_ADMIN_KEY        x-admin-key (reserved for --full)
+#   DEEP_SMOKE_ADMIN_KEY        x-admin-key (reserved for --full admin checks)
 #   DEEP_SMOKE_K8S_NAMESPACE    override target kube namespace
 #   DEEP_SMOKE_KUBE_CONTEXT     optional kubectl context
 #   DEEP_SMOKE_MODELS           comma-separated model id override; first
 #                               entry is used for the quick completion check
+#   DEEP_SMOKE_RESPONSES_MODEL  model id used for the --full /v1/responses
+#                               shape check (default: gpt-5-4)
+#   DEEP_SMOKE_MESSAGES_MODEL   model id used for the --full /v1/messages
+#                               shape check (default: claude-sonnet-4-6)
+#   DEEP_SMOKE_STREAM_MODEL     model id used for the --full SSE streaming
+#                               check (default: same as DEEP_SMOKE_MODELS)
+#   DEEP_SMOKE_PROVIDER_MODELS  comma-separated family=model pairs for the
+#                               --full provider-family allowlist (default:
+#                               claude=claude-sonnet-4-6,gpt=gpt-5-4,
+#                               gemini=gemini-3-flash)
 #   DEEP_SMOKE_PODS_ALLOWLIST   comma-separated pod-name substrings to skip
 #                               in the pods-Ready check
 #   DEEP_SMOKE_SKIP_PODS        set to "1" to skip the kubectl pods check
@@ -39,8 +54,7 @@
 #   DEEP_SMOKE_PYTHON_BIN       override python3 binary (tests only)
 #
 # Exit codes: 0 = all checks passed; 1 = at least one check failed (or a
-# warning was promoted to failure by --strict); 2 = usage/argument error;
-# 3 = --full requested but not implemented yet.
+# warning was promoted to failure by --strict); 2 = usage/argument error.
 
 set -euo pipefail
 
@@ -50,6 +64,9 @@ PYTHON_BIN="${DEEP_SMOKE_PYTHON_BIN:-python3}"
 CURL_BIN="${DEEP_SMOKE_CURL_BIN:-curl}"
 KUBECTL_BIN="${DEEP_SMOKE_KUBECTL_BIN:-kubectl}"
 DEFAULT_QUICK_MODEL="gpt-5-4"
+DEFAULT_RESPONSES_MODEL="gpt-5-4"
+DEFAULT_MESSAGES_MODEL="claude-sonnet-4-6"
+DEFAULT_PROVIDER_MODELS="claude=claude-sonnet-4-6,gpt=gpt-5-4,gemini=gemini-3-flash"
 
 ENVIRONMENT="staging"
 MODE="quick"
@@ -57,7 +74,7 @@ STRICT=0
 ALLOW_MUTATING_ADMIN=0
 
 usage() {
-  sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,57p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 while [ $# -gt 0 ]; do
@@ -238,6 +255,85 @@ check_completion() {
   record "completion" "$(map_rc_to_status "$CAPTURED_RC")" "$CAPTURED_OUT"
 }
 
+check_responses_shape() {
+  local model raw payload
+  model="${DEEP_SMOKE_RESPONSES_MODEL:-$DEFAULT_RESPONSES_MODEL}"
+  # metadata.user is best-effort tagging for upstream/provider logs; the
+  # gateway-engine's Responses API -> Chat Completions converter does not
+  # currently forward it into the end_user field LiteLLM's SpendLogs use
+  # (that DB-side check is tracked separately, bundle #396 issue #401).
+  payload=$(printf '{"model":"%s","input":"ping","max_output_tokens":8,"metadata":{"user":"%s"}}' \
+    "$model" "$SMOKE_TAG")
+  raw=$(http_call POST "/v1/responses" "$payload")
+  parse_response "$raw"
+  if [ "$code" != "200" ]; then
+    record "responses_shape" FAIL "POST /v1/responses ($model) -> ${code:-000}"
+    return
+  fi
+  py_check check-responses "$body"
+  record "responses_shape" "$(map_rc_to_status "$CAPTURED_RC")" "$CAPTURED_OUT"
+}
+
+check_messages_shape() {
+  local model raw payload
+  model="${DEEP_SMOKE_MESSAGES_MODEL:-$DEFAULT_MESSAGES_MODEL}"
+  # metadata.user_id is best-effort tagging; see check_responses_shape note.
+  payload=$(printf '{"model":"%s","max_tokens":8,"messages":[{"role":"user","content":"ping"}],"metadata":{"user_id":"%s"}}' \
+    "$model" "$SMOKE_TAG")
+  raw=$(http_call POST "/v1/messages" "$payload")
+  parse_response "$raw"
+  if [ "$code" != "200" ]; then
+    record "messages_shape" FAIL "POST /v1/messages ($model) -> ${code:-000}"
+    return
+  fi
+  py_check check-messages "$body"
+  record "messages_shape" "$(map_rc_to_status "$CAPTURED_RC")" "$CAPTURED_OUT"
+}
+
+check_stream() {
+  local model raw payload
+  model="${DEEP_SMOKE_STREAM_MODEL:-$DEFAULT_QUICK_MODEL}"
+  payload=$(printf '{"model":"%s","messages":[{"role":"user","content":"ping"}],"max_tokens":8,"stream":true,"user":"%s"}' \
+    "$model" "$SMOKE_TAG")
+  raw=$(http_call POST "/v1/chat/completions" "$payload")
+  parse_response "$raw"
+  if [ "$code" != "200" ]; then
+    record "stream" FAIL "POST /v1/chat/completions stream ($model) -> ${code:-000}"
+    return
+  fi
+  py_check check-stream "$body"
+  record "stream" "$(map_rc_to_status "$CAPTURED_RC")" "$CAPTURED_OUT"
+}
+
+# Cheap tagged completion per claude/gpt/gemini family (or DEEP_SMOKE_PROVIDER_MODELS
+# override). Each pair is "family=model"; records one check per family so a single
+# provider outage doesn't mask the others.
+check_provider_families() {
+  local spec pair family model raw payload
+  spec="${DEEP_SMOKE_PROVIDER_MODELS:-$DEFAULT_PROVIDER_MODELS}"
+  local pairs
+  IFS=',' read -ra pairs <<<"$spec"
+  for pair in "${pairs[@]}"; do
+    [ -z "$pair" ] && continue
+    family="${pair%%=*}"
+    model="${pair#*=}"
+    if [ -z "$family" ] || [ -z "$model" ] || [ "$family" = "$pair" ]; then
+      record "provider_${pair:-unknown}" FAIL "invalid DEEP_SMOKE_PROVIDER_MODELS entry '$pair' (expected family=model)"
+      continue
+    fi
+    payload=$(printf '{"model":"%s","messages":[{"role":"user","content":"ping"}],"max_tokens":8,"user":"%s"}' \
+      "$model" "$SMOKE_TAG")
+    raw=$(http_call POST "/v1/chat/completions" "$payload")
+    parse_response "$raw"
+    if [ "$code" != "200" ]; then
+      record "provider_${family}" FAIL "POST /v1/chat/completions ($model) -> ${code:-000}"
+      continue
+    fi
+    py_check check-completion "$body"
+    record "provider_${family}" "$(map_rc_to_status "$CAPTURED_RC")" "$CAPTURED_OUT ($model)"
+  done
+}
+
 check_pods() {
   if [ "${DEEP_SMOKE_SKIP_PODS:-0}" = "1" ]; then
     record "pods" WARN "skipped via DEEP_SMOKE_SKIP_PODS=1"
@@ -280,10 +376,11 @@ run_quick() {
 }
 
 run_full() {
-  echo "error: --full is not yet implemented." >&2
-  echo "Tracked under bundle #396 (issues #399-#401: API shapes/streaming," >&2
-  echo "soft admin/quota, SpendLogs/cluster checks). Use --quick for now." >&2
-  exit 3
+  run_quick
+  check_responses_shape
+  check_messages_shape
+  check_stream
+  check_provider_families
 }
 
 print_summary() {

@@ -23,8 +23,11 @@ FAKE_KUBECTL = REPO_ROOT / "tests" / "fixtures" / "deep_smoke" / "fake_kubectl.s
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "ops"))
 from deep_smoke import (  # noqa: E402
     check_completion_payload,
+    check_messages_payload,
     check_models_payload,
     check_pods_payload,
+    check_responses_payload,
+    check_stream_payload,
     check_version_payload,
     parse_json,
 )
@@ -109,6 +112,152 @@ def test_check_completion_payload_empty_content_warns() -> None:
     outcome = check_completion_payload({"choices": [{"message": {"content": ""}}]})
     assert outcome.status == "warn"
     assert outcome.exit_code == 2
+
+
+# ---------------------------------------------------------------------------
+# --full: /v1/responses shape (check_responses_payload)
+# ---------------------------------------------------------------------------
+
+
+def test_check_responses_payload_pass() -> None:
+    outcome = check_responses_payload(
+        {
+            "object": "response",
+            "status": "completed",
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": "pong"}]}],
+        }
+    )
+    assert outcome.status == "pass"
+    assert outcome.exit_code == 0
+
+
+def test_check_responses_payload_error_field_fails() -> None:
+    outcome = check_responses_payload({"error": {"message": "boom"}})
+    assert outcome.status == "fail"
+    assert "boom" in outcome.message
+
+
+def test_check_responses_payload_missing_output_fails() -> None:
+    outcome = check_responses_payload({"status": "completed"})
+    assert outcome.status == "fail"
+    assert "output" in outcome.message
+
+
+def test_check_responses_payload_empty_output_array_fails() -> None:
+    outcome = check_responses_payload({"status": "completed", "output": []})
+    assert outcome.status == "fail"
+
+
+def test_check_responses_payload_empty_text_warns() -> None:
+    outcome = check_responses_payload(
+        {"status": "completed", "output": [{"type": "message", "content": [{"type": "output_text", "text": ""}]}]}
+    )
+    assert outcome.status == "warn"
+
+
+def test_check_responses_payload_not_a_dict_fails() -> None:
+    outcome = check_responses_payload(["not", "a", "dict"])
+    assert outcome.status == "fail"
+
+
+# ---------------------------------------------------------------------------
+# --full: /v1/messages shape (check_messages_payload)
+# ---------------------------------------------------------------------------
+
+
+def test_check_messages_payload_pass() -> None:
+    outcome = check_messages_payload(
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "pong"}],
+            "stop_reason": "end_turn",
+        }
+    )
+    assert outcome.status == "pass"
+    assert outcome.exit_code == 0
+
+
+def test_check_messages_payload_error_type_fails() -> None:
+    outcome = check_messages_payload({"type": "error", "error": {"message": "rate limited"}})
+    assert outcome.status == "fail"
+    assert "rate limited" in outcome.message
+
+
+def test_check_messages_payload_missing_content_fails() -> None:
+    outcome = check_messages_payload({"type": "message", "role": "assistant"})
+    assert outcome.status == "fail"
+
+
+def test_check_messages_payload_empty_content_array_fails() -> None:
+    outcome = check_messages_payload({"type": "message", "content": []})
+    assert outcome.status == "fail"
+
+
+def test_check_messages_payload_no_text_blocks_warns() -> None:
+    outcome = check_messages_payload({"type": "message", "content": [{"type": "tool_use", "name": "x", "input": {}}]})
+    assert outcome.status == "warn"
+
+
+def test_check_messages_payload_not_a_dict_fails() -> None:
+    outcome = check_messages_payload("not-a-dict")
+    assert outcome.status == "fail"
+
+
+# ---------------------------------------------------------------------------
+# --full: SSE streaming (check_stream_payload)
+# ---------------------------------------------------------------------------
+
+
+def test_check_stream_payload_pass_with_done_and_content() -> None:
+    text = (
+        'data: {"choices":[{"delta":{"content":"pong"},"finish_reason":null}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    outcome = check_stream_payload(text)
+    assert outcome.status == "pass"
+    assert outcome.exit_code == 0
+
+
+def test_check_stream_payload_pass_without_done_but_finish_reason() -> None:
+    """Some providers omit the [DONE] sentinel; a terminal finish_reason is enough."""
+    text = 'data: {"choices":[{"delta":{"content":"pong"},"finish_reason":"stop"}]}\n\n'
+    outcome = check_stream_payload(text)
+    assert outcome.status == "pass"
+
+
+def test_check_stream_payload_empty_body_fails() -> None:
+    outcome = check_stream_payload("")
+    assert outcome.status == "fail"
+    assert "empty" in outcome.message
+
+
+def test_check_stream_payload_no_data_lines_fails() -> None:
+    outcome = check_stream_payload("not an SSE stream at all")
+    assert outcome.status == "fail"
+    assert "no 'data:' lines" in outcome.message
+
+
+def test_check_stream_payload_no_finish_signal_fails() -> None:
+    """Chunk(s) present but the stream cuts off with neither [DONE] nor finish_reason."""
+    text = 'data: {"choices":[{"delta":{"content":"pong"},"finish_reason":null}]}\n\n'
+    outcome = check_stream_payload(text)
+    assert outcome.status == "fail"
+    assert "without [DONE]" in outcome.message
+
+
+def test_check_stream_payload_no_content_warns() -> None:
+    text = 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+    outcome = check_stream_payload(text)
+    assert outcome.status == "warn"
+
+
+def test_check_stream_payload_error_chunk_fails() -> None:
+    text = 'data: {"error":{"message":"rate limited"}}\n\n'
+    outcome = check_stream_payload(text)
+    assert outcome.status == "fail"
+    assert "rate limited" in outcome.message
 
 
 def test_check_pods_payload_all_ready() -> None:
@@ -197,6 +346,39 @@ def test_cli_check_models_fail_on_bad_json() -> None:
     assert "invalid JSON" in proc.stdout
 
 
+def test_cli_check_responses_pass_exit_code() -> None:
+    payload = '{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"pong"}]}]}'
+    proc = _run_helper(["check-responses"], payload)
+    assert proc.returncode == 0
+
+
+def test_cli_check_responses_fail_on_error_field() -> None:
+    proc = _run_helper(["check-responses"], '{"error":{"message":"boom"}}')
+    assert proc.returncode == 1
+    assert "boom" in proc.stdout
+
+
+def test_cli_check_messages_pass_exit_code() -> None:
+    proc = _run_helper(["check-messages"], '{"type":"message","content":[{"type":"text","text":"pong"}]}')
+    assert proc.returncode == 0
+
+
+def test_cli_check_messages_fail_on_error_type() -> None:
+    proc = _run_helper(["check-messages"], '{"type":"error","error":{"message":"nope"}}')
+    assert proc.returncode == 1
+
+
+def test_cli_check_stream_pass_exit_code() -> None:
+    text = 'data: {"choices":[{"delta":{"content":"pong"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+    proc = _run_helper(["check-stream"], text)
+    assert proc.returncode == 0
+
+
+def test_cli_check_stream_fail_on_empty_body() -> None:
+    proc = _run_helper(["check-stream"], "")
+    assert proc.returncode == 1
+
+
 def test_cli_check_pods_allowlist_flag() -> None:
     payload = '{"items":[{"metadata":{"name":"canary-1"},"status":{"phase":"Pending","conditions":[]}}]}'
     proc = _run_helper(["check-pods", "--allowlist", "canary"], payload)
@@ -258,13 +440,6 @@ def test_invalid_env_exits_2() -> None:
     proc = _run_deep_smoke(["--env", "nope"])
     assert proc.returncode == 2
     assert "--env must be" in proc.stderr
-
-
-def test_full_mode_not_implemented_exits_3() -> None:
-    proc = _run_deep_smoke(["--env", "staging", "--full"])
-    assert proc.returncode == 3
-    assert "not yet implemented" in proc.stderr
-    assert "#396" in proc.stderr
 
 
 def test_quick_mode_all_pass() -> None:
@@ -356,3 +531,179 @@ def test_pods_allowlist_env_var_skips_bad_pod() -> None:
     )
     assert proc.returncode == 0
     assert "| pods | PASS |" in proc.stdout
+
+
+# ---------------------------------------------------------------------------
+# --full mode: API shapes, streaming, provider families
+# ---------------------------------------------------------------------------
+
+
+def test_full_mode_all_pass() -> None:
+    pods_json = (
+        '{"items":[{"metadata":{"name":"gateway-engine-abc"},'
+        '"status":{"phase":"Running","conditions":[{"type":"Ready","status":"True"}]}}]}'
+    )
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_PODS_JSON": pods_json},
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "Overall: PASS" in proc.stdout
+    for check in (
+        "health",
+        "ready",
+        "version",
+        "models",
+        "completion",
+        "pods",
+        "responses_shape",
+        "messages_shape",
+        "stream",
+        "provider_claude",
+        "provider_gpt",
+        "provider_gemini",
+    ):
+        assert f"| {check} | PASS |" in proc.stdout, f"missing PASS row for {check}\n{proc.stdout}"
+
+
+def test_full_mode_check_order_includes_quick_then_full_checks() -> None:
+    proc = _run_deep_smoke(["--env", "staging", "--full"])
+    rows = [line for line in proc.stdout.splitlines() if line.startswith("| ") and " | " in line[2:]]
+    check_names = [row.split("|")[1].strip() for row in rows if row.split("|")[1].strip() != "Check"]
+    assert check_names == [
+        "health",
+        "ready",
+        "version",
+        "models",
+        "completion",
+        "pods",
+        "responses_shape",
+        "messages_shape",
+        "stream",
+        "provider_claude",
+        "provider_gpt",
+        "provider_gemini",
+    ]
+
+
+def test_full_mode_responses_shape_failure_propagates() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_RESPONSES_BODY": '{"error":{"message":"boom"}}'},
+    )
+    assert proc.returncode == 1
+    assert "| responses_shape | FAIL |" in proc.stdout
+    assert "boom" in proc.stdout
+    assert "Overall: FAIL" in proc.stdout
+
+
+def test_full_mode_responses_shape_http_error_fails() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_RESPONSES_CODE": "500"},
+    )
+    assert proc.returncode == 1
+    assert "| responses_shape | FAIL | POST /v1/responses" in proc.stdout
+
+
+def test_full_mode_messages_shape_failure_propagates() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_MESSAGES_BODY": '{"type":"error","error":{"message":"nope"}}'},
+    )
+    assert proc.returncode == 1
+    assert "| messages_shape | FAIL |" in proc.stdout
+    assert "nope" in proc.stdout
+
+
+def test_full_mode_stream_failure_propagates() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_STREAM_BODY": "not an SSE stream at all"},
+    )
+    assert proc.returncode == 1
+    assert "| stream | FAIL |" in proc.stdout
+
+
+def test_full_mode_stream_warns_on_no_content() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={
+            "FAKE_STREAM_BODY": 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+        },
+    )
+    assert proc.returncode == 0
+    assert "| stream | WARN |" in proc.stdout
+    assert "Overall: WARN" in proc.stdout
+
+
+def test_full_mode_provider_family_failure_isolated_per_family() -> None:
+    """A single provider outage fails only that family's check, not the others."""
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_COMPLETION_CODE_CLAUDE_SONNET_4_6": "503"},
+    )
+    assert proc.returncode == 1
+    assert "| provider_claude | FAIL | POST /v1/chat/completions (claude-sonnet-4-6) -> 503 |" in proc.stdout
+    assert "| provider_gpt | PASS |" in proc.stdout
+    assert "| provider_gemini | PASS |" in proc.stdout
+    assert "Overall: FAIL" in proc.stdout
+
+
+def test_full_mode_provider_models_env_override() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"DEEP_SMOKE_PROVIDER_MODELS": "onlyfamily=some-custom-model"},
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "| provider_onlyfamily | PASS |" in proc.stdout
+    assert "provider_claude" not in proc.stdout
+    assert "provider_gpt" not in proc.stdout
+    assert "provider_gemini" not in proc.stdout
+
+
+def test_full_mode_provider_models_invalid_entry_fails() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"DEEP_SMOKE_PROVIDER_MODELS": "not-a-valid-pair"},
+    )
+    assert proc.returncode == 1
+    assert "invalid DEEP_SMOKE_PROVIDER_MODELS entry" in proc.stdout
+
+
+def test_full_mode_responses_and_messages_model_env_overrides(tmp_path) -> None:
+    log_path = tmp_path / "curl.log"
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={
+            "DEEP_SMOKE_RESPONSES_MODEL": "custom-responses-model",
+            "DEEP_SMOKE_MESSAGES_MODEL": "custom-messages-model",
+            "DEEP_SMOKE_STREAM_MODEL": "custom-stream-model",
+            "FAKE_CURL_LOG": str(log_path),
+        },
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    log_text = log_path.read_text()
+    assert "custom-responses-model" in log_text
+    assert "custom-messages-model" in log_text
+    assert "custom-stream-model" in log_text
+
+
+def test_full_mode_tags_requests_with_smoke_end_user(tmp_path) -> None:
+    """Every --full request should carry the deep-smoke-<ts> tag somewhere in its body."""
+    log_path = tmp_path / "curl.log"
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_CURL_LOG": str(log_path)},
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    tag_line = next(line for line in proc.stdout.splitlines() if line.startswith("## Deep Smoke Summary"))
+    tag = tag_line.rsplit("tag=", 1)[-1].strip()
+    assert tag.startswith("deep-smoke-")
+
+    log_text = log_path.read_text()
+    for path in ("/v1/chat/completions", "/v1/responses", "/v1/messages"):
+        matching_lines = [line for line in log_text.splitlines() if path in line]
+        assert matching_lines, f"no logged calls to {path}"
+        assert all(tag in line for line in matching_lines), f"missing smoke tag in a call to {path}:\n{log_text}"
