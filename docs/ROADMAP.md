@@ -10,7 +10,7 @@ issues only — never parent epics, and never items that exist only in
 | **This file** | Approved Now / Next / Parked / Completed |
 | [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) | Ideas **not** approved — document only until promoted here |
 
-Last reviewed: 2026-07-17 (Staging deep-smoke promote gate epic #396 approved under Next).
+Last reviewed: 2026-07-17 (CLIProxy upstream-patch and dependency-update epic #413 approved under Next).
 
 ---
 
@@ -52,6 +52,47 @@ Release invariants:
 The encrypted Gemini CLI credential archive is retained for seven days after
 successful production verification, then deleted through a separately recorded
 closeout action.
+
+---
+
+## Next — CLIProxy upstream patch and dependency update loop
+
+Approve coordination epic
+[#413](https://github.com/echoares-lab/ai-gateway/issues/413) and its atomic
+children. The work resets the CLIProxyAPI fork onto current upstream with only
+the quota contract carried as local patches, makes cliproxy promotion pass the
+existing staging deep-smoke gate, and establishes a risk-tiered dependency
+update and rollback loop.
+
+| Order | Atomic issue | Repository | State / dependency |
+|------:|--------------|------------|--------------------|
+| 0 | [ROADMAP + design/plan #414](https://github.com/echoares-lab/ai-gateway/issues/414) | `ai-gateway` | Ready; no dependency |
+| 1 | [Reset fork onto upstream #12](https://github.com/echoares-lab/CLIProxyAPI/issues/12) | `CLIProxyAPI` | Blocked on #414; drop auth-hardening and batch patches |
+| 2 | [Re-port quota foundation and live contract #13](https://github.com/echoares-lab/CLIProxyAPI/issues/13) | `CLIProxyAPI` | Depends on CLIProxyAPI #12; replaces closed #6 and #5 |
+| 3 | [Weekly upstream track + Nexus candidate #11](https://github.com/echoares-lab/CLIProxyAPI/issues/11) | `CLIProxyAPI` | Depends on CLIProxyAPI #12 and #13 |
+| 3 | [Include cliproxy in promote gate #415](https://github.com/echoares-lab/ai-gateway/issues/415) | `ai-gateway` | Depends on #414; soft dependency on CLIProxyAPI #11 |
+| 4 | [Dependency inventory + Renovate policy #416](https://github.com/echoares-lab/ai-gateway/issues/416) | `ai-gateway` | Depends on #414 |
+| 4 | [Per-component gates and rollback playbook #417](https://github.com/echoares-lab/ai-gateway/issues/417) | `ai-gateway` | Depends on #414 and #416; soft dependency on #415 |
+| 5 | [Staging-to-production cliproxy cutover #418](https://github.com/echoares-lab/ai-gateway/issues/418) | `ai-gateway` + `k3s-01` | Depends on CLIProxyAPI #13 and #414; #415 preferred |
+| 6 | [Archive Management-Center and prune fork branches #419](https://github.com/echoares-lab/ai-gateway/issues/419) | ops | Depends on #418 |
+
+Release invariants:
+
+- parent epic #413 is coordination-only; claim one atomic child per agent,
+  branch, external worktree, and isolated slot where a live stack is required;
+- retain no more than two documented quota commits above upstream; do not carry
+  overlapping auth-hardening or unused batch-credential patches;
+- a candidate cliproxy Nexus SHA must pass staging deep-smoke `--full`,
+  including quota assertions, before its exact digest is pinned in production;
+- high-risk dependency updates never auto-merge and require staging evidence;
+- production uses immutable digests, while the immediately previous digest and
+  any migration or credential restore procedure remain recorded for rollback;
+- one staging cliproxy rollback drill is recorded in the epic closeout; and
+- closed CLIProxyAPI #5 and #6 are historical inputs only and must not be
+  reclaimed.
+
+Spec: [`docs/superpowers/specs/2026-07-17-cliproxy-upstream-patch-dep-updates-design.md`](./superpowers/specs/2026-07-17-cliproxy-upstream-patch-dep-updates-design.md).
+Plan: [`docs/superpowers/plans/2026-07-17-cliproxy-upstream-patch-dep-updates.md`](./superpowers/plans/2026-07-17-cliproxy-upstream-patch-dep-updates.md).
 
 ---
 

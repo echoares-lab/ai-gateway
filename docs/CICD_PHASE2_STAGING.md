@@ -49,6 +49,11 @@ The component → Kubernetes object mapping is identical to production
 ([`CICD_PHASE2_CD_K3S.md` § Components → Kubernetes objects](CICD_PHASE2_CD_K3S.md#components--kubernetes-objects));
 only the namespace, hostnames, database names, secrets path, and image tags differ.
 
+Third-party runtime versions, Renovate automation rules, and per-component promotion gates
+are inventoried in [`docs/DEPENDENCY_INVENTORY.md`](DEPENDENCY_INVENTORY.md). Staging may
+float first-party `:latest` tags; third-party images should still be digest-pinned before a
+production promote PR.
+
 ## Namespace
 
 - Namespace: **`ai-gateway-staging`**, labeled `app.kubernetes.io/managed-by: argocd`.

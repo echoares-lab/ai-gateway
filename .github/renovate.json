@@ -1,0 +1,223 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":separateMajorReleases"
+  ],
+  "timezone": "UTC",
+  "schedule": ["before 6am on Monday"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 3,
+  "rebaseWhen": "conflicted",
+  "platformAutomerge": false,
+  "automerge": false,
+  "commitMessagePrefix": "chore(deps):",
+  "commitMessageAction": "update",
+  "commitMessageTopic": "{{depName}}",
+  "commitMessageExtra": "to {{#if isPinDigest}}{{{newDigestShort}}}{{else}}{{{newVersion}}}{{/if}}",
+  "docker-compose": {
+    "fileMatch": [
+      "(^|/)docker-compose\\.ya?ml$",
+      "(^|/)docker-compose\\.[^/]+\\.ya?ml$"
+    ]
+  },
+  "pinDigests": true,
+  "digest": {
+    "branchTopic": "{{{depNameSanitized}}}-digest"
+  },
+  "prBodyNotes": [
+    "## Dependency update checklist",
+    "",
+    "- [ ] Old and new version/digest recorded below",
+    "- [ ] Release notes reviewed for breaking changes and migrations",
+    "- [ ] Required gates from [`docs/DEPENDENCY_INVENTORY.md`](docs/DEPENDENCY_INVENTORY.md) identified",
+    "- [ ] Staging promotion path understood (compose validate → dev slot or k3s-staging)",
+    "- [ ] Rollback target (previous digest/tag) documented",
+    "",
+    "Production promotion requires green staging deep-smoke where applicable. Do not auto-merge high-risk updates."
+  ],
+  "packageRules": [
+    {
+      "description": "CLIProxy: excluded — weekly upstream-track + Nexus candidate (#11, #415)",
+      "matchManagers": ["docker-compose", "regex"],
+      "matchPackageNames": [
+        "nexus-docker.infra.plexplease.com/cli-proxy-api",
+        "cli-proxy-api"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "First-party ai-gateway images: built by repo CI, not Renovate",
+      "matchManagers": ["docker-compose"],
+      "matchPackagePatterns": [
+        "^nexus-docker\\.infra\\.plexplease\\.com/ai-gateway/",
+        "^ghcr\\.io/echoares-lab/ai-gateway/"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "LiteLLM — high risk, digest-pinned, no auto-merge",
+      "matchManagers": ["docker-compose", "regex"],
+      "matchPackageNames": ["ghcr.io/berriai/litellm"],
+      "labels": ["dependencies", "risk:high", "area:config"],
+      "automerge": false,
+      "pinDigests": true,
+      "separateMinorPatch": true,
+      "prBodyNotes": [
+        "### LiteLLM gates (high risk)",
+        "- [ ] `make test-fast` (Gate A + B)",
+        "- [ ] `python3 -c \"import yaml; yaml.safe_load(open('litellm-config.yaml'))\"`",
+        "- [ ] Prisma / DB migration review (`litellm-migrate` path on dev stack)",
+        "- [ ] Staging `deep-smoke --full` before k3s prod pin",
+        "- [ ] Gate C (`run-e2e` label) when provider/auth surfaces change"
+      ]
+    },
+    {
+      "description": "Langfuse web + worker — keep on one version",
+      "matchManagers": ["docker-compose"],
+      "matchPackagePatterns": ["^docker\\.io/langfuse/", "^langfuse/"],
+      "groupName": "langfuse",
+      "labels": ["dependencies", "risk:medium", "area:infra"],
+      "automerge": false,
+      "pinDigests": true,
+      "prBodyNotes": [
+        "### Langfuse gates (medium risk)",
+        "- [ ] Web and worker updated together (same tag/digest)",
+        "- [ ] Compose / YAML validation",
+        "- [ ] Trace ingestion smoke on staging",
+        "- [ ] Worker health after deploy"
+      ]
+    },
+    {
+      "description": "CPA-Manager — medium risk",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": ["seakee/cpa-manager"],
+      "labels": ["dependencies", "risk:medium", "area:infra"],
+      "automerge": false,
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "cpa-manager",
+      "prBodyNotes": [
+        "### CPA-Manager gates (medium risk)",
+        "- [ ] Management UI reachable",
+        "- [ ] Usage ingestion current after restart"
+      ]
+    },
+    {
+      "description": "CPA-Manager major — separate migration review",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": ["seakee/cpa-manager"],
+      "matchUpdateTypes": ["major"],
+      "labels": ["dependencies", "risk:medium", "migration-review"],
+      "automerge": false,
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "ClickHouse — medium risk; majors isolated",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": [
+        "docker.io/clickhouse/clickhouse-server",
+        "clickhouse/clickhouse-server"
+      ],
+      "labels": ["dependencies", "risk:medium", "area:infra"],
+      "automerge": false,
+      "pinDigests": true,
+      "prBodyNotes": [
+        "### ClickHouse gates (medium risk)",
+        "- [ ] Backup taken before upgrade",
+        "- [ ] Langfuse ingestion + query smoke",
+        "- [ ] Storage PVC compatibility confirmed"
+      ]
+    },
+    {
+      "description": "ClickHouse major — manual approval",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": [
+        "docker.io/clickhouse/clickhouse-server",
+        "clickhouse/clickhouse-server"
+      ],
+      "matchUpdateTypes": ["major"],
+      "labels": ["dependencies", "risk:medium", "migration-review"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "MinIO — medium risk; majors isolated",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": ["cgr.dev/chainguard/minio"],
+      "labels": ["dependencies", "risk:medium", "area:infra"],
+      "automerge": false,
+      "pinDigests": true,
+      "prBodyNotes": [
+        "### MinIO gates (medium risk)",
+        "- [ ] Backup / bucket inventory",
+        "- [ ] Object read/write smoke via Langfuse"
+      ]
+    },
+    {
+      "description": "MinIO major — manual approval",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": ["cgr.dev/chainguard/minio"],
+      "matchUpdateTypes": ["major"],
+      "labels": ["dependencies", "risk:medium", "migration-review"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Redis — low-medium; patch/minor grouping",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": ["docker.io/redis", "redis"],
+      "labels": ["dependencies", "risk:low-medium", "area:infra"],
+      "automerge": false,
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "redis",
+      "pinDigests": true
+    },
+    {
+      "description": "Redis major — manual approval",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": ["docker.io/redis", "redis"],
+      "matchUpdateTypes": ["major"],
+      "labels": ["dependencies", "risk:low-medium", "migration-review"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Postgres — patch/minor only via Renovate",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": ["docker.io/postgres", "postgres"],
+      "labels": ["dependencies", "risk:low-medium", "area:infra"],
+      "automerge": false,
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "postgres",
+      "pinDigests": true,
+      "prBodyNotes": [
+        "### Postgres gates (low-medium)",
+        "- [ ] `pg_isready` / integration tests on dev stack",
+        "- [ ] Major upgrades require manual issue + backup/restore drill (not Renovate)"
+      ]
+    },
+    {
+      "description": "Postgres major — disabled; operator-owned migration",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": ["docker.io/postgres", "postgres"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "All major updates — never auto-merge",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["dependencies", "migration-review"]
+    }
+  ],
+  "regexManagers": [
+    {
+      "description": "LiteLLM image default in ops scripts",
+      "fileMatch": ["^scripts/ops/generate-litellm-mock-seed\\.sh$"],
+      "matchStrings": [
+        "LITELLM_IMAGE=\"(?<depName>ghcr\\.io/berriai/litellm):(?<currentValue>[^\"@]+)(?<digest>@sha256:[a-f0-9]{64})?\""
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    }
+  ]
+}
