@@ -20,7 +20,16 @@ Scoring keys:
 | Need/fit | high / med / low / unclear — relative to current direction |
 | Status | `candidate` until promoted |
 
-Last reviewed: 2026-07-11.
+Last reviewed: 2026-07-17.
+
+## Promoted / done
+
+These entries are retained only as promotion history and are not unapproved
+inventory.
+
+| ID | Summary | Destination | Status |
+|----|---------|-------------|--------|
+| C-OPS-1 | CLIProxy upstream-patch migration and third-party dependency update/test/rollback loop | Roadmap epic [#413](https://github.com/echoares-lab/ai-gateway/issues/413) and atomic children #414–#419 plus CLIProxyAPI #11–#13 | promoted |
 
 ---
 
