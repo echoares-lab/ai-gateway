@@ -2,7 +2,7 @@
 
 How to run tests, choose the right gate, and mock external dependencies without flakiness.
 
-See also: [`docs/process/TESTING_AND_PROMOTION_POLICY.md`](process/TESTING_AND_PROMOTION_POLICY.md), [`docs/process/REPO_IMPROVEMENT_APPENDIX.md`](process/REPO_IMPROVEMENT_APPENDIX.md), [`CI_SELF_HOSTED.md`](CI_SELF_HOSTED.md).
+See also: [`docs/process/TESTING_AND_PROMOTION_POLICY.md`](process/TESTING_AND_PROMOTION_POLICY.md), [`docs/process/REPO_IMPROVEMENT_APPENDIX.md`](process/REPO_IMPROVEMENT_APPENDIX.md), [`CI_SELF_HOSTED.md`](CI_SELF_HOSTED.md), [`docs/ops/DEPENDENCY_UPDATES.md`](ops/DEPENDENCY_UPDATES.md) (per-component gates and promote path for third-party images).
 
 ---
 

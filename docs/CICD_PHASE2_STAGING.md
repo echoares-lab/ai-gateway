@@ -50,9 +50,10 @@ The component → Kubernetes object mapping is identical to production
 only the namespace, hostnames, database names, secrets path, and image tags differ.
 
 Third-party runtime versions, Renovate automation rules, and per-component promotion gates
-are inventoried in [`docs/DEPENDENCY_INVENTORY.md`](DEPENDENCY_INVENTORY.md). Staging may
-float first-party `:latest` tags; third-party images should still be digest-pinned before a
-production promote PR.
+are inventoried in [`docs/DEPENDENCY_INVENTORY.md`](DEPENDENCY_INVENTORY.md). Executable
+update steps (gates, staging `--full`, prod pin, rollback) live in
+[`docs/ops/DEPENDENCY_UPDATES.md`](ops/DEPENDENCY_UPDATES.md). Staging may float first-party
+`:latest` tags; third-party images should still be digest-pinned before a production promote PR.
 
 ## Namespace
 

@@ -4,7 +4,7 @@
 **Issue:** [#416](https://github.com/echoares-lab/ai-gateway/issues/416)  
 **Design:** [`docs/superpowers/specs/2026-07-17-cliproxy-upstream-patch-dep-updates-design.md`](superpowers/specs/2026-07-17-cliproxy-upstream-patch-dep-updates-design.md) (from #414)  
 **Automation:** [`.github/renovate.json`](../.github/renovate.json)  
-**Playbook (follow-on):** #417 — `docs/ops/DEPENDENCY_UPDATES.md`
+**Playbook:** [`docs/ops/DEPENDENCY_UPDATES.md`](ops/DEPENDENCY_UPDATES.md) (#417)
 
 This document is the authoritative inventory of **third-party runtime images** consumed by
 ai-gateway. First-party images (`gateway-engine`, `docs-server`, `credential-prober`) are built

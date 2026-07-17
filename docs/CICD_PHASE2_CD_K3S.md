@@ -54,9 +54,10 @@ Support: credential-prober (Deployment), docs-server (Deployment), cpa-manager (
 | redis | — (shared) | — | use `redis.database.svc.cluster.local:6379` |
 
 Third-party image pins, risk tiers, Renovate policy, and rollback targets are documented in
-[`docs/DEPENDENCY_INVENTORY.md`](DEPENDENCY_INVENTORY.md). Compose pins in this repo are the
-source of truth for Renovate; k3s overlays consume promoted digests via the promote workflow
-(see [`promote-k3s-images.yml`](../.github/workflows/promote-k3s-images.yml)).
+[`docs/DEPENDENCY_INVENTORY.md`](DEPENDENCY_INVENTORY.md). Per-component update and rollback
+steps are in [`docs/ops/DEPENDENCY_UPDATES.md`](ops/DEPENDENCY_UPDATES.md). Compose pins in
+this repo are the source of truth for Renovate; k3s overlays consume promoted digests via the
+promote workflow (see [`promote-k3s-images.yml`](../.github/workflows/promote-k3s-images.yml)).
 
 ## Databases on the shared CNPG cluster
 
