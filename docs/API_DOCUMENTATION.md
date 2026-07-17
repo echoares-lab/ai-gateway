@@ -51,6 +51,14 @@ and any leaked sentinel reset timestamps, while still rendering available
 windows. Because the endpoint performs a live provider refresh, allow up to
 30 seconds for a response before treating the request as timed out.
 
+**Deep-smoke soft-checks quota only:** `scripts/ops/deep-smoke.sh --full`
+(issue #400, bundle #396) asserts only that `GET /admin/quota/status`
+returns HTTP 2xx with a JSON object body — it does not validate `status`,
+`accounts`, per-window `live_status`, or any other field shape described
+above, because this schema is still moving. Field-contract hardening is
+tracked separately as issue #403 and will land once the quota response
+shape is frozen.
+
 ### Historical / Internal Specifications
 
 - **Policy Engine API**: `http://localhost:8002/docs/policy-engine.yaml` is

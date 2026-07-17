@@ -14,23 +14,30 @@
 # (e.g. "claude-sonnet-4-6" -> "CLAUDE_SONNET_4_6"). Falls back to the plain
 # FAKE_COMPLETION_CODE / FAKE_COMPLETION_BODY when no per-model override is set.
 #
-# Set FAKE_CURL_LOG=/path/to/file to append "<url> <payload>" for every call
-# (used by tests asserting the end_user smoke tag was sent).
+# Set FAKE_CURL_LOG=/path/to/file to append "<url> <payload> <admin_key_header>"
+# for every call (used by tests asserting the end_user smoke tag was sent,
+# and that admin checks forward x-admin-key when DEEP_SMOKE_ADMIN_KEY is set).
 set -uo pipefail
 
 url="${*: -1}"
 
 payload=""
+admin_key_header=""
 prev=""
 for arg in "$@"; do
   if [ "$prev" = "-d" ] || [ "$prev" = "--data" ]; then
     payload="$arg"
   fi
+  if [ "$prev" = "-H" ]; then
+    case "$arg" in
+      x-admin-key:*) admin_key_header="${arg#x-admin-key: }" ;;
+    esac
+  fi
   prev="$arg"
 done
 
 if [ -n "${FAKE_CURL_LOG:-}" ]; then
-  printf '%s %s\n' "$url" "$payload" >>"$FAKE_CURL_LOG"
+  printf '%s %s %s\n' "$url" "$payload" "$admin_key_header" >>"$FAKE_CURL_LOG"
 fi
 
 sanitize() {
@@ -94,6 +101,27 @@ case "$url" in
     body="${FAKE_MESSAGES_BODY-}"
     if [ -z "$body" ]; then
       body='{"id":"msg_abc","type":"message","role":"assistant","content":[{"type":"text","text":"pong"}],"stop_reason":"end_turn"}'
+    fi
+    ;;
+  */admin/status)
+    code="${FAKE_ADMIN_STATUS_CODE:-200}"
+    body="${FAKE_ADMIN_STATUS_BODY-}"
+    if [ -z "$body" ]; then
+      body='{"schema_version":"admin-console.v1","generated_at":"2026-07-17T00:00:00Z","panels":{}}'
+    fi
+    ;;
+  */admin/credentials)
+    code="${FAKE_ADMIN_CREDENTIALS_CODE:-200}"
+    body="${FAKE_ADMIN_CREDENTIALS_BODY-}"
+    if [ -z "$body" ]; then
+      body='{"credentials":[]}'
+    fi
+    ;;
+  */admin/quota/status)
+    code="${FAKE_ADMIN_QUOTA_CODE:-200}"
+    body="${FAKE_ADMIN_QUOTA_BODY-}"
+    if [ -z "$body" ]; then
+      body='{"status":"ok","source":"cliproxy","captured_at":"2026-07-17T00:00:00Z","partial":false,"accounts":[]}'
     fi
     ;;
   *)

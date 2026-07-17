@@ -22,6 +22,9 @@ FAKE_KUBECTL = REPO_ROOT / "tests" / "fixtures" / "deep_smoke" / "fake_kubectl.s
 
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "ops"))
 from deep_smoke import (  # noqa: E402
+    check_admin_credentials_payload,
+    check_admin_quota_payload,
+    check_admin_status_payload,
     check_completion_payload,
     check_messages_payload,
     check_models_payload,
@@ -316,6 +319,95 @@ def test_check_pods_payload_missing_items_fails() -> None:
 
 
 # ---------------------------------------------------------------------------
+# --full: read-mostly admin checks (issue #400, bundle #396)
+# ---------------------------------------------------------------------------
+
+
+def test_check_admin_status_payload_pass() -> None:
+    outcome = check_admin_status_payload({"schema_version": "admin-console.v1", "panels": {}})
+    assert outcome.status == "pass"
+    assert outcome.exit_code == 0
+
+
+def test_check_admin_status_payload_error_key_fails() -> None:
+    outcome = check_admin_status_payload({"error": "boom"})
+    assert outcome.status == "fail"
+    assert "boom" in outcome.message
+
+
+def test_check_admin_status_payload_not_a_dict_fails() -> None:
+    outcome = check_admin_status_payload(["not", "a", "dict"])
+    assert outcome.status == "fail"
+
+
+def test_check_admin_credentials_payload_pass_empty_list() -> None:
+    outcome = check_admin_credentials_payload({"credentials": []})
+    assert outcome.status == "pass"
+
+
+def test_check_admin_credentials_payload_pass_with_records() -> None:
+    outcome = check_admin_credentials_payload(
+        {"credentials": [{"id": "cred-1", "provider": "anthropic"}, {"id": "cred-2", "provider": "openai"}]}
+    )
+    assert outcome.status == "pass"
+    assert "2 credential(s)" in outcome.message
+
+
+def test_check_admin_credentials_payload_error_field_fails() -> None:
+    outcome = check_admin_credentials_payload({"error": {"message": "unauthorized"}})
+    assert outcome.status == "fail"
+    assert "unauthorized" in outcome.message
+
+
+def test_check_admin_credentials_payload_non_list_credentials_fails() -> None:
+    outcome = check_admin_credentials_payload({"credentials": "not-a-list"})
+    assert outcome.status == "fail"
+
+
+def test_check_admin_credentials_payload_not_a_dict_fails() -> None:
+    outcome = check_admin_credentials_payload("not-a-dict")
+    assert outcome.status == "fail"
+
+
+def test_check_admin_quota_payload_pass_minimal_object() -> None:
+    """Soft contract: ANY JSON object passes — no field contracts asserted."""
+    outcome = check_admin_quota_payload({})
+    assert outcome.status == "pass"
+    assert outcome.exit_code == 0
+
+
+def test_check_admin_quota_payload_pass_with_status_and_accounts() -> None:
+    outcome = check_admin_quota_payload({"status": "ok", "accounts": [{"credential_id": "cred-1"}]})
+    assert outcome.status == "pass"
+    assert "1 account(s)" in outcome.message
+
+
+def test_check_admin_quota_payload_pass_even_with_unexpected_status_value() -> None:
+    """Soft: an unexpected 'status' value is noted but never fails/warns."""
+    outcome = check_admin_quota_payload({"status": "degraded"})
+    assert outcome.status == "pass"
+    assert "not asserted" in outcome.message
+
+
+def test_check_admin_quota_payload_pass_even_with_non_list_accounts() -> None:
+    """Soft: a malformed 'accounts' field is noted but never fails/warns."""
+    outcome = check_admin_quota_payload({"accounts": "not-a-list"})
+    assert outcome.status == "pass"
+    assert "not asserted" in outcome.message
+
+
+def test_check_admin_quota_payload_not_a_dict_fails() -> None:
+    """The only hard requirement: a JSON object body."""
+    outcome = check_admin_quota_payload(["not", "a", "dict"])
+    assert outcome.status == "fail"
+
+
+def test_check_admin_quota_payload_string_fails() -> None:
+    outcome = check_admin_quota_payload("not-a-dict")
+    assert outcome.status == "fail"
+
+
+# ---------------------------------------------------------------------------
 # CLI wrapper tests (subprocess — matches how deep-smoke.sh invokes the helper)
 # ---------------------------------------------------------------------------
 
@@ -384,6 +476,36 @@ def test_cli_check_pods_allowlist_flag() -> None:
     proc = _run_helper(["check-pods", "--allowlist", "canary"], payload)
     assert proc.returncode == 0
     assert "allowlisted skipped" in proc.stdout
+
+
+def test_cli_check_admin_status_pass_exit_code() -> None:
+    proc = _run_helper(["check-admin-status"], '{"schema_version":"admin-console.v1"}')
+    assert proc.returncode == 0
+
+
+def test_cli_check_admin_status_fail_on_bad_json() -> None:
+    proc = _run_helper(["check-admin-status"], "not json")
+    assert proc.returncode == 1
+
+
+def test_cli_check_admin_credentials_pass_exit_code() -> None:
+    proc = _run_helper(["check-admin-credentials"], '{"credentials":[]}')
+    assert proc.returncode == 0
+
+
+def test_cli_check_admin_credentials_fail_on_error() -> None:
+    proc = _run_helper(["check-admin-credentials"], '{"error":"nope"}')
+    assert proc.returncode == 1
+
+
+def test_cli_check_admin_quota_pass_on_any_object() -> None:
+    proc = _run_helper(["check-admin-quota"], '{"anything":"goes"}')
+    assert proc.returncode == 0
+
+
+def test_cli_check_admin_quota_fail_on_non_object() -> None:
+    proc = _run_helper(["check-admin-quota"], "[1, 2, 3]")
+    assert proc.returncode == 1
 
 
 def test_cli_unknown_subcommand_exits_2() -> None:
@@ -562,6 +684,9 @@ def test_full_mode_all_pass() -> None:
         "provider_claude",
         "provider_gpt",
         "provider_gemini",
+        "admin_status",
+        "admin_credentials",
+        "admin_quota",
     ):
         assert f"| {check} | PASS |" in proc.stdout, f"missing PASS row for {check}\n{proc.stdout}"
 
@@ -583,6 +708,9 @@ def test_full_mode_check_order_includes_quick_then_full_checks() -> None:
         "provider_claude",
         "provider_gpt",
         "provider_gemini",
+        "admin_status",
+        "admin_credentials",
+        "admin_quota",
     ]
 
 
@@ -707,3 +835,133 @@ def test_full_mode_tags_requests_with_smoke_end_user(tmp_path) -> None:
         matching_lines = [line for line in log_text.splitlines() if path in line]
         assert matching_lines, f"no logged calls to {path}"
         assert all(tag in line for line in matching_lines), f"missing smoke tag in a call to {path}:\n{log_text}"
+
+
+# ---------------------------------------------------------------------------
+# --full mode: read-mostly admin checks (issue #400, bundle #396)
+# ---------------------------------------------------------------------------
+
+
+def test_full_mode_admin_status_http_failure_fails() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_ADMIN_STATUS_CODE": "503"},
+    )
+    assert proc.returncode == 1
+    assert "| admin_status | FAIL | GET /admin/status -> 503 |" in proc.stdout
+    assert "Overall: FAIL" in proc.stdout
+
+
+def test_full_mode_admin_status_error_body_fails() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_ADMIN_STATUS_BODY": '{"error":"boom"}'},
+    )
+    assert proc.returncode == 1
+    assert "| admin_status | FAIL |" in proc.stdout
+    assert "boom" in proc.stdout
+
+
+def test_full_mode_admin_credentials_http_failure_fails() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_ADMIN_CREDENTIALS_CODE": "500"},
+    )
+    assert proc.returncode == 1
+    assert "| admin_credentials | FAIL | GET /admin/credentials -> 500 |" in proc.stdout
+
+
+def test_full_mode_admin_credentials_error_body_fails() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_ADMIN_CREDENTIALS_BODY": '{"error":{"message":"unauthorized"}}'},
+    )
+    assert proc.returncode == 1
+    assert "| admin_credentials | FAIL |" in proc.stdout
+    assert "unauthorized" in proc.stdout
+
+
+def test_full_mode_admin_quota_accepts_201() -> None:
+    """Soft contract: any 2xx (not just 200) satisfies the quota check."""
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_ADMIN_QUOTA_CODE": "201"},
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "| admin_quota | PASS |" in proc.stdout
+
+
+def test_full_mode_admin_quota_http_failure_fails() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_ADMIN_QUOTA_CODE": "502"},
+    )
+    assert proc.returncode == 1
+    assert "| admin_quota | FAIL | GET /admin/quota/status -> 502 |" in proc.stdout
+
+
+def test_full_mode_admin_quota_non_json_body_fails() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_ADMIN_QUOTA_BODY": "not json at all"},
+    )
+    assert proc.returncode == 1
+    assert "| admin_quota | FAIL |" in proc.stdout
+    assert "invalid JSON" in proc.stdout
+
+
+def test_full_mode_admin_quota_soft_passes_on_minimal_body() -> None:
+    """Soft contract: quota schema is still moving; a bare '{}' must pass."""
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_ADMIN_QUOTA_BODY": "{}"},
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "| admin_quota | PASS |" in proc.stdout
+
+
+def test_full_mode_admin_quota_soft_passes_even_with_unexpected_status() -> None:
+    """Soft contract: an unexpected top-level 'status' value never fails the check."""
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_ADMIN_QUOTA_BODY": '{"status":"degraded","accounts":"not-a-list"}'},
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "| admin_quota | PASS |" in proc.stdout
+
+
+def test_full_mode_admin_checks_forward_admin_key_header(tmp_path) -> None:
+    log_path = tmp_path / "curl.log"
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_CURL_LOG": str(log_path), "DEEP_SMOKE_ADMIN_KEY": "test-admin-key-123"},
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    log_text = log_path.read_text()
+    for path in ("/admin/status", "/admin/credentials", "/admin/quota/status"):
+        matching_lines = [line for line in log_text.splitlines() if path in line]
+        assert matching_lines, f"no logged calls to {path}"
+        assert all("test-admin-key-123" in line for line in matching_lines), (
+            f"missing x-admin-key forwarding for {path}:\n{log_text}"
+        )
+
+    # Non-admin routes must NOT receive the admin key.
+    non_admin_lines = [line for line in log_text.splitlines() if "/v1/chat/completions" in line]
+    assert non_admin_lines
+    assert all("test-admin-key-123" not in line for line in non_admin_lines)
+
+
+def test_full_mode_admin_checks_omit_header_when_admin_key_unset(tmp_path) -> None:
+    log_path = tmp_path / "curl.log"
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_CURL_LOG": str(log_path)},
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    log_text = log_path.read_text()
+    admin_status_lines = [line for line in log_text.splitlines() if "/admin/status" in line]
+    assert admin_status_lines
+    # Log format is "<url> <payload> <admin_key_header>"; header field should be empty.
+    assert all(line.split(" ")[-1] == "" for line in admin_status_lines)
