@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -26,12 +27,15 @@ from deep_smoke import (  # noqa: E402
     check_admin_quota_payload,
     check_admin_status_payload,
     check_completion_payload,
+    check_jobs_payload,
     check_messages_payload,
     check_models_payload,
     check_pods_payload,
     check_responses_payload,
+    check_spendlogs_payload,
     check_stream_payload,
     check_version_payload,
+    find_matching_spend_log_row,
     parse_json,
 )
 
@@ -319,6 +323,185 @@ def test_check_pods_payload_missing_items_fails() -> None:
 
 
 # ---------------------------------------------------------------------------
+# --full: cluster Jobs check (issue #401, bundle #396)
+# ---------------------------------------------------------------------------
+
+
+def test_check_jobs_payload_no_jobs_passes() -> None:
+    """No bootstrap/migration Jobs present is not a failure (they're one-shot)."""
+    outcome = check_jobs_payload({"items": []})
+    assert outcome.status == "pass"
+    assert "no bootstrap/migration Jobs found" in outcome.message
+
+
+def test_check_jobs_payload_complete_job_passes() -> None:
+    outcome = check_jobs_payload(
+        {
+            "items": [
+                {
+                    "metadata": {"name": "litellm-migrate"},
+                    "status": {"conditions": [{"type": "Complete", "status": "True"}]},
+                }
+            ]
+        }
+    )
+    assert outcome.status == "pass"
+    assert "1 Job(s) checked, none failed" in outcome.message
+
+
+def test_check_jobs_payload_active_job_not_yet_complete_passes() -> None:
+    """A still-running Job (no Failed condition yet) is not a failure."""
+    outcome = check_jobs_payload({"items": [{"metadata": {"name": "gateway-migrate"}, "status": {"active": 1}}]})
+    assert outcome.status == "pass"
+
+
+def test_check_jobs_payload_failed_job_fails() -> None:
+    outcome = check_jobs_payload(
+        {
+            "items": [
+                {
+                    "metadata": {"name": "litellm-migrate"},
+                    "status": {"conditions": [{"type": "Failed", "status": "True", "reason": "BackoffLimitExceeded"}]},
+                }
+            ]
+        }
+    )
+    assert outcome.status == "fail"
+    assert "litellm-migrate" in outcome.message
+    assert "BackoffLimitExceeded" in outcome.message
+
+
+def test_check_jobs_payload_allowlist_skips_failed_job() -> None:
+    outcome = check_jobs_payload(
+        {
+            "items": [
+                {
+                    "metadata": {"name": "flaky-canary-job"},
+                    "status": {"conditions": [{"type": "Failed", "status": "True"}]},
+                }
+            ]
+        },
+        allowlist=["flaky-canary"],
+    )
+    assert outcome.status == "pass"
+    assert "allowlisted skipped" in outcome.message
+
+
+def test_check_jobs_payload_missing_items_fails() -> None:
+    outcome = check_jobs_payload({"unexpected": True})
+    assert outcome.status == "fail"
+
+
+def test_check_jobs_payload_not_a_dict_fails() -> None:
+    outcome = check_jobs_payload(["not", "a", "dict"])
+    assert outcome.status == "fail"
+
+
+# ---------------------------------------------------------------------------
+# --full: LiteLLM_SpendLogs DB side-effect check (issue #401, bundle #396)
+# ---------------------------------------------------------------------------
+
+
+def _spend_row(request_id: str = "", end_user: str = "", minutes_ago: float = 1.0) -> dict:
+    now = datetime(2026, 7, 17, 14, 0, 0, tzinfo=timezone.utc)
+    start_time = now - timedelta(minutes=minutes_ago)
+    return {
+        "request_id": request_id,
+        "end_user": end_user,
+        "startTime": start_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3],
+    }
+
+
+_NOW = datetime(2026, 7, 17, 14, 0, 0, tzinfo=timezone.utc)
+
+
+def test_find_matching_spend_log_row_matches_by_end_user() -> None:
+    rows = [_spend_row(request_id="other-req", end_user="deep-smoke-20260717T135900Z", minutes_ago=2)]
+    match = find_matching_spend_log_row(rows, end_user="deep-smoke-20260717T135900Z", request_id=None, now=_NOW)
+    assert match is not None
+    assert match["request_id"] == "other-req"
+
+
+def test_find_matching_spend_log_row_matches_by_request_id() -> None:
+    rows = [_spend_row(request_id="chatcmpl-abc123", end_user="someone-else", minutes_ago=2)]
+    match = find_matching_spend_log_row(rows, end_user="deep-smoke-x", request_id="chatcmpl-abc123", now=_NOW)
+    assert match is not None
+    assert match["end_user"] == "someone-else"
+
+
+def test_find_matching_spend_log_row_ignores_stale_row_outside_window() -> None:
+    rows = [_spend_row(request_id="chatcmpl-abc123", end_user="deep-smoke-x", minutes_ago=999)]
+    match = find_matching_spend_log_row(
+        rows, end_user="deep-smoke-x", request_id="chatcmpl-abc123", window_minutes=15, now=_NOW
+    )
+    assert match is None
+
+
+def test_find_matching_spend_log_row_returns_most_recent_when_multiple_match() -> None:
+    rows = [
+        _spend_row(request_id="req-old", end_user="deep-smoke-x", minutes_ago=10),
+        _spend_row(request_id="req-new", end_user="deep-smoke-x", minutes_ago=1),
+    ]
+    match = find_matching_spend_log_row(rows, end_user="deep-smoke-x", request_id=None, now=_NOW)
+    assert match is not None
+    assert match["request_id"] == "req-new"
+
+
+def test_find_matching_spend_log_row_no_rows_returns_none() -> None:
+    assert find_matching_spend_log_row([], end_user="deep-smoke-x", request_id=None, now=_NOW) is None
+
+
+def test_find_matching_spend_log_row_ignores_malformed_row() -> None:
+    match = find_matching_spend_log_row(["not-a-dict"], end_user="deep-smoke-x", request_id=None, now=_NOW)
+    assert match is None
+
+
+def test_find_matching_spend_log_row_unparseable_start_time_never_matches() -> None:
+    rows = [{"request_id": "chatcmpl-abc123", "end_user": "deep-smoke-x", "startTime": "not-a-timestamp"}]
+    match = find_matching_spend_log_row(rows, end_user="deep-smoke-x", request_id=None, now=_NOW)
+    assert match is None
+
+
+def test_check_spendlogs_payload_pass() -> None:
+    rows = [_spend_row(request_id="chatcmpl-abc123", end_user="deep-smoke-x", minutes_ago=1)]
+    outcome = check_spendlogs_payload(rows, end_user="deep-smoke-x", request_id=None, now=_NOW)
+    assert outcome.status == "pass"
+    assert outcome.exit_code == 0
+    assert "chatcmpl-abc123" in outcome.message
+
+
+def test_check_spendlogs_payload_no_rows_fails() -> None:
+    outcome = check_spendlogs_payload([], end_user="deep-smoke-x", request_id=None, now=_NOW)
+    assert outcome.status == "fail"
+    assert "0 rows" in outcome.message
+
+
+def test_check_spendlogs_payload_no_match_fails() -> None:
+    rows = [_spend_row(request_id="unrelated-req", end_user="unrelated-user", minutes_ago=1)]
+    outcome = check_spendlogs_payload(rows, end_user="deep-smoke-x", request_id=None, now=_NOW)
+    assert outcome.status == "fail"
+    assert "none matched/recent enough" in outcome.message
+
+
+def test_check_spendlogs_payload_stale_match_fails() -> None:
+    rows = [_spend_row(request_id="chatcmpl-abc123", end_user="deep-smoke-x", minutes_ago=999)]
+    outcome = check_spendlogs_payload(rows, end_user="deep-smoke-x", request_id=None, window_minutes=15, now=_NOW)
+    assert outcome.status == "fail"
+
+
+def test_check_spendlogs_payload_requires_end_user_or_request_id() -> None:
+    outcome = check_spendlogs_payload([], end_user=None, request_id=None, now=_NOW)
+    assert outcome.status == "fail"
+    assert "requires --end-user and/or --request-id" in outcome.message
+
+
+def test_check_spendlogs_payload_not_a_list_fails() -> None:
+    outcome = check_spendlogs_payload({"not": "a list"}, end_user="deep-smoke-x", request_id=None, now=_NOW)
+    assert outcome.status == "fail"
+    assert "expected a JSON array" in outcome.message
+
+
+# ---------------------------------------------------------------------------
 # --full: read-mostly admin checks (issue #400, bundle #396)
 # ---------------------------------------------------------------------------
 
@@ -508,6 +691,54 @@ def test_cli_check_admin_quota_fail_on_non_object() -> None:
     assert proc.returncode == 1
 
 
+def test_cli_check_jobs_pass_on_no_jobs() -> None:
+    proc = _run_helper(["check-jobs"], '{"items":[]}')
+    assert proc.returncode == 0
+
+
+def test_cli_check_jobs_fail_on_failed_job() -> None:
+    payload = '{"items":[{"metadata":{"name":"litellm-migrate"},"status":{"conditions":[{"type":"Failed","status":"True"}]}}]}'
+    proc = _run_helper(["check-jobs"], payload)
+    assert proc.returncode == 1
+    assert "litellm-migrate" in proc.stdout
+
+
+def test_cli_check_jobs_allowlist_flag() -> None:
+    payload = (
+        '{"items":[{"metadata":{"name":"flaky-job-1"},"status":{"conditions":[{"type":"Failed","status":"True"}]}}]}'
+    )
+    proc = _run_helper(["check-jobs", "--allowlist", "flaky-job"], payload)
+    assert proc.returncode == 0
+    assert "allowlisted skipped" in proc.stdout
+
+
+def test_cli_check_spendlogs_pass_exit_code() -> None:
+    # The CLI always uses the real clock (no --now override), so use a fresh
+    # timestamp generated at test time to land inside the default window.
+    fresh_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+    payload = f'[{{"request_id":"chatcmpl-abc","end_user":"someone-else","startTime":"{fresh_ts}"}}]'
+    proc = _run_helper(["check-spendlogs", "--request-id", "chatcmpl-abc"], payload)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_cli_check_spendlogs_fail_on_no_match() -> None:
+    proc = _run_helper(["check-spendlogs", "--end-user", "deep-smoke-x"], "[]")
+    assert proc.returncode == 1
+
+
+def test_cli_check_spendlogs_fail_without_end_user_or_request_id() -> None:
+    proc = _run_helper(["check-spendlogs"], "[]")
+    assert proc.returncode == 1
+    assert "requires --end-user and/or --request-id" in proc.stdout
+
+
+def test_cli_check_spendlogs_window_minutes_flag() -> None:
+    stale_ts = (datetime.now(timezone.utc) - timedelta(minutes=999)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+    payload = f'[{{"request_id":"chatcmpl-abc","end_user":"deep-smoke-x","startTime":"{stale_ts}"}}]'
+    proc = _run_helper(["check-spendlogs", "--end-user", "deep-smoke-x", "--window-minutes", "1"], payload)
+    assert proc.returncode == 1
+
+
 def test_cli_unknown_subcommand_exits_2() -> None:
     proc = _run_helper(["bogus-command"], "")
     assert proc.returncode == 2
@@ -532,6 +763,13 @@ def _run_deep_smoke(args: list[str], env_overrides: dict[str, str] | None = None
     import os
 
     env = os.environ.copy()
+    # Scrub inherited FAKE_* / DEEP_SMOKE_* so a polluted parent shell (or a
+    # previous debugging export) cannot bleed into offline subprocesses.
+    # Symptom this prevents: pods JSON "Extra data" when FAKE_PODS_JSON from
+    # another scenario is concatenated with the fake's default payload.
+    for key in list(env):
+        if key.startswith("FAKE_") or key.startswith("DEEP_SMOKE_"):
+            del env[key]
     env["DEEP_SMOKE_CURL_BIN"] = str(FAKE_CURL)
     env["DEEP_SMOKE_KUBECTL_BIN"] = str(FAKE_KUBECTL)
     if env_overrides:
@@ -655,6 +893,37 @@ def test_pods_allowlist_env_var_skips_bad_pod() -> None:
     assert "| pods | PASS |" in proc.stdout
 
 
+def test_parent_fake_pods_json_pollution_does_not_bleed() -> None:
+    """Regression: polluted parent FAKE_PODS_JSON must not break --quick.
+
+    A trailing character after a valid pods list previously produced
+    ``invalid JSON: Extra data: line 1 column 96`` when the fake also emitted
+    its default payload (or when argv logging hit stdout).
+    """
+    import os
+
+    polluted = '{"items":[{"metadata":{"name":"canary-flaky-1"},"status":{"phase":"Pending","conditions":[]}}]}X'
+    previous = os.environ.get("FAKE_PODS_JSON")
+    os.environ["FAKE_PODS_JSON"] = polluted
+    try:
+        pods_json = (
+            '{"items":[{"metadata":{"name":"gateway-engine-abc"},'
+            '"status":{"phase":"Running","conditions":[{"type":"Ready","status":"True"}]}}]}'
+        )
+        proc = _run_deep_smoke(
+            ["--env", "staging", "--quick"],
+            env_overrides={"FAKE_PODS_JSON": pods_json},
+        )
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert "| pods | PASS |" in proc.stdout
+        assert "Extra data" not in proc.stdout
+    finally:
+        if previous is None:
+            os.environ.pop("FAKE_PODS_JSON", None)
+        else:
+            os.environ["FAKE_PODS_JSON"] = previous
+
+
 # ---------------------------------------------------------------------------
 # --full mode: API shapes, streaming, provider families
 # ---------------------------------------------------------------------------
@@ -687,6 +956,8 @@ def test_full_mode_all_pass() -> None:
         "admin_status",
         "admin_credentials",
         "admin_quota",
+        "jobs",
+        "spendlogs",
     ):
         assert f"| {check} | PASS |" in proc.stdout, f"missing PASS row for {check}\n{proc.stdout}"
 
@@ -711,6 +982,8 @@ def test_full_mode_check_order_includes_quick_then_full_checks() -> None:
         "admin_status",
         "admin_credentials",
         "admin_quota",
+        "jobs",
+        "spendlogs",
     ]
 
 
@@ -965,3 +1238,230 @@ def test_full_mode_admin_checks_omit_header_when_admin_key_unset(tmp_path) -> No
     assert admin_status_lines
     # Log format is "<url> <payload> <admin_key_header>"; header field should be empty.
     assert all(line.split(" ")[-1] == "" for line in admin_status_lines)
+
+
+# ---------------------------------------------------------------------------
+# --full mode: cluster Jobs check (issue #401, bundle #396)
+# ---------------------------------------------------------------------------
+
+
+def test_full_mode_jobs_pass_when_none_present() -> None:
+    proc = _run_deep_smoke(["--env", "staging", "--full"])
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "| jobs | PASS | no bootstrap/migration Jobs found" in proc.stdout
+
+
+def test_full_mode_jobs_failed_job_fails() -> None:
+    jobs_json = (
+        '{"items":[{"metadata":{"name":"litellm-migrate"},'
+        '"status":{"conditions":[{"type":"Failed","status":"True","reason":"BackoffLimitExceeded"}]}}]}'
+    )
+    proc = _run_deep_smoke(["--env", "staging", "--full"], env_overrides={"FAKE_JOBS_JSON": jobs_json})
+    assert proc.returncode == 1
+    assert "| jobs | FAIL |" in proc.stdout
+    assert "litellm-migrate" in proc.stdout
+    assert "Overall: FAIL" in proc.stdout
+
+
+def test_full_mode_jobs_active_job_still_passes() -> None:
+    """A Job that's still Active (not yet Complete/Failed) is not a failure."""
+    jobs_json = '{"items":[{"metadata":{"name":"gateway-migrate"},"status":{"active":1}}]}'
+    proc = _run_deep_smoke(["--env", "staging", "--full"], env_overrides={"FAKE_JOBS_JSON": jobs_json})
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "| jobs | PASS |" in proc.stdout
+
+
+def test_full_mode_jobs_kubectl_exec_failure_fails() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_KUBECTL_JOBS_EXIT": "1"},
+    )
+    assert proc.returncode == 1
+    assert "| jobs | FAIL | kubectl get jobs failed" in proc.stdout
+
+
+def test_full_mode_jobs_missing_kubectl_fails_hard_on_staging() -> None:
+    """Unlike check_pods, missing kubectl for the Jobs check is a hard FAIL on
+    staging --full — no --strict flag required."""
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"DEEP_SMOKE_KUBECTL_BIN": "/nonexistent/kubectl-binary-for-tests"},
+    )
+    assert proc.returncode == 1
+    assert "| jobs | FAIL |" in proc.stdout
+    assert "Overall: FAIL" in proc.stdout
+
+
+def test_full_mode_jobs_missing_kubectl_warns_on_prod_without_strict() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "prod", "--full"],
+        env_overrides={"DEEP_SMOKE_KUBECTL_BIN": "/nonexistent/kubectl-binary-for-tests"},
+    )
+    assert "| jobs | WARN |" in proc.stdout
+
+
+def test_full_mode_jobs_missing_kubectl_fails_on_prod_with_strict() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "prod", "--full", "--strict"],
+        env_overrides={"DEEP_SMOKE_KUBECTL_BIN": "/nonexistent/kubectl-binary-for-tests"},
+    )
+    assert proc.returncode == 1
+    assert "| jobs | FAIL |" in proc.stdout
+
+
+def test_full_mode_jobs_allowlist_env_var_skips_failed_job() -> None:
+    jobs_json = (
+        '{"items":[{"metadata":{"name":"canary-flaky-job"},'
+        '"status":{"conditions":[{"type":"Failed","status":"True"}]}}]}'
+    )
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_JOBS_JSON": jobs_json, "DEEP_SMOKE_JOBS_ALLOWLIST": "canary-flaky"},
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "| jobs | PASS |" in proc.stdout
+
+
+def test_full_mode_skip_jobs_env_var() -> None:
+    proc = _run_deep_smoke(["--env", "staging", "--full"], env_overrides={"DEEP_SMOKE_SKIP_JOBS": "1"})
+    assert proc.returncode == 0
+    assert "| jobs | WARN | skipped via DEEP_SMOKE_SKIP_JOBS=1 |" in proc.stdout
+
+
+# ---------------------------------------------------------------------------
+# --full mode: LiteLLM_SpendLogs DB side-effect check (issue #401, bundle #396)
+# ---------------------------------------------------------------------------
+
+
+def test_full_mode_spendlogs_pass_by_default() -> None:
+    """The default fake psql fixture returns a row matching the fixed default
+    completion id ('chatcmpl-fake-000'), so this passes without any overrides."""
+    proc = _run_deep_smoke(["--env", "staging", "--full"])
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "| spendlogs | PASS |" in proc.stdout
+    assert "chatcmpl-fake-000" in proc.stdout
+
+
+def test_full_mode_spendlogs_no_rows_fails() -> None:
+    proc = _run_deep_smoke(["--env", "staging", "--full"], env_overrides={"FAKE_SPENDLOGS_JSON": "[]"})
+    assert proc.returncode == 1
+    assert "| spendlogs | FAIL |" in proc.stdout
+    assert "Overall: FAIL" in proc.stdout
+
+
+def test_full_mode_spendlogs_stale_row_fails() -> None:
+    stale_json = '[{"request_id":"chatcmpl-fake-000","end_user":"x","startTime":"2020-01-01T00:00:00.000"}]'
+    proc = _run_deep_smoke(["--env", "staging", "--full"], env_overrides={"FAKE_SPENDLOGS_JSON": stale_json})
+    assert proc.returncode == 1
+    assert "| spendlogs | FAIL |" in proc.stdout
+
+
+def test_full_mode_spendlogs_window_minutes_env_override() -> None:
+    """A row 20 minutes old fails the default 15m window but passes a 30m window."""
+    ts = (datetime.now(timezone.utc) - timedelta(minutes=20)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+    row_json = f'[{{"request_id":"chatcmpl-fake-000","end_user":"x","startTime":"{ts}"}}]'
+
+    proc_default = _run_deep_smoke(["--env", "staging", "--full"], env_overrides={"FAKE_SPENDLOGS_JSON": row_json})
+    assert proc_default.returncode == 1
+    assert "| spendlogs | FAIL |" in proc_default.stdout
+
+    proc_wide = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_SPENDLOGS_JSON": row_json, "DEEP_SMOKE_SPENDLOGS_WINDOW_MINUTES": "30"},
+    )
+    assert proc_wide.returncode == 0, proc_wide.stdout + proc_wide.stderr
+    assert "| spendlogs | PASS |" in proc_wide.stdout
+
+
+def test_full_mode_spendlogs_psql_exec_failure_fails() -> None:
+    proc = _run_deep_smoke(["--env", "staging", "--full"], env_overrides={"FAKE_PSQL_EXIT": "1"})
+    assert proc.returncode == 1
+    assert "| spendlogs | FAIL | psql query failed" in proc.stdout
+
+
+def test_full_mode_spendlogs_postgres_pod_not_found_fails_on_staging() -> None:
+    proc = _run_deep_smoke(["--env", "staging", "--full"], env_overrides={"FAKE_PG_POD_NAME": ""})
+    assert proc.returncode == 1
+    assert "| spendlogs | FAIL | could not resolve Postgres pod" in proc.stdout
+
+
+def test_full_mode_spendlogs_postgres_pod_not_found_warns_on_prod_without_strict() -> None:
+    proc = _run_deep_smoke(["--env", "prod", "--full"], env_overrides={"FAKE_PG_POD_NAME": ""})
+    assert "| spendlogs | WARN | could not resolve Postgres pod" in proc.stdout
+
+
+def test_full_mode_spendlogs_missing_kubectl_fails_hard_on_staging() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"DEEP_SMOKE_KUBECTL_BIN": "/nonexistent/kubectl-binary-for-tests"},
+    )
+    assert proc.returncode == 1
+    assert "| spendlogs | FAIL |" in proc.stdout
+
+
+def test_full_mode_spendlogs_missing_kubectl_warns_on_prod_without_strict() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "prod", "--full"],
+        env_overrides={"DEEP_SMOKE_KUBECTL_BIN": "/nonexistent/kubectl-binary-for-tests"},
+    )
+    assert "| spendlogs | WARN |" in proc.stdout
+
+
+def test_full_mode_skip_spendlogs_env_var() -> None:
+    proc = _run_deep_smoke(["--env", "staging", "--full"], env_overrides={"DEEP_SMOKE_SKIP_SPENDLOGS": "1"})
+    assert proc.returncode == 0
+    assert "| spendlogs | WARN | skipped via DEEP_SMOKE_SKIP_SPENDLOGS=1 |" in proc.stdout
+
+
+def test_full_mode_spendlogs_pg_pod_override_skips_lookup(tmp_path) -> None:
+    log_path = tmp_path / "kubectl.log"
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"DEEP_SMOKE_PG_POD": "custom-postgres-0", "FAKE_KUBECTL_LOG": str(log_path)},
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    log_text = log_path.read_text()
+    exec_lines = [line for line in log_text.splitlines() if "exec" in line]
+    assert exec_lines
+    assert all("custom-postgres-0" in line for line in exec_lines)
+    # No pod-lookup call (get pods -l ... -o jsonpath=...) should have happened.
+    lookup_lines = [line for line in log_text.splitlines() if "jsonpath=" in line]
+    assert not lookup_lines
+
+
+def test_full_mode_spendlogs_uses_configured_pg_namespace_and_db(tmp_path) -> None:
+    log_path = tmp_path / "kubectl.log"
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={
+            "DEEP_SMOKE_PG_NAMESPACE": "custom-db-ns",
+            "DEEP_SMOKE_PG_DB": "custom_litellm_db",
+            "FAKE_KUBECTL_LOG": str(log_path),
+        },
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    log_text = log_path.read_text()
+    exec_lines = [line for line in log_text.splitlines() if "exec" in line]
+    assert exec_lines
+    assert all("custom-db-ns" in line for line in exec_lines)
+    assert all("custom_litellm_db" in line for line in exec_lines)
+
+
+def test_full_mode_spendlogs_prod_uses_litellm_db_default(tmp_path) -> None:
+    log_path = tmp_path / "kubectl.log"
+    proc = _run_deep_smoke(["--env", "prod", "--full"], env_overrides={"FAKE_KUBECTL_LOG": str(log_path)})
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    log_text = log_path.read_text()
+    exec_lines = [line for line in log_text.splitlines() if "exec" in line]
+    assert exec_lines
+    assert all(" -d litellm " in line for line in exec_lines)
+
+
+def test_full_mode_spendlogs_staging_uses_litellm_staging_db_default(tmp_path) -> None:
+    log_path = tmp_path / "kubectl.log"
+    proc = _run_deep_smoke(["--env", "staging", "--full"], env_overrides={"FAKE_KUBECTL_LOG": str(log_path)})
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    log_text = log_path.read_text()
+    exec_lines = [line for line in log_text.splitlines() if "exec" in line]
+    assert exec_lines
+    assert all(" -d litellm_staging " in line for line in exec_lines)

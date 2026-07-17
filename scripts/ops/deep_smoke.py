@@ -13,10 +13,22 @@ Exit code convention for every ``check-*`` subcommand:
 The ``--quick`` checks (health/ready/version/models/completion/pods), the
 ``--full`` API-shape/streaming/provider-family checks (chat completions,
 Responses API, Claude Messages API, one SSE stream, claude/gpt/gemini
-allowlist), and the ``--full`` read-mostly admin checks (``/admin/status``,
-``/admin/credentials``, soft ``/admin/quota/status``) are implemented here.
-SpendLogs, cluster Jobs, and Langfuse checks remain out of scope for this
-issue (bundle #396, issue #401).
+allowlist), the ``--full`` read-mostly admin checks (``/admin/status``,
+``/admin/credentials``, soft ``/admin/quota/status``), the ``--full``
+cluster Job check (bootstrap/migration Jobs not ``Failed`` when present),
+and the ``--full`` ``LiteLLM_SpendLogs`` DB side-effect check are
+implemented here (bundle #396; Jobs/SpendLogs are issue #401). Langfuse
+checks remain out of scope for this issue.
+
+**SpendLogs matching** (issue #401): after a tagged completion, deep-smoke.sh
+polls ``public."LiteLLM_SpendLogs"`` (see db/seed-litellm-mock.sql) via
+``kubectl exec`` into the Postgres pod + ``psql`` for a row matching the
+smoke ``end_user`` and/or ``request_id`` within a short recency window.
+Matching on *either* identifier is sufficient (either can be missing/blank
+depending on what the API surface under test forwards — see the
+``metadata.user`` / ``metadata.user_id`` notes in deep-smoke.sh), but a
+match older than the window never counts, to avoid false positives from
+stale rows that happen to share a smoke tag from a previous run.
 
 **Soft quota contract** (issue #400): ``GET /admin/quota/status`` is only
 asserted to return an HTTP 2xx status with a JSON object body. The quota
@@ -36,8 +48,10 @@ import argparse
 import json
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 REQUIRED_VERSION_KEYS = ("version", "git_sha", "display_version")
+DEFAULT_SPENDLOGS_WINDOW_MINUTES = 15
 
 _EXIT_CODES = {"pass": 0, "fail": 1, "warn": 2}
 
@@ -263,6 +277,157 @@ def check_pods_payload(payload: object, allowlist: list[str] | None = None) -> C
     return CheckOutcome("pass", f"{checked} pod(s) checked, all ready{suffix}")
 
 
+def check_jobs_payload(payload: object, allowlist: list[str] | None = None) -> CheckOutcome:
+    """Validate a 'kubectl get jobs -o json' body (issue #401, bundle #396).
+
+    Pods-Ready is already covered by ``check_pods_payload`` in ``--quick``
+    (a completed Job's pod shows ``phase: Succeeded``, which that check
+    already treats as ok). This check adds the Job-specific assertion the
+    design calls for: any bootstrap/migration Jobs *present* (e.g. a
+    Postgres bootstrap PreSync hook, ``litellm-migrate``, ``gateway-migrate``
+    — see docs/CICD_PHASE2_STAGING.md) must not be in a ``Failed`` state.
+
+    Jobs are often one-shot and may already be pruned by the time an
+    operator runs deep-smoke, so *no* Jobs present is not a failure. A Job
+    that is still ``Active``/running (not yet ``Complete`` or ``Failed``) is
+    also not a failure — only an explicit ``Failed`` condition trips this
+    check.
+    """
+    if not isinstance(payload, dict):
+        return CheckOutcome("fail", "expected a JSON object from 'kubectl get jobs -o json'")
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return CheckOutcome("fail", "kubectl jobs response missing an 'items' array")
+    if not items:
+        return CheckOutcome("pass", "no bootstrap/migration Jobs found in namespace (ok)")
+
+    allowlist = [token for token in (allowlist or []) if token]
+    skipped = 0
+    checked = 0
+    failed: list[str] = []
+    for job in items:
+        name = job.get("metadata", {}).get("name", "<unknown>") if isinstance(job, dict) else "<unknown>"
+        if any(token in name for token in allowlist):
+            skipped += 1
+            continue
+        checked += 1
+        status = job.get("status", {}) if isinstance(job, dict) else {}
+        conditions = status.get("conditions") or []
+        failed_condition = next(
+            (c for c in conditions if isinstance(c, dict) and c.get("type") == "Failed" and c.get("status") == "True"),
+            None,
+        )
+        if failed_condition is not None:
+            reason = failed_condition.get("reason", "Failed")
+            failed.append(f"{name}: {reason}")
+
+    if failed:
+        return CheckOutcome("fail", f"{len(failed)} Job(s) failed: " + "; ".join(failed))
+    suffix = f" ({skipped} allowlisted skipped)" if skipped else ""
+    return CheckOutcome("pass", f"{checked} Job(s) checked, none failed{suffix}")
+
+
+def _parse_spend_log_timestamp(value: object) -> datetime | None:
+    """Parse a LiteLLM_SpendLogs "startTime" value into an aware UTC datetime.
+
+    psql (with ``-t -A`` / ``row_to_json``) renders Postgres
+    ``timestamp without time zone`` values as naive ISO-ish strings (e.g.
+    ``"2026-07-17T14:20:00.123"`` or ``"2026-07-17 14:20:00.123"``). The
+    column has no timezone, but the smoke tooling and the cluster both run
+    in UTC, so a naive value is treated as UTC.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if "T" not in text and " " in text:
+        text = text.replace(" ", "T", 1)
+    text = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def find_matching_spend_log_row(
+    rows: list[object],
+    end_user: str | None,
+    request_id: str | None,
+    window_minutes: int = DEFAULT_SPENDLOGS_WINDOW_MINUTES,
+    now: datetime | None = None,
+) -> dict | None:
+    """Return the most recent row matching `end_user` and/or `request_id`.
+
+    A row matches if its ``end_user`` equals `end_user` OR its
+    ``request_id`` equals `request_id` (either identifier is sufficient —
+    see the module docstring). A match is only counted if its ``startTime``
+    falls within the trailing `window_minutes` of `now` (defaults to the
+    current UTC time); rows with an unparseable/missing ``startTime`` never
+    match, since recency is what makes this a meaningful DB *side effect*
+    check rather than a coincidental identifier collision.
+    """
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=window_minutes)
+    best: tuple[datetime, dict] | None = None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        matches_request_id = bool(request_id) and row.get("request_id") == request_id
+        matches_end_user = bool(end_user) and row.get("end_user") == end_user
+        if not (matches_request_id or matches_end_user):
+            continue
+        ts = _parse_spend_log_timestamp(row.get("startTime"))
+        if ts is None or ts < cutoff:
+            continue
+        if best is None or ts > best[0]:
+            best = (ts, row)
+    return best[1] if best else None
+
+
+def check_spendlogs_payload(
+    payload: object,
+    end_user: str | None,
+    request_id: str | None,
+    window_minutes: int = DEFAULT_SPENDLOGS_WINDOW_MINUTES,
+    now: datetime | None = None,
+) -> CheckOutcome:
+    """Match a recent LiteLLM_SpendLogs row against the smoke tag (issue #401).
+
+    `payload` is the JSON array produced by deep-smoke.sh's psql query
+    (``SELECT request_id, end_user, "startTime" FROM
+    public."LiteLLM_SpendLogs" WHERE end_user = <tag> OR request_id = <id>
+    ORDER BY "startTime" DESC LIMIT 20``). This is the DB *side effect*
+    check (bundle #396 check inventory item 13): it proves a tagged smoke
+    request actually reached LiteLLM and was logged, not just that the HTTP
+    call returned 200.
+    """
+    if not end_user and not request_id:
+        return CheckOutcome("fail", "check-spendlogs requires --end-user and/or --request-id")
+    if not isinstance(payload, list):
+        return CheckOutcome("fail", "expected a JSON array of LiteLLM_SpendLogs rows")
+
+    match = find_matching_spend_log_row(payload, end_user, request_id, window_minutes, now)
+    if match is None:
+        if not payload:
+            return CheckOutcome(
+                "fail",
+                f"no LiteLLM_SpendLogs row found for end_user={end_user!r} request_id={request_id!r} "
+                f"within {window_minutes}m (query returned 0 rows)",
+            )
+        return CheckOutcome(
+            "fail",
+            f"no LiteLLM_SpendLogs row matched end_user={end_user!r} request_id={request_id!r} "
+            f"within {window_minutes}m ({len(payload)} row(s) returned, none matched/recent enough)",
+        )
+    return CheckOutcome(
+        "pass",
+        f"LiteLLM_SpendLogs row found: request_id={match.get('request_id')!r} "
+        f"end_user={match.get('end_user')!r} startTime={match.get('startTime')!r}",
+    )
+
+
 def check_admin_status_payload(payload: object) -> CheckOutcome:
     """Validate a GET /admin/status body — read-mostly, 2xx + JSON object.
 
@@ -400,6 +565,45 @@ def cli_check_admin_quota() -> int:
     return _emit(check_admin_quota_payload(payload))
 
 
+def cli_check_jobs(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="deep_smoke.py check-jobs")
+    parser.add_argument(
+        "--allowlist",
+        default="",
+        help="comma-separated Job-name substrings to skip Failed-condition checks for",
+    )
+    args = parser.parse_args(argv)
+    allowlist = [tok.strip() for tok in args.allowlist.split(",") if tok.strip()]
+    payload, err = _read_stdin_json()
+    if err:
+        return _emit(CheckOutcome("fail", err))
+    return _emit(check_jobs_payload(payload, allowlist))
+
+
+def cli_check_spendlogs(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="deep_smoke.py check-spendlogs")
+    parser.add_argument("--end-user", default="", help="smoke end_user tag to match")
+    parser.add_argument("--request-id", default="", help="completion response id to match")
+    parser.add_argument(
+        "--window-minutes",
+        type=int,
+        default=DEFAULT_SPENDLOGS_WINDOW_MINUTES,
+        help="only rows within this many trailing minutes count as a match",
+    )
+    args = parser.parse_args(argv)
+    payload, err = _read_stdin_json()
+    if err:
+        return _emit(CheckOutcome("fail", err))
+    return _emit(
+        check_spendlogs_payload(
+            payload,
+            end_user=args.end_user or None,
+            request_id=args.request_id or None,
+            window_minutes=args.window_minutes,
+        )
+    )
+
+
 def cli_check_pods(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="deep_smoke.py check-pods")
     parser.add_argument(
@@ -421,7 +625,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "usage: deep_smoke.py <check-version|check-models|check-completion|"
             "check-responses|check-messages|check-stream|check-pods|"
-            "check-admin-status|check-admin-credentials|check-admin-quota> [options]",
+            "check-admin-status|check-admin-credentials|check-admin-quota|"
+            "check-jobs|check-spendlogs> [options]",
             file=sys.stderr,
         )
         return 2
@@ -447,6 +652,10 @@ def main(argv: list[str] | None = None) -> int:
         return cli_check_admin_credentials()
     if cmd == "check-admin-quota":
         return cli_check_admin_quota()
+    if cmd == "check-jobs":
+        return cli_check_jobs(rest)
+    if cmd == "check-spendlogs":
+        return cli_check_spendlogs(rest)
 
     print(f"unknown subcommand: {cmd}", file=sys.stderr)
     return 2

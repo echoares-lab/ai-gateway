@@ -85,7 +85,7 @@ case "$url" in
       code="${code_override:-${FAKE_COMPLETION_CODE:-200}}"
       body="${body_override:-${FAKE_COMPLETION_BODY-}}"
       if [ -z "$body" ]; then
-        body='{"choices":[{"message":{"content":"pong"},"finish_reason":"stop"}]}'
+        body='{"id":"chatcmpl-fake-000","choices":[{"message":{"content":"pong"},"finish_reason":"stop"}]}'
       fi
     fi
     ;;
