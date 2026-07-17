@@ -195,7 +195,7 @@ git worktree remove /home/dev/worktrees/ai-gateway-feat-X
 ```
 
 **Dev stack details:**
-- CLIProxy is built from `/home/dev/repos/CLIProxyAPI` (`dev` branch) so our patches are included
+- CLIProxy is built from `/home/dev/repos/CLIProxyAPI` (`echoares/main` — upstream + quota patch stack) so our patches are included
 - OAuth tokens are seeded into an isolated Docker volume from `~/.cli-proxy-api/` at `start`; writes never touch host auth files
 - LiteLLM uses SQLite (disposable, no Postgres) and `DISABLE_CACHE=true`
 - If tokens expire mid-session, `./dev-env.sh stop 1 && ./dev-env.sh start 1` re-seeds them

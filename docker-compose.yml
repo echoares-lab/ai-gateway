@@ -91,7 +91,7 @@ services:
     container_name: PROD-cliproxy
     # Patched echoares-lab fork, built and pushed to Nexus by the CLIProxyAPI repo CI.
     # Pin CLIPROXY_IMAGE to a released tag/sha in production for reproducibility.
-    image: ${CLIPROXY_IMAGE:-nexus-docker.infra.plexplease.com/cli-proxy-api:6cf6e68}
+    image: ${CLIPROXY_IMAGE:-nexus-docker.infra.plexplease.com/cli-proxy-api:c305d49}
     command:
     - ./CLIProxyAPI
     - --config
