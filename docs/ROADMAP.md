@@ -91,7 +91,7 @@ Release invariants:
 - closed CLIProxyAPI #5 and #6 are historical inputs only and must not be
   reclaimed.
 
-Spec: [`docs/superpowers/specs/2026-07-17-cliproxy-upstream-patch-dep-updates-design.md`](./superpowers/specs/2026-07-17-cliproxy-upstream-patch-dep-updates-design.md).  
+Spec: [`docs/superpowers/specs/2026-07-17-cliproxy-upstream-patch-dep-updates-design.md`](./superpowers/specs/2026-07-17-cliproxy-upstream-patch-dep-updates-design.md).
 Plan: [`docs/superpowers/plans/2026-07-17-cliproxy-upstream-patch-dep-updates.md`](./superpowers/plans/2026-07-17-cliproxy-upstream-patch-dep-updates.md).
 
 ---

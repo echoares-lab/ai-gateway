@@ -1,7 +1,7 @@
 # CLIProxy Upstream-Patch Migration and Dependency Updates — Design
 
-**Date:** 2026-07-17  
-**Status:** Approved for implementation through epic #413 atomic children  
+**Date:** 2026-07-17
+**Status:** Approved for implementation through epic #413 atomic children
 **Primary systems:** CLIProxyAPI fork, ai-gateway CI, and k3s-01 staging/production overlays
 
 ## Goal

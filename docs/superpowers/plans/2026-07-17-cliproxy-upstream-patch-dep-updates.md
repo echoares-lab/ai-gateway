@@ -68,8 +68,8 @@ design document.
 
 ## Task 1: Reset the CLIProxyAPI fork (#12)
 
-**Repository:** `echoares-lab/CLIProxyAPI`  
-**Depends on:** #414 merged  
+**Repository:** `echoares-lab/CLIProxyAPI`
+**Depends on:** #414 merged
 **Expected files:** fork branch/history plus any CI references that name its
 base; no ai-gateway runtime changes.
 
@@ -100,8 +100,8 @@ base; no ai-gateway runtime changes.
 
 ## Task 2: Re-port the quota stack (#13)
 
-**Repository:** `echoares-lab/CLIProxyAPI`  
-**Depends on:** CLIProxyAPI #12  
+**Repository:** `echoares-lab/CLIProxyAPI`
+**Depends on:** CLIProxyAPI #12
 **Patch limit:** two commits.
 
 - [ ] Claim #13 on the reset branch.
@@ -126,7 +126,7 @@ base; no ai-gateway runtime changes.
 
 ## Task 3: Add weekly upstream tracking and Nexus candidates (#11)
 
-**Repository:** `echoares-lab/CLIProxyAPI`  
+**Repository:** `echoares-lab/CLIProxyAPI`
 **Depends on:** #12 and #13.
 
 - [ ] Claim #11 and add a weekly scheduled workflow with manual dispatch.
@@ -143,8 +143,8 @@ base; no ai-gateway runtime changes.
 
 ## Task 4: Include cliproxy in the promotion gate (#415)
 
-**Repository:** `ai-gateway`  
-**Depends on:** #414; soft dependency on CLIProxyAPI #11  
+**Repository:** `ai-gateway`
+**Depends on:** #414; soft dependency on CLIProxyAPI #11
 **Files:** `.github/workflows/promote-k3s-images.yml`,
 `scripts/k3s/promote_k3s_images.py`, related tests and CICD docs.
 
@@ -163,8 +163,8 @@ base; no ai-gateway runtime changes.
 
 ## Task 5: Inventory dependencies and configure Renovate (#416)
 
-**Repository:** `ai-gateway`  
-**Depends on:** #414  
+**Repository:** `ai-gateway`
+**Depends on:** #414
 **Files:** Renovate configuration, compose/config inventory, and ops/CICD docs.
 
 - [ ] Claim #416 and inventory image references in compose files, environment
@@ -185,8 +185,8 @@ base; no ai-gateway runtime changes.
 
 ## Task 6: Publish the per-component update playbook (#417)
 
-**Repository:** `ai-gateway`  
-**Depends on:** #414 and #416; soft dependency on #415  
+**Repository:** `ai-gateway`
+**Depends on:** #414 and #416; soft dependency on #415
 **Files:** `docs/ops/DEPENDENCY_UPDATES.md`, `docs/ops/RUNBOOK.md`, and CICD docs.
 
 - [ ] Claim #417 and write one executable section per inventory component.
@@ -202,8 +202,8 @@ base; no ai-gateway runtime changes.
 
 ## Task 7: Cut over cliproxy through staging and production (#418)
 
-**Repositories:** `ai-gateway` and `k3s-01`  
-**Depends on:** CLIProxyAPI #13 and #414; #415 preferred  
+**Repositories:** `ai-gateway` and `k3s-01`
+**Depends on:** CLIProxyAPI #13 and #414; #415 preferred
 **Risk:** High.
 
 - [ ] Claim #418 and capture the current production/staging digest, Argo
