@@ -174,16 +174,27 @@ Staging is the pre-prod gate. The promotion flow (see also epic
 3. **Validate on staging** — run the [Verification](#verification) steps against
    `gateway-staging.infra.plexplease.com`. Confirm health, model catalog, an end-to-end
    completion, and Langfuse traces.
-4. **Deep smoke (promote gate)** — before opening the prod digest-pin PR, run the full staging
-   deep-smoke from an operator machine with kubectl and DB access:
+4. **Deep smoke (CI promote gate)** — production digest promotion is gated on a green
+   staging `--full` deep-smoke in GitHub Actions (issue
+   [#410](https://github.com/echoares-lab/ai-gateway/issues/410), epic
+   [#396](https://github.com/echoares-lab/ai-gateway/issues/396)):
+
+   - Workflow: `.github/workflows/staging-deep-smoke.yml` (reusable + `workflow_dispatch`)
+   - Enforced by: `.github/workflows/promote-k3s-images.yml` — runs staging deep-smoke
+     **before** opening the k3s-01 digest-pin PR (auto path after CI Suite on `main`, or
+     manual dispatch).
+   - Required secrets: `DEEP_SMOKE_STAGING_API_KEY`, `K3S_KUBECONFIG` (optional
+     `DEEP_SMOKE_STAGING_ADMIN_KEY`). Missing secrets fail closed.
+   - When promoting a known SHA, `DEEP_SMOKE_EXPECT_GIT_SHA` must match staging
+     `GET /version` `git_sha`.
+   - Emergency only: `workflow_dispatch` input `skip_deep_smoke=true` bypasses the gate
+     (never on the auto CI Suite path). Summary is pasted into the k3s-01 PR body.
+
+   Local / operator equivalent:
 
    ```bash
-   ./scripts/ops/deep-smoke.sh --env staging --full
+   DEEP_SMOKE_EXPECT_GIT_SHA=<candidate-sha> ./scripts/ops/deep-smoke.sh --env staging --full
    ```
-
-   This is the human/process promote gate: multi-API shapes, streaming, admin surfaces,
-   cluster readiness, and `LiteLLM_SpendLogs` side effects that CI and thin post-merge Gate D
-   do not cover. Paste the markdown summary into the GitOps PR or issue closeout.
 
    - **Langfuse** — best-effort / warn-only when credentials are unset; use `--strict` to
      promote warnings (including missing Langfuse) to failures.
@@ -192,7 +203,8 @@ Staging is the pre-prod gate. The promotion flow (see also epic
    - **Prod quick smoke** — optional incident path only:
      `./scripts/ops/deep-smoke.sh --env prod --quick`
 
-   Do **not** open or merge the k3s-01 digest-pin PR until staging `--full` is green.
+   Do **not** open or merge the k3s-01 digest-pin PR until staging `--full` is green
+   (CI-enforced unless emergency skip).
 5. **Regenerate the prod ConfigMap** from the same `litellm-config.yaml` (production's
    generator / the existing prod overlay) and open a PR in the `k3s-01` GitOps repo pinning
    the **exact digest validated by step 4**.

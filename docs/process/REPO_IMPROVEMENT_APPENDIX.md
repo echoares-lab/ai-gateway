@@ -34,7 +34,7 @@ main -> feat/* worktree/branch -> PR -> main
 | **B** | Mock integration (0 skips) | `make test-mock` | `mock-integration` |
 | **C** | Real providers (smoke) | `make test-e2e` or PR label `run-e2e` | `real-provider-e2e` (**opt-in / advisory**) |
 | **D** | Post-merge stable (thin) | `./cliproxy-setup.sh health` + model smokes on :4000 / k8s prod edge | `post-merge-gate-d` (advisory) |
-| **Deep smoke** | Staging promote gate | `./scripts/ops/deep-smoke.sh --env staging --full` | Offline unit tests only; live run is operator/k8s |
+| **Deep smoke** | Staging promote gate | `./scripts/ops/deep-smoke.sh --env staging --full` | **CI:** `staging-deep-smoke.yml` via `promote-k3s-images.yml` (#410) |
 
 **Agent loop (before push):** `make test-fast` (Gate A + B locally, ~5 min). Does **not** run `multi-repo-isolation` — run `bash tests/test-multi-repo-isolation.sh` when touching isolation scripts.
 
@@ -99,11 +99,15 @@ There is **no** `build-gateway-engine` or `policy-engine-tests` job (image build
 - `./cliproxy-setup.sh test gpt-5-4`
 
 **Deep smoke (staging promote gate — before prod digest pin, epic #396):**
-- `./scripts/ops/deep-smoke.sh --env staging --full` — required human/process gate; not a
-  substitute for Gate D and not run on every merge to `main`.
+- **CI-enforced:** `promote-k3s-images.yml` runs `staging-deep-smoke.yml` (`--env staging --full`)
+  before opening the k3s-01 pin PR (issue #410). Secrets: `DEEP_SMOKE_STAGING_API_KEY`,
+  `K3S_KUBECONFIG` (+ optional `DEEP_SMOKE_STAGING_ADMIN_KEY`).
+- Local: `./scripts/ops/deep-smoke.sh --env staging --full` — still valid for operators.
 - Langfuse: warn-only by default; `--strict` promotes warnings to failures.
 - Quota: soft check only (`GET /admin/quota/status` → 2xx + JSON object); no field freeze asserts.
+- Optional `DEEP_SMOKE_EXPECT_GIT_SHA` for candidate SHA match on staging `/version`.
 - Incident prod path: `./scripts/ops/deep-smoke.sh --env prod --quick`
+- Emergency: `workflow_dispatch` `skip_deep_smoke=true` only (never on auto CI Suite path).
 - See [`docs/CICD_PHASE2_STAGING.md`](../CICD_PHASE2_STAGING.md#promotion-from-staging-to-prod)
   and [`docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md`](../superpowers/specs/2026-07-17-staging-deep-smoke-design.md).
 

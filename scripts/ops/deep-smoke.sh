@@ -92,7 +92,10 @@
 #   DEEP_SMOKE_SKIP_SPENDLOGS   set to "1" to skip the --full
 #                               LiteLLM_SpendLogs DB check (recorded as a
 #                               warning)
-#   DEEP_SMOKE_CURL_BIN         override curl binary (tests only)
+#   DEEP_SMOKE_EXPECT_GIT_SHA   when set, GET /version must report a matching
+#                               git_sha (full SHA or unique prefix). Used by
+#                               the CI promote gate to ensure staging is on the
+#                               candidate revision before digest pin.
 #   DEEP_SMOKE_KUBECTL_BIN      override kubectl binary (tests only)
 #   DEEP_SMOKE_PYTHON_BIN       override python3 binary (tests only)
 #
@@ -129,7 +132,7 @@ STRICT=0
 ALLOW_MUTATING_ADMIN=0
 
 usage() {
-  sed -n '2,107p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,110p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 while [ $# -gt 0 ]; do
@@ -299,7 +302,11 @@ check_version() {
     record "version" FAIL "GET /version -> ${code:-000}"
     return
   fi
-  py_check check-version "$body"
+  local expect_args=()
+  if [ -n "${DEEP_SMOKE_EXPECT_GIT_SHA:-}" ]; then
+    expect_args+=(--expect-git-sha "${DEEP_SMOKE_EXPECT_GIT_SHA}")
+  fi
+  py_check check-version "$body" "${expect_args[@]}"
   record "version" "$(map_rc_to_status "$CAPTURED_RC")" "$CAPTURED_OUT"
 }
 

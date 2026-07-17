@@ -71,7 +71,8 @@ shapes, streaming, admin soft checks, cluster readiness, `LiteLLM_SpendLogs`).
 | 2 | [Soft admin + quota #400](https://github.com/echoares-lab/ai-gateway/issues/400) | Depends on #398; soft asserts only |
 | 3 | [SpendLogs + cluster #401](https://github.com/echoares-lab/ai-gateway/issues/401) | Depends on #399 |
 | 3 | [Promote checklist docs #402](https://github.com/echoares-lab/ai-gateway/issues/402) | Depends on #398 |
-| 4 | [Harden quota asserts #403](https://github.com/echoares-lab/ai-gateway/issues/403) | Blocked on #400 + OpenAPI freeze |
+| 4 | [CI gate promote on deep-smoke #410](https://github.com/echoares-lab/ai-gateway/issues/410) | Depends on #401 |
+| 5 | [Harden quota asserts #403](https://github.com/echoares-lab/ai-gateway/issues/403) | Blocked on #400 + OpenAPI freeze |
 
 Invariants:
 

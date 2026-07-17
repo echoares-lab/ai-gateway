@@ -24,10 +24,11 @@ Fast pre-push loop: `make test-fast` (Gate A + B locally).
 completions on stable `:4000` or prod k8s edge). **Deep smoke `--full`** is the **staging promote
 gate** (epic [#396](https://github.com/echoares-lab/ai-gateway/issues/396)) — multi-API shapes,
 streaming, admin surfaces, cluster/DB checks — and must pass **before** opening the k3s-01
-digest-pin PR. It is operator-run (kubectl + DB access required), not CI-blocking on every merge.
-Langfuse checks are **warn-only** unless `--strict` is set. Quota is a **soft** check (2xx +
-parseable JSON only; no field-contract asserts while the schema is in flux — see
-[`docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md`](superpowers/specs/2026-07-17-staging-deep-smoke-design.md)).
+digest-pin PR. It is **CI-enforced** by `promote-k3s-images.yml` → `staging-deep-smoke.yml`
+(issue #410); local operator runs remain supported. Not required on every merge to `main`
+outside the promote path. Langfuse checks are **warn-only** unless `--strict` is set. Quota is a
+**soft** check (2xx + parseable JSON only; no field-contract asserts while the schema is in flux —
+see [`docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md`](superpowers/specs/2026-07-17-staging-deep-smoke-design.md)).
 
 ---
 

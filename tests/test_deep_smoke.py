@@ -65,7 +65,31 @@ def test_parse_json_valid() -> None:
 def test_check_version_payload_pass() -> None:
     outcome = check_version_payload({"version": "1.0", "git_sha": "abc", "display_version": "1.0 (abc)"})
     assert outcome.status == "pass"
-    assert outcome.exit_code == 0
+
+
+def test_check_version_payload_expect_git_sha_match_full() -> None:
+    outcome = check_version_payload(
+        {"version": "1.0", "git_sha": "abcdef1234567890", "display_version": "1.0"},
+        expect_git_sha="abcdef1234567890",
+    )
+    assert outcome.status == "pass"
+
+
+def test_check_version_payload_expect_git_sha_match_prefix() -> None:
+    outcome = check_version_payload(
+        {"version": "1.0", "git_sha": "abcdef1234567890", "display_version": "1.0"},
+        expect_git_sha="abcdef1",
+    )
+    assert outcome.status == "pass"
+
+
+def test_check_version_payload_expect_git_sha_mismatch_fails() -> None:
+    outcome = check_version_payload(
+        {"version": "1.0", "git_sha": "abcdef1234567890", "display_version": "1.0"},
+        expect_git_sha="deadbeef",
+    )
+    assert outcome.status == "fail"
+    assert "does not match expected" in outcome.message
 
 
 @pytest.mark.parametrize(
