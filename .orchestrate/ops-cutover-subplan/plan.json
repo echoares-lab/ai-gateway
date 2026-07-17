@@ -1,0 +1,57 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cursor/plugins/main/orchestrate/schemas/plan.schema.json",
+  "goal": "Own ai-gateway #418 (staging->prod cliproxy cutover) and #419 (archive Management-Center + prune fork branches) after promote-gate and fork quota stack are ready. Prefer documenting exact operator commands and opening k3s-01 PRs when cluster credentials are available; if kubectl/OpenBao/Nexus are missing in the cloud VM, produce a complete runbook handoff with digests/rollback and stop without fake success. Never force-push main; never delete rollback tags.",
+  "summary": "cliproxy staging->prod cutover (#418) + fork/Management-Center retirement (#419)",
+  "rootSlug": "ops-cutover-subplan",
+  "selfAgentId": "bc-3f860c92-d468-44f5-8a79-2916873c1a43",
+  "baseBranch": "main",
+  "repoUrl": "https://github.com/echoares-lab/ai-gateway",
+  "acceptanceCriteria": [
+    "Either #418/#419 PRs/ops evidence OR explicit blocked handoff with runnable operator checklist",
+    "Rollback pins recorded"
+  ],
+  "status": "blocked",
+  "blockedReason": "Cutover cannot execute or be delegated from this environment: (1) upstream+quota cliproxy candidate image does not exist (CLIProxyAPI repo 404 -> #418 hard-blocked); (2) no kubectl/OpenBao/Nexus and no write access to echoares-lab/k3s-01 (404) -> cannot pin/deep-smoke/promote/Gate-D or open k3s-01 PR; (3) GitHub token read-only scoped to ai-gateway only -> cannot archive Cli-Proxy-API-Management-Center or prune fork branches; (4) no bun and no CURSOR_API_KEY -> cannot spawn cloud-agent workers. Deliverable per scoped sub-goal: complete runbook handoff with digests/rollback (docs/ops/RUNBOOK_CLIPROXY_CUTOVER.md). See BLOCKER.md.",
+  "tasks": [
+    {
+      "name": "cliproxy-cutover-418",
+      "type": "worker",
+      "model": "gpt-5.5-high",
+      "scopedGoal": "Execute the staging->prod cliproxy cutover for #418 using docs/ops/RUNBOOK_CLIPROXY_CUTOVER.md Steps 0-6. Capture rollback state first, resolve candidate to a sha256 digest, pin+deep-smoke staging (--full), run the N->N-1->N rollback drill, promote the exact tested digest via the gated promote-k3s-images workflow (or manual k3s-01 PR), then thin prod Gate D. Update ai-gateway compose CLIPROXY_IMAGE default only to the validated immutable digest per #418 scope.",
+      "pathsAllowed": ["docker-compose.yml", "docker-compose.dev.yml", ".env.example", "docs/**"],
+      "acceptance": [
+        "Staging deep-smoke --full green on the candidate digest (quota asserts pass)",
+        "Prod cliproxy pods report imageID == promoted digest; Gate D health + claude/gpt/gemini smokes + quota-summary green",
+        "Closeout on #413/#418 records new digest, previous prod digest (rollback pin), staging+prod Argo revisions, N->N-1->N drill, OAuth auth archive still valid"
+      ],
+      "verify": "./scripts/ops/deep-smoke.sh --env staging --full green; kubectl -n ai-gateway pods imageID == promoted sha256 digest; ./cliproxy-setup.sh health + three model smokes + quota-summary green",
+      "dependsOn": [],
+      "maxAttempts": 1,
+      "openPR": false
+    },
+    {
+      "name": "verify-cliproxy-cutover-418",
+      "type": "verifier",
+      "model": "claude-opus-4-8",
+      "verifies": "cliproxy-cutover-418",
+      "scopedGoal": "Verify #418 acceptance from evidence: staging --full deep-smoke output (incl. /admin/quota/status contract), prod pod imageID == promoted digest, Gate D smokes, and that the rollback pin (previous prod digest) and N->N-1->N drill are recorded. Reject any 'fake success' where the promoted digest was not the deep-smoked digest.",
+      "dependsOn": ["cliproxy-cutover-418"]
+    },
+    {
+      "name": "retire-fork-surfaces-419",
+      "type": "worker",
+      "model": "gpt-5.3-codex-high-fast",
+      "scopedGoal": "After #418 prod cutover is verified green, execute #419 per docs/ops/RUNBOOK_CLIPROXY_CUTOVER.md Steps A-D: confirm CPA-Manager replaces Management-Center, archive echoares-lab/Cli-Proxy-API-Management-Center (maintainer token), update docs that still point at it or at fork `dev`, inventory+prune stale patch/* and frozen dev fork branches while preserving all rollback tags/SHAs, run docs/link checks.",
+      "pathsAllowed": ["docs/**", "AGENTS.md", "CLAUDE.md"],
+      "acceptance": [
+        "Docs no longer instruct operators to use Management-Center separately or build cliproxy from fork `dev`",
+        "Stale fork branches listed and removed or documented as rollback-only; rollback tags/SHAs preserved",
+        "Epic #413 closeout references this cleanup"
+      ],
+      "verify": "grep -rn 'Cli-Proxy-API-Management-Center' docs AGENTS.md CLAUDE.md returns only archived-context notes; Cli-Proxy-API-Management-Center repo isArchived == true; rollback tags still present",
+      "dependsOn": ["verify-cliproxy-cutover-418"],
+      "maxAttempts": 1,
+      "openPR": true
+    }
+  ]
+}
