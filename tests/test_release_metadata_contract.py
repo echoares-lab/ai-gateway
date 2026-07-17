@@ -7,7 +7,6 @@ from pathlib import Path
 
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -74,3 +73,22 @@ def test_k3s_promotion_installs_verified_gh_before_pr_creation() -> None:
     verify_index = workflow.index('gh --version', checksum_index)
     create_index = workflow.index("gh pr create", verify_index)
     assert setup_index < checksum_index < verify_index < create_index
+
+
+def test_k3s_promotion_requires_cliproxy_digest_resolution() -> None:
+    workflow = (ROOT / ".github/workflows/promote-k3s-images.yml").read_text(encoding="utf-8")
+    assert "repository_dispatch:" in workflow
+    assert "cliproxy-candidate-ready" in workflow
+    assert "Resolve cliproxy candidate digest" in workflow
+    assert "scripts/k3s/resolve_image_digest.py" in workflow
+    assert "CLIPROXY_CANDIDATE_TAG" in workflow
+    assert "cliproxy digest is required" in workflow
+    assert 'ARGS+=(--cliproxy "${CLIPROXY}")' in workflow
+
+
+def test_k3s_promotion_preserves_emergency_skip_deep_smoke() -> None:
+    workflow = (ROOT / ".github/workflows/promote-k3s-images.yml").read_text(encoding="utf-8")
+    assert "skip_deep_smoke=true" in workflow
+    assert 'INPUT_SKIP}" == "true"' in workflow
+    assert "needs.resolve-sha.outputs.skip_deep_smoke != 'true'" in workflow
+    assert "Staging deep-smoke **skipped** via workflow_dispatch skip_deep_smoke=true" in workflow

@@ -115,7 +115,7 @@ jobs:
           bash tests/test-sync-models-probe.sh
       - name: promote-k3s-images script tests
         run: |
-          PYTHONPATH=. .venv-ci/bin/python -m pytest tests/test_promote_k3s_images.py -v
+          PYTHONPATH=. .venv-ci/bin/python -m pytest tests/test_promote_k3s_images.py tests/test_resolve_image_digest.py -v
       - name: Validate litellm-config.yaml
         run: |
           .venv-ci/bin/python3 - <<'PY'
