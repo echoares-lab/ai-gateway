@@ -30,3 +30,12 @@ The helper exits nonzero with a clear error when Gateway Engine is unreachable o
 - Add shell-level tests with a fake `curl` response for unauthenticated and authenticated calls, rendered quota windows, empty accounts, and HTTP failure.
 - Run the helper tests and `bash -n cliproxy-setup.sh`.
 - Validate the OpenAPI YAML and run the repository documentation validation available in the local environment.
+
+## Related: staging deep-smoke (soft contract)
+
+The staging deep-smoke promote gate
+([spec](./2026-07-17-staging-deep-smoke-design.md), epic #396) calls
+`GET /admin/quota/status` as a **soft** check (HTTP 2xx + parseable JSON object
+only) until the OpenAPI response schema is frozen. Field-level asserts are
+tracked in follow-up #403 — do not harden deep-smoke against a moving quota
+shape while quota/alert work is in flight.
