@@ -186,10 +186,13 @@ Staging is the pre-prod gate. The promotion flow (see also epic
 
    - Workflow: `.github/workflows/staging-deep-smoke.yml` (reusable + `workflow_dispatch`)
    - Enforced by: `.github/workflows/promote-k3s-images.yml` — runs staging deep-smoke
-     **before** opening the k3s-01 digest-pin PR (auto path after CI Suite on `main`, or
-     manual dispatch).
+     **before** opening the k3s-01 digest-pin PR (auto path after CI Suite on `main`,
+     `repository_dispatch` from CLIProxyAPI Nexus CI, or manual dispatch).
    - Required secrets: `DEEP_SMOKE_STAGING_API_KEY`, `K3S_KUBECONFIG` (optional
      `DEEP_SMOKE_STAGING_ADMIN_KEY`). Missing secrets fail closed.
+   - **Cliproxy (issue #415):** every promote path resolves CLIProxyAPI's Nexus candidate to
+     an immutable digest (`CLIPROXY_CANDIDATE_TAG` on auto promote, or dispatch/input payload).
+     Floating tags (`latest`, `dev`) are rejected. Production k3s-01 pins use digest form only.
    - When promoting a known SHA, `DEEP_SMOKE_EXPECT_GIT_SHA` must match staging
      `GET /version` `git_sha`.
    - Emergency only: `workflow_dispatch` input `skip_deep_smoke=true` bypasses the gate

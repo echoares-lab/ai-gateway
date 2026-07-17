@@ -125,6 +125,29 @@ Gateway Engine releases carry complementary human and immutable identities:
 The promotion workflow installs kubectl v1.34.1 before running
 `kubectl kustomize`; the minimal runner image does not provide kubectl.
 
+### Cliproxy digest gate (issue #415)
+
+Cliproxy is built and published by the **CLIProxyAPI** repo (`nexus-image.yml`), not
+ai-gateway CI. Production promotion **always** includes an immutable cliproxy digest pin
+alongside gateway-engine (and optional credential-prober/docs-server pins):
+
+1. Resolve the Nexus candidate tag to `sha256:…` via
+   `scripts/k3s/resolve_image_digest.py` (rejects `latest`, `dev`, and other floating tags).
+2. Run staging deep-smoke `--full` (unchanged promote gate — issue #410).
+3. Open the k3s-01 PR with `--cliproxy <digest>` (digest form only in production overlay).
+
+**Triggers:**
+
+| Source | cliproxy candidate | gateway-engine |
+|--------|-------------------|----------------|
+| CI Suite `workflow_run` on `main` | `CLIPROXY_CANDIDATE_TAG` secret | CI head SHA |
+| `repository_dispatch` `cliproxy-candidate-ready` | `client_payload.cliproxy_tag` or `cliproxy_digest` | optional `client_payload.git_sha` |
+| `workflow_dispatch` | `cliproxy` / `cliproxy_digest` input or `CLIPROXY_CANDIDATE_TAG` | `git_sha` / per-image inputs |
+
+Required secrets for digest resolution: `NEXUS_USERNAME`, `NEXUS_PASSWORD`, plus
+`CLIPROXY_CANDIDATE_TAG` on the auto path. Emergency `skip_deep_smoke=true` remains
+**workflow_dispatch only** and is recorded in the k3s-01 PR body.
+
 ## Verification
 
 1. ArgoCD `k3s-01` app Synced/Healthy; `ai-gateway` namespace resources reconciled.
