@@ -577,8 +577,7 @@ def check_admin_quota_payload(payload: object) -> CheckOutcome:
         if missing_win:
             return CheckOutcome(
                 "fail",
-                f"/admin/quota/status accounts[{idx}].quota.windows missing "
-                f"core keys: {', '.join(missing_win)}",
+                f"/admin/quota/status accounts[{idx}].quota.windows missing core keys: {', '.join(missing_win)}",
             )
 
     return CheckOutcome(
