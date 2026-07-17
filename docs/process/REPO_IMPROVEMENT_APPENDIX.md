@@ -75,6 +75,15 @@ Advisory:
 - `real-provider-e2e` → Gate C (opt-in)
 - `nightly-integration`, `post-merge-gate-d` → Gate C/D signal
 
+### Third-party dependency updates (#413 / #416)
+
+- Inventory and risk tiers: [`docs/DEPENDENCY_INVENTORY.md`](../DEPENDENCY_INVENTORY.md)
+- Renovate config: [`.github/renovate.json`](../../.github/renovate.json)
+- CLIProxy image updates: CLIProxyAPI weekly upstream-track (#11), promoted via k3s workflow (#415) — **not** Renovate
+- Per-component playbook: #417 (`docs/ops/DEPENDENCY_UPDATES.md`)
+
+Renovate PRs for **high**-risk components (LiteLLM) and **all majors** never auto-merge. Merge only after the gates listed in the inventory row for that component.
+
 There is **no** `build-gateway-engine` or `policy-engine-tests` job (image build is inside `unit-tests`; policy lives in `services/gateway-engine/core/policy/`).
 
 ## Required checks (copy-paste)

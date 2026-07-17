@@ -382,6 +382,12 @@ Read-only admin endpoints are unauthenticated by default (operator-local convent
 
 Maintainers should periodically check for new releases and pin them in the repo to ensure stability.
 
+> **Canonical inventory:** [`docs/DEPENDENCY_INVENTORY.md`](../DEPENDENCY_INVENTORY.md) lists every
+> third-party runtime pin, risk tier, Renovate policy, and rollback target. Renovate opens PRs
+> from [`.github/renovate.json`](../../.github/renovate.json). The step-by-step update playbook
+> is #417 (`docs/ops/DEPENDENCY_UPDATES.md`). CLIProxy updates flow through the weekly
+> upstream-track job (#11), not Renovate.
+
 ### 1. Check for new releases
 - **CLIProxyAPI**: [GitHub Releases](https://github.com/router-for-me/CLIProxyAPI/releases)
 - **CPA-Manager**: [Docker Hub](https://hub.docker.com/r/seakee/cpa-manager/tags) or [GitHub Releases](https://github.com/seakee/cpa-manager/releases)
