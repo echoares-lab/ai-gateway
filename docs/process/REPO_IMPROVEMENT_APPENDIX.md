@@ -33,7 +33,8 @@ main -> feat/* worktree/branch -> PR -> main
 | **A** | Lint, schema, unit | `make lint` / `make test-unit` | `lint-and-syntax`, `unit-tests`, path-filtered service tests |
 | **B** | Mock integration (0 skips) | `make test-mock` | `mock-integration` |
 | **C** | Real providers (smoke) | `make test-e2e` or PR label `run-e2e` | `real-provider-e2e` (**opt-in / advisory**) |
-| **D** | Post-merge stable | `./cliproxy-setup.sh health` + model smokes on :4000 | `post-merge-gate-d` (advisory) |
+| **D** | Post-merge stable (thin) | `./cliproxy-setup.sh health` + model smokes on :4000 / k8s prod edge | `post-merge-gate-d` (advisory) |
+| **Deep smoke** | Staging promote gate | `./scripts/ops/deep-smoke.sh --env staging --full` | Offline unit tests only; live run is operator/k8s |
 
 **Agent loop (before push):** `make test-fast` (Gate A + B locally, ~5 min). Does **not** run `multi-repo-isolation` — run `bash tests/test-multi-repo-isolation.sh` when touching isolation scripts.
 
@@ -91,11 +92,20 @@ There is **no** `build-gateway-engine` or `policy-engine-tests` job (image build
 - PR label `run-e2e` triggers CI `real-provider-e2e`
 - Local: `./dev-env.sh test <slot>` or `make test-e2e`
 
-**Gate D (post-merge on stable, port 4000):**
+**Gate D (post-merge on stable, port 4000 or k8s prod edge — thin):**
 - `./cliproxy-setup.sh health`
 - `./cliproxy-setup.sh test claude-sonnet-4-6`
 - `./cliproxy-setup.sh test gemini-3-flash`
 - `./cliproxy-setup.sh test gpt-5-4`
+
+**Deep smoke (staging promote gate — before prod digest pin, epic #396):**
+- `./scripts/ops/deep-smoke.sh --env staging --full` — required human/process gate; not a
+  substitute for Gate D and not run on every merge to `main`.
+- Langfuse: warn-only by default; `--strict` promotes warnings to failures.
+- Quota: soft check only (`GET /admin/quota/status` → 2xx + JSON object); no field freeze asserts.
+- Incident prod path: `./scripts/ops/deep-smoke.sh --env prod --quick`
+- See [`docs/CICD_PHASE2_STAGING.md`](../CICD_PHASE2_STAGING.md#promotion-from-staging-to-prod)
+  and [`docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md`](../superpowers/specs/2026-07-17-staging-deep-smoke-design.md).
 
 ## Hotspot files and areas
 
