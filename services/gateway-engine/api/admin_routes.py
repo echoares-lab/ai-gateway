@@ -20,6 +20,7 @@ from api.admin_credential_sync import (  # noqa: F401
 from api.admin_panels import (  # noqa: F401
     _PROVIDER_LABELS,
     _PROVIDER_MODEL_SCOPE,
+    _QUOTA_STATUS_HIDDEN_PROVIDERS,
     ADMIN_ERROR_MAXLEN,
     ADMIN_SCHEMA_VERSION,
     CLIPROXY_MANAGEMENT_KEY,
@@ -189,6 +190,11 @@ async def admin_quota_status(request: Request):
         if not cred_id or cred.get("provider", "") in ("", "unknown"):
             continue
         provider = cred.get("provider", "")
+        # Retired Gemini CLI tier + orphaned bare Gemini API-key auth files never
+        # route production traffic; hide them from the display layer instead of
+        # confusing operators with dead-account rows (see docs/ROADMAP.md).
+        if provider in _QUOTA_STATUS_HIDDEN_PROVIDERS:
+            continue
         auth = auth_by_id.get(cred_id, {})
         full = full_by_id.get(cred_id, {})
 

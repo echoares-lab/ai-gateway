@@ -219,6 +219,47 @@ def test_admin_quota_status_unknown_provider_falls_back_to_raw(monkeypatch):
     assert account["applies_to_models"] == "All moonshot-custom models"
 
 
+def test_admin_quota_status_hides_retired_gemini_cli_and_bare_gemini_apikey(monkeypatch):
+    """Retired Gemini CLI tier and orphaned bare Gemini API-key accounts are filtered."""
+    fake = _FakeQuotaHttpClient(
+        quota_status={
+            "credentials": [
+                _sample_quota_cred(id="cred-gcli", provider="gemini-cli", label="gcli@example.com"),
+                _sample_quota_cred(id="cred-gemini-apikey", provider="gemini", label="orphan@example.com"),
+                _sample_quota_cred(id="cred-antigravity", provider="antigravity", label="ag@example.com"),
+                _sample_quota_cred(id="cred-claude-1"),
+            ]
+        },
+        quota_status_full={
+            "credentials": [
+                {"id": "cred-gcli", "windows": {}},
+                {"id": "cred-gemini-apikey", "windows": {}},
+                {"id": "cred-antigravity", "windows": {}},
+                {"id": "cred-claude-1", "windows": {}},
+            ]
+        },
+        auth_files={
+            "files": [
+                {"id": "cred-gcli", "email": "gcli@example.com", "status": "active"},
+                {"id": "cred-gemini-apikey", "email": "orphan@example.com", "status": "active"},
+                {"id": "cred-antigravity", "email": "ag@example.com", "status": "active"},
+                {"id": "cred-claude-1", "email": "operator@example.com", "status": "active"},
+            ]
+        },
+    )
+    _configure(monkeypatch, fake)
+
+    client = TestClient(t.app)
+    resp = client.get("/admin/quota/status")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    providers = {a["provider"] for a in body["accounts"]}
+    assert "gemini-cli" not in providers
+    assert "gemini" not in providers
+    assert providers == {"antigravity", "claude"}
+
+
 def test_admin_quota_status_maps_live_status_and_fetched_at(monkeypatch):
     fetched = "2026-07-16T12:00:00Z"
     fake = _FakeQuotaHttpClient(
