@@ -576,35 +576,129 @@ def test_check_admin_credentials_payload_not_a_dict_fails() -> None:
     assert outcome.status == "fail"
 
 
-def test_check_admin_quota_payload_pass_minimal_object() -> None:
-    """Soft contract: ANY JSON object passes — no field contracts asserted."""
-    outcome = check_admin_quota_payload({})
+def test_check_admin_quota_payload_pass_empty_accounts() -> None:
+    """OpenAPI-valid top-level with zero accounts is fine."""
+    outcome = check_admin_quota_payload(
+        {
+            "status": "ok",
+            "source": "cliproxy",
+            "captured_at": "2026-07-17T00:00:00Z",
+            "partial": False,
+            "accounts": [],
+        }
+    )
     assert outcome.status == "pass"
-    assert outcome.exit_code == 0
+    assert "0 account(s)" in outcome.message
 
 
-def test_check_admin_quota_payload_pass_with_status_and_accounts() -> None:
-    outcome = check_admin_quota_payload({"status": "ok", "accounts": [{"credential_id": "cred-1"}]})
+def test_check_admin_quota_payload_pass_with_full_account() -> None:
+    outcome = check_admin_quota_payload(
+        {
+            "status": "ok",
+            "source": "cliproxy",
+            "captured_at": "2026-07-17T00:00:00Z",
+            "partial": False,
+            "accounts": [
+                {
+                    "credential_id": "cred-1",
+                    "email": "a@example.com",
+                    "provider": "claude",
+                    "provider_label": "Claude",
+                    "account_status": "active",
+                    "disabled": False,
+                    "applies_to_models": "All Claude models",
+                    "quota": {
+                        "source": "unified",
+                        "stale": False,
+                        "captured_at": "2026-07-17T00:00:00Z",
+                        "windows": {
+                            "five_hour": {"utilization_pct": 1.0, "resets_at": None},
+                            "seven_day": {"utilization_pct": 2.0, "resets_at": None},
+                            "binding": {"utilization_pct": 1.0, "resets_at": None},
+                        },
+                        "tokens_remaining": 1,
+                        "tokens_limit": 2,
+                        "requests_remaining": None,
+                        "requests_limit": None,
+                        "live_status": "fresh",
+                    },
+                }
+            ],
+        }
+    )
     assert outcome.status == "pass"
     assert "1 account(s)" in outcome.message
 
 
-def test_check_admin_quota_payload_pass_even_with_unexpected_status_value() -> None:
-    """Soft: an unexpected 'status' value is noted but never fails/warns."""
-    outcome = check_admin_quota_payload({"status": "degraded"})
-    assert outcome.status == "pass"
-    assert "not asserted" in outcome.message
+def test_check_admin_quota_payload_missing_top_level_fails() -> None:
+    outcome = check_admin_quota_payload({})
+    assert outcome.status == "fail"
+    assert "missing keys" in outcome.message
 
 
-def test_check_admin_quota_payload_pass_even_with_non_list_accounts() -> None:
-    """Soft: a malformed 'accounts' field is noted but never fails/warns."""
-    outcome = check_admin_quota_payload({"accounts": "not-a-list"})
-    assert outcome.status == "pass"
-    assert "not asserted" in outcome.message
+def test_check_admin_quota_payload_unexpected_status_fails() -> None:
+    outcome = check_admin_quota_payload(
+        {
+            "status": "degraded",
+            "source": "cliproxy",
+            "captured_at": "2026-07-17T00:00:00Z",
+            "partial": False,
+            "accounts": [],
+        }
+    )
+    assert outcome.status == "fail"
+    assert "must be 'ok'" in outcome.message
+
+
+def test_check_admin_quota_payload_non_list_accounts_fails() -> None:
+    outcome = check_admin_quota_payload(
+        {
+            "status": "ok",
+            "source": "cliproxy",
+            "captured_at": "2026-07-17T00:00:00Z",
+            "partial": False,
+            "accounts": "not-a-list",
+        }
+    )
+    assert outcome.status == "fail"
+    assert "accounts" in outcome.message
+
+
+def test_check_admin_quota_payload_bad_live_status_fails() -> None:
+    base_account = {
+        "credential_id": "cred-1",
+        "email": "a@example.com",
+        "provider": "claude",
+        "provider_label": "Claude",
+        "account_status": "active",
+        "disabled": False,
+        "applies_to_models": "All",
+        "quota": {
+            "source": "unified",
+            "stale": False,
+            "captured_at": None,
+            "windows": {"five_hour": {}, "seven_day": {}, "binding": {}},
+            "tokens_remaining": None,
+            "tokens_limit": None,
+            "requests_remaining": None,
+            "requests_limit": None,
+            "live_status": "weird",
+        },
+    }
+    outcome = check_admin_quota_payload(
+        {
+            "status": "ok",
+            "source": "cliproxy",
+            "captured_at": "2026-07-17T00:00:00Z",
+            "partial": False,
+            "accounts": [base_account],
+        }
+    )
+    assert outcome.status == "fail"
+    assert "live_status" in outcome.message
 
 
 def test_check_admin_quota_payload_not_a_dict_fails() -> None:
-    """The only hard requirement: a JSON object body."""
     outcome = check_admin_quota_payload(["not", "a", "dict"])
     assert outcome.status == "fail"
 
@@ -705,9 +799,18 @@ def test_cli_check_admin_credentials_fail_on_error() -> None:
     assert proc.returncode == 1
 
 
-def test_cli_check_admin_quota_pass_on_any_object() -> None:
-    proc = _run_helper(["check-admin-quota"], '{"anything":"goes"}')
+def test_cli_check_admin_quota_pass_on_openapi_object() -> None:
+    body = (
+        '{"status":"ok","source":"cliproxy","captured_at":"2026-07-17T00:00:00Z",'
+        '"partial":false,"accounts":[]}'
+    )
+    proc = _run_helper(["check-admin-quota"], body)
     assert proc.returncode == 0
+
+
+def test_cli_check_admin_quota_fail_on_incomplete_object() -> None:
+    proc = _run_helper(["check-admin-quota"], '{"anything":"goes"}')
+    assert proc.returncode == 1
 
 
 def test_cli_check_admin_quota_fail_on_non_object() -> None:
@@ -1207,24 +1310,29 @@ def test_full_mode_admin_quota_non_json_body_fails() -> None:
     assert "invalid JSON" in proc.stdout
 
 
-def test_full_mode_admin_quota_soft_passes_on_minimal_body() -> None:
-    """Soft contract: quota schema is still moving; a bare '{}' must pass."""
+def test_full_mode_admin_quota_fails_on_minimal_body() -> None:
+    """Hardened contract: bare '{}' is missing required OpenAPI keys."""
     proc = _run_deep_smoke(
         ["--env", "staging", "--full"],
         env_overrides={"FAKE_ADMIN_QUOTA_BODY": "{}"},
     )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "| admin_quota | PASS |" in proc.stdout
+    assert proc.returncode == 1
+    assert "| admin_quota | FAIL |" in proc.stdout
 
 
-def test_full_mode_admin_quota_soft_passes_even_with_unexpected_status() -> None:
-    """Soft contract: an unexpected top-level 'status' value never fails the check."""
+def test_full_mode_admin_quota_fails_on_unexpected_status() -> None:
+    """Hardened contract: top-level status must be 'ok'."""
     proc = _run_deep_smoke(
         ["--env", "staging", "--full"],
-        env_overrides={"FAKE_ADMIN_QUOTA_BODY": '{"status":"degraded","accounts":"not-a-list"}'},
+        env_overrides={
+            "FAKE_ADMIN_QUOTA_BODY": (
+                '{"status":"degraded","source":"x","captured_at":"2026-07-17T00:00:00Z",'
+                '"partial":false,"accounts":[]}'
+            )
+        },
     )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "| admin_quota | PASS |" in proc.stdout
+    assert proc.returncode == 1
+    assert "| admin_quota | FAIL |" in proc.stdout
 
 
 def test_full_mode_admin_checks_forward_admin_key_header(tmp_path) -> None:

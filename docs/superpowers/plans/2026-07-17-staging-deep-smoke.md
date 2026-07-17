@@ -12,7 +12,7 @@
 
 - Work only in `/home/dev/worktrees/ai-gateway-<issue>/` — never edit stable `:4000` checkout for feature work.
 - One GitHub atomic issue = one claim = one branch = one worktree = one PR.
-- Soft quota: assert `GET /admin/quota/status` → 2xx + JSON object only; do **not** freeze field contracts until a follow-up issue after OpenAPI freeze.
+- Soft quota (historical #400): 2xx + JSON object only; superseded by OpenAPI-hardened asserts in #403.
 - Default `--env staging`; prod is optional/incident.
 - No secrets in git; document `DEEP_SMOKE_*` in `.env.example` only.
 - Do not expand `post-merge-gate-d.yml` in this epic unless a child issue explicitly says so.
@@ -23,8 +23,8 @@
 | File | Responsibility |
 |------|----------------|
 | `scripts/ops/deep-smoke.sh` | CLI flags, env defaults, orchestration, markdown summary, exit codes |
-| `scripts/ops/deep_smoke.py` | Parse responses, SSE checks, SpendLogs match helper, soft quota check |
-| `tests/test_deep_smoke.py` (or `tests/test-deep-smoke.sh`) | Offline fakes: args, soft quota, spend match, exit taxonomy |
+| `scripts/ops/deep_smoke.py` | Parse responses, SSE checks, SpendLogs match helper, OpenAPI quota check |
+| `tests/test_deep_smoke.py` (or `tests/test-deep-smoke.sh`) | Offline fakes: args, hardened quota, spend match, exit taxonomy |
 | `.env.example` | `DEEP_SMOKE_*` placeholders |
 | `docs/CICD_PHASE2_STAGING.md` | Promote-gate checklist step |
 | `docs/CICD_PHASE2_CD_K3S.md` | Staging deep smoke vs thin prod Gate D |
@@ -105,13 +105,14 @@
 
 ---
 
-### Task 6 (follow-up, blocked): Harden quota asserts
+### Task 6 (done, #403): Harden quota asserts
 
-**Depends on:** Quota OpenAPI schema frozen + operator signoff  
-**Status:** `status:blocked` until freeze
+**Depends on:** Quota OpenAPI schema frozen (`docs/openapi/gateway-engine.yaml`)  
+**Status:** Done
 
-- [ ] Replace soft quota check with schema-validated asserts
-- [ ] Update OpenAPI examples and deep-smoke tests together
+- [x] Replace soft quota check with schema-validated asserts
+- [x] Update deep-smoke tests / fixtures to match OpenAPI examples
+- [x] Document hardened contract in TESTING / API docs / promote checklist
 
 ---
 

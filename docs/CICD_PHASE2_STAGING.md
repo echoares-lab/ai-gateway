@@ -198,8 +198,8 @@ Staging is the pre-prod gate. The promotion flow (see also epic
 
    - **Langfuse** — best-effort / warn-only when credentials are unset; use `--strict` to
      promote warnings (including missing Langfuse) to failures.
-   - **Quota** — soft check only (`GET /admin/quota/status` → 2xx + parseable JSON). Do not
-     assert field contracts until the quota schema is frozen (follow-up #403).
+   - **Quota** — OpenAPI-hardened (`GET /admin/quota/status` required fields +
+     `live_status` enums; issue #403).
    - **Prod quick smoke** — optional incident path only:
      `./scripts/ops/deep-smoke.sh --env prod --quick`
 

@@ -14,7 +14,7 @@ Provide an on-demand operator deep-smoke that covers production-path gaps CI and
 - Replace advisory `post-merge-gate-d.yml` (thin prod edge smoke after merge remains).
 - Block every merge to `main`.
 - Require Langfuse credentials (best-effort / warn-only).
-- Harden assertions against a frozen `GET /admin/quota/status` schema while quota work is in flux (soft check only).
+- Harden assertions against a frozen `GET /admin/quota/status` schema (done in #403).
 
 ## Placement in the promotion flow
 
@@ -57,7 +57,7 @@ Exit non-zero on any hard failure. Print a pasteable markdown summary (GitOps PR
 8. **Streaming** — one SSE chat stream; ≥1 `data:` chunk; clean finish  
 9. **Provider families** — cheap completion for claude / gpt / gemini allowlist  
 10. **Admin (read-mostly)** — `/admin/status` 2xx; credentials list non-error  
-11. **Quota (soft)** — `GET /admin/quota/status` → 2xx + parseable JSON object only. **Do not assert field contracts** until quota schema is explicitly frozen in OpenAPI / the quota design. Document soft contract in script comments and TESTING docs.  
+11. **Quota (OpenAPI-hardened, #403)** — `GET /admin/quota/status` → 2xx + required top-level/account fields + `quota.live_status` ∈ `{fresh, unsupported, missing, error}` + core windows.  
 12. **Cluster** — pods Ready; bootstrap/migration Jobs not `Failed` when present  
 13. **DB side effect** — after a tagged completion, poll `LiteLLM_SpendLogs` via kubectl/psql for a recent row matching smoke `end_user` (or `request_id`) within a short window  
 14. **Langfuse** — if creds set, confirm a recent trace; else warn (fail only with `--strict`)
@@ -107,7 +107,7 @@ Defaults:
 | `docs/CICD_PHASE2_STAGING.md` | Promote checklist step |
 | `docs/CICD_PHASE2_CD_K3S.md` | Note: deep smoke is staging-side; prod Gate D stays thin |
 | `docs/TESTING.md` / appendix | Gate D vs deep-smoke distinction |
-| `docs/API_DOCUMENTATION.md` / OpenAPI | Cross-link soft quota smoke contract while schema moves |
+| `docs/API_DOCUMENTATION.md` / OpenAPI | Cross-link OpenAPI-hardened quota smoke contract (#403) |
 
 ## Blockers / soft dependencies
 
@@ -122,6 +122,6 @@ Defaults:
 ## Success criteria
 
 - Staging `--full` is the documented promote gate in CICD staging docs.
-- Offline tests cover argument parsing, soft quota behavior, SpendLogs match helper, and failure exit codes.
+- Offline tests cover argument parsing, OpenAPI-hardened quota behavior, SpendLogs match helper, and failure exit codes.
 - Operator can paste markdown summary into GitOps PR / issue closeout.
 - Thin Gate D remains unchanged unless a later issue explicitly expands it.

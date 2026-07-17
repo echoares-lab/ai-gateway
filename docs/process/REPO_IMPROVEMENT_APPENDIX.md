@@ -104,7 +104,7 @@ There is **no** `build-gateway-engine` or `policy-engine-tests` job (image build
   `K3S_KUBECONFIG` (+ optional `DEEP_SMOKE_STAGING_ADMIN_KEY`).
 - Local: `./scripts/ops/deep-smoke.sh --env staging --full` — still valid for operators.
 - Langfuse: warn-only by default; `--strict` promotes warnings to failures.
-- Quota: soft check only (`GET /admin/quota/status` → 2xx + JSON object); no field freeze asserts.
+- Quota: OpenAPI-hardened (`GET /admin/quota/status` required fields + `live_status`; #403).
 - Optional `DEEP_SMOKE_EXPECT_GIT_SHA` for candidate SHA match on staging `/version`.
 - Incident prod path: `./scripts/ops/deep-smoke.sh --env prod --quick`
 - Emergency: `workflow_dispatch` `skip_deep_smoke=true` only (never on auto CI Suite path).
