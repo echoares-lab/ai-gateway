@@ -2,13 +2,21 @@ name: Promote k3s-01 image pins
 
 # After app images are pushed to Nexus with immutable :${GIT_SHA} (or digests),
 # this workflow:
-#   1. Runs staging deep-smoke --full (CI promote gate — issue #410 / epic #396)
-#   2. Opens a one-commit PR on echoares-lab/k3s-01 updating the ai-gateway
+#   1. Resolves cliproxy to an immutable digest (required — issue #415 / epic #413)
+#   2. Runs staging deep-smoke --full (CI promote gate — issue #410 / epic #396)
+#   3. Opens a one-commit PR on echoares-lab/k3s-01 updating the ai-gateway
 #      overlay `images:` pins so ArgoCD rolls out to production
+#
+# Triggers:
+#   - workflow_run after CI Suite push to main (gateway-engine SHA + cliproxy candidate)
+#   - repository_dispatch type cliproxy-candidate-ready from CLIProxyAPI Nexus CI
+#   - workflow_dispatch for manual / emergency promotion
 #
 # Requires repository secrets:
 #   K3S_GITOPS_TOKEN or GH_PAT_AUTO_APPROVE — contents:write + pull-requests:write on k3s-01
 #   DEEP_SMOKE_STAGING_API_KEY, K3S_KUBECONFIG — see staging-deep-smoke.yml
+#   CLIPROXY_CANDIDATE_TAG — immutable Nexus tag for auto promote (not latest/dev)
+#   NEXUS_USERNAME, NEXUS_PASSWORD — registry manifest lookup for cliproxy digest
 # Optional: DEEP_SMOKE_STAGING_ADMIN_KEY
 #
 # Emergency: workflow_dispatch input skip_deep_smoke=true skips the staging gate
@@ -34,7 +42,11 @@ on:
         required: false
         type: string
       cliproxy:
-        description: "cli-proxy-api tag (optional)"
+        description: "cli-proxy-api immutable candidate tag or sha256 digest (required unless cliproxy_digest set)"
+        required: false
+        type: string
+      cliproxy_digest:
+        description: "Pre-resolved cli-proxy-api sha256 digest (skips registry lookup)"
         required: false
         type: string
       git_sha:
@@ -46,6 +58,8 @@ on:
         required: false
         type: boolean
         default: false
+  repository_dispatch:
+    types: [cliproxy-candidate-ready]
   workflow_run:
     workflows: ["CI Suite"]
     types: [completed]
@@ -58,6 +72,7 @@ jobs:
   resolve-sha:
     if: >
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'repository_dispatch' ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push')
@@ -73,11 +88,14 @@ jobs:
           INPUT_GIT_SHA: ${{ inputs.git_sha }}
           INPUT_SKIP: ${{ inputs.skip_deep_smoke }}
           RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          DISPATCH_GIT_SHA: ${{ github.event.client_payload.git_sha }}
         run: |
           set -euo pipefail
           SHA=""
           if [[ -n "${INPUT_GIT_SHA:-}" ]]; then
             SHA="${INPUT_GIT_SHA}"
+          elif [[ "${EVENT_NAME}" == "repository_dispatch" && -n "${DISPATCH_GIT_SHA:-}" ]]; then
+            SHA="${DISPATCH_GIT_SHA}"
           elif [[ "${EVENT_NAME}" == "workflow_run" ]]; then
             SHA="${RUN_HEAD_SHA}"
           fi
@@ -105,6 +123,7 @@ jobs:
       (needs.staging-deep-smoke.result == 'success' ||
        needs.staging-deep-smoke.result == 'skipped') &&
       (github.event_name == 'workflow_dispatch' ||
+       github.event_name == 'repository_dispatch' ||
        (github.event_name == 'workflow_run' &&
         github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.event == 'push'))
@@ -124,6 +143,38 @@ jobs:
       - name: Checkout ai-gateway (for promote script)
         uses: actions/checkout@v4
 
+      - name: Resolve cliproxy candidate digest
+        id: cliproxy
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_CLIPROXY: ${{ inputs.cliproxy }}
+          INPUT_CLIPROXY_DIGEST: ${{ inputs.cliproxy_digest }}
+          DISPATCH_CLIPROXY_TAG: ${{ github.event.client_payload.cliproxy_tag }}
+          DISPATCH_CLIPROXY_DIGEST: ${{ github.event.client_payload.cliproxy_digest }}
+          CANDIDATE_TAG: ${{ secrets.CLIPROXY_CANDIDATE_TAG }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          set -euo pipefail
+          REF=""
+          if [[ -n "${INPUT_CLIPROXY_DIGEST:-}" ]]; then
+            REF="${INPUT_CLIPROXY_DIGEST}"
+          elif [[ -n "${INPUT_CLIPROXY:-}" ]]; then
+            REF="${INPUT_CLIPROXY}"
+          elif [[ "${EVENT_NAME}" == "repository_dispatch" ]]; then
+            REF="${DISPATCH_CLIPROXY_DIGEST:-${DISPATCH_CLIPROXY_TAG:-}}"
+          fi
+          if [[ -z "${REF}" ]]; then
+            REF="${CANDIDATE_TAG:-}"
+          fi
+          if [[ -z "${REF}" ]]; then
+            echo "::error::cliproxy candidate is required (repository_dispatch payload, workflow input, or CLIPROXY_CANDIDATE_TAG secret)."
+            exit 1
+          fi
+          DIGEST=$(python3 scripts/k3s/resolve_image_digest.py --reference "${REF}")
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Resolved cliproxy candidate ${REF} -> ${DIGEST}"
+
       - name: Resolve image pins
         id: pins
         env:
@@ -133,13 +184,16 @@ jobs:
           INPUT_GATEWAY_VERSION: ${{ inputs.gateway_version }}
           INPUT_CP: ${{ inputs.credential_prober }}
           INPUT_DS: ${{ inputs.docs_server }}
-          INPUT_CLIPROXY: ${{ inputs.cliproxy }}
+          CLIPROXY_DIGEST: ${{ steps.cliproxy.outputs.digest }}
           RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          DISPATCH_GIT_SHA: ${{ github.event.client_payload.git_sha }}
         run: |
           set -euo pipefail
           SHA=""
           if [[ -n "${INPUT_GIT_SHA}" ]]; then
             SHA="${INPUT_GIT_SHA}"
+          elif [[ "${EVENT_NAME}" == "repository_dispatch" && -n "${DISPATCH_GIT_SHA:-}" ]]; then
+            SHA="${DISPATCH_GIT_SHA}"
           elif [[ "${EVENT_NAME}" == "workflow_run" ]]; then
             SHA="${RUN_HEAD_SHA}"
           fi
@@ -147,13 +201,10 @@ jobs:
           GE="${INPUT_GE:-}"
           CP="${INPUT_CP:-}"
           DS="${INPUT_DS:-}"
-          CLIPROXY="${INPUT_CLIPROXY:-}"
+          CLIPROXY="${CLIPROXY_DIGEST}"
           GATEWAY_VERSION="${INPUT_GATEWAY_VERSION:-$(tr -d '[:space:]' < VERSION)}"
 
           if [[ -n "${SHA}" ]]; then
-            # Auto promote from CI Suite always updates gateway-engine. Other app
-            # images are included when explicitly requested via workflow_dispatch
-            # git_sha / per-image inputs (sha tags are pushed from main CI).
             GE="${GE:-$SHA}"
             if [[ "${EVENT_NAME}" == "workflow_dispatch" && -n "${INPUT_GIT_SHA}" ]]; then
               CP="${CP:-$SHA}"
@@ -161,8 +212,12 @@ jobs:
             fi
           fi
 
-          if [[ -z "${GE}${CP}${DS}${CLIPROXY}" ]]; then
-            echo "::error::No image pins to promote (pass git_sha or per-image inputs)."
+          if [[ -z "${CLIPROXY}" ]]; then
+            echo "::error::cliproxy digest is required for promotion."
+            exit 1
+          fi
+          if [[ "${EVENT_NAME}" == "workflow_run" && -z "${GE}" ]]; then
+            echo "::error::gateway-engine pin is required on the CI Suite auto-promote path."
             exit 1
           fi
 
@@ -204,7 +259,7 @@ jobs:
           [[ -n "${GE}" ]] && ARGS+=(--gateway-engine "${GE}" --gateway-version "${GATEWAY_VERSION}")
           [[ -n "${CP}" ]] && ARGS+=(--credential-prober "${CP}")
           [[ -n "${DS}" ]] && ARGS+=(--docs-server "${DS}")
-          [[ -n "${CLIPROXY}" ]] && ARGS+=(--cliproxy "${CLIPROXY}")
+          ARGS+=(--cliproxy "${CLIPROXY}")
           python3 scripts/k3s/promote_k3s_images.py "${ARGS[@]}"
           kubectl kustomize k3s-01/kubernetes/workloads/home/ai-gateway/overlays/k3s-01 >/dev/null
 
@@ -254,13 +309,13 @@ jobs:
             --title "chore(ai-gateway): promote immutable image pins" \
             --body "$(cat <<EOF
           ## Summary
-          Automated image-pin promotion from ai-gateway CI (issue #361).
+          Automated image-pin promotion from ai-gateway CI (issues #361, #415).
 
           - gateway-engine: \`${{ steps.pins.outputs.gateway_engine }}\`
           - gateway version: \`${{ steps.pins.outputs.gateway_version }}\`
           - credential-prober: \`${{ steps.pins.outputs.credential_prober }}\`
           - docs-server: \`${{ steps.pins.outputs.docs_server }}\`
-          - cliproxy: \`${{ steps.pins.outputs.cliproxy }}\`
+          - cliproxy (digest): \`${{ steps.pins.outputs.cliproxy }}\`
 
           ## Staging deep-smoke (promote gate)
           ${SMOKE_NOTE}

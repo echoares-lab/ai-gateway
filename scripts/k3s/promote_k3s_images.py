@@ -21,6 +21,12 @@ import re
 import sys
 from pathlib import Path
 
+from scripts.k3s.resolve_image_digest import (
+    ResolveImageDigestError,
+    is_digest,
+    require_cliproxy_candidate,
+)
+
 DEFAULT_REL = Path("kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml")
 DEFAULT_WORKLOAD_REL = Path("kubernetes/workloads/home/ai-gateway/overlays/k3s-01/core-workloads.yaml")
 
@@ -30,6 +36,16 @@ IMAGE_KEYS = {
     "credential-prober": "nexus-docker.infra.plexplease.com/ai-gateway/credential-prober",
     "docs-server": "nexus-docker.infra.plexplease.com/ai-gateway/docs-server",
 }
+
+
+def require_cliproxy_digest_pin(value: str | None) -> str:
+    """Production promotion requires an immutable cliproxy digest."""
+    candidate = require_cliproxy_candidate(value)
+    if not is_digest(candidate):
+        raise ResolveImageDigestError(
+            "cliproxy production pins must be immutable sha256 digests, not tags"
+        )
+    return candidate
 
 
 def _set_image_pin(text: str, image_name: str, *, tag: str | None, digest: str | None) -> str:
@@ -86,7 +102,7 @@ def main() -> int:
     parser.add_argument("--k3s-repo", type=Path, required=True)
     parser.add_argument("--overlay", type=Path, default=DEFAULT_REL)
     parser.add_argument("--workloads", type=Path, default=DEFAULT_WORKLOAD_REL)
-    parser.add_argument("--cliproxy")
+    parser.add_argument("--cliproxy", help="required sha256 digest for production promotion")
     parser.add_argument("--gateway-engine")
     parser.add_argument("--gateway-version")
     parser.add_argument("--credential-prober", help="short sha tag OR sha256:digest")
@@ -111,7 +127,10 @@ def main() -> int:
         else:
             updates.append((IMAGE_KEYS[key], value, None))
 
-    add("cliproxy", args.cliproxy)
+    cliproxy_digest: str | None = None
+    if args.cliproxy:
+        cliproxy_digest = require_cliproxy_digest_pin(args.cliproxy)
+    add("cliproxy", cliproxy_digest)
     add("gateway-engine", args.gateway_engine)
     add("credential-prober", args.credential_prober)
     add("docs-server", args.docs_server)
