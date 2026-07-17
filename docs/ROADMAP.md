@@ -10,7 +10,7 @@ issues only — never parent epics, and never items that exist only in
 | **This file** | Approved Now / Next / Parked / Completed |
 | [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) | Ideas **not** approved — document only until promoted here |
 
-Last reviewed: 2026-07-16 (Gemini CLI retirement and quota reliability promoted via #389).
+Last reviewed: 2026-07-17 (Staging deep-smoke promote gate epic #396 approved under Next).
 
 ---
 
@@ -52,6 +52,36 @@ Release invariants:
 The encrypted Gemini CLI credential archive is retained for seven days after
 successful production verification, then deleted through a separately recorded
 closeout action.
+
+---
+
+## Next — Staging deep-smoke promote gate
+
+Approve coordination epic
+[#396](https://github.com/echoares-lab/ai-gateway/issues/396) and its atomic
+children. Staging `--full` deep-smoke is the human/process promote gate before
+pinning digests to production. It covers gaps CI and thin Gate D miss (API
+shapes, streaming, admin soft checks, cluster readiness, `LiteLLM_SpendLogs`).
+
+| Order | Atomic issue | State / dependency |
+|------:|--------------|--------------------|
+| 0 | [ROADMAP + design/plan #397](https://github.com/echoares-lab/ai-gateway/issues/397) | Ready; docs-only |
+| 1 | [`--quick` scaffold #398](https://github.com/echoares-lab/ai-gateway/issues/398) | Depends on #397 |
+| 2 | [`--full` HTTP shapes #399](https://github.com/echoares-lab/ai-gateway/issues/399) | Depends on #398 |
+| 2 | [Soft admin + quota #400](https://github.com/echoares-lab/ai-gateway/issues/400) | Depends on #398; soft asserts only |
+| 3 | [SpendLogs + cluster #401](https://github.com/echoares-lab/ai-gateway/issues/401) | Depends on #399 |
+| 3 | [Promote checklist docs #402](https://github.com/echoares-lab/ai-gateway/issues/402) | Depends on #398 |
+| 4 | [Harden quota asserts #403](https://github.com/echoares-lab/ai-gateway/issues/403) | Blocked on #400 + OpenAPI freeze |
+
+Invariants:
+
+- do **not** replace advisory `post-merge-gate-d.yml`;
+- default `--env staging`; prod `--quick` is optional/incident-only;
+- serialize `scripts/ops/deep-smoke.*`;
+- keep `/admin/quota/status` checks soft until #403 (quota schema still moving).
+
+Spec: [`docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md`](./superpowers/specs/2026-07-17-staging-deep-smoke-design.md).  
+Plan: [`docs/superpowers/plans/2026-07-17-staging-deep-smoke.md`](./superpowers/plans/2026-07-17-staging-deep-smoke.md).
 
 ---
 
