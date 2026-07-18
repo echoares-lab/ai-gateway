@@ -9,7 +9,7 @@ Supported client formats:
 
 Model prefix (AI-Gateway:) for Cursor model list disambiguation.
 
-Auth normalisation:
+Auth normalization:
   Gemini CLI  ?key=sk-...            → Authorization: Bearer sk-...
   Codex CLI   Authorization: Bearer  → forwarded as-is
   Claude CLI  x-api-key: sk-...      → Authorization: Bearer sk-...

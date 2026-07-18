@@ -590,8 +590,8 @@ class TestCodexCliFormat:
     @pytest.mark.asyncio
     @pytest.mark.mock
     @pytest.mark.smoke
-    async def test_dotted_model_normalised_in_chat_completions(self, asgi_client, mock_litellm_router):
-        """gpt-5.5 (dotted) must be normalised to gpt-5-5 and not 404."""
+    async def test_dotted_model_normalized_in_chat_completions(self, asgi_client, mock_litellm_router):
+        """gpt-5.5 (dotted) must be normalized to gpt-5-5 and not 404."""
         resp = await asgi_client.post(
             "/v1/chat/completions",
             json={
@@ -660,7 +660,7 @@ class TestCodexCliFormat:
     @pytest.mark.mock
     @pytest.mark.smoke
     async def test_responses_api_tool_call(self, asgi_client, mock_litellm_router):
-        """Responses API with tools — gateway-engine must normalise tool format."""
+        """Responses API with tools — gateway-engine must normalize tool format."""
         resp = await asgi_client.post(
             "/v1/responses",
             json={

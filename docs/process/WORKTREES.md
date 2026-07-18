@@ -112,8 +112,7 @@ One active claim = one worktree + one branch + one slot.
 | Slot | Purpose |
 |------|---------|
 | 0 | Stable stack (:4000) — **never use for feature work** |
-| 1–8 | Real OAuth dev stacks (Gate C) |
-| 9 | Mock stack (Gate B) — `make test-mock` default |
+| 1–N | Real OAuth dev stacks (Gate C / integration) |
 
 Before starting a stack: `./dev-env.sh list`. Declare your slot in the issue claim comment.
 Do not share slots between concurrent claims without an explicit handoff.
