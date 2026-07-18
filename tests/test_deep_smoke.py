@@ -899,6 +899,8 @@ def _run_deep_smoke(args: list[str], env_overrides: dict[str, str] | None = None
             del env[key]
     env["DEEP_SMOKE_CURL_BIN"] = str(FAKE_CURL)
     env["DEEP_SMOKE_KUBECTL_BIN"] = str(FAKE_KUBECTL)
+    # Offline default so --env prod tests do not exit 2 on missing prod key.
+    env["DEEP_SMOKE_API_KEY_PROD"] = "test-prod-api-key"
     if env_overrides:
         env.update(env_overrides)
     return subprocess.run(
@@ -1008,6 +1010,36 @@ def test_quick_mode_skip_pods_env_var() -> None:
 def test_prod_env_uses_prod_defaults() -> None:
     proc = _run_deep_smoke(["--env", "prod", "--quick"])
     assert "env=prod mode=quick" in proc.stdout
+
+
+def test_prod_env_requires_prod_api_key() -> None:
+    proc = _run_deep_smoke(
+        ["--env", "prod", "--quick"],
+        env_overrides={
+            "DEEP_SMOKE_API_KEY_PROD": "",
+            "DEEP_SMOKE_API_KEY": "staging-key-must-not-be-used",
+        },
+    )
+    assert proc.returncode == 2
+    assert "DEEP_SMOKE_API_KEY_PROD" in proc.stderr
+    assert "refusing DEEP_SMOKE_API_KEY" in proc.stderr
+
+
+def test_prod_env_sends_prod_api_key_not_staging(tmp_path) -> None:
+    log_path = tmp_path / "curl.log"
+    proc = _run_deep_smoke(
+        ["--env", "prod", "--quick"],
+        env_overrides={
+            "DEEP_SMOKE_API_KEY": "staging-key-must-not-be-used",
+            "DEEP_SMOKE_API_KEY_PROD": "prod-smoke-key",
+            "DEEP_SMOKE_SKIP_PODS": "1",
+            "FAKE_CURL_LOG": str(log_path),
+        },
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    log_text = log_path.read_text()
+    assert "Authorization: Bearer prod-smoke-key" in log_text
+    assert "staging-key-must-not-be-used" not in log_text
 
 
 def test_pods_allowlist_env_var_skips_bad_pod() -> None:

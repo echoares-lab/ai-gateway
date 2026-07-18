@@ -14,15 +14,18 @@
 # (e.g. "claude-sonnet-4-6" -> "CLAUDE_SONNET_4_6"). Falls back to the plain
 # FAKE_COMPLETION_CODE / FAKE_COMPLETION_BODY when no per-model override is set.
 #
-# Set FAKE_CURL_LOG=/path/to/file to append "<url> <payload> <admin_key_header>"
-# for every call (used by tests asserting the end_user smoke tag was sent,
-# and that admin checks forward x-admin-key when DEEP_SMOKE_ADMIN_KEY is set).
+# Set FAKE_CURL_LOG=/path/to/file to append
+# "<url> <payload> <admin_key_header> <authorization_header>" for every call
+# (used by tests asserting the end_user smoke tag was sent, that admin checks
+# forward x-admin-key when DEEP_SMOKE_ADMIN_KEY is set, and that --env prod
+# uses DEEP_SMOKE_API_KEY_PROD rather than the staging key).
 set -uo pipefail
 
 url="${*: -1}"
 
 payload=""
 admin_key_header=""
+authorization_header=""
 prev=""
 for arg in "$@"; do
   if [ "$prev" = "-d" ] || [ "$prev" = "--data" ]; then
@@ -31,13 +34,14 @@ for arg in "$@"; do
   if [ "$prev" = "-H" ]; then
     case "$arg" in
       x-admin-key:*) admin_key_header="${arg#x-admin-key: }" ;;
+      Authorization:*) authorization_header="$arg" ;;
     esac
   fi
   prev="$arg"
 done
 
 if [ -n "${FAKE_CURL_LOG:-}" ]; then
-  printf '%s %s %s\n' "$url" "$payload" "$admin_key_header" >>"$FAKE_CURL_LOG"
+  printf '%s %s %s %s\n' "$url" "$payload" "$admin_key_header" "$authorization_header" >>"$FAKE_CURL_LOG"
 fi
 
 sanitize() {

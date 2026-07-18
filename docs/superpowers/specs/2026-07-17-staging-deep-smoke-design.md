@@ -67,8 +67,10 @@ Exit non-zero on any hard failure. Print a pasteable markdown summary (GitOps PR
 | Variable | Purpose |
 |----------|---------|
 | `DEEP_SMOKE_GATEWAY_URL` | Override default staging/prod ingress |
-| `DEEP_SMOKE_API_KEY` | Dedicated smoke virtual key (preferred) |
-| `DEEP_SMOKE_ADMIN_KEY` | Optional `x-admin-key` |
+| `DEEP_SMOKE_API_KEY` | Staging smoke virtual key (`--env staging`) |
+| `DEEP_SMOKE_API_KEY_PROD` | Prod smoke virtual key (`--env prod`; required, no fallback to staging key) |
+| `DEEP_SMOKE_ADMIN_KEY` | Optional staging `x-admin-key` |
+| `DEEP_SMOKE_ADMIN_KEY_PROD` | Optional prod `x-admin-key` |
 | `DEEP_SMOKE_K8S_NAMESPACE` | Override namespace |
 | `DEEP_SMOKE_KUBE_CONTEXT` | Optional kubectl context |
 | `DEEP_SMOKE_PG_*` / kubectl exec into postgres | SpendLogs query path |

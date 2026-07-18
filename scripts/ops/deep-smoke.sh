@@ -41,11 +41,16 @@
 #
 # Env vars (placeholders documented in .env.example, never commit secrets):
 #   DEEP_SMOKE_GATEWAY_URL      override default staging/prod gateway URL
-#   DEEP_SMOKE_API_KEY          bearer key used for /v1 requests
-#   DEEP_SMOKE_ADMIN_KEY        x-admin-key sent with --full admin checks
-#                               (/admin/status, /admin/credentials,
+#   DEEP_SMOKE_API_KEY          bearer key for --env staging /v1 requests
+#                               (CI: secrets.DEEP_SMOKE_STAGING_API_KEY)
+#   DEEP_SMOKE_API_KEY_PROD     bearer key for --env prod /v1 requests
+#                               (required for prod; never falls back to the
+#                               staging DEEP_SMOKE_API_KEY — that caused 401s)
+#   DEEP_SMOKE_ADMIN_KEY        x-admin-key for --env staging --full admin
+#                               checks (/admin/status, /admin/credentials,
 #                               /admin/quota/status); omit if
 #                               GATEWAY_ENGINE_ADMIN_READ_AUTH is not enabled
+#   DEEP_SMOKE_ADMIN_KEY_PROD   x-admin-key for --env prod --full admin checks
 #   DEEP_SMOKE_K8S_NAMESPACE    override target kube namespace
 #   DEEP_SMOKE_KUBE_CONTEXT     optional kubectl context
 #   DEEP_SMOKE_MODELS           comma-separated model id override; first
@@ -188,8 +193,19 @@ fi
 GATEWAY_URL="${DEEP_SMOKE_GATEWAY_URL:-$DEFAULT_URL}"
 GATEWAY_URL="${GATEWAY_URL%/}"
 NAMESPACE="${DEEP_SMOKE_K8S_NAMESPACE:-$DEFAULT_NAMESPACE}"
-API_KEY="${DEEP_SMOKE_API_KEY:-}"
-ADMIN_KEY="${DEEP_SMOKE_ADMIN_KEY:-}"
+# Env-specific auth: prod must use *_PROD keys so a staging virtual key is
+# never sent to gateway.infra.plexplease.com (silent 401 / wrong-tenant risk).
+if [ "$ENVIRONMENT" = "prod" ]; then
+  API_KEY="${DEEP_SMOKE_API_KEY_PROD:-}"
+  ADMIN_KEY="${DEEP_SMOKE_ADMIN_KEY_PROD:-}"
+  if [ -z "$API_KEY" ]; then
+    echo "error: --env prod requires DEEP_SMOKE_API_KEY_PROD (refusing DEEP_SMOKE_API_KEY; that key is for staging)" >&2
+    exit 2
+  fi
+else
+  API_KEY="${DEEP_SMOKE_API_KEY:-}"
+  ADMIN_KEY="${DEEP_SMOKE_ADMIN_KEY:-}"
+fi
 KUBE_CONTEXT="${DEEP_SMOKE_KUBE_CONTEXT:-}"
 PG_NAMESPACE="${DEEP_SMOKE_PG_NAMESPACE:-$DEFAULT_PG_NAMESPACE}"
 PG_POD="${DEEP_SMOKE_PG_POD:-}"
