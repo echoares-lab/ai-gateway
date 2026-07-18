@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from api.proxy_common import _deps, log
 
-# ── Shared content normalisation (Responses API / Cursor) ────────────────────
+# ── Shared content normalization (Responses API / Cursor) ────────────────────
 
 
 def _normalize_content_item(c: dict) -> dict | None:
@@ -340,13 +340,13 @@ def _patch_body(path: str, body: bytes) -> tuple[bytes, bool]:
     elif "messages" in data:
         data["messages"], msg_changed = _normalize_messages(data["messages"])
         if msg_changed:
-            log.info("Normalised content types in %d messages", len(data["messages"]))
+            log.info("Normalized content types in %d messages", len(data["messages"]))
             changed = True
 
     if "tools" in data:
         data["tools"], tools_changed = _normalize_tools(data["tools"])
         if tools_changed:
-            log.info("Normalised %d tools to Chat Completions format", len(data["tools"]))
+            log.info("Normalized %d tools to Chat Completions format", len(data["tools"]))
             changed = True
 
     raw_model = data.get("model", "")

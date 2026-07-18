@@ -81,7 +81,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Normalise: strip a trailing slash and any trailing /v1 so we can compose paths.
+# Normalize: strip a trailing slash and any trailing /v1 so we can compose paths.
 BASE_URL="${BASE_URL%/}"
 BASE_ROOT="${BASE_URL%/v1}"
 KEY_REF="\${${KEY_VAR}}"

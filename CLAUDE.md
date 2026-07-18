@@ -106,7 +106,7 @@ External client (Cursor, curl, SDK)
 
 **`services/gateway-engine/main.py`** is the real entry point — clients hit port 4000 which is the gateway-engine, not LiteLLM directly. LiteLLM is only accessible internally (and on port 4001 for its UI). The gateway-engine does three things:
 1. **Responses API → Chat Completions**: Cursor Agent mode sends `input` (not `messages`) using OpenAI Responses API format. The gateway-engine converts all item types: plain `{role,content}` dicts, `function_call`, `function_call_output`, and content types like `input_text`/`input_image`.
-2. **Tool format normalisation**: Cursor sends `{type, name, parameters}` (Responses API); LiteLLM needs `{type, function: {name, parameters}}` (Chat Completions).
+2. **Tool format normalization**: Cursor sends `{type, name, parameters}` (Responses API); LiteLLM needs `{type, function: {name, parameters}}` (Chat Completions).
 3. **Model prefix**: `/v1/models` responses are prefixed with `AI-Gateway:` so Cursor can distinguish gateway models from its built-ins. The prefix is stripped from incoming requests before forwarding.
 
 **`litellm-config.yaml`** defines all models. Every model routes through CLIProxy using the `openai/` provider prefix (CLIProxy is OpenAI-compatible) with `api_base: http://cliproxy:8317/v1`. Model aliases use dashes instead of dots (`gpt-5-4` not `gpt-5.4`) for LiteLLM compatibility; the `model:` field under `litellm_params` uses the original dotted name that CLIProxy expects.

@@ -377,7 +377,7 @@ async def test_post_with_retry_records_rate_limit_signal():
 
 
 class TestGeminiReqToOai(unittest.TestCase):
-    """_gemini_req_to_oai model name normalisation."""
+    """_gemini_req_to_oai model name normalization."""
 
     def _call(self, model, body=None, gemini_map=None):
         body = body or {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}
