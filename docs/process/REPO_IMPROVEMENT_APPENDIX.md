@@ -13,13 +13,13 @@ main -> feat/* worktree/branch -> PR -> main
 - **Worktree location:** `/home/dev/worktrees/ai-gateway-<feature>` — see `docs/process/WORKTREES.md`.
 - Do **not** put worktrees under `/home/dev/repos/` (siblings of stable) or inside the repo (`.claude/`, `.cursor/`, etc.).
 - Do not edit the stable worktree at `/home/dev/repos/ai-gateway` for feature work.
-- Keep slot 0 reserved for the stable stack.
+- Keep slot 0 reserved for the optional local stack (not production).
 - Use a separate dev stack slot for work that needs live-service validation.
 - One active claim = one worktree + one branch + one slot (declare in claim comment).
 
 ## Environment strategy
 
-- Stable stack: port 4000 (slot 0) for local Gate D / operator use. **Production is k8s** (see `docs/ROADMAP.md`).
+- Optional local stack: port 4000 (slot 0), for ad hoc manual/operator use only — not part of any required workflow. **Production is k8s** (see `docs/ROADMAP.md`); Gate D verifies k8s prod directly and needs no local stack.
 - Dev stacks: `./dev-env.sh start <slot>` (slots 1, 2, 3, …).
 - Gate B mock tier: `make test-mock` (in-memory ASGI — **no** compose mock slot).
 - Slot 1 maps gateway-engine to port 4010; slot 2 maps gateway-engine to port 4020.
@@ -33,7 +33,7 @@ main -> feat/* worktree/branch -> PR -> main
 | **A** | Lint, schema, unit | `make lint` / `make test-unit` | `lint-and-syntax`, `unit-tests`, path-filtered service tests |
 | **B** | Mock integration (0 skips) | `make test-mock` | `mock-integration` |
 | **C** | Real providers (smoke) | `make test-e2e` or PR label `run-e2e` | `real-provider-e2e` (**opt-in / advisory**) |
-| **D** | Post-merge stable (thin) | `./cliproxy-setup.sh health` + model smokes on :4000 / k8s prod edge | `post-merge-gate-d` (advisory) |
+| **D** | Post-merge k8s prod smoke (thin) | Automated — no manual command | `post-merge-gate-d` (advisory) |
 | **Deep smoke** | Staging promote gate | `./scripts/ops/deep-smoke.sh --env staging --full` | **CI:** `staging-deep-smoke.yml` via `promote-k3s-images.yml` (#410) |
 
 **Agent loop (before push):** `make test-fast` (Gate A + B locally, ~5 min). Does **not** run `multi-repo-isolation` — run `bash tests/test-multi-repo-isolation.sh` when touching isolation scripts.
@@ -46,7 +46,7 @@ main -> feat/* worktree/branch -> PR -> main
 |------|--------|--------|--------|--------|
 | Low (docs, templates) | yes | optional | no | no |
 | Medium (gateway-engine logic, tests) | yes | yes | no | no |
-| High (auth, litellm-config, compose, cliproxy) | yes | yes | **recommended** (label `run-e2e` or `make test-e2e`) | post-merge on stable |
+| High (auth, litellm-config, compose, cliproxy) | yes | yes | **recommended** (label `run-e2e` or `make test-e2e`) | automated, post-merge |
 
 ### CI check tiers (Required vs Advisory)
 
@@ -101,11 +101,10 @@ There is **no** `build-gateway-engine` or `policy-engine-tests` job (image build
 - PR label `run-e2e` triggers CI `real-provider-e2e`
 - Local: `./dev-env.sh test <slot>` or `make test-e2e`
 
-**Gate D (post-merge on stable, port 4000 or k8s prod edge — thin):**
-- `./cliproxy-setup.sh health`
-- `./cliproxy-setup.sh test claude-sonnet-4-6`
-- `./cliproxy-setup.sh test gemini-3-flash`
-- `./cliproxy-setup.sh test gpt-5-4`
+**Gate D (post-merge, k8s prod edge — thin, fully automated):**
+- Runs automatically via `.github/workflows/post-merge-gate-d.yml` on every push to `main`
+  (health check + models list + one smoke completion per model against `https://ai.plexplease.com`).
+  No manual command needed; check the workflow run/job summary and record the result in closeout.
 
 **Deep smoke (staging promote gate — before prod digest pin, epic #396):**
 - **CI-enforced:** `promote-k3s-images.yml` runs `staging-deep-smoke.yml` (`--env staging --full`)
@@ -185,7 +184,7 @@ Only after PR merge + Gate D:
 ```bash
 ./dev-env.sh stop <slot>
 cd /home/dev/repos/ai-gateway
-git status    # stable must be clean before Gate D pull
+git status    # main checkout must be clean before pulling
 git pull origin main
 git worktree remove /home/dev/worktrees/ai-gateway-<feature>
 git branch -d feat/<feature>
@@ -207,8 +206,8 @@ Dev stacks avoid ~15 min LiteLLM `proxy_extras` migrations on fresh Postgres vol
 3. **`db/apply-migrations.sh`** — gateway tables (`credential_inventory`, policy profiles).
 4. **`LITELLM_MIGRATIONS=None`** — LiteLLM skips Prisma migrations (schema already present).
 
-Regenerate seed after LiteLLM image bump: `scripts/ops/generate-litellm-mock-seed.sh` (requires stable
-`ai-postgres-1` with migrations applied).
+Regenerate seed after LiteLLM image bump: `scripts/ops/generate-litellm-mock-seed.sh` (requires the
+optional local stack's `ai-postgres-1` running with migrations applied).
 
 **CI flake:** If `mock-integration` fails in CI but `make test-mock` passes locally, note it in the PR and retry.
 

@@ -4,16 +4,19 @@ See also: `docs/process/TESTING_AND_PROMOTION_POLICY.md`, `docs/process/REPO_IMP
 
 ## Why worktrees?
 
-The stable gateway stack runs on **port 4000** and serves live traffic. If you
-switch branches in the main repo directory while the stack is running, Docker's
-volume mounts pick up the new files immediately and can silently break the live
-gateway. Worktrees solve this:
+Real production and staging run on k3s-01, not this host — there is no local stack whose
+live traffic worktrees need to protect. Worktrees still matter for a different reason: the
+main checkout (`/home/dev/repos/ai-gateway`, `main` branch) is the pull/rebase target every
+session and epic-closeout tooling reads from — switching branches or leaving edits there
+breaks that for whoever (human or agent) relies on it next, and if an optional local
+`docker-compose.yml` stack happens to be running there, Docker's volume mounts would pick
+up in-progress edits immediately. Worktrees solve this:
 
 - Each worktree is an independent checkout of the repo in a separate directory
-- The stable stack always reads from `/home/dev/repos/ai-gateway` (never changes)
+- The main checkout always stays on `main`, clean, at `/home/dev/repos/ai-gateway`
 - Feature work happens under `/home/dev/worktrees/ai-gateway-<feature>` (isolated)
-- Dev stacks started with `./dev-env.sh start <slot>` use different ports, so
-  the stable stack is never touched
+- Dev stacks started with `./dev-env.sh start <slot>` use different ports, so they never
+  collide with each other or with the optional local stack on port 4000
 
 ---
 
@@ -21,7 +24,7 @@ gateway. Worktrees solve this:
 
 | Path | Purpose |
 |------|---------|
-| `/home/dev/repos/ai-gateway` | **Stable checkout only** — `main`, serves port 4000 |
+| `/home/dev/repos/ai-gateway` | **Main checkout only** — `main`, kept clean for pulls/Gate D |
 | `/home/dev/worktrees/ai-gateway-<feature>` | **Feature worktrees** — all agent development |
 
 **Do not** create feature worktrees:
@@ -65,7 +68,7 @@ Run `git worktree list` for the live state.
 
 | Directory | Branch | Purpose |
 |-----------|--------|---------|
-| `/home/dev/repos/ai-gateway` | `main` | Primary repo — stable stack reads from here |
+| `/home/dev/repos/ai-gateway` | `main` | Primary repo — pull/rebase target, kept clean |
 
 ---
 
@@ -111,7 +114,7 @@ One active claim = one worktree + one branch + one slot.
 
 | Slot | Purpose |
 |------|---------|
-| 0 | Stable stack (:4000) — **never use for feature work** |
+| 0 | Optional local stack (:4000) — **never use for feature work** |
 | 1–N | Real OAuth dev stacks (Gate C / integration) |
 
 Before starting a stack: `./dev-env.sh list`. Declare your slot in the issue claim comment.
@@ -126,7 +129,7 @@ Do not share slots between concurrent claims without an explicit handoff.
 | During development (Gate A) | `make test-unit` |
 | Before PR (Gate A + B) | `make test-fast` |
 | High-risk pre-merge (Gate C) | `make test-e2e` or PR label `run-e2e` |
-| After merge (Gate D) | `./cliproxy-setup.sh health` + 3 model smokes on :4000 |
+| After merge (Gate D) | Automated `post-merge-gate-d` workflow against k8s prod (no manual action) |
 
 ---
 
@@ -160,8 +163,8 @@ git worktree prune
 ```
 
 Parent/coordinator agents should confirm no orphaned worktrees or occupied slots before
-closing epics. Keep the stable checkout at `/home/dev/repos/ai-gateway` clean — do not
-use it for feature edits; a dirty stable tree blocks `git pull` for Gate D.
+closing epics. Keep the main checkout at `/home/dev/repos/ai-gateway` clean — do not
+use it for feature edits; a dirty checkout there blocks the next session's `git pull`.
 
 ---
 

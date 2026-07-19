@@ -18,7 +18,10 @@ Process and PR-handling references:
 
 ## Development Workflow (REQUIRED)
 
-**Always work in a git worktree + dev stack — never edit the stable stack on port 4000 directly.**
+**Always work in a git worktree + isolated dev stack (`dev-env.sh`).** Real production and
+staging run on k3s-01 (see [Kubernetes / k3s deployment](#kubernetes--k3s-deployment)),
+not on this host — this host has no persistent "stable" stack to protect; it only runs
+ephemeral dev-env.sh slots for local testing.
 
 ```bash
 # 1. Create a feature worktree under /home/dev/worktrees/ (not beside or inside the repo)
@@ -52,8 +55,13 @@ cd /home/dev/repos/ai-gateway && git worktree remove /home/dev/worktrees/ai-gate
 
 ## Common Commands
 
+These target the optional local `docker-compose.yml` stack, useful for ad hoc manual
+debugging (e.g. poking at Langfuse traces locally). It is **not** the required dev
+workflow — use `dev-env.sh` (see below) for feature work — and it is not production;
+real prod/staging run on k3s-01 (see [Kubernetes / k3s deployment](#kubernetes--k3s-deployment)).
+
 ```bash
-# Start full stack
+# Start the optional local stack
 docker compose up -d
 
 # main.py changes: no action needed, uvicorn auto-reloads
@@ -91,10 +99,15 @@ source .env && curl -s http://localhost:4000/v1/models -H "Authorization: Bearer
 
 ## Architecture
 
+The request-processing chain below is the same code path everywhere it runs — k3s-01
+(real prod/staging, see [Kubernetes / k3s deployment](#kubernetes--k3s-deployment)), a
+local `dev-env.sh` slot, or the optional local `docker-compose.yml` stack. In production
+the entry point is k3s-01's ingress (Cloudflare → tunnel → k3s), not this host.
+
 ```
 External client (Cursor, curl, SDK)
-  └─► Cloudflare Tunnel (gateway.example.com) → gateway-host.example:4000
-        └─► gateway-engine (port 4000, public)   ← entry point for ALL traffic
+  └─► Cloudflare Tunnel → k3s-01 ingress
+        └─► gateway-engine (port 4000)   ← entry point for ALL traffic
               └─► litellm (port 4000 internal, 4001 external for UI)
                     └─► cliproxy (port 8317)
                           ├─► Anthropic (Claude Pro/Max OAuth)
@@ -153,10 +166,10 @@ Run `docker compose` from within the worktree directory when testing changes the
 
 ## Dev Environment (Isolated Dev Stacks)
 
-`dev-env.sh` manages isolated 3-container dev stacks (cliproxy from fork + litellm + gateway-engine) so multiple agents can develop and test features without touching the stable gateway on port 4000.
+`dev-env.sh` manages isolated 3-container dev stacks (cliproxy from fork + litellm + gateway-engine) so multiple agents can develop and test features in parallel without colliding with each other or with the optional local stack on port 4000.
 
-Each **slot N** maps to dedicated ports (slot 0 = stable, reserved):
-| Service | Stable | Slot 1 | Slot 2 |
+Each **slot N** maps to dedicated ports (slot 0 = optional local stack, reserved):
+| Service | Slot 0 (optional) | Slot 1 | Slot 2 |
 |---|---|---|---|
 | gateway-engine | :4000 | :4010 | :4020 |
 | litellm UI | :4001 | :4011 | :4021 |
@@ -218,7 +231,7 @@ docker exec -it ai-postgres-1 psql -U postgres -d litellm
 Apply repo-managed LiteLLM schema migrations to an existing stack:
 
 ```bash
-./db/apply-migrations.sh ai-postgres-1       # stable stack
+./db/apply-migrations.sh ai-postgres-1       # optional local stack
 ./db/apply-migrations.sh aidev1-postgres-1   # dev slot 1
 ```
 
@@ -226,9 +239,10 @@ Notable: `search_tools` and MCP tool configs live in `LiteLLM_ToolTable` / `Lite
 
 ## Kubernetes / k3s deployment
 
-Beyond `docker compose`, the stack deploys to the `k3s-01` cluster via ArgoCD/Kustomize. This
-repo holds the design specs + config-generation tooling; the live manifests live in the
-external `k3s-01` GitOps repo.
+Real production and staging deploy to the `k3s-01` cluster via ArgoCD/Kustomize — this is
+the only live-serving deployment; the local `docker-compose.yml` stack is optional and not
+production (see [Common Commands](#common-commands)). This repo holds the design specs +
+config-generation tooling; the live manifests live in the external `k3s-01` GitOps repo.
 
 - `docs/CICD_PHASE2_CD_K3S.md` — **production** overlay (namespace `ai-gateway`, OpenBao
   `prod/workloads/ai-gateway/*`, ingress `gateway.infra.plexplease.com`, `litellm` +

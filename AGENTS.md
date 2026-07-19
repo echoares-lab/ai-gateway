@@ -39,7 +39,8 @@ to install. Docker must be running before any `docker compose` commands.
 | postgres | 5432 | LiteLLM DB (localhost only) |
 | redis | 6379 | Cache (localhost only) |
 
-The stable production stack runs on port 4000. Dev stacks use slots (port 4010, 4020, …).
+Port 4000 is the optional local `docker-compose.yml` stack (not production — see
+[`CLAUDE.md`](CLAUDE.md)); it isn't running by default. Dev stacks use slots (port 4010, 4020, …).
 
 ---
 
@@ -53,11 +54,13 @@ The stable production stack runs on port 4000. Dev stacks use slots (port 4010, 
 
 ## ⚠️ The non-negotiable rule
 
-**Never edit files while the stable stack (port 4000) is your working directory.**
+**Never edit files in the main checkout (`/home/dev/repos/ai-gateway`) directly.**
 
-The stable stack serves live traffic. All development must happen in an isolated
-worktree with its own dev stack slot. This is enforced by convention, not by tooling —
-agents must follow it.
+All development must happen in an isolated worktree with its own dev stack slot. Real
+production and staging run on k3s-01, not this host — the main checkout must stay clean
+because it's what Gate D (`git pull origin main`) and epic-closeout tooling operate
+against, and because a dirty main checkout blocks pulling in the latest `main` for the
+next session. This is enforced by convention, not by tooling — agents must follow it.
 
 ---
 
@@ -82,7 +85,7 @@ cd /home/dev/worktrees/ai-gateway-<feature>
 # Find a free slot first
 ./dev-env.sh list
 
-# Start your slot (1, 2, 3, …  — slot 0 is the stable stack, reserved)
+# Start your slot (1, 2, 3, …  — slot 0 is the optional local stack, reserved)
 ./dev-env.sh start 1
 ```
 
@@ -187,20 +190,20 @@ git checkout main
 git pull origin main
 ```
 
-### Step 8 — Gate D: verify stable stack after merge
+### Step 8 — Gate D: verify production after merge
 
-From the **stable worktree** (`/home/dev/repos/ai-gateway` on `main`):
+Real production runs on k3s-01, not this host. The
+[`post-merge-gate-d.yml`](../.github/workflows/post-merge-gate-d.yml) workflow runs
+automatically on every push to `main` — it hits `https://ai.plexplease.com` (k8s
+production) directly with a health check, a models-list check, and a smoke completion
+per model. No manual local action is required.
 
-```bash
-git pull origin main
-./cliproxy-setup.sh health
-./cliproxy-setup.sh test claude-sonnet-4-5-20250929
-./cliproxy-setup.sh test gemini-3-flash
-./cliproxy-setup.sh test gpt-5-4
-```
+Check the workflow run (or its job summary) for the commit that merged your PR; if any
+check failed, investigate and fix before the session ends. Record the result in the
+issue closeout.
 
-All three model tests must return a valid response. Record results in the issue closeout.
-If any fail, investigate and fix before the session ends.
+(There is no local "stable stack" to smoke-test on this host — the optional
+`docker-compose.yml` stack, if you ever bring it up manually, is not production.)
 
 ### Step 9 — Clean up (after PR merge only)
 
@@ -343,7 +346,7 @@ Never leave uncommitted changes in the stable worktree; they block pulls and Gat
 | A — lint | `make lint` | Before commit / push |
 | B — mock integration | `make test-mock` or `make test-fast` | Before PR; required CI parity |
 | C — real providers | `make test-e2e` or label `run-e2e` | Opt-in only (high-risk changes) |
-| D — stable smoke | `./cliproxy-setup.sh test <model>` + `health` | After merge to main (+ advisory `post-merge-gate-d` workflow) |
+| D — production smoke | Automated `post-merge-gate-d` workflow (hits k8s prod directly) | After merge to main |
 | Full integration | `./dev-env.sh test <slot>` | When Gate C needs broader coverage |
 | YAML validation | `python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"` | After editing litellm-config.yaml |
 
@@ -432,8 +435,8 @@ See `docs/TESTING.md`, `docs/process/TESTING_AND_PROMOTION_POLICY.md`, and `docs
 | Multi-repo isolation broken | `multi-repo-isolation` job in CI |
 | Wire-format / routing broken | `mock-integration` job (0 skips) |
 | Real provider regressions | Gate C: opt-in via `run-e2e` label or nightly schedule |
-| Post-merge production drift | Gate D: stable smokes + advisory `post-merge-gate-d` workflow |
-| Stable stack taken down | Worktree isolation (step 1) |
+| Post-merge production drift | Gate D: automated `post-merge-gate-d` workflow against k8s prod |
+| Main checkout accidentally modified during dev | Worktree isolation (step 1) |
 | Direct push bypasses review | Branch protection + PR requirement |
 | Image version drift | Pinned in docker-compose files; upgrade via PR + test |
 | Cross-user cache hits | `CACHE_ENABLED=false` default in gateway-engine |
@@ -483,8 +486,8 @@ The Docker-based workflow above (`docker compose`, `./dev-env.sh`, `./cliproxy-s
 worktrees/slots) is the canonical dev path, but the Cursor Cloud VM has **no Docker daemon**
 and **no provider OAuth** (`~/.cli-proxy-api/`). The full stack additionally needs the external
 CLIProxy fork image from Nexus (built by the `CLIProxyAPI` repo). So the Docker full stack and
-the real-provider tiers (**Gate C `make test-e2e`, Gate D `./cliproxy-setup.sh` smokes**) are
-**not runnable here** — don't try to run them in the cloud VM.
+**Gate C** (`make test-e2e`) are **not runnable here** — don't try to run them in the cloud VM.
+(Gate D is fully automated post-merge against k8s prod and isn't manually run anywhere.)
 
 What *does* run here is a Python-only local workflow that covers lint, both test tiers, and the
 flagship `gateway-engine` service:

@@ -144,8 +144,8 @@ cd /home/dev/worktrees/ai-gateway-<short-name>
 ./dev-env.sh start <slot>
 ```
 
-**Never edit files in `/home/dev/repos/ai-gateway` directly — that is the stable stack.**
-**Never use slot 0 — that is the stable production stack on port 4000.**
+**Never edit files in `/home/dev/repos/ai-gateway` directly — that is the main checkout, kept clean for pulls/Gate D.**
+**Never use slot 0 — that is reserved for the optional local stack on port 4000 (not production; production is k8s).**
 **One issue = one agent = one slot = one worktree.**
 
 ---
@@ -315,24 +315,23 @@ gh pr merge $PR_NUMBER --repo echoares-lab/ai-gateway --merge
 
 ---
 
-## Step 8 — Gate D: post-merge verification on stable (main)
+## Step 8 — Gate D: post-merge verification against k8s production
 
-After the PR merges, from the **stable worktree** on `main`:
+Real production runs on k3s-01, not this host. Gate D is fully automated:
+`.github/workflows/post-merge-gate-d.yml` runs on every push to `main`, hitting
+`https://ai.plexplease.com` directly (health check + models list + a smoke completion per
+model). No manual command or local stack is needed. Check the workflow run/job summary for
+the merge commit and record the result in closeout.
+
+Still pull `main` into the main checkout to keep it current for the next session:
 
 ```bash
 cd /home/dev/repos/ai-gateway
 git status    # must be clean — stash or discard any local edits first
 git pull origin main
-
-# Gate D — production-like stack on port 4000
-./cliproxy-setup.sh health
-./cliproxy-setup.sh test claude-sonnet-4-6
-./cliproxy-setup.sh test gemini-3-flash
-./cliproxy-setup.sh test gpt-5-4
 ```
 
-All three model tests must return a valid response. Record results in the closeout comment.
-**Do not leave uncommitted changes in the stable worktree** — they block `git pull` and Gate D.
+**Do not leave uncommitted changes in the main checkout** — they block this `git pull`.
 
 ---
 
@@ -352,7 +351,7 @@ gh issue comment $ISSUE --repo echoares-lab/ai-gateway --body "$(cat <<'EOF'
   - Gate A: lint-and-syntax, unit-tests (test_gateway_engine*.py)
   - Gate B: mock-integration (0 skips)
   - Gate C: real-provider-e2e (if high-risk / run-e2e label)
-  - Gate D: cliproxy-setup health + 3 model smokes on stable (:4000)
+  - Gate D: automated `post-merge-gate-d` workflow against k8s prod
 - Verified on: main (production)
 - Cleanup: slot <slot> stopped, worktree removed, branch deleted
 - Follow-up issues: none / #NNN
@@ -390,8 +389,8 @@ before closing epics or ending a multi-agent session.
 | `make test-mock` | Gate B only — in-memory ASGI, 0 skips |
 | `./dev-env.sh test <slot>` | Gate C — real-provider integration when broader coverage needed |
 | `gh pr edit <pr> --add-label run-e2e` | Trigger Gate C in CI (`real-provider-e2e`) |
-| `./cliproxy-setup.sh health` | Gate D — before and after merge on stable |
-| `./cliproxy-setup.sh test <model>` | Gate D — post-merge model smoke on stable |
+| `./cliproxy-setup.sh health` | Optional manual check of the local stack (not part of Gate D) |
+| (none — Gate D is automated) | Gate D — post-merge model smoke against k8s prod |
 
 ---
 
@@ -420,6 +419,6 @@ If two agents are running simultaneously:
 - After a dependency merges: `git fetch origin && git rebase origin/main`, resolve conflicts, `make test-fast`, `git push --force-with-lease`
 - CI `mock-integration` infra flakes: confirm with local `make test-mock` before retrying merge
 - Auto-merge may be off — use `gh pr merge <num> --merge` when `--auto` does not queue
-- Stable worktree stays **read-only** for feature work; keep it clean for Gate D `git pull`
+- Main checkout stays **read-only** for feature work; keep it clean for the post-merge `git pull`
 
-The stable stack on port 4000 is never touched by any agent.
+The optional local stack on port 4000 is never touched by any agent — it isn't production and isn't part of any required workflow.
