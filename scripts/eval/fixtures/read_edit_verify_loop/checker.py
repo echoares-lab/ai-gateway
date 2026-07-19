@@ -1,5 +1,5 @@
 """Checker for the read_edit_verify_loop task."""
-import re
+
 import sys
 from pathlib import Path
 

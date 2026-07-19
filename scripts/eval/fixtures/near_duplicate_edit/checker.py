@@ -1,4 +1,5 @@
 """Checker for the near_duplicate_edit task."""
+
 import sys
 from pathlib import Path
 

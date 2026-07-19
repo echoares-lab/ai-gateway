@@ -3,6 +3,7 @@
 Usage: python checker.py <scratch_dir>
 Prints "PASS" or "FAIL: <reason>" and exits 0/1 accordingly.
 """
+
 import sys
 from pathlib import Path
 
@@ -25,8 +26,8 @@ def check(scratch_dir: Path) -> tuple[bool, str]:
         return False, "expected replacement line not found"
 
     # Every other line must be unchanged (same content, same relative order).
-    orig_without_marker = [l for l in original if MARKER not in l]
-    current_without_replacement = [l for l in current if l != EXPECTED_LINE]
+    orig_without_marker = [line for line in original if MARKER not in line]
+    current_without_replacement = [line for line in current if line != EXPECTED_LINE]
     if orig_without_marker != current_without_replacement:
         return False, "unrelated lines were modified"
 

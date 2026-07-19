@@ -13,6 +13,7 @@ Tests the two gaps identified against docs/FEATURE_CANDIDATES.md C-RT-6:
 
 See docs/tool-use-eval.md and scripts/eval/README.md for context.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -125,7 +126,7 @@ def check_streaming_tool_call(base_url: str, api_key: str, model: str) -> dict:
             for line in r.iter_lines():
                 if not line or not line.startswith("data: "):
                     continue
-                payload = line[len("data: "):]
+                payload = line[len("data: ") :]
                 if payload.strip() == "[DONE]":
                     continue
                 try:

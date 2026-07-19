@@ -1,4 +1,5 @@
 """Checker for the multi_edit_sequence task."""
+
 import sys
 from pathlib import Path
 

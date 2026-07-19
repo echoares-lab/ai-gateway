@@ -8,6 +8,7 @@ model-fallback-substitution per run.
 
 See docs/tool-use-eval.md for the design this implements.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -90,8 +91,9 @@ def run_once(model: str, task: str, base_url: str, api_key: str, timeout_s: int)
             timeout=timeout_s,
         )
     except subprocess.TimeoutExpired:
-        record.update(apply_success=False, correct=False, fallback_substituted=None,
-                      error=f"timed out after {timeout_s}s")
+        record.update(
+            apply_success=False, correct=False, fallback_substituted=None, error=f"timed out after {timeout_s}s"
+        )
         shutil.rmtree(scratch, ignore_errors=True)
         return record
 

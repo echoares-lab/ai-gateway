@@ -1,4 +1,5 @@
 """Checker for the new_file_write task."""
+
 import importlib.util
 import sys
 from pathlib import Path
