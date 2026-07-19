@@ -742,7 +742,6 @@ general_settings:
   forward_client_headers_to_llm_api: true
   store_model_in_db: true
   store_prompts_in_spend_logs: true
-  drop_params: true
   # --- Background model health checks ---
   # Probes each model on a schedule; results appear in LiteLLM UI → Model Health page.
   # Each check sends 1 request (~6-7 tokens in, max_tokens=1 out) per model per interval.
@@ -793,7 +792,19 @@ router_settings:
   # capability-correct provider in the fallbacks list.
   num_retries: 2
 
+  # Bad requests (unsupported params, malformed input) are never retryable —
+  # don't waste num_retries attempts against the same deployment before
+  # falling back; other error classes keep the default retry count above.
+  retry_policy:
+    BadRequestErrorRetries: 0
+
 litellm_settings:
+  # Silently strip request params a given model doesn't support (e.g.
+  # reasoning_effort sent to a model that doesn't accept it) instead of
+  # raising UnsupportedParamsError, which otherwise triggers the fallbacks:
+  # list below for a request that would fail identically on every fallback
+  # target too. Must live here, not under general_settings, or it's inert.
+  drop_params: true
   callbacks: ["langfuse"]
   success_callback: ["langfuse"]
   failure_callback: ["langfuse"]
