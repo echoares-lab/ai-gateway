@@ -21,20 +21,40 @@ Real production and staging run on k3s-01, not this host (see `CLAUDE.md` §
 | `https://ai.plexplease.com` | Cloudflare (public) → tunnel → k3s ingress | Public internet | External clients (Cursor, etc.); the automated `post-merge-gate-d.yml` post-merge smoke |
 | `https://gateway.infra.plexplease.com` | Traefik ingress directly (`10.10.10.50`) | Internal/LAN only | Ad hoc manual operator checks from a host on the internal network |
 
-**`ai.plexplease.com` has a Cloudflare WAF rule that blocks plain manual API requests.**
-Verified 2026-07-19: `GET /health` returns `200` with a plain `curl`, but `GET /v1/models`
-and (presumably) other `/v1/*` calls return Cloudflare's own "Attention Required" challenge
-page — before the request ever reaches gateway-engine — even with a valid
-`Authorization: Bearer <LITELLM_MASTER_KEY>` header and a browser-like `User-Agent`. This
-is not a LiteLLM/app-layer auth failure; it's Cloudflare's edge blocking the request
-outright. The automated Gate D CI job reaches it successfully using
-`secrets.GATEWAY_SMOKE_KEY` from a self-hosted (`arc`) runner — whether that's because the
-key itself satisfies a WAF rule, or the runner's network path is allowlisted differently
-from an arbitrary shell session, is not confirmed. **Don't assume a plain `curl` from an
-arbitrary machine will reach `ai.plexplease.com`'s API paths** — use
-`gateway.infra.plexplease.com` for manual checks from a host on the internal network
-instead (e.g. `GATEWAY_ENGINE_URL=https://gateway.infra.plexplease.com ./cliproxy-setup.sh
-test <model>` — see `cliproxy-setup.sh --help`).
+**`ai.plexplease.com` has a Cloudflare WAF rule requiring an extra header — confirmed
+2026-07-19.** A plain `GET /v1/models` with only `Authorization: Bearer <key>` gets
+Cloudflare's own "Attention Required" challenge page before the request ever reaches
+gateway-engine. The WAF rule expects a second header:
+
+```
+X-Edge-Auth: <shared edge-gate key>
+```
+
+**Key location:** 1Password vault `Homelab-GitOps`, item **"ai-gateway - shared edge (WAF)
+key"** — field `header` names the header (`X-Edge-Auth`), field `credential` holds the
+value. Also likely present in OpenBao under the `prod/workloads/ai-gateway/*` path
+convention documented in `docs/CICD_PHASE2_CD_K3S.md` (this is where the k3s deployment's
+own secrets are provisioned from) — the exact key name within that path was **not**
+confirmed from this environment; the `VAULT_TOKEN` available here lacks permission to
+browse/read it. Whoever has proper OpenBao access should confirm and record the exact
+path here.
+
+**Which `Authorization` key to send alongside it:** don't use the admin `LITELLM_MASTER_KEY`
+for this — per 1Password item **"ai-gateway - client access key"** (same vault): *"Dedicated
+LiteLLM virtual key for client + Cloudflare edge auth. Master key is admin-only and blocked
+at the edge."* That item's `base_url` field is `https://ai.plexplease.com/v1`, confirming
+it's the intended credential for this exact path. (The master key + edge header combination
+was observed to still get through in a one-off test, but that's not the sanctioned pattern
+per the item's own notes and may not stay true if the rule is tightened later.)
+
+Verified end-to-end 2026-07-19: `curl -H "Authorization: Bearer <client access key>" -H
+"X-Edge-Auth: <shared edge key>" https://ai.plexplease.com/v1/models` returns the real
+production model list. `gateway.infra.plexplease.com` (internal, no Cloudflare hop, no
+extra header needed) remains the simpler option for ad hoc checks from a host on the
+internal network — e.g. `GATEWAY_ENGINE_URL=https://gateway.infra.plexplease.com
+./cliproxy-setup.sh test <model>`. To instead test the real external path including the
+WAF/edge layer, set `GATEWAY_ENGINE_URL=https://ai.plexplease.com` **and**
+`GATEWAY_EDGE_AUTH_KEY=<shared edge key>` (see `cliproxy-setup.sh --help`).
 
 **Security note — shared/working production key on this dev host.** Verified 2026-07-19:
 this host's local `.env` `LITELLM_MASTER_KEY` (the same key used for the optional local
