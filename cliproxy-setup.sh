@@ -1018,7 +1018,7 @@ cmd_health() {
   local api_key
   api_key=$(get_api_key)
 
-  echo "=== CLIProxyAPI health ==="
+  echo "=== CLIProxyAPI health (local, optional stack -- not production) ==="
   local model_count
   if model_count=$(curl -sf -H "Authorization: Bearer $api_key" \
     "http://localhost:$CLIPROXY_PORT/v1/models" \
@@ -1026,7 +1026,8 @@ cmd_health() {
     echo "  Status : UP"
     echo "  Models : $model_count available"
   else
-    echo "  Status : DOWN (not reachable on port $CLIPROXY_PORT)"
+    echo "  Status : not running on port $CLIPROXY_PORT (expected unless you started it manually --"
+    echo "           production runs on k8s-01, not this host; see CLAUDE.md)"
   fi
 
   echo ""
@@ -1036,36 +1037,55 @@ cmd_health() {
     local found=false
     for f in "$auth_dir"/*.json; do
       [ -f "$f" ] || continue
-      found=true
-      python3 - "$f" <<'PYEOF'
+      python3 - "$f" <<'PYEOF' || true
 import sys, json, datetime
 path = sys.argv[1]
 with open(path) as f:
     d = json.load(f)
-ptype  = d.get('type', '?')
+
+ptype = d.get('type')
+if not ptype:
+    # Not a credential file (e.g. probe_failures.json) -- skip silently.
+    sys.exit(0)
+
 email  = d.get('email', '?')
 disabled = d.get('disabled', False)
+
+# last_refresh: only claude/codex tokens carry this field. antigravity has a
+# raw epoch-ms 'timestamp' instead; gemini has neither at the top level.
 last_ref = d.get('last_refresh', '')
-expired  = d.get('expired', '')
+if not last_ref and 'timestamp' in d:
+    try:
+        last_ref = datetime.datetime.fromtimestamp(
+            d['timestamp'] / 1000, tz=datetime.timezone.utc
+        ).isoformat()
+    except (TypeError, ValueError, OSError):
+        last_ref = ''
+last_ref_display = last_ref[:19] if last_ref else 'n/a'
+
+# expiry: top-level 'expired' (claude/codex/antigravity) or nested
+# token.expiry (gemini's structure).
+expired = d.get('expired') or (d.get('token') or {}).get('expiry', '')
 
 status = 'DISABLED' if disabled else 'active'
 if expired:
     try:
-        exp_dt = datetime.datetime.fromisoformat(expired.replace('Z','+00:00'))
+        exp_dt = datetime.datetime.fromisoformat(expired.replace('Z', '+00:00'))
         now = datetime.datetime.now(datetime.timezone.utc)
         diff = exp_dt - now
         age = f"(access token expires in {int(diff.total_seconds()//60)}m)"
         if diff.total_seconds() < 0:
             age = "(access token EXPIRED — CLIProxyAPI should auto-refresh)"
-    except:
+    except (ValueError, TypeError):
         age = ''
 else:
     age = ''
 
 login_cmd = {'claude': 'login-claude', 'codex': 'login-codex'}.get(ptype, 'login-all')
-print(f"  [{ptype:6}] {email}  {status}  last_refresh={last_ref[:19]}  {age}")
+print(f"  [{ptype:6}] {email}  {status}  last_refresh={last_ref_display}  {age}")
 print(f"           If seeing 401 errors → ./cliproxy-setup.sh {login_cmd}")
 PYEOF
+      found=true
     done
     if [ "$found" = false ]; then
       echo "  No auth files found in $auth_dir"
@@ -1076,17 +1096,24 @@ PYEOF
   fi
   echo ""
   echo "  Note: 401 errors in LiteLLM logs mean a provider token needs refresh."
-  echo "  OAuth tokens auto-refresh every ~15min while the container is running."
-  echo "  Force re-auth with: ./cliproxy-setup.sh login-claude | login-codex | login-antigravity"
+  echo "  Access tokens auto-refresh on demand (using the stored refresh token) whenever"
+  echo "  something -- a dev-env.sh slot, or this optional stack if you start it -- actually"
+  echo "  calls the provider. If the refresh token itself is invalid/revoked, no amount of"
+  echo "  waiting fixes it (look for 'invalid_grant' in logs) -- force re-auth:"
+  echo "  ./cliproxy-setup.sh login-claude | login-codex | login-antigravity"
   echo ""
   echo "  For re-auth on a remote server, open SSH port forwards first (local terminal):"
   echo "    ssh -L 54545:127.0.0.1:54545 -L 1455:127.0.0.1:1455 -L 8085:127.0.0.1:8085 user@gateway-host.example -p 22"
 
   echo ""
-  echo "=== Docker container ==="
-  docker compose -f "$SCRIPT_DIR/docker-compose.yml" ps cliproxy 2>/dev/null \
-    | grep -v '^NAME' | awk '{printf "  %-20s %s\n", $1, $4}' \
-    || echo "  (docker compose not available)"
+  echo "=== Local docker-compose.yml stack (optional; not production) ==="
+  local compose_rows
+  compose_rows=$(docker compose -f "$SCRIPT_DIR/docker-compose.yml" ps cliproxy 2>/dev/null | grep -v '^NAME' || true)
+  if [ -n "$compose_rows" ]; then
+    echo "$compose_rows" | awk '{printf "  %-20s %s\n", $1, $4}'
+  else
+    echo "  (not running -- this is expected; production is k8s-01, not this host)"
+  fi
 }
 
 cmd_models() {
@@ -1203,8 +1230,9 @@ case "$cmd" in
 
   test)
     MODEL="${2:-claude-sonnet-4-5-20250929}"
-    echo "Testing LiteLLM → CLIProxyAPI with model: $MODEL"
-    curl -s -X POST http://localhost:4000/v1/chat/completions \
+    echo "Testing gateway-engine → LiteLLM → CLIProxyAPI with model: $MODEL"
+    echo "Target: ${GATEWAY_ENGINE_URL%/} (override with GATEWAY_ENGINE_URL=... for e.g. k8s prod)"
+    curl -s -X POST "${GATEWAY_ENGINE_URL%/}/v1/chat/completions" \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer $LITELLM_KEY" \
       -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in one sentence.\"}],\"max_tokens\":30}" \
@@ -1233,6 +1261,7 @@ case "$cmd" in
     )
     PASS=0; FAIL=0; SKIP=0
     echo "=== Provider flow test (gateway-engine → LiteLLM → CLIProxy) ==="
+    echo "Target: ${GATEWAY_ENGINE_URL%/} (override with GATEWAY_ENGINE_URL=... for e.g. k8s prod)"
     for provider in claude gemini openai xai kimi; do
       model="${PROVIDER_MODELS[$provider]}"
       # skip if model not in litellm config
@@ -1241,7 +1270,7 @@ case "$cmd" in
         (( SKIP++ )) || true
         continue
       fi
-      response=$(curl -s --max-time 30 -X POST http://localhost:4000/v1/chat/completions \
+      response=$(curl -s --max-time 30 -X POST "${GATEWAY_ENGINE_URL%/}/v1/chat/completions" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $LITELLM_KEY" \
         -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly one word: OK\"}],\"max_tokens\":10}")
@@ -1288,9 +1317,13 @@ Operations:
   health               Show per-provider auth status and container state
   models               List models grouped by provider from CLIProxyAPI
   quota-summary        Per-account quota windows and reset timing
-  test [model]         Test model end-to-end through LiteLLM
-  test-direct [model]  Test model directly against CLIProxyAPI
-  test-all             Test one model per provider; reports pass/fail/skip
+  test [model]         Test model end-to-end through gateway-engine (GATEWAY_ENGINE_URL,
+                        default localhost:4000 -- set to e.g. https://ai.plexplease.com
+                        to test k8s prod directly instead of a local stack)
+  test-direct [model]  Test model directly against CLIProxyAPI (always local -- no k8s
+                        equivalent, CLIProxy isn't part of k8s's public ingress)
+  test-all             Test one model per provider via GATEWAY_ENGINE_URL; reports
+                        pass/fail/skip
 
 Legacy (prefer Docker):
   start                Run CLIProxyAPI directly on host (for debugging)
