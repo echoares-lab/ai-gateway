@@ -114,8 +114,12 @@ def _oai_to_responses_resp(oai: dict) -> dict:
             "input_tokens": usage.get("prompt_tokens", 0),
             "output_tokens": usage.get("completion_tokens", 0),
             "total_tokens": usage.get("total_tokens", 0),
-            "input_tokens_details": {"cached_tokens": 0},
-            "output_tokens_details": {"reasoning_tokens": 0},
+            "input_tokens_details": {
+                "cached_tokens": (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+            },
+            "output_tokens_details": {
+                "reasoning_tokens": (usage.get("completion_tokens_details") or {}).get("reasoning_tokens", 0)
+            },
         },
     }
 
