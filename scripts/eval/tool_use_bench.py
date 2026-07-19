@@ -44,7 +44,7 @@ def seed_scratch_dir(task_dir: Path) -> Path:
     subprocess.run(["git", "init", "-q"], cwd=scratch, check=True)
     subprocess.run(["git", "add", "-A"], cwd=scratch, check=True)
     subprocess.run(
-        ["git", "-c", "user.email=eval@local", "-c", "user.name=eval", "commit", "-q", "-m", "seed"],
+        ["git", "-c", "user.email=eval@local", "-c", "user.name=eval", "commit", "-q", "-m", "seed", "--allow-empty"],
         cwd=scratch,
         check=True,
     )

@@ -1,0 +1,10 @@
+In this repository there is a file named config.py. Make exactly these three
+changes to it, all in the same session:
+
+1. Change MAX_RETRIES from 3 to 7.
+2. Change TIMEOUT_SECONDS from 30 to 45.
+3. Change FEATURE_FLAG_NEW_UI from False to True.
+
+Do not change LOG_LEVEL, DEFAULT_LOCALE, or anything else in the file.
+Use your file-editing tools to make all three changes directly on disk.
+Do not add any explanation, just make the edits.
