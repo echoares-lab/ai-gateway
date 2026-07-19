@@ -1231,7 +1231,7 @@ case "$cmd" in
   test)
     MODEL="${2:-claude-sonnet-4-5-20250929}"
     echo "Testing gateway-engine → LiteLLM → CLIProxyAPI with model: $MODEL"
-    echo "Target: ${GATEWAY_ENGINE_URL%/} (override with GATEWAY_ENGINE_URL=... for e.g. k8s prod)"
+    echo "Target: ${GATEWAY_ENGINE_URL%/} (override GATEWAY_ENGINE_URL for k8s prod -- use gateway.infra.plexplease.com, not ai.plexplease.com; see docs/ops/RUNBOOK.md)"
     curl -s -X POST "${GATEWAY_ENGINE_URL%/}/v1/chat/completions" \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer $LITELLM_KEY" \
@@ -1261,7 +1261,7 @@ case "$cmd" in
     )
     PASS=0; FAIL=0; SKIP=0
     echo "=== Provider flow test (gateway-engine → LiteLLM → CLIProxy) ==="
-    echo "Target: ${GATEWAY_ENGINE_URL%/} (override with GATEWAY_ENGINE_URL=... for e.g. k8s prod)"
+    echo "Target: ${GATEWAY_ENGINE_URL%/} (override GATEWAY_ENGINE_URL for k8s prod -- use gateway.infra.plexplease.com, not ai.plexplease.com; see docs/ops/RUNBOOK.md)"
     for provider in claude gemini openai xai kimi; do
       model="${PROVIDER_MODELS[$provider]}"
       # skip if model not in litellm config
@@ -1318,8 +1318,12 @@ Operations:
   models               List models grouped by provider from CLIProxyAPI
   quota-summary        Per-account quota windows and reset timing
   test [model]         Test model end-to-end through gateway-engine (GATEWAY_ENGINE_URL,
-                        default localhost:4000 -- set to e.g. https://ai.plexplease.com
-                        to test k8s prod directly instead of a local stack)
+                        default localhost:4000 -- set to e.g.
+                        https://gateway.infra.plexplease.com (internal, LAN-only) to test
+                        k8s prod directly instead of a local stack. Do NOT use
+                        https://ai.plexplease.com here -- Cloudflare's WAF blocks plain
+                        manual /v1/* requests to it; see docs/ops/RUNBOOK.md
+                        "Production endpoints".)
   test-direct [model]  Test model directly against CLIProxyAPI (always local -- no k8s
                         equivalent, CLIProxy isn't part of k8s's public ingress)
   test-all             Test one model per provider via GATEWAY_ENGINE_URL; reports

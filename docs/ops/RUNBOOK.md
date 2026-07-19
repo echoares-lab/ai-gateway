@@ -3,9 +3,50 @@
 Unified access to Claude Pro, ChatGPT Plus, and Gemini consumer accounts via LiteLLM.
 
 **Stack**: CLIProxyAPI (Docker) → LiteLLM (Docker) → Langfuse (Docker)  
-**API endpoint**: `http://localhost:4000`  
+**Local API endpoint** (this host, optional dev stack — not production): `http://localhost:4000`  
+**Production API endpoints**: see [Production endpoints](#production-endpoints) below  
 **LiteLLM master key**: in `.env` as `LITELLM_MASTER_KEY`  
 **CLIProxyAPI key**: in `~/.cliproxy/config.yaml` under `api-keys`
+
+---
+
+## Production endpoints
+
+Real production and staging run on k3s-01, not this host (see `CLAUDE.md` §
+[Kubernetes / k3s deployment](../../CLAUDE.md#kubernetes--k3s-deployment)). There are
+**two** different ways to reach the production gateway, and they behave differently:
+
+| Endpoint | Path | Reachability | Use |
+|---|---|---|---|
+| `https://ai.plexplease.com` | Cloudflare (public) → tunnel → k3s ingress | Public internet | External clients (Cursor, etc.); the automated `post-merge-gate-d.yml` post-merge smoke |
+| `https://gateway.infra.plexplease.com` | Traefik ingress directly (`10.10.10.50`) | Internal/LAN only | Ad hoc manual operator checks from a host on the internal network |
+
+**`ai.plexplease.com` has a Cloudflare WAF rule that blocks plain manual API requests.**
+Verified 2026-07-19: `GET /health` returns `200` with a plain `curl`, but `GET /v1/models`
+and (presumably) other `/v1/*` calls return Cloudflare's own "Attention Required" challenge
+page — before the request ever reaches gateway-engine — even with a valid
+`Authorization: Bearer <LITELLM_MASTER_KEY>` header and a browser-like `User-Agent`. This
+is not a LiteLLM/app-layer auth failure; it's Cloudflare's edge blocking the request
+outright. The automated Gate D CI job reaches it successfully using
+`secrets.GATEWAY_SMOKE_KEY` from a self-hosted (`arc`) runner — whether that's because the
+key itself satisfies a WAF rule, or the runner's network path is allowlisted differently
+from an arbitrary shell session, is not confirmed. **Don't assume a plain `curl` from an
+arbitrary machine will reach `ai.plexplease.com`'s API paths** — use
+`gateway.infra.plexplease.com` for manual checks from a host on the internal network
+instead (e.g. `GATEWAY_ENGINE_URL=https://gateway.infra.plexplease.com ./cliproxy-setup.sh
+test <model>` — see `cliproxy-setup.sh --help`).
+
+**Security note — shared/working production key on this dev host.** Verified 2026-07-19:
+this host's local `.env` `LITELLM_MASTER_KEY` (the same key used for the optional local
+dev stack) successfully authenticates against `gateway.infra.plexplease.com` and returns
+the real production model list; a missing or wrong key gets `401` there, so this isn't a
+coincidence — it's a genuine working production credential sitting in a dev host's `.env`.
+Two explanations, not distinguished here: (a) intentionally shared as an ops/admin key for
+exactly this kind of ad hoc production check, or (b) leftover from before this host was the
+serving stack (pre-k3s-cutover; see #433/#434), never rotated once k3s took over serving.
+Whoever owns key rotation for `ai-gateway`'s production LiteLLM instance should confirm
+which, and rotate if it's (b) — this doc only records the finding, it doesn't change the
+key.
 
 ---
 
