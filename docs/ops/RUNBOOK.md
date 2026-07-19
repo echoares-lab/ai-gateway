@@ -30,14 +30,35 @@ gateway-engine. The WAF rule expects a second header:
 X-Edge-Auth: <shared edge-gate key>
 ```
 
-**Key location:** 1Password vault `Homelab-GitOps`, item **"ai-gateway - shared edge (WAF)
-key"** — field `header` names the header (`X-Edge-Auth`), field `credential` holds the
-value. Also likely present in OpenBao under the `prod/workloads/ai-gateway/*` path
-convention documented in `docs/CICD_PHASE2_CD_K3S.md` (this is where the k3s deployment's
-own secrets are provisioned from) — the exact key name within that path was **not**
-confirmed from this environment; the `VAULT_TOKEN` available here lacks permission to
-browse/read it. Whoever has proper OpenBao access should confirm and record the exact
-path here.
+**Key location — confirmed 2026-07-19, two places:**
+- 1Password vault `Homelab-GitOps`, item **"ai-gateway - shared edge (WAF) key"** — field
+  `header` names the header (`X-Edge-Auth`), field `credential` holds the value.
+- OpenBao, path **`kv/data/ai-gateway/edge-auth`** (KV v2, mount `kv/`) — fields `header`
+  and `value`, plus a `paired_authorization_key_1password` field pointing back at the
+  client access key item below. This did **not** turn out to live under the
+  `prod/workloads/ai-gateway/*` k3s-provisioning convention from `docs/CICD_PHASE2_CD_K3S.md`
+  — that path is for the k3s deployment's *own* ExternalSecrets-sourced config, a separate
+  concern from this manually-managed edge key.
+
+**Reading it:** requires an OpenBao token with the `ai-gateway-secrets` policy. The
+`ai-gateway` AppRole (role_id/secret_id in 1Password item **"ai-gateway - OpenBao AppRole
+(kv/ai-gateway/*)"**, same vault) is scoped exactly to `kv/data/ai-gateway/*` read/write.
+Login: `bao write auth/approle/login role_id=<role_id> secret_id=<secret_id>` against
+`http://openbao.plexplease.com:8201` (or `http://127.0.0.1:8200` on a host running the
+Vault Agent), then `bao kv get kv/ai-gateway/edge-auth`. Its `secret_id` has a 1-year TTL
+(expires ~2027-07-19) — regenerate before then via the `secrets-generator` bootstrap role
+(see next paragraph) or root.
+
+**How this AppRole/policy came to exist:** created via a dedicated, deliberately
+short-lived bootstrap identity (policy `secrets-generator`: can create/edit policies,
+AppRole roles, and mint tokens — root-equivalent, so kept separate from the day-to-day
+`workstation-admin` role rather than folded into it). Its role_id is recorded in 1Password
+item **"ai-gateway/homelab - OpenBao secrets-generator..."** (same vault); its `secret_id`
+is deliberately *not* persisted anywhere — mint a fresh one on demand with the OpenBao root
+token (1Password item **"OpenBao init recovery material 2026-06-19"**, file attachment,
+`root_token` field — this is the original `vault operator init` output, still valid, no
+TTL) via `bao write -f auth/approle/role/secrets-generator/secret-id`. Use this path if the
+`ai-gateway` policy ever needs new paths/capabilities added.
 
 **Which `Authorization` key to send alongside it:** don't use the admin `LITELLM_MASTER_KEY`
 for this — per 1Password item **"ai-gateway - client access key"** (same vault): *"Dedicated
