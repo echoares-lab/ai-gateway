@@ -462,6 +462,40 @@ def test_responses_preview_model_warns_and_passthrough(caplog):
     assert any("model_resolution" in r.message and "preview_passthrough" in r.message for r in caplog.records)
 
 
+def test_oai_to_responses_resp_reports_real_reasoning_and_cached_tokens():
+    """output_tokens_details.reasoning_tokens / input_tokens_details.cached_tokens
+    must reflect real upstream usage, not be hardcoded to 0 (regression for the
+    bug found via scripts/eval/protocol_checks.py)."""
+    oai = {
+        "id": "chatcmpl-abc",
+        "model": "gpt-5-4",
+        "created": 1700000000,
+        "choices": [{"message": {"content": "hello"}}],
+        "usage": {
+            "prompt_tokens": 66,
+            "completion_tokens": 177,
+            "total_tokens": 695,
+            "completion_tokens_details": {"reasoning_tokens": 452},
+            "prompt_tokens_details": {"cached_tokens": 12},
+        },
+    }
+    resp = t._oai_to_responses_resp(oai)
+    assert resp["usage"]["output_tokens_details"]["reasoning_tokens"] == 452
+    assert resp["usage"]["input_tokens_details"]["cached_tokens"] == 12
+
+
+def test_oai_to_responses_resp_defaults_to_zero_when_details_absent():
+    oai = {
+        "id": "chatcmpl-xyz",
+        "model": "gemini-3-flash",
+        "choices": [{"message": {"content": "hi"}}],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
+    }
+    resp = t._oai_to_responses_resp(oai)
+    assert resp["usage"]["output_tokens_details"]["reasoning_tokens"] == 0
+    assert resp["usage"]["input_tokens_details"]["cached_tokens"] == 0
+
+
 def test_patch_body_model_resolution_from_dotted_name():
     body = json.dumps({"model": "gemini.3.1.pro", "messages": [{"role": "user", "content": "x"}]}).encode()
     result, changed = t._patch_body("v1/chat/completions", body)
