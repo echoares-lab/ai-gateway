@@ -1,0 +1,8 @@
+In this repository there is a file named app.py. Find the line that contains
+the exact text "TODO_UNIQUE_MARKER_7f3a" and replace that entire line with
+exactly this line:
+
+GREETING = "Hello, benchmark!"
+
+Use your file-editing tool to make the change directly on disk. Do not modify
+any other line in the file. Do not add any explanation, just make the edit.

@@ -1,0 +1,11 @@
+In this repository there is a file named handlers.py containing three classes:
+InvoiceHandler, OrderHandler, and ShipmentHandler. Each has a `process`
+method with an identical body: `return x + 1`.
+
+Change ONLY the `process` method inside the `OrderHandler` class so that it
+returns `x + 100` instead of `x + 1`. Do not change the `process` method in
+InvoiceHandler or ShipmentHandler, and do not change any other method or
+line in the file.
+
+Use your file-editing tool to make the change directly on disk. Do not add
+any explanation, just make the edit.

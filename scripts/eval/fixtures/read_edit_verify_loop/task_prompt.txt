@@ -1,0 +1,19 @@
+This repository has two files: helpers.py and constants.py.
+
+First, read helpers.py and count how many top-level function definitions
+(lines starting with "def ") it contains.
+
+Then, edit constants.py and replace the line:
+
+FUNCTION_COUNT_PLACEHOLDER = None
+
+with:
+
+FUNCTION_COUNT_PLACEHOLDER = <N>
+
+where <N> is the exact integer count you computed from helpers.py (a plain
+integer literal, not a string, not a placeholder).
+
+Do not modify helpers.py, and do not change APP_NAME or VERSION in
+constants.py. Use your file tools to read and edit directly on disk. Do not
+add any explanation, just perform the task.
