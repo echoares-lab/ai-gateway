@@ -1114,10 +1114,7 @@ cmd_apply() {
   echo "Step 1: Check for CLIProxyAPI upgrade"
   cmd_upgrade
   echo ""
-  echo "Step 2: Sync model registry and reconcile LiteLLM config"
-  cmd_sync_models
-  echo ""
-  echo "Step 3: Health check"
+  echo "Step 2: Health check"
   cmd_health
 }
 
@@ -1281,8 +1278,11 @@ Setup:
   login-headless <p>   Headless OAuth for SSH servers (p: claude|codex|antigravity|grok|kimi)
 
 Operations:
-  apply                Full update workflow: upgrade → sync-models → health
-  sync-models          Sync via gateway-engine registry APIs; writes reconciled config
+  apply                Update workflow: upgrade → health (no longer runs sync-models;
+                        real prod/staging model config lives in k3s-01, not this host)
+  sync-models          Manual: sync via gateway-engine registry APIs; writes reconciled
+                        config. Only useful if gateway-engine is running on this host
+                        (e.g. a local dev-env.sh slot) -- not run automatically.
   sync-models --legacy Emergency direct mutation path for one-release rollback
   upgrade              Download newer binary + rebuild Docker image if available
   health               Show per-provider auth status and container state
