@@ -16,13 +16,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install project and SBOM generator
+      - name: Install SBOM generator
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e .
           python -m pip install cyclonedx-bom
       - name: Generate CycloneDX SBOM
-        run: cyclonedx-py environment --output-format JSON --output-file ai-gateway-python.cdx.json
+        run: cyclonedx-py requirements -i requirements/ci-runner-venv.txt --output-format JSON --output-file ai-gateway-python.cdx.json
       - uses: actions/upload-artifact@v4
         with:
           name: ai-gateway-sbom
