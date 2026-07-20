@@ -53,7 +53,7 @@ x-langfuse-env: &langfuse-env
 services:
   langfuse-worker:
     container_name: PROD-langfuse-worker
-    image: docker.io/langfuse/langfuse-worker:3
+    image: docker.io/langfuse/langfuse-worker:3@sha256:81e8e9aa7f8685ac504674dc37a8b48c12544884e014a8965b978533e26fc2a2
     restart: always
     depends_on: &id001
       postgres:
@@ -70,7 +70,7 @@ services:
       <<: *langfuse-env
   langfuse-web:
     container_name: PROD-langfuse-web
-    image: docker.io/langfuse/langfuse:3
+    image: docker.io/langfuse/langfuse:3@sha256:0c8ff747c7e5c07ebd15ffd0165e9e87c00d172da6feb56f94841f432b69d3fa
     restart: always
     depends_on: *id001
     ports:
