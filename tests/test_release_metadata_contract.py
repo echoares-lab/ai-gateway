@@ -49,7 +49,7 @@ def test_compose_passes_release_build_args() -> None:
 
 def test_k3s_promotion_installs_pinned_kubectl_before_rendering() -> None:
     workflow = (ROOT / ".github/workflows/promote-k3s-images.yml").read_text(encoding="utf-8")
-    setup_index = workflow.index("azure/setup-kubectl@v4")
+    setup_index = workflow.index("azure/setup-kubectl")
     version_index = workflow.index("version: v1.34.1", setup_index)
     render_index = workflow.index("kubectl kustomize", version_index)
     assert setup_index < version_index < render_index

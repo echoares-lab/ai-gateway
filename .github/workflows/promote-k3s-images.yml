@@ -278,6 +278,14 @@ jobs:
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
           echo "Resolved cliproxy candidate ${REF} -> ${DIGEST}"
 
+      - name: Checkout k3s-01
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: echoares-lab/k3s-01
+          ref: production
+          path: k3s-01
+          token: ${{ steps.token.outputs.token }}
+
       - name: Resolve image pins
         id: pins
         env:
@@ -337,13 +345,75 @@ jobs:
           echo "branch_suffix=${BRANCH_SUFFIX}" >> "$GITHUB_OUTPUT"
           echo "Promoting GE=${GE} VERSION=${GATEWAY_VERSION} CP=${CP} DS=${DS} CLIPROXY=${CLIPROXY}"
 
-      - name: Checkout k3s-01
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: echoares-lab/k3s-01
-          ref: production
-          path: k3s-01
-          token: ${{ steps.token.outputs.token }}
+          # Extract staging pins and compare with production
+          python3 - <<'EOF'
+          import re
+          import os
+          from pathlib import Path
+
+          def get_container_image(file_path: Path, container_name: str) -> str:
+              if not file_path.is_file():
+                  return ""
+              content = file_path.read_text(encoding="utf-8")
+              pattern = re.compile(
+                  rf"-\s+name:\s*{re.escape(container_name)}\b(?:[ \t]*\n|[^-\n].*\n)*?[ \t]+image:\s*(?:>\-\s*\n[ \t]+)?([^\s\n]+)"
+              )
+              m = pattern.search(content)
+              if m:
+                  return m.group(1).strip()
+              return ""
+
+          def get_kustomize_image(file_path: Path, image_name: str) -> str:
+              if not file_path.is_file():
+                  return ""
+              content = file_path.read_text(encoding="utf-8")
+              pattern = re.compile(
+                  rf"-\s+name:\s*{re.escape(image_name)}\b(?:[ \t]*\n|[^-\n].*\n)*?[ \t]+(?:newTag:\s*\"?([^\n\"]+)\"?|digest:\s*([^\n\s]+))"
+              )
+              m = pattern.search(content)
+              if m:
+                  val = m.group(1) or m.group(2)
+                  return val.strip()
+              return ""
+
+          def parse_tag_or_digest(image_ref: str) -> str:
+              if "@" in image_ref:
+                  return image_ref.split("@")[-1]
+              if ":" in image_ref:
+                  return image_ref.split(":")[-1]
+              return image_ref
+
+          k3s_repo = Path("k3s-01")
+          staging_dir = k3s_repo / "kubernetes/workloads/home/ai-gateway/overlays/staging"
+          prod_dir = k3s_repo / "kubernetes/workloads/home/ai-gateway/overlays/k3s-01"
+
+          # 1. LiteLLM
+          stg_litellm = get_container_image(staging_dir / "core-workloads.yaml", "litellm")
+          prod_litellm = get_container_image(prod_dir / "core-workloads.yaml", "litellm")
+
+          # 2. Langfuse
+          stg_langfuse_raw = get_container_image(staging_dir / "observability.yaml", "langfuse-web")
+          stg_langfuse = parse_tag_or_digest(stg_langfuse_raw)
+          prod_langfuse = get_kustomize_image(prod_dir / "kustomization.yaml", "docker.io/langfuse/langfuse")
+
+          # 3. Langfuse Worker
+          stg_worker_raw = get_container_image(staging_dir / "observability.yaml", "langfuse-worker")
+          stg_worker = parse_tag_or_digest(stg_worker_raw)
+          prod_worker = get_kustomize_image(prod_dir / "kustomization.yaml", "docker.io/langfuse/langfuse-worker")
+
+          litellm_val = stg_litellm if stg_litellm != prod_litellm else ""
+          langfuse_val = stg_langfuse if stg_langfuse != prod_langfuse else ""
+          worker_val = stg_worker if stg_worker != prod_worker else ""
+
+          print(f"Staging LiteLLM: {stg_litellm} | Production LiteLLM: {prod_litellm} -> resolve: {litellm_val}")
+          print(f"Staging Langfuse: {stg_langfuse} | Production Langfuse: {prod_langfuse} -> resolve: {langfuse_val}")
+          print(f"Staging Worker: {stg_worker} | Production Worker: {prod_worker} -> resolve: {worker_val}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"litellm={litellm_val}\n")
+              f.write(f"langfuse={langfuse_val}\n")
+              f.write(f"langfuse_worker={worker_val}\n")
+          EOF
 
       - name: Install kubectl for Kustomize validation
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
@@ -359,10 +429,16 @@ jobs:
           CP='${{ steps.pins.outputs.credential_prober }}'
           DS='${{ steps.pins.outputs.docs_server }}'
           CLIPROXY='${{ steps.pins.outputs.cliproxy }}'
+          LITELLM='${{ steps.pins.outputs.litellm }}'
+          LANGFUSE='${{ steps.pins.outputs.langfuse }}'
+          LANGFUSE_WORKER='${{ steps.pins.outputs.langfuse_worker }}'
           [[ -n "${GE}" ]] && ARGS+=(--gateway-engine "${GE}" --gateway-version "${GATEWAY_VERSION}")
           [[ -n "${CP}" ]] && ARGS+=(--credential-prober "${CP}")
           [[ -n "${DS}" ]] && ARGS+=(--docs-server "${DS}")
           ARGS+=(--cliproxy "${CLIPROXY}")
+          [[ -n "${LITELLM}" ]] && ARGS+=(--litellm "${LITELLM}")
+          [[ -n "${LANGFUSE}" ]] && ARGS+=(--langfuse "${LANGFUSE}")
+          [[ -n "${LANGFUSE_WORKER}" ]] && ARGS+=(--langfuse-worker "${LANGFUSE_WORKER}")
           python3 -m scripts.k3s.promote_k3s_images "${ARGS[@]}"
           kubectl kustomize k3s-01/kubernetes/workloads/home/ai-gateway/overlays/k3s-01 >/dev/null
 
@@ -399,13 +475,29 @@ jobs:
           git checkout -b "$BRANCH"
           git add \
             kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml \
-            kubernetes/workloads/home/ai-gateway/overlays/k3s-01/core-workloads.yaml
+            kubernetes/workloads/home/ai-gateway/overlays/k3s-01/core-workloads.yaml \
+            kubernetes/workloads/home/ai-gateway/overlays/k3s-01/db-jobs.yaml
           git commit -m "chore(ai-gateway): promote image and release metadata"
           git push -u origin "$BRANCH"
 
           SMOKE_NOTE="Staging deep-smoke --full: **passed** (CI promote gate #410)."
           if [[ "${DEEP_SMOKE_SKIPPED}" == "true" ]]; then
             SMOKE_NOTE="⚠️ Staging deep-smoke **skipped** via workflow_dispatch skip_deep_smoke=true."
+          fi
+
+          EXTRA_CHECKLIST=""
+          LITELLM_PIN='${{ steps.pins.outputs.litellm }}'
+          LANGFUSE_PIN='${{ steps.pins.outputs.langfuse }}'
+          if [[ -n "${LITELLM_PIN}" ]]; then
+            EXTRA_CHECKLIST+=$'\n### LiteLLM promotion checklist\n'
+            EXTRA_CHECKLIST+=$'- [ ] **Prisma migration review:** read release notes; inspect `litellm-migrate` job / Prisma migrations in the new image.\n'
+            EXTRA_CHECKLIST+=$'- [ ] If migrations are not backward-compatible, confirm DB backup is planned/executed before merge.\n'
+            EXTRA_CHECKLIST+=$'- [ ] Confirm `litellm-migrate` Job succeeded on staging.\n'
+          fi
+          if [[ -n "${LANGFUSE_PIN}" ]]; then
+            EXTRA_CHECKLIST+=$'\n### Langfuse promotion checklist\n'
+            EXTRA_CHECKLIST+=$'- [ ] **Migration review:** check Langfuse release notes for Postgres/ClickHouse schema changes.\n'
+            EXTRA_CHECKLIST+=$'- [ ] Trace ingestion + worker health verified (traces in Langfuse UI, worker logs clean).\n'
           fi
 
           gh pr create --repo echoares-lab/k3s-01 --base production --head "$BRANCH" \
@@ -419,18 +511,23 @@ jobs:
           - credential-prober: \`${{ steps.pins.outputs.credential_prober }}\`
           - docs-server: \`${{ steps.pins.outputs.docs_server }}\`
           - cliproxy (digest): \`${{ steps.pins.outputs.cliproxy }}\`
+          $( [[ -n "${LITELLM_PIN}" ]] && echo "- litellm: \`\${LITELLM_PIN}\`" )
+          $( [[ -n "${LANGFUSE_PIN}" ]] && echo "- langfuse: \`\${LANGFUSE_PIN}\`" )
 
           ## Staging deep-smoke (promote gate)
-          ${SMOKE_NOTE}
+          \${SMOKE_NOTE}
 
           \`\`\`
-          ${DEEP_SMOKE_SUMMARY:-"(no summary — skipped or empty)"}
+          \${DEEP_SMOKE_SUMMARY:-"(no summary — skipped or empty)"}
           \`\`\`
+          \${EXTRA_CHECKLIST}
 
           ## Test plan
           - [ ] \`kubectl kustomize kubernetes/workloads/home/ai-gateway/overlays/k3s-01\`
           - [ ] After merge, confirm ArgoCD sync and pod imageIDs
           - [ ] Thin prod Gate D / post-merge smoke after sync
+
+          **No Auto-Merge**: This PR must be reviewed and merged manually.
           EOF
           )"
 
