@@ -426,3 +426,34 @@ jobs:
           - [ ] Thin prod Gate D / post-merge smoke after sync
           EOF
           )"
+
+  notify-failure:
+    needs: [resolve-sha, bump-staging, staging-deep-smoke, promote]
+    if: |
+      always() &&
+      contains(needs.*.result, 'failure')
+    runs-on: arc
+    steps:
+      - name: Send Slack Notification on Failure
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          PAYLOAD=$(jq -n \
+            --arg repo "${{ github.repository }}" \
+            --arg sha "${{ github.sha }}" \
+            --arg workflow "${{ github.workflow }}" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg server_url "${{ github.server_url }}" \
+            '
+            {
+              "text": "❌ *Workflow Failure: \($workflow)*\n*Repository:* \($repo)\n*SHA:* \($sha)\n*Run URL:* \($server_url)/\($repo)/actions/runs/\($run_id)",
+              "workflow": $workflow,
+              "repository": $repo,
+              "sha": $sha,
+              "run_url": "\($server_url)/\($repo)/actions/runs/\($run_id)"
+            }
+            '
+          )
+          curl -s -X POST -H 'Content-type: application/json' --data "$PAYLOAD" "$SLACK_WEBHOOK_URL"
+
