@@ -151,7 +151,7 @@ Required secrets for digest resolution: `NEXUS_USERNAME`, `NEXUS_PASSWORD`, plus
 
 ## Verification
 
-1. ArgoCD `k3s-01` app Synced/Healthy; `ai-gateway` namespace resources reconciled.
+1. ArgoCD `k3s-01` app Synced/Healthy (sync triggers near-instantly on git push via the registered GitHub webhook); `ai-gateway` namespace resources reconciled.
 2. Bootstrap + migration Jobs complete; `litellm` and `langfuse` databases exist on
    `platform-postgres`.
 3. `kubectl -n ai-gateway get pods` all Ready (gateway-engine, litellm, cliproxy, docs-server,
