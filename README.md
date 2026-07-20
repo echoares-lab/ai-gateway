@@ -6,6 +6,8 @@ This repository manages a production-grade AI Gateway using **LiteLLM**, **Langf
 
 ## Core Components
 
+For a detailed breakdown of all repository services, their features, and lifecycles, see the [Service Architecture Documentation](docs/SERVICES.md).
+
 ### 1. gateway-engine + LiteLLM
 **Clients hit `gateway-engine` on port 4000** (format translation, model prefix, policy). LiteLLM runs behind it as the model router/adapter.
 *   **Unified API:** Access OpenAI, Anthropic, Gemini, and more via a single OpenAI-compatible format.
@@ -22,6 +24,12 @@ Provides the "dashboard" and tracing layer for all AI calls.
 A specialized proxy that allows LiteLLM to use consumer-tier accounts (ChatGPT Plus, Claude Pro, Gemini Advanced / Antigravity, X Premium).
 *   **No Token Billing:** Uses your existing subscriptions.
 *   **OAuth Management:** Handles token refreshes and session persistence for OpenAI, Anthropic, Google (via Antigravity CLI), xAI (Grok), and Moonshot (Kimi).
+
+### 4. Auxiliary & Integrated Services
+- **[credential-prober](docs/SERVICES.md#2-credential-prober)**: Background daemon that monitors and syncs credential health and sets cooldowns.
+- **[docs-server](docs/SERVICES.md#3-docs-server)**: Hosts interactive Scalar API documentation at `http://localhost:8002`.
+- **[mcp-postgres](docs/SERVICES.md#4-mcp-postgres)**: FastMCP SQL schema execution tool for LLMs over stdio.
+- **[policy-engine](docs/SERVICES.md#5-policy-engine-in-process-evaluator)**: Routing policy logic integrated **in-process** inside `gateway-engine`.
 
 ## Advanced Capabilities
 
@@ -86,12 +94,12 @@ To use this gateway in Cursor, follow these steps:
 5.  **Verify Connection:** Use the `Cursor Chat` and ask a question. Check your **Langfuse dashboard** (`http://localhost:3000`) to verify the request was captured.
 
 ## Documentation Index
+*   [docs/SERVICES.md](./docs/SERVICES.md): Comprehensive service architecture, features, and status overview.
 *   [docs/process/](./docs/process/): Agent workflow, testing/promotion policy, worktrees, dispatch.
 *   [docs/ops/RUNBOOK.md](./docs/ops/RUNBOOK.md): Commands for setup, maintenance, and troubleshooting.
 *   [docs/TENANCY.md](./docs/TENANCY.md): Foundational tenancy and workspace domain model design.
 *   [docs/CLIENT_COMPATIBILITY.md](./docs/CLIENT_COMPATIBILITY.md): Supported client compatibility matrix and integration profiles.
 *   [docs/MODELS.md](./docs/MODELS.md): Detailed reference for available models, rate limits, and authentication.
-*   [docs/ops/RUNBOOK.md](./docs/ops/RUNBOOK.md): Commands for setup, maintenance, and troubleshooting.
 *   [docs/ROADMAP.md](./docs/ROADMAP.md): Active roadmap focus and explicitly deferred platform-control areas.
 *   [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md): MCP control-plane architecture decision record.
 *   [docs/ADAPTIVE_ROUTING.md](./docs/ADAPTIVE_ROUTING.md): Adaptive provider routing design, telemetry plan, and implementation roadmap.
