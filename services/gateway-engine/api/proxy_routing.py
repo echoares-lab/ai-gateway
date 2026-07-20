@@ -20,6 +20,10 @@ from core.metrics import (
     PROVIDER_LATENCY,
     PROVIDER_RATE_LIMITS,
     PROVIDER_REQUESTS,
+    TOKEN_CACHE_CANONICAL_INPUT,
+    TOKEN_CACHE_CANONICAL_OUTPUT,
+    TOKEN_CACHE_INPUT,
+    TOKEN_CACHE_OUTPUT,
     TOKEN_CANONICAL_INPUT,
     TOKEN_CANONICAL_OUTPUT,
     TOKEN_CANONICAL_REQUESTS,
@@ -473,7 +477,7 @@ async def _apply_policy_engine(token: str | None, body: dict) -> dict:
         return body
 
 
-def _record_token_usage(model: str, response_json: dict) -> None:
+def _record_token_usage(model: str, response_json: dict, headers: dict | httpx.Headers | None = None) -> None:
     """Extract and record token usage from API response for analytics (#117)."""
     provider = _provider_of(model)
     label_model = model or "-"
@@ -482,38 +486,124 @@ def _record_token_usage(model: str, response_json: dict) -> None:
         input_tokens = usage.get("prompt_tokens", 0)
         output_tokens = usage.get("completion_tokens", 0)
         if input_tokens > 0 or output_tokens > 0:
-            TOKEN_INPUT.labels(provider, label_model).inc(input_tokens)
-            TOKEN_OUTPUT.labels(provider, label_model).inc(output_tokens)
-            TOKEN_REQUESTS.labels(provider, label_model).inc()
+            is_litellm_cache = False
+            if headers:
+                # Check both lowercase and exact casing for x-litellm-cache
+                cache_header = headers.get("x-litellm-cache") or headers.get("X-LiteLLM-Cache")
+                if cache_header == "HIT":
+                    is_litellm_cache = True
+
+            registry_metadata = _model_registry_metadata_for_policy(model)
+            canonical_model_id = label_model
+            canonical_provider = provider
+            canonical_family = provider
+            if registry_metadata:
+                canonical_model_id = registry_metadata.get("canonical_model_id") or label_model
+                canonical_provider = registry_metadata.get("provider") or provider
+                canonical_family = registry_metadata.get("family") or canonical_provider
+
+            if is_litellm_cache:
+                # Record under litellm cache type
+                TOKEN_CACHE_INPUT.labels(provider, label_model, "litellm").inc(input_tokens)
+                TOKEN_CACHE_OUTPUT.labels(provider, label_model, "litellm").inc(output_tokens)
+                if registry_metadata:
+                    TOKEN_CACHE_CANONICAL_INPUT.labels(
+                        provider,
+                        label_model,
+                        canonical_model_id,
+                        canonical_provider,
+                        canonical_family,
+                        "litellm",
+                    ).inc(input_tokens)
+                    TOKEN_CACHE_CANONICAL_OUTPUT.labels(
+                        provider,
+                        label_model,
+                        canonical_model_id,
+                        canonical_provider,
+                        canonical_family,
+                        "litellm",
+                    ).inc(output_tokens)
+            else:
+                # Record normal upstream non-cached consumption
+                TOKEN_INPUT.labels(provider, label_model).inc(input_tokens)
+                TOKEN_OUTPUT.labels(provider, label_model).inc(output_tokens)
+                TOKEN_REQUESTS.labels(provider, label_model).inc()
+                if registry_metadata:
+                    TOKEN_CANONICAL_INPUT.labels(
+                        provider,
+                        label_model,
+                        canonical_model_id,
+                        canonical_provider,
+                        canonical_family,
+                    ).inc(input_tokens)
+                    TOKEN_CANONICAL_OUTPUT.labels(
+                        provider,
+                        label_model,
+                        canonical_model_id,
+                        canonical_provider,
+                        canonical_family,
+                    ).inc(output_tokens)
+                    TOKEN_CANONICAL_REQUESTS.labels(
+                        provider,
+                        label_model,
+                        canonical_model_id,
+                        canonical_provider,
+                        canonical_family,
+                    ).inc()
+
+            # Record provider prompt cache hits if details are populated
+            prompt_details = usage.get("prompt_tokens_details") or {}
+            cached_prompt = prompt_details.get("cached_tokens", 0)
+            if cached_prompt > 0:
+                TOKEN_CACHE_INPUT.labels(provider, label_model, "provider").inc(cached_prompt)
+                if registry_metadata:
+                    TOKEN_CACHE_CANONICAL_INPUT.labels(
+                        provider,
+                        label_model,
+                        canonical_model_id,
+                        canonical_provider,
+                        canonical_family,
+                        "provider",
+                    ).inc(cached_prompt)
+    except (AttributeError, TypeError, KeyError):
+        # Safely ignore malformed responses
+        pass
+
+
+def _record_cached_token_usage(model: str, response_json: dict, cache_type: str) -> None:
+    """Record token metrics when served from local cache (gateway) (#117)."""
+    provider = _provider_of(model)
+    label_model = model or "-"
+    try:
+        usage = response_json.get("usage", {})
+        input_tokens = usage.get("prompt_tokens", 0)
+        output_tokens = usage.get("completion_tokens", 0)
+        if input_tokens > 0 or output_tokens > 0:
+            TOKEN_CACHE_INPUT.labels(provider, label_model, cache_type).inc(input_tokens)
+            TOKEN_CACHE_OUTPUT.labels(provider, label_model, cache_type).inc(output_tokens)
             registry_metadata = _model_registry_metadata_for_policy(model)
             if registry_metadata:
                 canonical_model_id = registry_metadata.get("canonical_model_id") or label_model
                 canonical_provider = registry_metadata.get("provider") or provider
                 canonical_family = registry_metadata.get("family") or canonical_provider
-                TOKEN_CANONICAL_INPUT.labels(
+                TOKEN_CACHE_CANONICAL_INPUT.labels(
                     provider,
                     label_model,
                     canonical_model_id,
                     canonical_provider,
                     canonical_family,
+                    cache_type,
                 ).inc(input_tokens)
-                TOKEN_CANONICAL_OUTPUT.labels(
+                TOKEN_CACHE_CANONICAL_OUTPUT.labels(
                     provider,
                     label_model,
                     canonical_model_id,
                     canonical_provider,
                     canonical_family,
+                    cache_type,
                 ).inc(output_tokens)
-                TOKEN_CANONICAL_REQUESTS.labels(
-                    provider,
-                    label_model,
-                    canonical_model_id,
-                    canonical_provider,
-                    canonical_family,
-                ).inc()
-    except (AttributeError, TypeError, KeyError):
-        # Safely ignore malformed responses
-        pass
+    except Exception as exc:
+        log.warning("failed to record cached token usage: %s", exc)
 
 
 def _record_provider_signal(model: str, status: int, elapsed: float) -> None:

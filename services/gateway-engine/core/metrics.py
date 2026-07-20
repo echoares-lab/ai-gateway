@@ -85,3 +85,25 @@ TOKEN_CANONICAL_REQUESTS = Counter(
     "Total requests with token data by requested provider/model and canonical registry model",
     ["provider", "model", "canonical_model_id", "canonical_provider", "canonical_family"],
 )
+
+# --- Token cache analytics ---
+TOKEN_CACHE_INPUT = Counter(
+    "gateway_engine_token_cache_input_total",
+    "Total input tokens served from cache by provider, model, and cache type",
+    ["provider", "model", "cache_type"],  # cache_type: gateway, litellm, provider
+)
+TOKEN_CACHE_OUTPUT = Counter(
+    "gateway_engine_token_cache_output_total",
+    "Total output tokens served from cache by provider, model, and cache type",
+    ["provider", "model", "cache_type"],  # cache_type: gateway, litellm, provider
+)
+TOKEN_CACHE_CANONICAL_INPUT = Counter(
+    "gateway_engine_token_cache_canonical_input_total",
+    "Total input tokens served from cache by requested provider/model, canonical registry model, and cache type",
+    ["provider", "model", "canonical_model_id", "canonical_provider", "canonical_family", "cache_type"],
+)
+TOKEN_CACHE_CANONICAL_OUTPUT = Counter(
+    "gateway_engine_token_cache_canonical_output_total",
+    "Total output tokens served from cache by requested provider/model, canonical registry model, and cache type",
+    ["provider", "model", "canonical_model_id", "canonical_provider", "canonical_family", "cache_type"],
+)
