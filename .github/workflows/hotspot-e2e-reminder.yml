@@ -21,8 +21,8 @@ jobs:
     # Lightweight comment bot — avoid self-hosted queue behind Docker CI jobs.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
         id: filter
         with:
           filters: |
@@ -35,7 +35,7 @@ jobs:
               - 'dev-env.sh'
       - name: Remind to run Gate C (opt-in)
         if: steps.filter.outputs.hotspot == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const marker = '<!-- hotspot-e2e-reminder -->';
