@@ -163,7 +163,7 @@ Renovate:
 
 1. Resolve Nexus candidate tag → immutable digest.
 2. Pin digest in k3s-01 `ai-gateway-staging` overlay.
-3. Wait for ArgoCD sync; confirm cliproxy pod image ID matches digest.
+3. Wait for ArgoCD sync (near-instant due to registered GitHub webhook; typically takes single-digit seconds); confirm cliproxy pod image ID matches digest.
 4. Run staging deep-smoke:
 
    ```bash
