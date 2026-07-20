@@ -7,7 +7,7 @@ volumes:
 services:
   postgres:
     container_name: TESTING-postgres-dev
-    image: postgres:17
+    image: postgres:17@sha256:a426e44bac0b759c95894d68e1a0ac03ecc20b619f498a91aae373bf06d8508d
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -25,7 +25,7 @@ services:
       retries: 10
   redis:
     container_name: TESTING-redis-dev
-    image: docker.io/redis:7
+    image: docker.io/redis:7@sha256:a8f08480e1f88f2647fed492d1178c06abb0d0c1fbf02c682a61e2f483fb3954
     restart: unless-stopped
     command: '--requirepass ${REDIS_AUTH:-myredissecret} --maxmemory-policy noeviction
 
@@ -75,7 +75,7 @@ services:
         condition: service_healthy
   gateway-migrate:
     container_name: TESTING-gateway-migrate-dev
-    image: postgres:17
+    image: postgres:17@sha256:a426e44bac0b759c95894d68e1a0ac03ecc20b619f498a91aae373bf06d8508d
     restart: "no"
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -190,7 +190,7 @@ services:
     - ./litellm-config.yaml:/config/litellm-config.yaml:ro
   cpa-manager:
     container_name: TESTING-cpa-manager-dev
-    image: seakee/cpa-manager:1.5.5
+    image: seakee/cpa-manager:1.5.5@sha256:051bff237d8deb0cd6d9825e0c571ae8cd81f1aad91eb5ecf0dc253cf9a89731
     restart: unless-stopped
     depends_on:
     - cliproxy
