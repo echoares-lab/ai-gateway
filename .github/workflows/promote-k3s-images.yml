@@ -107,9 +107,102 @@ jobs:
             echo "skip_deep_smoke=false" >> "$GITHUB_OUTPUT"
           fi
 
-  staging-deep-smoke:
+  bump-staging:
     needs: resolve-sha
-    if: needs.resolve-sha.outputs.skip_deep_smoke != 'true'
+    if: >
+      needs.resolve-sha.outputs.skip_deep_smoke != 'true' &&
+      needs.resolve-sha.outputs.expect_git_sha != ''
+    runs-on: arc
+    steps:
+      - name: Resolve token
+        id: token
+        env:
+          PAT: ${{ secrets.K3S_GITOPS_TOKEN || secrets.GH_PAT_AUTO_APPROVE }}
+        run: |
+          if [[ -z "${PAT}" ]]; then
+            echo "::error::Missing K3S_GITOPS_TOKEN or GH_PAT_AUTO_APPROVE secret; cannot bump k3s-01 staging pins."
+            exit 1
+          fi
+          echo "token=${PAT}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout ai-gateway (for promote script)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Checkout k3s-01
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: echoares-lab/k3s-01
+          ref: production
+          path: k3s-01
+          token: ${{ steps.token.outputs.token }}
+
+      - name: Install kubectl for Kustomize validation
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4
+        with:
+          version: v1.34.1
+
+      - name: Bump staging image pins and push
+        id: bump
+        env:
+          GIT_SHA: ${{ needs.resolve-sha.outputs.expect_git_sha }}
+        run: |
+          set -euo pipefail
+          python3 -m scripts.k3s.promote_k3s_images \
+            --k3s-repo k3s-01 \
+            --overlay kubernetes/workloads/home/ai-gateway/overlays/staging/kustomization.yaml \
+            --gateway-engine "${GIT_SHA}" \
+            --credential-prober "${GIT_SHA}" \
+            --docs-server "${GIT_SHA}"
+          kubectl kustomize k3s-01/kubernetes/workloads/home/ai-gateway/overlays/staging >/dev/null
+
+          cd k3s-01
+          if git diff --quiet; then
+            echo "staging already pinned to ${GIT_SHA}"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "ai-gateway-ci"
+          git config user.email "ci@echoares-lab.invalid"
+          git add kubernetes/workloads/home/ai-gateway/overlays/staging/kustomization.yaml
+          git commit -m "chore(staging): bump ai-gateway image pins to ${GIT_SHA}"
+          git push origin HEAD:production
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for ArgoCD sync and rollout
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          KUBECONFIG_DATA: ${{ secrets.K3S_KUBECONFIG }}
+          GIT_SHA: ${{ needs.resolve-sha.outputs.expect_git_sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KUBECONFIG_DATA}" ]]; then
+            echo "::warning::Missing K3S_KUBECONFIG; skipping rollout wait (staging-deep-smoke will still gate on git_sha)."
+            exit 0
+          fi
+          mkdir -p "$HOME/.kube"
+          if printf '%s' "$KUBECONFIG_DATA" | grep -q 'apiVersion:'; then
+            printf '%s' "$KUBECONFIG_DATA" >"$HOME/.kube/config"
+          else
+            printf '%s' "$KUBECONFIG_DATA" | base64 -d >"$HOME/.kube/config"
+          fi
+          chmod 600 "$HOME/.kube/config"
+          for i in $(seq 1 30); do
+            IMAGE=$(kubectl -n ai-gateway-staging get deploy gateway-engine -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+            if [[ "$IMAGE" == *"${GIT_SHA}"* ]]; then
+              break
+            fi
+            sleep 10
+          done
+          kubectl -n ai-gateway-staging rollout status deploy/gateway-engine --timeout=180s
+          kubectl -n ai-gateway-staging rollout status deploy/credential-prober --timeout=180s
+          kubectl -n ai-gateway-staging rollout status deploy/docs-server --timeout=180s
+
+  staging-deep-smoke:
+    needs: [resolve-sha, bump-staging]
+    if: >
+      always() &&
+      needs.resolve-sha.outputs.skip_deep_smoke != 'true' &&
+      (needs.bump-staging.result == 'success' || needs.bump-staging.result == 'skipped')
     uses: ./.github/workflows/staging-deep-smoke.yml
     secrets: inherit
     with:
