@@ -1,7 +1,7 @@
 # DEPRECATED: production and the dev stack now pull the patched echoares-lab CLIProxyAPI
 # fork image from Nexus (see CLIPROXY_IMAGE in docker-compose*.yml). This Dockerfile, which
 # bakes the upstream prebuilt binary, is retained only as an offline/upstream fallback.
-FROM alpine:latest
+FROM alpine:latest@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 ARG GIT_SHA=unknown
 ARG ENVIRONMENT=production
 LABEL org.opencontainers.image.source="https://github.com/echoares-lab/ai-gateway" \

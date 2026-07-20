@@ -26,7 +26,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: docker/build-push-action@v5
+    - uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
       with:
         context: ${{ inputs.context }}
         load: true

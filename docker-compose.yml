@@ -104,7 +104,7 @@ services:
     - 8317:8317
   cpa-manager:
     container_name: PROD-cpa-manager
-    image: seakee/cpa-manager:1.5.5
+    image: seakee/cpa-manager:1.5.5@sha256:051bff237d8deb0cd6d9825e0c571ae8cd81f1aad91eb5ecf0dc253cf9a89731
     restart: always
     depends_on:
     - cliproxy
@@ -218,7 +218,7 @@ services:
       start_period: 20m
   clickhouse:
     container_name: PROD-clickhouse
-    image: docker.io/clickhouse/clickhouse-server
+    image: docker.io/clickhouse/clickhouse-server@sha256:1d1f6508eba2dccce2cee9913907c5f7766327debc57a6b1991f2c9e3176c163
     restart: always
     user: 101:101
     environment:
@@ -240,7 +240,7 @@ services:
       start_period: 1s
   minio:
     container_name: PROD-minio
-    image: cgr.dev/chainguard/minio
+    image: cgr.dev/chainguard/minio@sha256:f767919bd003062ac69713cdce920eb922c9fa3388efe96264e78b763342ca1a
     restart: always
     entrypoint: sh
     command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address
@@ -265,7 +265,7 @@ services:
       start_period: 1s
   redis:
     container_name: PROD-redis
-    image: docker.io/redis:7
+    image: docker.io/redis:7@sha256:a8f08480e1f88f2647fed492d1178c06abb0d0c1fbf02c682a61e2f483fb3954
     restart: always
     command: '--requirepass ${REDIS_AUTH:-myredissecret} --maxmemory-policy noeviction
 
