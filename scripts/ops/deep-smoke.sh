@@ -342,8 +342,16 @@ check_completion() {
   model="${DEEP_SMOKE_MODELS:-}"
   model="${model%%,*}"
   model="${model:-$DEFAULT_QUICK_MODEL}"
-  payload=$(printf '{"model":"%s","messages":[{"role":"user","content":"ping"}],"max_tokens":8,"user":"%s"}' \
-    "$model" "$SMOKE_TAG")
+  # Content embeds $SMOKE_TAG so every run is a cache miss: gateway-engine's
+  # own /v1/chat/completions cache key (proxy_catchall.py) is built from
+  # model+messages+tools+auth_fingerprint only — it does not include `user`.
+  # A fixed "ping" body therefore collides across runs regardless of the
+  # unique `user` tag, serving a stale cached response (and its stale id)
+  # straight from Redis without ever reaching LiteLLM, so no fresh
+  # LiteLLM_SpendLogs row is written and check_spendlogs below fails on a
+  # request that never actually happened this run.
+  payload=$(printf '{"model":"%s","messages":[{"role":"user","content":"ping %s"}],"max_tokens":8,"user":"%s"}' \
+    "$model" "$SMOKE_TAG" "$SMOKE_TAG")
   raw=$(http_call POST "/v1/chat/completions" "$payload")
   parse_response "$raw"
   if [ "$code" != "200" ]; then
