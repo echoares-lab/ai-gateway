@@ -30,14 +30,60 @@ gateway-engine. The WAF rule expects a second header:
 X-Edge-Auth: <shared edge-gate key>
 ```
 
-**Key location:** 1Password vault `Homelab-GitOps`, item **"ai-gateway - shared edge (WAF)
-key"** — field `header` names the header (`X-Edge-Auth`), field `credential` holds the
-value. Also likely present in OpenBao under the `prod/workloads/ai-gateway/*` path
-convention documented in `docs/CICD_PHASE2_CD_K3S.md` (this is where the k3s deployment's
-own secrets are provisioned from) — the exact key name within that path was **not**
-confirmed from this environment; the `VAULT_TOKEN` available here lacks permission to
-browse/read it. Whoever has proper OpenBao access should confirm and record the exact
-path here.
+**Key location — confirmed 2026-07-19, two places:**
+- 1Password vault `Homelab-GitOps`, item **"ai-gateway - shared edge (WAF) key"** — field
+  `header` names the header (`X-Edge-Auth`), field `credential` holds the value.
+- OpenBao, path **`kv/data/ai-gateway/edge-auth`** (KV v2, mount `kv/`) — fields `header`
+  and `value`, plus a `paired_authorization_key_1password` field pointing back at the
+  client access key item below. This is **not** under the k3s ExternalSecrets convention
+  — confirmed 2026-07-19 by reading the `k3s-01-external-secrets` policy directly: that
+  convention is real and live (`kv/data/prod/workloads/ai-gateway/*` +
+  `kv/data/staging/workloads/ai-gateway/*`, plus a sibling `kv/data/{prod,staging}/workloads/ai-gateway-tokens`
+  path used by policy `ai-gateway-token-writer`), it's just for the k3s deployment's *own*
+  ExternalSecrets-sourced pod config — nothing in this repo's code consumes the WAF
+  edge-auth key (it's checked entirely on Cloudflare's side, never reaching gateway-engine),
+  so there's no reason for a k3s pod to need it, and it correctly lives at its own path
+  instead.
+
+**Reading it:** requires an OpenBao token with the `ai-gateway-secrets` policy. The
+`ai-gateway` AppRole (role_id/secret_id in 1Password item **"ai-gateway - OpenBao AppRole
+(kv/ai-gateway/*)"**, same vault) is scoped exactly to `kv/data/ai-gateway/*` read/write.
+Login: `bao write auth/approle/login role_id=<role_id> secret_id=<secret_id>` against
+`http://openbao.plexplease.com:8201` (or `http://127.0.0.1:8200` on a host running the
+Vault Agent), then `bao kv get kv/ai-gateway/edge-auth`. Its `secret_id` has a 1-year TTL
+(expires ~2027-07-19) — regenerate before then via the `secrets-generator` bootstrap role
+(see next paragraph) or root.
+
+**How this AppRole/policy came to exist:** created via a dedicated bootstrap identity
+(policy `secrets-generator`: can create/edit policies, AppRole roles, and mint tokens —
+root-equivalent capability). As of 2026-07-19 this identity is the **default** for this
+dev account's background Vault Agent (`/home/dev/.config/vault-agent/`, systemd user unit
+`vault-agent.service`) — a deliberate choice by the account owner to have standing
+admin-level access for ongoing OpenBao scoping work, accepting the higher exposure that
+implies versus a narrowly-invoked bootstrap credential. The previous default
+(`workstation-admin`, policy `homelab-interactive-admin`, scoped to homelab infra) had its
+active `secret_id` destroyed so it can no longer authenticate, but its role/policy
+definitions were deliberately left in place as a recovery path — not fully deleted. Its
+role_id is recorded in 1Password item **"ai-gateway/homelab - OpenBao secrets-generator..."**
+(same vault); its own current `secret_id` lives only in the Vault Agent's local files
+(`role_id`/`secret_id` in that directory), not duplicated in 1Password, since regenerating
+it is one command (`bao write -f auth/approle/role/secrets-generator/secret-id`) against
+the OpenBao root token (1Password item **"OpenBao init recovery material 2026-06-19"**,
+file attachment, `root_token` field — the original `vault operator init` output, still
+valid, no TTL) if it's ever lost. Use that root-token path if the `ai-gateway` policy or
+`secrets-generator` itself ever needs new paths/capabilities added — note a token cannot
+modify the policy currently active on itself, so `secrets-generator`'s own policy needs
+root (or a *different* sufficiently-privileged token) to edit, even though it can freely
+create/edit *other* policies.
+
+**Operational quirk:** reading policy documents (`bao policy read <name>` / `GET
+sys/policies/acl/<name>`) fails with `permission denied` when going through the local
+Vault Agent proxy (`http://127.0.0.1:8200`), even for policies the calling token has full
+`sudo` capability on — confirmed 2026-07-19 to be a proxy-specific issue, not a real ACL
+restriction: the identical token against the real server
+(`http://openbao.plexplease.com:8201`) reads policy documents fine. Point `VAULT_ADDR` at
+the real server directly for this specific operation; the local proxy is fine for
+everything else tried so far (`kv` read/write, `auth/approle/*`, policy *write*).
 
 **Which `Authorization` key to send alongside it:** don't use the admin `LITELLM_MASTER_KEY`
 for this — per 1Password item **"ai-gateway - client access key"** (same vault): *"Dedicated
