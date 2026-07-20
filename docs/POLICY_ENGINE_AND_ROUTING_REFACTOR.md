@@ -2,9 +2,9 @@
 
 > **Design / candidate document.** Runtime policy lives in `services/gateway-engine/core/policy/` — there is no standalone `services/policy-engine/` deployment. Treat paths below that say `services/policy-engine/` as historical design names unless noted otherwise.
 
-> **Status:** In progress (Epic [#38](https://github.com/echoares-lab/ai-gateway/issues/38)).
-> Hybrid architecture: `policy-engine` evaluates rules; LiteLLM and CLIProxy execute routing.
-> Fail-open to static `litellm-config.yaml` when policy-engine is unavailable.
+> **Status:** Completed (July 2026).
+> Fully implemented as an **in-process** library (`services/gateway-engine/core/policy/`).
+> Fail-open to static `litellm-config.yaml` when Redis or DB profiles are unavailable.
 
 Design companion: [ROUTING_AND_FAILOVER_STRATEGY.md](./ROUTING_AND_FAILOVER_STRATEGY.md) (CLIProxy
 `fill-first` / `quota-aware` semantics).
@@ -14,15 +14,14 @@ Design companion: [ROUTING_AND_FAILOVER_STRATEGY.md](./ROUTING_AND_FAILOVER_STRA
 ## 1. Architecture
 
 ```text
-Client → gateway-engine → policy-engine /v1/evaluate (optional, fail-open)
+Client → gateway-engine (in-process core/policy/ evaluate)
                     → LiteLLM (HTTP paths) → CLIProxy → Provider OAuth
                     → CLIProxy (Codex WS path, policy bypass — see §9)
 ```
 
 | Component | Role |
 |-----------|------|
-| `gateway-engine` | Build `RoutingContext`, call evaluate, inject `metadata.routing_decision` |
-| `policy-engine` | Evaluate rules, return `RoutingDecision` |
+| `gateway-engine` | Evaluates in-process rules via `core/policy/`, builds `RoutingContext`, and injects `metadata.routing_decision` |
 | LiteLLM | Model-level fallbacks, deployment ordering |
 | CLIProxy | Credential pools, session-affinity, quota-aware routing |
 
@@ -30,7 +29,7 @@ Client → gateway-engine → policy-engine /v1/evaluate (optional, fail-open)
 
 ## 2. Core schemas
 
-Defined in `services/policy-engine/schemas.py` (issue 38-01):
+Defined in `services/gateway-engine/core/policy/schemas.py` (issue 38-01):
 
 - `RoutingContext` — tenancy, capabilities, rate limits, quota headroom
 - `RoutingDecision` — gate, fallback chain, `session_key`, `quota_aware_mode`,

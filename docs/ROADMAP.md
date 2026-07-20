@@ -215,6 +215,15 @@ Local **dev** stacks (`./dev-env.sh` / `TESTING-*`) remain for development. Prod
 
 Broader credential-pool work remains candidate-only (C-CRED-*).
 
+
+### Policy Engine and Routing Refactor ([#38](https://github.com/echoares-lab/ai-gateway/issues/38))
+
+Fully implemented as an **in-process** system under `services/gateway-engine/core/policy/` (instead of a standalone service), providing fast in-memory evaluation for:
+- Repository and agent affinity
+- Budget gates and Redis-backed rate limits
+- Fallback ordering and MCP visibility filters
+
+
 ### Earlier roadmap themes (closed for documented scope)
 
 Future work in these areas needs new atomic issues after promotion from
