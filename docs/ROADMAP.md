@@ -71,6 +71,102 @@ Release invariants:
 
 Plan: [`docs/superpowers/plans/cross-model-tool-use-benchmark.md`](./superpowers/plans/cross-model-tool-use-benchmark.md).
 
+
+---
+
+## Next — CI/CD failure alerting and honest Gate D signaling
+
+Approve coordination epic [#468](https://github.com/echoares-lab/ai-gateway/issues/468)
+and its four atomic children. Adds failure notification to the two
+previously-silent pipelines that caused this session's staging-drift and
+dormant-CLIProxyAPI-sync incidents, and fixes Gate D's misleading
+naming/timing/masking.
+
+| Order | Atomic issue | Repository | State / dependency |
+|------:|--------------|------------|--------------------|
+| 1 | [Notify on promote-k3s-images.yml failure #470](https://github.com/echoares-lab/ai-gateway/issues/470) | `ai-gateway` | Ready; blocked on webhook secret provisioning |
+| 1 | [Notify on weekly-upstream-track.yml failure #24](https://github.com/echoares-lab/CLIProxyAPI/issues/24) | `CLIProxyAPI` | Ready; blocked on webhook secret provisioning |
+| 2 | [Fix Gate D naming/timing/masking #471](https://github.com/echoares-lab/ai-gateway/issues/471) | `ai-gateway` | Depends on Order-1 ai-gateway child |
+| 3 | [Real post-promotion Gate D #102](https://github.com/echoares-lab/k3s-01/issues/102) | `k3s-01` | Depends on Order-2 |
+
+Release invariants:
+- parent epic is coordination-only;
+- Order-1 ai-gateway child hard-blocks the litellm/langfuse-automation
+  epic's Order-1 child (same file: `promote-k3s-images.yml`);
+- Order-1 CLIProxyAPI child hard-blocks the CLIProxyAPI-unblock epic's PAT
+  child (same file: `weekly-upstream-track.yml`);
+- neither webhook secret exists yet — wiring may merge ahead of the secret
+  being provisioned; closeouts must say so explicitly.
+
+---
+
+## Next — ArgoCD GitHub webhook for near-real-time sync
+
+Approve coordination epic [#100](https://github.com/echoares-lab/k3s-01/issues/100)
+and its two atomic children. Replaces ArgoCD's 120s poll interval with
+near-instant webhook-triggered sync.
+
+| Order | Atomic issue | Repository | State / dependency |
+|------:|--------------|------------|--------------------|
+| 1 | [Register GitHub webhook #103](https://github.com/echoares-lab/k3s-01/issues/103) | `k3s-01` | Ready; may need repo-admin scope beyond agent auth |
+| 2 | [Document webhook in runbook #104](https://github.com/echoares-lab/k3s-01/issues/104) | `k3s-01` | Depends on Order-1 |
+
+Release invariants:
+- parent epic is coordination-only;
+- acceptance is evidence-based (observed sync latency), not just "PR
+  merged" — most of this epic's work has no corresponding git diff.
+
+---
+
+## Next — Automate litellm/langfuse staging-to-production promotion
+
+Approve coordination epic [#469](https://github.com/echoares-lab/ai-gateway/issues/469)
+and its two atomic children. Extends the proven `bump-staging`/`promote`
+pattern (currently app-images-only) to litellm and langfuse.
+
+| Order | Atomic issue | Repository | State / dependency |
+|------:|--------------|------------|--------------------|
+| 1 | [Mirror litellm/langfuse pins to k3s-01 staging #472](https://github.com/echoares-lab/ai-gateway/issues/472) | `ai-gateway` + `k3s-01` | Blocked on #468's Order-1 ai-gateway child (same file) |
+| 2 | [Open k3s-01 prod PRs for litellm/langfuse #473](https://github.com/echoares-lab/ai-gateway/issues/473) | `ai-gateway` + `k3s-01` | Depends on Order-1 |
+
+Release invariants:
+- parent epic is coordination-only;
+- never auto-merge the resulting prod PRs;
+- litellm promotion must always restate the Prisma-migration-review gate
+  from `docs/ops/DEPENDENCY_UPDATES.md` §LiteLLM, not treat it like the
+  simpler app-image path.
+
+---
+
+## Next — CLIProxyAPI weekly upstream-sync automation unblock
+
+Approve coordination epic [#23](https://github.com/echoares-lab/CLIProxyAPI/issues/23)
+and its two atomic children. Unblocks the weekly fork-sync workflow's PR
+creation and its dispatch into ai-gateway's promote pipeline.
+
+| Order | Atomic issue | Repository | State / dependency |
+|------:|--------------|------------|--------------------|
+| 1 | [PAT secrets for PR creation + dispatch #25](https://github.com/echoares-lab/CLIProxyAPI/issues/25) | `CLIProxyAPI` | Blocked on #468's Order-1 CLIProxyAPI child (same file); also blocked on human-provisioned PAT values |
+| 1 | [pr-path-guard exception for automation branches #26](https://github.com/echoares-lab/CLIProxyAPI/issues/26) | `CLIProxyAPI` | Ready; different file, parallel with the above |
+
+Release invariants:
+- parent epic is coordination-only;
+- PAT secrets are a hard external/human dependency — closeout must state
+  explicitly whether they were actually provisioned, not just wired.
+
+---
+
+## Next — Standardize k3s-01 image-pin mechanism
+
+Approve coordination epic [#101](https://github.com/echoares-lab/k3s-01/issues/101)
+and its two atomic children. Lowest priority in this plan — pure pin-hygiene
+cleanup, no functional bug.
+
+| Order | Atomic issue | Repository | State / dependency |
+|------:|--------------|------------|--------------------|
+| 1 | [Audit pin mechanisms #105](https://github.com/echoares-lab/k3s-01/issues/105) | `k3s-01` | Ready |
+| 2 | [Migrate holdouts to consistent mechanism #106](https://github.com/echoares-lab/k3s-01/issues/106) | `k3s-01` | Depends on Order-1; soft-depends on Epic 3 landing first |
+
 ---
 
 ## Next — CLIProxy upstream patch and dependency update loop
