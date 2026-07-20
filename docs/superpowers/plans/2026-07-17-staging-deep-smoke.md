@@ -15,7 +15,7 @@
 - Soft quota (historical #400): 2xx + JSON object only; superseded by OpenAPI-hardened asserts in #403.
 - Default `--env staging`; prod is optional/incident.
 - No secrets in git; document `DEEP_SMOKE_*` in `.env.example` only.
-- Do not expand `post-merge-gate-d.yml` in this epic unless a child issue explicitly says so.
+- Do not expand `production-health-heartbeat.yml` in this epic unless a child issue explicitly says so.
 - Spec: `docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md`.
 
 ## File map

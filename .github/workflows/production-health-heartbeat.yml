@@ -1,4 +1,4 @@
-name: Post-Merge Gate D Smoke
+name: Production Health Heartbeat
 
 # Advisory: after merge to main, smoke the LIVE k8s production gateway
 # (https://ai.plexplease.com → Cloudflare edge → tunnel → k3s) end to end.
@@ -17,7 +17,6 @@ env:
 jobs:
   gate-d-smoke:
     runs-on: arc
-    continue-on-error: true
     steps:
       - name: Gate D — health check (public edge)
         run: |
@@ -57,3 +56,26 @@ jobs:
             echo "Endpoint: \`$GATEWAY_URL\`  ·  Commit: \`${{ github.sha }}\`"
             echo "Record results in issue closeout if any model failed."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Send Slack Notification on Failure
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          PAYLOAD=$(jq -n \
+            --arg repo "${{ github.repository }}" \
+            --arg sha "${{ github.sha }}" \
+            --arg workflow "${{ github.workflow }}" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg server_url "${{ github.server_url }}" \
+            '
+            {
+              "text": "❌ *Workflow Failure: \($workflow)*\n*Repository:* \($repo)\n*SHA:* \($sha)\n*Run URL:* \($server_url)/\($repo)/actions/runs/\($run_id)",
+              "workflow": $workflow,
+              "repository": $repo,
+              "sha": $sha,
+              "run_url": "\($server_url)/\($repo)/actions/runs/\($run_id)"
+            }
+            '
+          )
+          curl -s -X POST -H 'Content-type: application/json' --data "$PAYLOAD" "$SLACK_WEBHOOK_URL"
