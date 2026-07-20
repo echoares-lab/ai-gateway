@@ -130,6 +130,8 @@ jobs:
 
       - name: Checkout ai-gateway (for promote script)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 2
 
       - name: Checkout k3s-01
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -138,6 +140,11 @@ jobs:
           ref: production
           path: k3s-01
           token: ${{ steps.token.outputs.token }}
+
+      - name: Mirror external images to staging
+        run: |
+          set -euo pipefail
+          python3 -m scripts.k3s.mirror_external_images --k3s-repo k3s-01
 
       - name: Install kubectl for Kustomize validation
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
@@ -166,7 +173,7 @@ jobs:
           fi
           git config user.name "ai-gateway-ci"
           git config user.email "ci@echoares-lab.invalid"
-          git add kubernetes/workloads/home/ai-gateway/overlays/staging/kustomization.yaml
+          git add kubernetes/workloads/home/ai-gateway/overlays/staging/
           git commit -m "chore(staging): bump ai-gateway image pins to ${GIT_SHA}"
           git push origin HEAD:production
           echo "changed=true" >> "$GITHUB_OUTPUT"
