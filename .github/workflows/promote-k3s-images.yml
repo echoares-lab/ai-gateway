@@ -112,6 +112,9 @@ jobs:
     if: >
       needs.resolve-sha.outputs.skip_deep_smoke != 'true' &&
       needs.resolve-sha.outputs.expect_git_sha != ''
+    concurrency:
+      group: bump-staging-k3s-01
+      cancel-in-progress: false
     runs-on: arc
     steps:
       - name: Resolve token
