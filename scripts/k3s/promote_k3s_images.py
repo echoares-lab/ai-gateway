@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -25,6 +26,7 @@ from scripts.k3s.resolve_image_digest import (
     ResolveImageDigestError,
     is_digest,
     require_cliproxy_candidate,
+    resolve_reference,
 )
 
 DEFAULT_REL = Path("kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml")
@@ -151,7 +153,14 @@ def main() -> int:
         if value.startswith("sha256:") or (len(value) == 64 and all(c in "0123456789abcdef" for c in value)):
             updates.append((IMAGE_KEYS[key], None, value))
         else:
-            updates.append((IMAGE_KEYS[key], value, None))
+            username = os.environ.get("NEXUS_USERNAME")
+            password = os.environ.get("NEXUS_PASSWORD")
+            try:
+                digest = resolve_reference(IMAGE_KEYS[key], reference=value, username=username, password=password)
+                updates.append((IMAGE_KEYS[key], None, digest))
+            except Exception as e:
+                print(f"Warning: registry lookup failed for {IMAGE_KEYS[key]}:{value} ({e}); falling back to tag")
+                updates.append((IMAGE_KEYS[key], value, None))
 
     cliproxy_digest: str | None = None
     if args.cliproxy:
