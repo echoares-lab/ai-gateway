@@ -709,58 +709,814 @@ _ADMIN_DASHBOARD_HTML = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Gateway — Admin Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root { color-scheme: light dark; }
-  body { font-family: system-ui, sans-serif; margin: 0; padding: 1.5rem; background: #0f1115; color: #e6e6e6; }
-  h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
-  .meta { color: #9aa0a6; font-size: .85rem; margin-bottom: 1rem; }
-  .links a { color: #8ab4f8; margin-right: 1rem; font-size: .85rem; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; margin-top: 1rem; }
-  .panel { background: #1b1e24; border: 1px solid #2a2e36; border-radius: 8px; padding: 1rem; }
-  .panel h2 { font-size: 1rem; margin: 0 0 .5rem; text-transform: capitalize; }
-  .badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
-  .ok { background: #1e3a2b; color: #7ee2a8; }
-  .warning { background: #3a341e; color: #e7d27e; }
-  .error { background: #3a1e1e; color: #e78a8a; }
-  .unknown { background: #2a2e36; color: #b0b6bf; }
-  pre { white-space: pre-wrap; word-break: break-word; font-size: .8rem; color: #c8cdd4; margin: .5rem 0 0; max-height: 16rem; overflow: auto; }
-  .err { color: #e78a8a; font-size: .8rem; }
-  button { background: #2a2e36; color: #e6e6e6; border: 1px solid #3a3f49; border-radius: 6px; padding: .3rem .7rem; cursor: pointer; }
+  :root {
+    --bg-color: #0b0e14;
+    --panel-bg: rgba(22, 28, 38, 0.7);
+    --border-color: rgba(255, 255, 255, 0.08);
+    --text-primary: #f3f4f6;
+    --text-secondary: #9ca3af;
+    --primary-color: #3b82f6;
+    --primary-glow: rgba(59, 130, 246, 0.35);
+    --ok-color: #10b981;
+    --ok-glow: rgba(16, 185, 129, 0.25);
+    --warning-color: #f59e0b;
+    --warning-glow: rgba(245, 158, 11, 0.25);
+    --error-color: #ef4444;
+    --error-glow: rgba(239, 68, 68, 0.25);
+  }
+
+  body {
+    font-family: 'Outfit', system-ui, sans-serif;
+    margin: 0;
+    padding: 2rem;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    line-height: 1.5;
+  }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    background: var(--panel-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+  }
+
+  @media (max-width: 768px) {
+    header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+  }
+
+  .brand h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 0 0 0.25rem;
+    background: linear-gradient(135deg, #60a5fa, #3b82f6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .brand-meta {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+
+  .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  @media (max-width: 768px) {
+    .header-controls {
+      justify-content: space-between;
+    }
+  }
+
+  .links {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .links a {
+    color: #60a5fa;
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    background: rgba(96, 165, 250, 0.1);
+    border: 1px solid rgba(96, 165, 250, 0.2);
+    transition: all 0.2s ease;
+  }
+
+  .links a:hover {
+    background: rgba(96, 165, 250, 0.2);
+    border-color: rgba(96, 165, 250, 0.4);
+    transform: translateY(-1px);
+  }
+
+  .refresh-btn {
+    background: var(--primary-color);
+    color: #fff;
+    border: none;
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0.5rem 1.2rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 0 12px var(--primary-glow);
+  }
+
+  .refresh-btn:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 0 18px var(--primary-glow);
+  }
+
+  .refresh-btn:active {
+    transform: translateY(1px);
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.5rem;
+  }
+
+  .tab-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+  }
+
+  .tab-btn:hover {
+    color: var(--text-primary);
+  }
+
+  .tab-btn.active {
+    color: var(--primary-color);
+  }
+
+  .tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -0.6rem;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: var(--primary-color);
+    border-radius: 2px;
+    box-shadow: 0 0 8px var(--primary-color);
+  }
+
+  /* Stat Cards */
+  .stats-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .stat-card {
+    background: var(--panel-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--primary-color);
+  }
+
+  .stat-card.cached::before {
+    background: var(--ok-color);
+  }
+
+  .stat-card.non-cached::before {
+    background: var(--warning-color);
+  }
+
+  .stat-title {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+  }
+
+  .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    font-feature-settings: "tnum";
+  }
+
+  .stat-sub {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+
+  /* Progress bar */
+  .progress-container {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+    margin-top: 0.75rem;
+    overflow: hidden;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 999px;
+    transition: width 0.5s ease-out;
+  }
+
+  .progress-bar.cached {
+    background: var(--ok-color);
+  }
+
+  /* Grid Layout */
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+    gap: 1.5rem;
+  }
+
+  @media (max-width: 600px) {
+    .dashboard-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .panel-card {
+    background: var(--panel-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  }
+
+  .panel-card h2 {
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin-top: 0;
+    margin-bottom: 1.25rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* Badges */
+  .badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    text-transform: uppercase;
+  }
+
+  .badge.ok {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--ok-color);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);
+  }
+
+  .badge.warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--warning-color);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+
+  .badge.error {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--error-color);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.1);
+  }
+
+  .badge.unknown {
+    background: rgba(176, 182, 191, 0.15);
+    color: var(--text-secondary);
+    border: 1px solid rgba(176, 182, 191, 0.3);
+  }
+
+  /* Lists and Tables */
+  .item-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .item-row:last-child {
+    border-bottom: none;
+  }
+
+  .item-label {
+    font-weight: 500;
+  }
+
+  .item-value {
+    font-weight: 600;
+    font-feature-settings: "tnum";
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.5rem;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 0.75rem 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  th {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+  }
+
+  td {
+    font-size: 0.9rem;
+  }
+
+  .table-progress {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .table-progress-bar {
+    width: 60px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .table-progress-fill {
+    height: 100%;
+    background: var(--ok-color);
+  }
+
+  /* Raw Panels View */
+  .raw-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .raw-panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.25rem;
+  }
+
+  .raw-panel h2 {
+    font-size: 1rem;
+    margin: 0 0 0.75rem;
+    text-transform: capitalize;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  pre {
+    background: rgba(10, 12, 16, 0.75);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #c8cdd4;
+    overflow: auto;
+    max-height: 20rem;
+    margin: 0;
+  }
+
+  .err {
+    color: var(--error-color);
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+  }
+
+  .hidden {
+    display: none !important;
+  }
 </style>
 </head>
 <body>
-  <h1>AI Gateway — Admin Console <span id="schema" class="meta"></span></h1>
-  <div class="meta">Read-only. Generated: <span id="generated">…</span>
-    <button onclick="load()">Refresh</button></div>
-  <div class="links" id="links"></div>
-  <div id="grid" class="grid"><div class="meta">Loading…</div></div>
+  <header>
+    <div class="brand">
+      <h1>AI Gateway — Admin Console</h1>
+      <div class="brand-meta">
+        Schema: <span id="schema">…</span> | Generated: <span id="generated">…</span>
+      </div>
+    </div>
+    <div class="header-controls">
+      <div class="links" id="links"></div>
+      <button class="refresh-btn" onclick="load()">Refresh</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button id="tab-overview" class="tab-btn active" onclick="switchTab('overview')">Overview Dashboard</button>
+    <button id="tab-raw" class="tab-btn" onclick="switchTab('raw')">Raw Metrics Panels</button>
+  </div>
+
+  <div id="overview-content">
+    <div class="stats-container">
+      <div class="stat-card">
+        <div class="stat-title">Total Processed Tokens</div>
+        <div class="stat-value" id="stat-total-tokens">0</div>
+        <div class="stat-sub" id="stat-total-detail">0 input / 0 output</div>
+      </div>
+      <div class="stat-card cached">
+        <div class="stat-title">Cached Tokens</div>
+        <div class="stat-value" id="stat-cached-tokens">0</div>
+        <div class="stat-sub" id="stat-cached-ratio">0% overall cache hit ratio</div>
+        <div class="progress-container">
+          <div class="progress-bar cached" id="bar-cached-ratio" style="width: 0%"></div>
+        </div>
+      </div>
+      <div class="stat-card non-cached">
+        <div class="stat-title">Non-Cached (Upstream Billed)</div>
+        <div class="stat-value" id="stat-upstream-tokens">0</div>
+        <div class="stat-sub" id="stat-upstream-ratio">0% hit the provider directly</div>
+        <div class="progress-container">
+          <div class="progress-bar" id="bar-upstream-ratio" style="width: 0%; background: var(--warning-color)"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <!-- Health & Systems -->
+      <div class="panel-card" id="card-health">
+        <h2>System Health <span id="badge-health" class="badge">…</span></h2>
+        <div id="health-details"></div>
+      </div>
+
+      <!-- Cache Type Breakdown -->
+      <div class="panel-card" id="card-cache-types">
+        <h2>Caching Types Breakdown</h2>
+        <div id="cache-types-details">
+          <table>
+            <thead>
+              <tr>
+                <th>Cache Tier</th>
+                <th>Input Tokens</th>
+                <th>Output Tokens</th>
+                <th>Total Tokens</th>
+              </tr>
+            </thead>
+            <tbody id="cache-types-table-body">
+              <tr><td colspan="4" style="text-align: center; color: var(--text-secondary)">No cache analytics available</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Top Models -->
+      <div class="panel-card" id="card-models" style="grid-column: span 2">
+        <h2>Active Models Performance</h2>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Model ID</th>
+                <th>Provider</th>
+                <th>Total Tokens</th>
+                <th>Cached Tokens</th>
+                <th>Cache Ratio</th>
+              </tr>
+            </thead>
+            <tbody id="models-table-body">
+              <tr><td colspan="5" style="text-align: center; color: var(--text-secondary)">Loading model stats…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Top Providers -->
+      <div class="panel-card" id="card-providers">
+        <h2>Providers Performance</h2>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Provider</th>
+                <th>Models</th>
+                <th>Total Tokens</th>
+                <th>Cached Ratio</th>
+              </tr>
+            </thead>
+            <tbody id="providers-table-body">
+              <tr><td colspan="4" style="text-align: center; color: var(--text-secondary)">Loading provider stats…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Configuration Drift & Policy -->
+      <div class="panel-card" id="card-config">
+        <h2>Configuration & Policies</h2>
+        <div id="config-details"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="raw-content" class="hidden">
+    <div id="raw-grid" class="raw-grid"><div class="brand-meta">Loading raw panels…</div></div>
+  </div>
+
 <script>
-function badge(s){ const c=['ok','warning','error','unknown'].includes(s)?s:'unknown';
-  return '<span class="badge '+c+'">'+(s||'unknown')+'</span>'; }
-function esc(v){ return JSON.stringify(v,null,2)
-  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-async function load(){
-  const grid=document.getElementById('grid');
-  try {
-    const r=await fetch('/admin/status',{headers:{'accept':'application/json'}});
-    const d=await r.json();
-    document.getElementById('schema').textContent=d.schema_version||'';
-    document.getElementById('generated').textContent=d.generated_at||'';
-    const env=d.environment||{};
-    document.getElementById('links').innerHTML=[
-      ['LiteLLM UI',env.litellm_ui_url],
-      ['CLIProxy',env.cliproxy_management_url],
-      ['CPA-Manager',env.cpa_manager_url],
-    ].filter(x=>x[1]).map(x=>'<a href="'+x[1]+'" target="_blank" rel="noopener">'+x[0]+'</a>').join('');
-    const panels=d.panels||{};
-    grid.innerHTML=Object.keys(panels).map(function(name){
-      const p=panels[name]||{};
-      const errs=(p.errors||[]).map(e=>'<div class="err">'+(e.code||'')+': '+(e.message||'')+'</div>').join('');
-      return '<div class="panel"><h2>'+name+' '+badge(p.status)+'</h2>'+errs+
-        '<pre>'+esc(p.data||{})+'</pre></div>';
-    }).join('');
-  } catch(e){ grid.innerHTML='<div class="err">Failed to load /admin/status: '+e+'</div>'; }
+let currentTab = 'overview';
+let activeData = null;
+
+function badge(s) {
+  const c = ['ok', 'warning', 'error', 'unknown'].includes(s) ? s : 'unknown';
+  return '<span class="badge ' + c + '">' + (s || 'unknown') + '</span>';
 }
+
+function esc(v) {
+  return JSON.stringify(v, null, 2)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function formatNum(n) {
+  if (n === null || n === undefined) return '-';
+  return n.toLocaleString();
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-overview').classList.toggle('active', tab === 'overview');
+  document.getElementById('tab-raw').classList.toggle('active', tab === 'raw');
+  document.getElementById('overview-content').classList.toggle('hidden', tab !== 'overview');
+  document.getElementById('raw-content').classList.toggle('hidden', tab === 'overview');
+  if (activeData) render(activeData);
+}
+
+async function load() {
+  const grid = document.getElementById('raw-grid');
+  try {
+    const r = await fetch('/admin/status', { headers: { 'accept': 'application/json' } });
+    const d = await r.json();
+    activeData = d;
+    render(d);
+  } catch (e) {
+    grid.innerHTML = '<div class="err">Failed to load /admin/status: ' + e + '</div>';
+  }
+}
+
+function render(d) {
+  // Update Header Metadata
+  document.getElementById('schema').textContent = d.schema_version || '';
+  document.getElementById('generated').textContent = d.generated_at || '';
+
+  // Render Environment Links
+  const env = d.environment || {};
+  document.getElementById('links').innerHTML = [
+    ['LiteLLM UI', env.litellm_ui_url],
+    ['CLIProxy', env.cliproxy_management_url],
+    ['CPA-Manager', env.cpa_manager_url],
+  ].filter(x => x[1]).map(x => '<a href="' + x[1] + '" target="_blank" rel="noopener">'+x[0]+'</a>').join('');
+
+  const panels = d.panels || {};
+
+  // RENDER OVERVIEW VISUALS
+  renderStats(panels.token_analytics);
+  renderHealth(panels.health);
+  renderCacheBreakdown(panels.token_analytics);
+  renderModelsTable(panels.token_analytics);
+  renderProvidersTable(panels.token_analytics);
+  renderConfigDetails(panels.config_drift, panels.routing);
+
+  // RENDER RAW VIEW
+  const rawGrid = document.getElementById('raw-grid');
+  rawGrid.innerHTML = Object.keys(panels).map(function(name) {
+    const p = panels[name] || {};
+    const errs = (p.errors || []).map(e => '<div class="err">' + (e.code || '') + ': ' + (e.message || '') + '</div>').join('');
+    return '<div class="raw-panel"><h2>' + name + ' ' + badge(p.status) + '</h2>' + errs +
+      '<pre>' + esc(p.data || {}) + '</pre></div>';
+  }).join('');
+}
+
+function renderStats(ta) {
+  if (!ta || !ta.data || !ta.data.summary) return;
+  const s = ta.data.summary;
+
+  document.getElementById('stat-total-tokens').textContent = formatNum(s.total_tokens || 0);
+  document.getElementById('stat-total-detail').textContent =
+    formatNum(s.total_input_tokens || 0) + ' input / ' + formatNum(s.total_output_tokens || 0) + ' output';
+
+  document.getElementById('stat-cached-tokens').textContent = formatNum(s.cached_tokens || 0);
+  const ratio = s.cache_ratio_pct !== undefined ? s.cache_ratio_pct : 0;
+  document.getElementById('stat-cached-ratio').textContent = ratio + '% overall cache hit ratio';
+  document.getElementById('bar-cached-ratio').style.width = ratio + '%';
+
+  document.getElementById('stat-upstream-tokens').textContent = formatNum(s.non_cached_tokens || 0);
+  const upstreamRatio = ratio > 0 ? Math.max(0, 100 - ratio).toFixed(2) : 100;
+  document.getElementById('stat-upstream-ratio').textContent = upstreamRatio + '% hit the provider directly';
+  document.getElementById('bar-upstream-ratio').style.width = upstreamRatio + '%';
+}
+
+function renderHealth(health) {
+  const container = document.getElementById('health-details');
+  const badgeEl = document.getElementById('badge-health');
+
+  if (!health) {
+    badgeEl.className = 'badge unknown';
+    badgeEl.textContent = 'UNKNOWN';
+    container.innerHTML = '<div style="color: var(--text-secondary)">No health status reported</div>';
+    return;
+  }
+
+  badgeEl.className = 'badge ' + (health.status || 'unknown');
+  badgeEl.textContent = health.status || 'UNKNOWN';
+
+  const data = health.data || {};
+  let html = '';
+  Object.keys(data).forEach(key => {
+    const val = data[key];
+    let statusText = 'UNKNOWN';
+    let statusClass = 'unknown';
+
+    if (val === true || val === 'ok' || val === 'connected' || (val && val.status === 'ok')) {
+      statusText = 'HEALTHY';
+      statusClass = 'ok';
+    } else if (val === false || val === 'error' || val === 'disconnected') {
+      statusText = 'ERROR';
+      statusClass = 'error';
+    } else if (val && typeof val === 'object') {
+      statusText = (val.status || 'unknown').toUpperCase();
+      statusClass = val.status || 'unknown';
+    } else if (val) {
+      statusText = String(val).toUpperCase();
+      statusClass = 'warning';
+    }
+
+    html += '<div class="item-row">' +
+      '<div class="item-label">' + key.replace(/_/g, ' ') + '</div>' +
+      '<div class="item-value">' + badge(statusClass) + '</div>' +
+      '</div>';
+  });
+
+  container.innerHTML = html;
+}
+
+function renderCacheBreakdown(ta) {
+  const body = document.getElementById('cache-types-table-body');
+  if (!ta || !ta.data || !ta.data.summary || !ta.data.summary.by_cache_type) {
+    body.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-secondary)">No cache type breakdown available</td></tr>';
+    return;
+  }
+
+  const cache = ta.data.summary.by_cache_type;
+  let html = '';
+
+  const displayNames = {
+    'gateway': 'Gateway-Engine Cache (Redis local)',
+    'litellm': 'LiteLLM router Cache (upstream pool)',
+    'provider': 'Provider Prompt Caching (e.g. Claude)'
+  };
+
+  Object.keys(cache).forEach(key => {
+    const item = cache[key] || {};
+    html += '<tr>' +
+      '<td><b>' + (displayNames[key] || key) + '</b></td>' +
+      '<td style="font-feature-settings: \'tnum\';">' + formatNum(item.input_tokens || 0) + '</td>' +
+      '<td style="font-feature-settings: \'tnum\';">' + formatNum(item.output_tokens || 0) + '</td>' +
+      '<td style="font-feature-settings: \'tnum\'; font-weight: 600;">' + formatNum(item.total_tokens || item.input_tokens || 0) + '</td>' +
+      '</tr>';
+  });
+
+  body.innerHTML = html;
+}
+
+function renderModelsTable(ta) {
+  const body = document.getElementById('models-table-body');
+  if (!ta || !ta.data || !ta.data.by_model || ta.data.by_model.length === 0) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary)">No model usage data recorded</td></tr>';
+    return;
+  }
+
+  let html = '';
+  ta.data.by_model.forEach(m => {
+    const total = m.total_tokens || 0;
+    const cached = m.cached_tokens || 0;
+    const ratio = total > 0 ? ((cached / total) * 100).toFixed(1) : '0.0';
+
+    html += '<tr>' +
+      '<td><b>' + (m.model || m.canonical_model_id || '-') + '</b></td>' +
+      '<td><span class="badge unknown">' + (m.provider || '-') + '</span></td>' +
+      '<td style="font-feature-settings: \'tnum\'; font-weight: 500;">' + formatNum(total) + '</td>' +
+      '<td style="font-feature-settings: \'tnum\'; color: var(--text-secondary)">' + formatNum(cached) + '</td>' +
+      '<td>' +
+        '<div class="table-progress">' +
+          '<span style="font-weight: 600; width: 45px; text-align: right;">' + ratio + '%</span>' +
+          '<div class="table-progress-bar"><div class="table-progress-fill" style="width: ' + ratio + '%"></div></div>' +
+        '</div>' +
+      '</td>' +
+      '</tr>';
+  });
+
+  body.innerHTML = html;
+}
+
+function renderProvidersTable(ta) {
+  const body = document.getElementById('providers-table-body');
+  if (!ta || !ta.data || !ta.data.by_provider || ta.data.by_provider.length === 0) {
+    body.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-secondary)">No provider usage data recorded</td></tr>';
+    return;
+  }
+
+  let html = '';
+  ta.data.by_provider.forEach(p => {
+    const total = p.total_tokens || 0;
+    const cached = p.cached_tokens || 0;
+    const ratio = total > 0 ? ((cached / total) * 100).toFixed(1) : '0.0';
+
+    html += '<tr>' +
+      '<td style="text-transform: capitalize;"><b>' + p.provider + '</b></td>' +
+      '<td style="font-feature-settings: \'tnum\';">' + p.model_count + '</td>' +
+      '<td style="font-feature-settings: \'tnum\'; font-weight: 500;">' + formatNum(total) + '</td>' +
+      '<td>' +
+        '<div class="table-progress">' +
+          '<span style="font-weight: 600; width: 45px; text-align: right;">' + ratio + '%</span>' +
+          '<div class="table-progress-bar"><div class="table-progress-fill" style="width: ' + ratio + '%"></div></div>' +
+        '</div>' +
+      '</td>' +
+      '</tr>';
+  });
+
+  body.innerHTML = html;
+}
+
+function renderConfigDetails(drift, routing) {
+  const container = document.getElementById('config-details');
+  let html = '';
+
+  // Config drift status
+  if (drift) {
+    const isDrift = drift.status !== 'ok';
+    html += '<div class="item-row">' +
+      '<div class="item-label">Config Drift Status</div>' +
+      '<div class="item-value">' + badge(drift.status) + '</div>' +
+      '</div>';
+    if (drift.data && drift.data.drift_detected !== undefined) {
+      html += '<div class="item-row">' +
+        '<div class="item-label">Drift Detected</div>' +
+        '<div class="item-value" style="font-weight: 600; color: ' + (drift.data.drift_detected ? 'var(--warning-color)' : 'var(--ok-color)') + '">' +
+        (drift.data.drift_detected ? 'YES' : 'NO') + '</div>' +
+        '</div>';
+    }
+  }
+
+  // Routing and policy engine status
+  if (routing && routing.data) {
+    const policy = routing.data.policy_engine || {};
+    html += '<div class="item-row">' +
+      '<div class="item-label">Policy Engine Connectivity</div>' +
+      '<div class="item-value">' + (policy.redis_connected ? badge('ok') : badge('error')) + '</div>' +
+      '</div>';
+    if (policy.version) {
+      html += '<div class="item-row">' +
+        '<div class="item-label">Policy Active Version</div>' +
+        '<div class="item-value" style="font-family: monospace; font-size: 0.85rem">' + policy.version + '</div>' +
+        '</div>';
+    }
+  }
+
+  container.innerHTML = html || '<div style="color: var(--text-secondary)">No policy data found</div>';
+}
+
 load();
 </script>
 </body>
