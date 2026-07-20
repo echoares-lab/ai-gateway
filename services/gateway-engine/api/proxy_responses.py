@@ -328,6 +328,17 @@ async def _oai_to_responses_stream(oai_lines):
     )
 
 
+def _log_safe_headers(headers: dict) -> dict:
+    sensitive = {
+        "authorization",
+        "x-api-key",
+        "x-goog-api-key",
+        "api-key",
+        "key",
+    }
+    return {k: ("[redacted]" if k.lower() in sensitive else v) for k, v in headers.items()}
+
+
 @router.post("/v1/responses")
 async def responses_proxy(request: Request):
     raw = await request.body()
@@ -363,7 +374,7 @@ async def responses_proxy(request: Request):
         oai_body.get("tools"),
         auth_fingerprint=_auth_fingerprint(auth or headers.get("authorization")),
     )
-    log.info("Codex request headers: %s", {k: v for k, v in request.headers.items()})
+    log.info("Codex request headers: %s", _log_safe_headers(dict(request.headers.items())))
     log.info(
         "Codex Responses API → model=%s tools=%d stream=%s",
         oai_body.get("model"),

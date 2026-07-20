@@ -168,19 +168,6 @@ CI, image, OpenAPI, and deployment changes belong to #379, not the promotion PR.
 
 ---
 
-## Parked — multi-tenant / onboarding (decision unclear)
-
-Keep these open as coordination anchors with `status:blocked`. Do **not** claim
-or expand them until a tenancy decision is made and the items are promoted with
-fresh child issues.
-
-- **Multi-tenant workspace management** ([#30](https://github.com/echoares-lab/ai-gateway/issues/30))
-- **Self-service onboarding** ([#34](https://github.com/echoares-lab/ai-gateway/issues/34))
-- **Admin tenant/team panel** ([#109](https://github.com/echoares-lab/ai-gateway/issues/109))
-
-Expanded tenancy scope: [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) (C-TEN-*).
-
----
 
 ## Completed (2026-07 wave)
 
