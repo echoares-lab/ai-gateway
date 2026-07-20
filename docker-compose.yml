@@ -104,7 +104,7 @@ services:
     - 8317:8317
   cpa-manager:
     container_name: PROD-cpa-manager
-    image: seakee/cpa-manager:1.5.5@sha256:051bff237d8deb0cd6d9825e0c571ae8cd81f1aad91eb5ecf0dc253cf9a89731
+    image: seakee/cpa-manager:v1.5.6@sha256:a5ddb3b5d79c712f3811a28990199ff8ad147846f4b4553d325eb0aa597fa4b2
     restart: always
     depends_on:
     - cliproxy
