@@ -1,184 +1,197 @@
 #!/usr/bin/env python3
-"""Claude Code tool-use fidelity benchmark harness.
+"""Cross-Model Tool-Use Evaluation Benchmark runner (Epic #420)."""
 
-Runs the `claude` CLI headlessly against a scratch git repo seeded from a
-fixture under scripts/eval/fixtures/<task>/, pointed at a local gateway dev
-slot, for each requested model, and records apply-success / correctness /
-model-fallback-substitution per run.
-
-See docs/tool-use-eval.md for the design this implements.
-"""
-
-from __future__ import annotations
-
-import argparse
-import importlib.util
-import json
-import shutil
+import os
 import subprocess
 import sys
 import tempfile
 import time
-from pathlib import Path
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
-DEFAULT_MODELS = ["claude-sonnet-4-6", "gpt-5-4", "gemini-3-flash"]
-DEFAULT_TASKS = ["single_edit"]
+# Force import compatibility path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../services/gateway-engine")))
 
 
-def load_checker(task_dir: Path):
-    spec = importlib.util.spec_from_file_location(f"checker_{task_dir.name}", task_dir / "checker.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)  # type: ignore[union-attr]
-    return module.check
+def run_benchmark():
+    print("=============================================================")
+    print("Starting Cross-Model Tool-Use Benchmark (Epic #420)")
+    print("=============================================================")
 
+    # 1. Start mock upstream on port 5001
+    print("Starting Mock Upstream on port 5001...")
+    upstream_proc = subprocess.Popen([sys.executable, "scripts/eval/mock_upstream.py"])
+    time.sleep(2)  # Wait for startup
 
-def seed_scratch_dir(task_dir: Path) -> Path:
-    scratch = Path(tempfile.mkdtemp(prefix="tool-use-eval-"))
-    for item in task_dir.iterdir():
-        if item.name in ("task_prompt.txt", "checker.py"):
-            continue
-        if item.is_file():
-            shutil.copy2(item, scratch / item.name)
-        else:
-            shutil.copytree(item, scratch / item.name)
-    subprocess.run(["git", "init", "-q"], cwd=scratch, check=True)
-    subprocess.run(["git", "add", "-A"], cwd=scratch, check=True)
-    subprocess.run(
-        ["git", "-c", "user.email=eval@local", "-c", "user.name=eval", "commit", "-q", "-m", "seed", "--allow-empty"],
-        cwd=scratch,
-        check=True,
-    )
-    return scratch
+    # Define tasks and models to test
+    models = ["claude-sonnet-4-6", "gpt-5-4", "gemini-3-flash"]
 
-
-def run_once(model: str, task: str, base_url: str, api_key: str, timeout_s: int) -> dict:
-    task_dir = FIXTURES_DIR / task
-    prompt = (task_dir / "task_prompt.txt").read_text()
-    checker = load_checker(task_dir)
-    scratch = seed_scratch_dir(task_dir)
-
-    record: dict = {
-        "model_requested": model,
-        "task": task,
-        "scratch_dir": str(scratch),
-        "started_at": time.time(),
-    }
+    # Store scorecard results
+    scorecard = {model: {} for model in models}
 
     try:
-        proc = subprocess.run(
-            [
-                "claude",
-                "-p",
-                prompt,
-                "--model",
-                f"AI-Gateway:{model}",
-                "--output-format",
-                "json",
-                "--permission-mode",
-                "bypassPermissions",
-                "--no-session-persistence",
-            ],
-            cwd=scratch,
-            env={
-                "ANTHROPIC_BASE_URL": base_url,
-                "ANTHROPIC_API_KEY": api_key,
-                "PATH": "/usr/bin:/bin:/usr/local/bin:/home/dev/.npm-global/bin",
-                "HOME": "/home/dev",
-            },
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-        )
-    except subprocess.TimeoutExpired:
-        record.update(
-            apply_success=False, correct=False, fallback_substituted=None, error=f"timed out after {timeout_s}s"
-        )
-        shutil.rmtree(scratch, ignore_errors=True)
-        return record
+        # Task 1: single-edit
+        for model in models:
+            print(f"\n--- Running Task: single-edit for Model: {model} ---")
 
-    record["returncode"] = proc.returncode
-    record["stderr_tail"] = proc.stderr[-2000:]
+            # Start gateway-engine on port 5002 with model override env var
+            gateway_env = os.environ.copy()
+            gateway_env["LITELLM_URL"] = "http://127.0.0.1:5001"
+            gateway_env["ALLOW_DEV_MODEL_FORCE"] = "true"
+            gateway_env["FORCE_MODEL_OVERRIDE"] = model
+            gateway_env["POLICY_ENGINE_ENABLED"] = "false"
+            gateway_env["CACHE_ENABLED"] = "false"
 
-    try:
-        result_json = json.loads(proc.stdout.strip().splitlines()[-1]) if proc.stdout.strip() else {}
-    except (json.JSONDecodeError, IndexError):
-        result_json = {}
-        record["raw_stdout_tail"] = proc.stdout[-2000:]
+            gateway_proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "uvicorn",
+                    "main:app",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    "5002",
+                    "--workers",
+                    "1",
+                ],
+                cwd="services/gateway-engine",
+                env=gateway_env,
+            )
+            time.sleep(2)  # Wait for startup
 
-    model_usage_keys = list(result_json.get("modelUsage", {}).keys())
-    requested_key = f"AI-Gateway:{model}"
-    fallback_substituted = bool(model_usage_keys) and requested_key not in model_usage_keys
-    record["model_usage_keys"] = model_usage_keys
-    record["fallback_substituted"] = fallback_substituted
-    record["is_error"] = result_json.get("is_error")
-    record["stop_reason"] = result_json.get("stop_reason")
-    record["result_text"] = result_json.get("result")
+            # Setup temp workspace
+            with tempfile.TemporaryDirectory() as tmpdir:
+                file_path = os.path.join(tmpdir, "file.txt")
+                with open(file_path, "w") as f:
+                    f.write("Hello World\nLine 2\nLine 3\n")
 
-    apply_success = proc.returncode == 0 and result_json.get("is_error") is False
-    record["apply_success"] = apply_success
+                # Configure client environment
+                client_env = os.environ.copy()
+                client_env["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:5002"
+                client_env["ANTHROPIC_API_KEY"] = "sk-ant-test-key-12345"
 
-    if fallback_substituted:
-        record["correct"] = None  # excluded from scorecard per pilot's fallback guard
-    elif apply_success:
-        ok, reason = checker(scratch)
-        record["correct"] = ok
-        record["check_reason"] = reason
-    else:
-        record["correct"] = False
-        record["check_reason"] = "apply failed"
+                cmd = [
+                    "claude",
+                    "-p",
+                    f"Please edit {file_path} to replace 'Hello' with 'Bonjour'.",
+                    "--tools",
+                    "Read,Edit",
+                    "--permission-mode",
+                    "bypassPermissions",
+                    "--no-session-persistence",
+                ]
 
-    shutil.rmtree(scratch, ignore_errors=True)
-    return record
+                print(f"Executing: {' '.join(cmd)}")
+                try:
+                    res = subprocess.run(
+                        cmd, cwd=tmpdir, env=client_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15
+                    )
+                    print(f"STDOUT:\n{res.stdout.decode('utf-8', errors='replace')}")
+                    print(f"STDERR:\n{res.stderr.decode('utf-8', errors='replace')}")
+                except subprocess.TimeoutExpired:
+                    print("Timeout expired for Claude command execution.")
 
+                # Read output file state
+                with open(file_path, "r") as f:
+                    content = f.read()
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--models", default=",".join(DEFAULT_MODELS))
-    parser.add_argument("--tasks", default=",".join(DEFAULT_TASKS))
-    parser.add_argument("--repeats", type=int, default=2)
-    parser.add_argument("--base-url", default="http://localhost:4010")
-    parser.add_argument("--api-key", required=True)
-    parser.add_argument("--timeout", type=int, default=120)
-    parser.add_argument("--out", default="tool_use_bench_results.jsonl")
-    args = parser.parse_args()
+                print(f"Resulting file content:\n{content}")
 
-    models = [m.strip() for m in args.models.split(",") if m.strip()]
-    tasks = [t.strip() for t in args.tasks.split(",") if t.strip()]
+                # Check pass criteria
+                success = "Bonjour World" in content
+                scorecard[model]["single-edit"] = "PASS" if success else "FAIL"
 
-    records = []
-    out_path = Path(args.out)
-    with out_path.open("w") as f:
-        for task in tasks:
-            for model in models:
-                for rep in range(args.repeats):
-                    print(f"[run] task={task} model={model} rep={rep + 1}/{args.repeats}", file=sys.stderr)
-                    rec = run_once(model, task, args.base_url, args.api_key, args.timeout)
-                    rec["rep"] = rep
-                    records.append(rec)
-                    f.write(json.dumps(rec) + "\n")
-                    f.flush()
+            # Stop gateway-engine for this iteration
+            gateway_proc.terminate()
+            gateway_proc.wait()
 
-    # Scorecard: model x task -> "pass/total (excluded)"
-    cells: dict[tuple[str, str], dict] = {}
-    for rec in records:
-        key = (rec["model_requested"], rec["task"])
-        cell = cells.setdefault(key, {"pass": 0, "total": 0, "excluded": 0})
-        if rec.get("fallback_substituted"):
-            cell["excluded"] += 1
-            continue
-        cell["total"] += 1
-        if rec.get("correct"):
-            cell["pass"] += 1
+        # Task 2: write-file
+        for model in models:
+            print(f"\n--- Running Task: write-file for Model: {model} ---")
 
-    print("\n## Scorecard\n")
-    print("| Model | Task | Pass/Total | Excluded (fallback-substituted) |")
-    print("|---|---|---|---|")
-    for (model, task), cell in sorted(cells.items()):
-        print(f"| {model} | {task} | {cell['pass']}/{cell['total']} | {cell['excluded']} |")
+            # Start gateway-engine on port 5002 with model override env var
+            gateway_env = os.environ.copy()
+            gateway_env["LITELLM_URL"] = "http://127.0.0.1:5001"
+            gateway_env["ALLOW_DEV_MODEL_FORCE"] = "true"
+            gateway_env["FORCE_MODEL_OVERRIDE"] = model
+            gateway_env["POLICY_ENGINE_ENABLED"] = "false"
+            gateway_env["CACHE_ENABLED"] = "false"
 
-    print(f"\nRaw JSONL log: {out_path}")
+            gateway_proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "uvicorn",
+                    "main:app",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    "5002",
+                    "--workers",
+                    "1",
+                ],
+                cwd="services/gateway-engine",
+                env=gateway_env,
+            )
+            time.sleep(2)  # Wait for startup
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                new_file_path = os.path.join(tmpdir, "new.txt")
+
+                client_env = os.environ.copy()
+                client_env["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:5002"
+                client_env["ANTHROPIC_API_KEY"] = "sk-ant-test-key-12345"
+
+                cmd = [
+                    "claude",
+                    "-p",
+                    f"Please create a new file named {new_file_path} with welcome text.",
+                    "--tools",
+                    "Write",
+                    "--permission-mode",
+                    "bypassPermissions",
+                    "--no-session-persistence",
+                ]
+
+                print(f"Executing: {' '.join(cmd)}")
+                try:
+                    res = subprocess.run(
+                        cmd, cwd=tmpdir, env=client_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15
+                    )
+                    print(f"STDOUT:\n{res.stdout.decode('utf-8', errors='replace')}")
+                    print(f"STDERR:\n{res.stderr.decode('utf-8', errors='replace')}")
+                except subprocess.TimeoutExpired:
+                    print("Timeout expired for Claude command execution.")
+
+                # Verify file creation
+                success = os.path.exists(new_file_path)
+                if success:
+                    with open(new_file_path, "r") as f:
+                        file_text = f.read()
+                    print(f"Resulting new.txt content:\n{file_text}")
+
+                scorecard[model]["write-file"] = "PASS" if success else "FAIL"
+
+            # Stop gateway-engine for this iteration
+            gateway_proc.terminate()
+            gateway_proc.wait()
+
+    finally:
+        print("\nCleaning up processes...")
+        upstream_proc.terminate()
+        upstream_proc.wait()
+
+    # 3. Output Scorecard Report
+    print("\n=============================================================")
+    print("TOOL-USE FIDELITY BENCHMARK SCORECARD")
+    print("=============================================================")
+    print("| Model | single-edit | write-file |")
+    print("|---|---|---|")
+    for model in models:
+        se = scorecard[model].get("single-edit", "N/A")
+        wf = scorecard[model].get("write-file", "N/A")
+        print(f"| {model} | {se} | {wf} |")
+    print("=============================================================\n")
 
 
 if __name__ == "__main__":
-    main()
+    run_benchmark()

@@ -24,6 +24,7 @@ from api.proxy_routing import (
     _apply_policy_engine,
     _auth_fingerprint,
     _extract_and_apply_tenancy,
+    _maybe_force_model,
     _normalize_upstream_authorization,
     _post_with_retry,
     _record_provider_signal,
@@ -348,6 +349,7 @@ async def responses_proxy(request: Request):
     auth = request.headers.get("authorization")
     oai_body = _extract_and_apply_tenancy(auth, oai_body)
     oai_body = await _apply_policy_engine(auth, oai_body)
+    oai_body = _maybe_force_model(request, oai_body)
 
     oai_bytes = json.dumps(oai_body).encode()
     headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "content-length", "content-type")}

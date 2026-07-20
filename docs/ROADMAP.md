@@ -53,6 +53,24 @@ The encrypted Gemini CLI credential archive is retained for seven days after
 successful production verification, then deleted through a separately recorded
 closeout action.
 
+
+### Cross-Model Tool-Use & Protocol Benchmark
+
+Approve coordination epic [#420](https://github.com/echoares-lab/ai-gateway/issues/420) and its three atomic children. This work introduces protocol-level checks for Claude/Cursor, a dev-only model-forcing escape hatch, and a headless benchmark harness evaluating cross-model tool-use fidelity.
+
+| Order | Atomic issue | Repository | State / dependency |
+|------:|--------------|------------|--------------------|
+| 1 | [Model-forcing escape hatch #421](https://github.com/echoares-lab/ai-gateway/issues/421) | `ai-gateway` | Ready; no dependency |
+| 2 | [Protocol-level contract tests #422](https://github.com/echoares-lab/ai-gateway/issues/422) | `ai-gateway` | Depends on #421 |
+| 3 | [Cross-model tool-use eval harness #423](https://github.com/echoares-lab/ai-gateway/issues/423) | `ai-gateway` | Depends on #421 and #422 |
+
+Release invariants:
+- Parent epic #420 is coordination-only;
+- Model-forcing escape hatch must only be active in dev/test stacks (`ALLOW_DEV_MODEL_FORCE=true`);
+- Do not check in mock credentials or real API keys for benchmark runs.
+
+Plan: [`docs/superpowers/plans/cross-model-tool-use-benchmark.md`](./superpowers/plans/cross-model-tool-use-benchmark.md).
+
 ---
 
 ## Next — CLIProxy upstream patch and dependency update loop
@@ -196,6 +214,15 @@ Local **dev** stacks (`./dev-env.sh` / `TESTING-*`) remain for development. Prod
 | Quota unit tests [#348](https://github.com/echoares-lab/ai-gateway/issues/348) / PR #373 | Closed |
 
 Broader credential-pool work remains candidate-only (C-CRED-*).
+
+
+### Policy Engine and Routing Refactor ([#38](https://github.com/echoares-lab/ai-gateway/issues/38))
+
+Fully implemented as an **in-process** system under `services/gateway-engine/core/policy/` (instead of a standalone service), providing fast in-memory evaluation for:
+- Repository and agent affinity
+- Budget gates and Redis-backed rate limits
+- Fallback ordering and MCP visibility filters
+
 
 ### Earlier roadmap themes (closed for documented scope)
 
