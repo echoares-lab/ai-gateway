@@ -27,6 +27,7 @@ from api.proxy_routing import (
     _maybe_force_model,
     _normalize_upstream_authorization,
     _post_with_retry,
+    _record_cached_token_usage,
     _record_provider_signal,
     _record_token_usage,
 )
@@ -502,13 +503,14 @@ async def responses_proxy(request: Request):
 
         return StreamingResponse(generate(), media_type="text/event-stream")
 
-    if ck:
         cached_json = await _deps().cache_get(ck + ":json")
         if cached_json is not None:
             log.info("cache hit (responses) key=%s", ck[:16])
             try:
+                parsed_cached = json.loads(cached_json[0])
+                _record_cached_token_usage(oai_body.get("model", "-"), parsed_cached, "gateway")
                 return Response(
-                    content=json.dumps(_oai_to_responses_resp(json.loads(cached_json[0]))).encode(),
+                    content=json.dumps(_oai_to_responses_resp(parsed_cached)).encode(),
                     status_code=200,
                     headers={"content-type": "application/json"},
                 )
@@ -549,7 +551,7 @@ async def responses_proxy(request: Request):
         if ck:
             await _deps().cache_set(ck + ":json", [json.dumps(resp_json)])
         # Record token usage for analytics (#117)
-        _record_token_usage(oai_body.get("model", "-"), resp_json)
+        _record_token_usage(oai_body.get("model", "-"), resp_json, resp.headers)
         responses_resp = _oai_to_responses_resp(resp_json)
         return Response(
             content=json.dumps(responses_resp).encode(),

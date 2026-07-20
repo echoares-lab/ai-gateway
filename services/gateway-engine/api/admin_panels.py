@@ -665,55 +665,201 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
     by_provider: dict[str, dict] = {}
     by_model: list[dict] = []
     by_canonical: dict[tuple[str, str, str], dict] = {}
+    by_cache_type: dict[str, dict] = {
+        "gateway": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        "litellm": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        "provider": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+    }
 
     if metrics_text:
         for line in metrics_text.splitlines():
             if line.startswith("#") or not line.strip():
                 continue
-            # Match token counters: gateway_engine_token_input_total{provider="...",model="..."} value
-            m = re.match(
-                r'gateway_engine_token_(input|output)_total\{provider="([^"]+)",model="([^"]+)"\}\s+([\d.e+]+)',
-                line,
-            )
-            if not m:
-                canonical_match = re.match(
+
+            # 1. Parse cache canonical metrics
+            if line.startswith("gateway_engine_token_cache_canonical_"):
+                m = re.match(
+                    r"gateway_engine_token_cache_canonical_(input|output)_total\{([^}]*)\}\s+([\d.e+]+)",
+                    line,
+                )
+                if m:
+                    kind = m.group(1)
+                    labels = _parse_prometheus_labels(m.group(2))
+                    try:
+                        val = int(float(m.group(3)))
+                    except ValueError:
+                        continue
+                    canonical_model_id = labels.get("canonical_model_id") or labels.get("model") or "-"
+                    canonical_provider = labels.get("canonical_provider") or labels.get("provider") or "-"
+                    canonical_family = labels.get("canonical_family") or canonical_provider
+                    cache_type = labels.get("cache_type") or "gateway"
+                    requested_model = labels.get("model") or "-"
+                    key = (canonical_model_id, canonical_provider, canonical_family)
+
+                    if key not in by_canonical:
+                        by_canonical[key] = {
+                            "canonical_model_id": canonical_model_id,
+                            "canonical_provider": canonical_provider,
+                            "canonical_family": canonical_family,
+                            "non_cached_input_tokens": 0,
+                            "non_cached_output_tokens": 0,
+                            "cached_input_tokens": 0,
+                            "cached_output_tokens": 0,
+                            "non_upstream_cached_input_tokens": 0,
+                            "non_upstream_cached_output_tokens": 0,
+                            "requested_models": set(),
+                        }
+
+                    by_canonical[key][f"cached_{kind}_tokens"] += val
+                    if cache_type in ("gateway", "litellm"):
+                        by_canonical[key][f"non_upstream_cached_{kind}_tokens"] += val
+                    by_canonical[key]["requested_models"].add(requested_model)
+                continue
+
+            # 2. Parse raw canonical metrics
+            elif line.startswith("gateway_engine_token_canonical_"):
+                m = re.match(
                     r"gateway_engine_token_canonical_(input|output)_total\{([^}]*)\}\s+([\d.e+]+)",
                     line,
                 )
-                if not canonical_match:
-                    continue
-                kind = canonical_match.group(1)
-                labels = _parse_prometheus_labels(canonical_match.group(2))
-                try:
-                    val = int(float(canonical_match.group(3)))
-                except ValueError:
-                    continue
-                canonical_model_id = labels.get("canonical_model_id") or labels.get("model") or "-"
-                canonical_provider = labels.get("canonical_provider") or labels.get("provider") or "-"
-                canonical_family = labels.get("canonical_family") or canonical_provider
-                requested_model = labels.get("model") or "-"
-                key = (canonical_model_id, canonical_provider, canonical_family)
-                if key not in by_canonical:
-                    by_canonical[key] = {
-                        "canonical_model_id": canonical_model_id,
-                        "canonical_provider": canonical_provider,
-                        "canonical_family": canonical_family,
-                        "input_tokens": 0,
-                        "output_tokens": 0,
-                        "requested_models": set(),
-                    }
-                by_canonical[key][f"{kind}_tokens"] += val
-                by_canonical[key]["requested_models"].add(requested_model)
-                continue
-            kind = m.group(1)
-            provider = m.group(2)
-            model = m.group(3)
-            try:
-                val = int(float(m.group(4)))
-            except ValueError:
+                if m:
+                    kind = m.group(1)
+                    labels = _parse_prometheus_labels(m.group(2))
+                    try:
+                        val = int(float(m.group(3)))
+                    except ValueError:
+                        continue
+                    canonical_model_id = labels.get("canonical_model_id") or labels.get("model") or "-"
+                    canonical_provider = labels.get("canonical_provider") or labels.get("provider") or "-"
+                    canonical_family = labels.get("canonical_family") or canonical_provider
+                    requested_model = labels.get("model") or "-"
+                    key = (canonical_model_id, canonical_provider, canonical_family)
+
+                    if key not in by_canonical:
+                        by_canonical[key] = {
+                            "canonical_model_id": canonical_model_id,
+                            "canonical_provider": canonical_provider,
+                            "canonical_family": canonical_family,
+                            "non_cached_input_tokens": 0,
+                            "non_cached_output_tokens": 0,
+                            "cached_input_tokens": 0,
+                            "cached_output_tokens": 0,
+                            "non_upstream_cached_input_tokens": 0,
+                            "non_upstream_cached_output_tokens": 0,
+                            "requested_models": set(),
+                        }
+
+                    by_canonical[key][f"non_cached_{kind}_tokens"] += val
+                    by_canonical[key]["requested_models"].add(requested_model)
                 continue
 
-            _add_token_metric(by_provider, by_model, provider, model, kind, val)
+            # 3. Parse raw cache metrics (by provider/model)
+            elif line.startswith("gateway_engine_token_cache_"):
+                m = re.match(
+                    r'gateway_engine_token_cache_(input|output)_total\{provider="([^"]+)",model="([^"]+)",cache_type="([^"]+)"\}\s+([\d.e+]+)',
+                    line,
+                )
+                if m:
+                    kind = m.group(1)
+                    provider = m.group(2)
+                    model = m.group(3)
+                    cache_type = m.group(4)
+                    try:
+                        val = int(float(m.group(5)))
+                    except ValueError:
+                        continue
+
+                    # Accumulate in by_provider
+                    if provider not in by_provider:
+                        by_provider[provider] = {
+                            "provider": provider,
+                            "non_cached_input_tokens": 0,
+                            "non_cached_output_tokens": 0,
+                            "cached_input_tokens": 0,
+                            "cached_output_tokens": 0,
+                            "non_upstream_cached_input_tokens": 0,
+                            "non_upstream_cached_output_tokens": 0,
+                            "models": set(),
+                        }
+                    by_provider[provider][f"cached_{kind}_tokens"] += val
+                    if cache_type in ("gateway", "litellm"):
+                        by_provider[provider][f"non_upstream_cached_{kind}_tokens"] += val
+                    by_provider[provider]["models"].add(model)
+
+                    # Accumulate in by_model
+                    existing = next(
+                        (e for e in by_model if e["model"] == model and e["provider"] == provider),
+                        None,
+                    )
+                    if not existing:
+                        existing = {
+                            "model": model,
+                            "provider": provider,
+                            "non_cached_input_tokens": 0,
+                            "non_cached_output_tokens": 0,
+                            "cached_input_tokens": 0,
+                            "cached_output_tokens": 0,
+                            "non_upstream_cached_input_tokens": 0,
+                            "non_upstream_cached_output_tokens": 0,
+                        }
+                        by_model.append(existing)
+                    existing[f"cached_{kind}_tokens"] += val
+                    if cache_type in ("gateway", "litellm"):
+                        existing[f"non_upstream_cached_{kind}_tokens"] += val
+
+                    # Accumulate in global by_cache_type
+                    if cache_type in by_cache_type:
+                        by_cache_type[cache_type][f"{kind}_tokens"] += val
+                        by_cache_type[cache_type]["total_tokens"] += val
+                continue
+
+            # 4. Parse raw metrics (by provider/model)
+            elif line.startswith("gateway_engine_token_"):
+                m = re.match(
+                    r'gateway_engine_token_(input|output)_total\{provider="([^"]+)",model="([^"]+)"\}\s+([\d.e+]+)',
+                    line,
+                )
+                if m:
+                    kind = m.group(1)
+                    provider = m.group(2)
+                    model = m.group(3)
+                    try:
+                        val = int(float(m.group(4)))
+                    except ValueError:
+                        continue
+
+                    if provider not in by_provider:
+                        by_provider[provider] = {
+                            "provider": provider,
+                            "non_cached_input_tokens": 0,
+                            "non_cached_output_tokens": 0,
+                            "cached_input_tokens": 0,
+                            "cached_output_tokens": 0,
+                            "non_upstream_cached_input_tokens": 0,
+                            "non_upstream_cached_output_tokens": 0,
+                            "models": set(),
+                        }
+                    by_provider[provider][f"non_cached_{kind}_tokens"] += val
+                    by_provider[provider]["models"].add(model)
+
+                    existing = next(
+                        (e for e in by_model if e["model"] == model and e["provider"] == provider),
+                        None,
+                    )
+                    if not existing:
+                        existing = {
+                            "model": model,
+                            "provider": provider,
+                            "non_cached_input_tokens": 0,
+                            "non_cached_output_tokens": 0,
+                            "cached_input_tokens": 0,
+                            "cached_output_tokens": 0,
+                            "non_upstream_cached_input_tokens": 0,
+                            "non_upstream_cached_output_tokens": 0,
+                        }
+                        by_model.append(existing)
+                    existing[f"non_cached_{kind}_tokens"] += val
+                continue
 
     canonical_summary = [
         {
@@ -721,14 +867,23 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
             "canonical_provider": v["canonical_provider"],
             "canonical_family": v["canonical_family"],
             "requested_models": sorted(v["requested_models"]),
-            "input_tokens": v["input_tokens"],
-            "output_tokens": v["output_tokens"],
-            "total_tokens": v["input_tokens"] + v["output_tokens"],
+            "input_tokens": v["non_cached_input_tokens"] + v["non_upstream_cached_input_tokens"],
+            "output_tokens": v["non_cached_output_tokens"] + v["non_upstream_cached_output_tokens"],
+            "total_tokens": v["non_cached_input_tokens"]
+            + v["non_upstream_cached_input_tokens"]
+            + v["non_cached_output_tokens"]
+            + v["non_upstream_cached_output_tokens"],
+            "non_cached_input_tokens": v["non_cached_input_tokens"],
+            "non_cached_output_tokens": v["non_cached_output_tokens"],
+            "non_cached_tokens": v["non_cached_input_tokens"] + v["non_cached_output_tokens"],
+            "cached_input_tokens": v["cached_input_tokens"],
+            "cached_output_tokens": v["cached_output_tokens"],
+            "cached_tokens": v["cached_input_tokens"] + v["cached_output_tokens"],
         }
         for v in by_canonical.values()
     ]
     canonical_summary.sort(
-        key=lambda e: e["input_tokens"] + e["output_tokens"],
+        key=lambda e: e["total_tokens"],
         reverse=True,
     )
 
@@ -737,14 +892,59 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
         {
             "provider": v["provider"],
             "model_count": len(v["models"]),
-            "input_tokens": v["input_tokens"],
-            "output_tokens": v["output_tokens"],
-            "total_tokens": v["input_tokens"] + v["output_tokens"],
+            "input_tokens": v["non_cached_input_tokens"] + v["non_upstream_cached_input_tokens"],
+            "output_tokens": v["non_cached_output_tokens"] + v["non_upstream_cached_output_tokens"],
+            "total_tokens": v["non_cached_input_tokens"]
+            + v["non_upstream_cached_input_tokens"]
+            + v["non_cached_output_tokens"]
+            + v["non_upstream_cached_output_tokens"],
+            "non_cached_input_tokens": v["non_cached_input_tokens"],
+            "non_cached_output_tokens": v["non_cached_output_tokens"],
+            "non_cached_tokens": v["non_cached_input_tokens"] + v["non_cached_output_tokens"],
+            "cached_input_tokens": v["cached_input_tokens"],
+            "cached_output_tokens": v["cached_output_tokens"],
+            "cached_tokens": v["cached_input_tokens"] + v["cached_output_tokens"],
         }
         for v in by_provider.values()
     ]
+
+    model_summary = [
+        {
+            "model": m["model"],
+            "provider": m["provider"],
+            "input_tokens": m["non_cached_input_tokens"] + m["non_upstream_cached_input_tokens"],
+            "output_tokens": m["non_cached_output_tokens"] + m["non_upstream_cached_output_tokens"],
+            "total_tokens": m["non_cached_input_tokens"]
+            + m["non_upstream_cached_input_tokens"]
+            + m["non_cached_output_tokens"]
+            + m["non_upstream_cached_output_tokens"],
+            "non_cached_input_tokens": m["non_cached_input_tokens"],
+            "non_cached_output_tokens": m["non_cached_output_tokens"],
+            "non_cached_tokens": m["non_cached_input_tokens"] + m["non_cached_output_tokens"],
+            "cached_input_tokens": m["cached_input_tokens"],
+            "cached_output_tokens": m["cached_output_tokens"],
+            "cached_tokens": m["cached_input_tokens"] + m["cached_output_tokens"],
+        }
+        for m in by_model
+    ]
+    model_summary.sort(
+        key=lambda e: e["total_tokens"],
+        reverse=True,
+    )
+
     total_input = sum(p["input_tokens"] for p in provider_summary)
     total_output = sum(p["output_tokens"] for p in provider_summary)
+    total_tokens = total_input + total_output
+
+    total_cached_input = sum(p["cached_input_tokens"] for p in provider_summary)
+    total_cached_output = sum(p["cached_output_tokens"] for p in provider_summary)
+    total_cached = total_cached_input + total_cached_output
+
+    total_non_cached_input = sum(p["non_cached_input_tokens"] for p in provider_summary)
+    total_non_cached_output = sum(p["non_cached_output_tokens"] for p in provider_summary)
+    total_non_cached = total_non_cached_input + total_non_cached_output
+
+    cache_ratio = round((total_cached / total_tokens * 100), 2) if total_tokens > 0 else 0.0
 
     status = "ok" if metrics_text and not errors else "warning"
     return _admin_panel(
@@ -756,14 +956,18 @@ def _admin_token_analytics_panel(metrics_text: str | None, errors: list[dict]) -
             "summary": {
                 "total_input_tokens": total_input,
                 "total_output_tokens": total_output,
-                "total_tokens": total_input + total_output,
+                "total_tokens": total_tokens,
+                "cached_input_tokens": total_cached_input,
+                "cached_output_tokens": total_cached_output,
+                "cached_tokens": total_cached,
+                "non_cached_input_tokens": total_non_cached_input,
+                "non_cached_output_tokens": total_non_cached_output,
+                "non_cached_tokens": total_non_cached,
+                "cache_ratio_pct": cache_ratio,
+                "by_cache_type": by_cache_type,
             },
             "by_provider": provider_summary,
-            "by_model": sorted(
-                by_model,
-                key=lambda e: e["input_tokens"] + e["output_tokens"],
-                reverse=True,
-            ),
+            "by_model": model_summary,
             "by_canonical_model": canonical_summary,
         },
     )
@@ -774,39 +978,6 @@ def _parse_prometheus_labels(raw: str) -> dict[str, str]:
     for match in re.finditer(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:[^"\\]|\\.)*)"', raw):
         labels[match.group(1)] = match.group(2).replace(r"\"", '"').replace(r"\\", "\\")
     return labels
-
-
-def _add_token_metric(
-    by_provider: dict[str, dict],
-    by_model: list[dict],
-    provider: str,
-    model: str,
-    kind: str,
-    val: int,
-) -> None:
-    if provider not in by_provider:
-        by_provider[provider] = {
-            "provider": provider,
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "models": set(),
-        }
-    by_provider[provider][f"{kind}_tokens"] += val
-    by_provider[provider]["models"].add(model)
-
-    existing = next(
-        (e for e in by_model if e["model"] == model and e["provider"] == provider),
-        None,
-    )
-    if not existing:
-        existing = {
-            "model": model,
-            "provider": provider,
-            "input_tokens": 0,
-            "output_tokens": 0,
-        }
-        by_model.append(existing)
-    existing[f"{kind}_tokens"] += val
 
 
 async def _admin_fetch_visible_models() -> tuple[list[str] | None, list[dict]]:

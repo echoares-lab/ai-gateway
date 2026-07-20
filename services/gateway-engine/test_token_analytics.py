@@ -214,8 +214,143 @@ def test_admin_token_analytics_rolls_up_canonical_model_ids():
             "input_tokens": 13,
             "output_tokens": 7,
             "total_tokens": 20,
+            "non_cached_input_tokens": 13,
+            "non_cached_output_tokens": 7,
+            "non_cached_tokens": 20,
+            "cached_input_tokens": 0,
+            "cached_output_tokens": 0,
+            "cached_tokens": 0,
         }
     ]
+
+
+def test_record_cached_token_usage_gateway():
+    """Test recording tokens served from the gateway-engine local cache."""
+    response = {"usage": {"prompt_tokens": 100, "completion_tokens": 25}}
+
+    with (
+        patch.object(main.TOKEN_CACHE_INPUT, "labels") as mock_input,
+        patch.object(main.TOKEN_CACHE_OUTPUT, "labels") as mock_output,
+    ):
+        mock_input_counter = MagicMock()
+        mock_output_counter = MagicMock()
+        mock_input.return_value = mock_input_counter
+        mock_output.return_value = mock_output_counter
+
+        main._record_cached_token_usage("gpt-4", response, "gateway")
+
+        mock_input.assert_called_once_with("openai", "gpt-4", "gateway")
+        mock_input_counter.inc.assert_called_once_with(100)
+
+        mock_output.assert_called_once_with("openai", "gpt-4", "gateway")
+        mock_output_counter.inc.assert_called_once_with(25)
+
+
+def test_record_token_usage_litellm_cache():
+    """Test that LiteLLM cache hits increment cache metrics instead of raw metrics."""
+    response = {"usage": {"prompt_tokens": 80, "completion_tokens": 15}}
+    headers = {"x-litellm-cache": "HIT"}
+
+    with (
+        patch.object(main.TOKEN_INPUT, "labels") as mock_raw_input,
+        patch.object(main.TOKEN_CACHE_INPUT, "labels") as mock_cache_input,
+        patch.object(main.TOKEN_CACHE_OUTPUT, "labels") as mock_cache_output,
+    ):
+        mock_raw_input_counter = MagicMock()
+        mock_cache_input_counter = MagicMock()
+        mock_cache_output_counter = MagicMock()
+
+        mock_raw_input.return_value = mock_raw_input_counter
+        mock_cache_input.return_value = mock_cache_input_counter
+        mock_cache_output.return_value = mock_cache_output_counter
+
+        main._record_token_usage("gpt-4", response, headers)
+
+        # Raw non-cache counters should not be touched
+        mock_raw_input.assert_not_called()
+
+        # Cache counters should record the tokens under 'litellm' type
+        mock_cache_input.assert_called_once_with("openai", "gpt-4", "litellm")
+        mock_cache_input_counter.inc.assert_called_once_with(80)
+
+        mock_cache_output.assert_called_once_with("openai", "gpt-4", "litellm")
+        mock_cache_output_counter.inc.assert_called_once_with(15)
+
+
+def test_record_token_usage_provider_prompt_cache():
+    """Test that provider prompt cache hits are recorded under both raw and provider cache metrics."""
+    response = {
+        "usage": {
+            "prompt_tokens": 1000,
+            "completion_tokens": 200,
+            "prompt_tokens_details": {"cached_tokens": 600},
+        }
+    }
+
+    with (
+        patch.object(main.TOKEN_INPUT, "labels") as mock_raw_input,
+        patch.object(main.TOKEN_CACHE_INPUT, "labels") as mock_cache_input,
+    ):
+        mock_raw_input_counter = MagicMock()
+        mock_cache_input_counter = MagicMock()
+
+        mock_raw_input.return_value = mock_raw_input_counter
+        mock_cache_input.return_value = mock_cache_input_counter
+
+        main._record_token_usage("claude-3-5", response)
+
+        # Raw total tokens must still be counted
+        mock_raw_input.assert_called_once_with("anthropic", "claude-3-5")
+        mock_raw_input_counter.inc.assert_called_once_with(1000)
+
+        # Sub-segment of tokens matching provider-side cache must be recorded
+        mock_cache_input.assert_called_once_with("anthropic", "claude-3-5", "provider")
+        mock_cache_input_counter.inc.assert_called_once_with(600)
+
+
+def test_admin_token_analytics_includes_cache_metrics():
+    """Test that the analytics panel aggregates and reports cache-related token values."""
+    metrics_text = "\n".join(
+        [
+            'gateway_engine_token_input_total{provider="openai",model="gpt-4"} 100.0',
+            'gateway_engine_token_output_total{provider="openai",model="gpt-4"} 20.0',
+            'gateway_engine_token_cache_input_total{provider="openai",model="gpt-4",cache_type="gateway"} 50.0',
+            'gateway_engine_token_cache_output_total{provider="openai",model="gpt-4",cache_type="gateway"} 10.0',
+            'gateway_engine_token_cache_input_total{provider="openai",model="gpt-4",cache_type="litellm"} 30.0',
+            'gateway_engine_token_cache_output_total{provider="openai",model="gpt-4",cache_type="litellm"} 5.0',
+            'gateway_engine_token_cache_input_total{provider="openai",model="gpt-4",cache_type="provider"} 10.0',
+        ]
+    )
+
+    panel = main._admin_token_analytics_panel(metrics_text, [])
+
+    summary = panel["data"]["summary"]
+    # Total input: 100 (non-cached) + 50 (gateway cache) + 30 (litellm cache) = 180
+    assert summary["total_input_tokens"] == 180
+    # Total output: 20 (non-cached) + 10 (gateway) + 5 (litellm) = 35
+    assert summary["total_output_tokens"] == 35
+    assert summary["total_tokens"] == 215
+
+    # Cached totals
+    assert summary["cached_input_tokens"] == 90  # 50 + 30 + 10 (provider cache)
+    assert summary["cached_output_tokens"] == 15  # 10 + 5
+    assert summary["cached_tokens"] == 105
+
+    # Non-cached totals
+    assert summary["non_cached_input_tokens"] == 100
+    assert summary["non_cached_output_tokens"] == 20
+    assert summary["non_cached_tokens"] == 120
+
+    # Cache ratio: 105 / 215 * 100 = 48.84
+    assert summary["cache_ratio_pct"] == 48.84
+
+    # Cache type breakdown
+    assert summary["by_cache_type"]["gateway"]["input_tokens"] == 50
+    assert summary["by_cache_type"]["gateway"]["total_tokens"] == 60
+    assert summary["by_cache_type"]["litellm"]["input_tokens"] == 30
+    assert summary["by_cache_type"]["litellm"]["total_tokens"] == 35
+    assert summary["by_cache_type"]["provider"]["input_tokens"] == 10
+    assert summary["by_cache_type"]["provider"]["total_tokens"] == 10
 
 
 if __name__ == "__main__":

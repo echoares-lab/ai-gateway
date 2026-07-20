@@ -21,6 +21,7 @@ from api.proxy_routing import (
     _extract_and_apply_tenancy,
     _maybe_force_model,
     _post_with_retry,
+    _record_cached_token_usage,
     _record_provider_signal,
     _record_token_usage,
 )
@@ -212,13 +213,14 @@ async def gemini_proxy(model_action: str, request: Request):
 
         return StreamingResponse(generate(), media_type="text/event-stream")
 
-    if ck:
         cached_json = await _deps().cache_get(ck + ":json")
         if cached_json is not None:
             log.info("cache hit (gemini) key=%s", ck[:16])
             try:
+                parsed_cached = json.loads(cached_json[0])
+                _record_cached_token_usage(model, parsed_cached, "gateway")
                 return Response(
-                    content=json.dumps(_oai_to_gemini_resp(json.loads(cached_json[0]), model)).encode(),
+                    content=json.dumps(_oai_to_gemini_resp(parsed_cached, model)).encode(),
                     status_code=200,
                     headers={"content-type": "application/json"},
                 )
@@ -240,7 +242,7 @@ async def gemini_proxy(model_action: str, request: Request):
         if ck:
             await _deps().cache_set(ck + ":json", [json.dumps(resp_json)])
         # Record token usage for analytics (#117)
-        _record_token_usage(model, resp_json)
+        _record_token_usage(model, resp_json, resp.headers)
         gemini_resp = _oai_to_gemini_resp(resp_json, model)
         return Response(
             content=json.dumps(gemini_resp).encode(),
