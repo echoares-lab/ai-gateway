@@ -36,7 +36,7 @@ jobs:
       compose: ${{ steps.filter.outputs.compose }}
       integration_tests: ${{ steps.filter.outputs.integration_tests }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set GIT_SHA
         run: echo "GIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
       - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
@@ -87,7 +87,7 @@ jobs:
     name: "CI :: Lint and Syntax"
     runs-on: arc
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set GIT_SHA
         run: echo "GIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
       - uses: ./.github/actions/setup-python-venv
@@ -150,7 +150,7 @@ jobs:
     name: "CI :: Build and Unit Test"
     runs-on: arc-dind
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set release metadata
         run: |
           APP_VERSION=$(tr -d '[:space:]' < VERSION)
@@ -221,7 +221,7 @@ jobs:
       github.event_name == 'workflow_dispatch'
     runs-on: arc
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set GIT_SHA
         run: echo "GIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
       - uses: ./.github/actions/setup-python-venv
@@ -237,7 +237,7 @@ jobs:
       github.event_name == 'workflow_dispatch'
     runs-on: arc
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install direnv
         run: sudo apt-get update && sudo apt-get install -y direnv
       - name: Setup mock organizational structure
@@ -278,7 +278,7 @@ jobs:
       )
     runs-on: arc
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set GIT_SHA
         run: echo "GIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
       - uses: ./.github/actions/setup-python-venv
@@ -302,7 +302,7 @@ jobs:
       )
     runs-on: arc-dind
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set GIT_SHA
         run: echo "GIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
       - name: Mask injected CI secrets

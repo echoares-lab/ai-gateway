@@ -129,10 +129,10 @@ jobs:
           echo "token=${PAT}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout ai-gateway (for promote script)
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Checkout k3s-01
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: echoares-lab/k3s-01
           ref: production
@@ -237,7 +237,7 @@ jobs:
           echo "token=${PAT}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout ai-gateway (for promote script)
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Resolve cliproxy candidate digest
         id: cliproxy
@@ -331,7 +331,7 @@ jobs:
           echo "Promoting GE=${GE} VERSION=${GATEWAY_VERSION} CP=${CP} DS=${DS} CLIPROXY=${CLIPROXY}"
 
       - name: Checkout k3s-01
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: echoares-lab/k3s-01
           ref: production
