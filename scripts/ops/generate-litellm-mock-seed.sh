@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-ai-postgres-1}"
 OUT="${ROOT}/db/seed-litellm-mock.sql"
-LITELLM_IMAGE="${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.87.1}"
+LITELLM_IMAGE="${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.93.0}"
 
 if ! docker inspect "$POSTGRES_CONTAINER" >/dev/null 2>&1; then
     echo "error: postgres container not found: ${POSTGRES_CONTAINER}" >&2
