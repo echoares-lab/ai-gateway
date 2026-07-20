@@ -28,3 +28,4 @@ __pycache__/
 # Local dev/CI virtualenv
 .venv-ci/
 .venv/
+ai-gateway-python.cdx.json
