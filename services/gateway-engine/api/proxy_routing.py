@@ -577,3 +577,17 @@ async def _post_with_retry(url: str, headers: dict, content: bytes, retries: int
             continue
         return resp
     return resp
+
+
+def _maybe_force_model(request, body: dict) -> dict:
+    env_force = os.environ.get("FORCE_MODEL_OVERRIDE")
+    if env_force:
+        body["model"] = env_force
+        log.info("Forcing target model to %s via environment override", env_force)
+        return body
+    if os.environ.get("ALLOW_DEV_MODEL_FORCE", "").lower() in ("1", "true", "yes"):
+        force = request.headers.get("x-force-model")
+        if force:
+            body["model"] = force
+            log.info("Forcing target model to %s via header override", force)
+    return body

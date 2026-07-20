@@ -21,6 +21,7 @@ from api.proxy_routing import (
     _apply_policy_engine,
     _auth_fingerprint,
     _extract_and_apply_tenancy,
+    _maybe_force_model,
     _model_from_content,
     _normalize_upstream_authorization,
     _record_provider_signal,
@@ -76,6 +77,7 @@ async def proxy(path: str, request: Request):
             auth_token = request.headers.get("authorization", "")
             bd = _extract_and_apply_tenancy(auth_token, bd)
             bd = await _apply_policy_engine(auth_token, bd)
+            bd = _maybe_force_model(request, bd)
             body = json.dumps(bd).encode()
             changed = True
         except Exception as exc:

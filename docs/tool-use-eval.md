@@ -1,12 +1,9 @@
-# Claude Code Tool-Use Fidelity Benchmark — Design Stub
+# Claude Code Tool-Use Fidelity Benchmark
 
-> **Design / candidate document.** Not an approved implementation track by itself.
-> No runtime behavior change. Promote via ROADMAP + GitHub issues before claiming.
+> **Promoted Document.** Part of approved Epic #420.
+> Provides runtime model-forcing headers in dev/test stacks and the evaluation harness.
 > Feeds the model-capability gap identified while reviewing
-> [FEATURE_CANDIDATES.md `C-RT-6`](./FEATURE_CANDIDATES.md) — the claim that
-> "Claude Code has baked-in edit conventions that don't transfer to other
-> models" is currently an unverified assertion inherited from an external
-> planning doc. This benchmark replaces that assertion with measured data.
+> [FEATURE_CANDIDATES.md `C-RT-6`](./FEATURE_CANDIDATES.md) — this benchmark measures edit-tool apply success rate per model.
 
 ---
 
