@@ -260,7 +260,7 @@ jobs:
           [[ -n "${CP}" ]] && ARGS+=(--credential-prober "${CP}")
           [[ -n "${DS}" ]] && ARGS+=(--docs-server "${DS}")
           ARGS+=(--cliproxy "${CLIPROXY}")
-          python3 scripts/k3s/promote_k3s_images.py "${ARGS[@]}"
+          python3 -m scripts.k3s.promote_k3s_images "${ARGS[@]}"
           kubectl kustomize k3s-01/kubernetes/workloads/home/ai-gateway/overlays/k3s-01 >/dev/null
 
       - name: Install verified GitHub CLI for PR creation
