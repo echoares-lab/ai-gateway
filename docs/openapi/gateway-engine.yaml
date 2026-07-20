@@ -418,6 +418,129 @@ paths:
                         total_input_tokens: 1250000
                         total_output_tokens: 350000
                         total_tokens: 1600000
+  /admin/status/policy:
+    get:
+      summary: Read recent policy routing decisions
+      description: Exposes a sliding window of recent routing policy decisions and execution metrics, with client-identifying secrets redacted.
+      security:
+        - {}
+        - AdminKey: []
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: false
+          description: Required only when Gateway Engine admin read authentication is enabled.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of recent routing policy decision entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [evaluated_at, evaluate_ms, decision]
+                  properties:
+                    evaluated_at:
+                      type: string
+                      format: date-time
+                    evaluate_ms:
+                      type: number
+                      format: float
+                    decision:
+                      type: object
+                      required: [gate, rules_applied]
+                      properties:
+                        gate:
+                          type: string
+                          enum: [allow, deny, throttle]
+                        deny_reason:
+                          type: string
+                          nullable: true
+                        retry_after_seconds:
+                          type: integer
+                          nullable: true
+                        allowed_models:
+                          type: array
+                          items:
+                            type: string
+                        fallback_chain:
+                          type: array
+                          items:
+                            type: string
+                        ordered_deployments:
+                          type: array
+                          items:
+                            type: string
+                        credential_tier_preference:
+                          type: string
+                          nullable: true
+                        preferred_credential_id:
+                          type: string
+                          nullable: true
+                        session_key:
+                          type: string
+                          nullable: true
+                        lock_model_family:
+                          type: boolean
+                        cache_cold_start:
+                          type: boolean
+                        quota_aware_mode:
+                          type: boolean
+                        deprioritized_credentials:
+                          type: array
+                          items:
+                            type: string
+                        allowed_mcp_servers:
+                          type: array
+                          items:
+                            type: string
+                          nullable: true
+                        denied_mcp_servers:
+                          type: array
+                          items:
+                            type: string
+                        policy_version:
+                          type: string
+                        rules_applied:
+                          type: array
+                          items:
+                            type: string
+                        debug:
+                          type: object
+                    error:
+                      type: string
+                      nullable: true
+              example:
+                - evaluated_at: "2026-07-20T15:39:31Z"
+                  evaluate_ms: 2.34
+                  decision:
+                    gate: "allow"
+                    allowed_models: ["claude-sonnet-4-6", "gemini-3-flash"]
+                    fallback_chain: ["claude-sonnet-4-6", "gemini-3-flash"]
+                    ordered_deployments: ["cred-claude-1", "cred-gemini-2"]
+                    rules_applied: ["postgres:profiles_loaded", "agent_affinity:matched"]
+                  error: null
+        '403':
+          description: Admin read authentication is enabled and x-admin-key is missing or invalid
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: object
+                    required: [message, code]
+                    properties:
+                      message: {type: string}
+                      code: {type: string}
+              example:
+                error:
+                  message: "gateway-engine admin mutations are disabled or unauthorized"
+                  code: "admin_key_required"
   /admin/analytics/tokens:
     get:
       summary: Granular token usage analytics by provider and model
