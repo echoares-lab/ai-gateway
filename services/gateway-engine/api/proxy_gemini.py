@@ -19,6 +19,7 @@ from api.proxy_routing import (
     _apply_policy_engine,
     _auth_fingerprint,
     _extract_and_apply_tenancy,
+    _maybe_force_model,
     _post_with_retry,
     _record_provider_signal,
     _record_token_usage,
@@ -102,6 +103,7 @@ async def gemini_proxy(model_action: str, request: Request):
     # Extract and apply tenancy metadata
     oai_body = _extract_and_apply_tenancy(auth, oai_body)
     oai_body = await _apply_policy_engine(auth, oai_body)
+    oai_body = _maybe_force_model(request, oai_body)
 
     oai_bytes = json.dumps(oai_body).encode()
     headers = {
