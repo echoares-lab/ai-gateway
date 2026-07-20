@@ -231,7 +231,7 @@ cluster readiness, `LiteLLM_SpendLogs`).
 
 Invariants:
 
-- do **not** replace advisory `post-merge-gate-d.yml`;
+- do **not** replace advisory `production-health-heartbeat.yml`;
 - default `--env staging`; prod `--quick` is optional/incident-only;
 - serialize `scripts/ops/deep-smoke.*`;
 - `/admin/quota/status` asserts match OpenAPI (`docs/openapi/gateway-engine.yaml`).

@@ -18,7 +18,7 @@ Real production and staging run on k3s-01, not this host (see `CLAUDE.md` §
 
 | Endpoint | Path | Reachability | Use |
 |---|---|---|---|
-| `https://ai.plexplease.com` | Cloudflare (public) → tunnel → k3s ingress | Public internet | External clients (Cursor, etc.); the automated `post-merge-gate-d.yml` post-merge smoke |
+| `https://ai.plexplease.com` | Cloudflare (public) → tunnel → k3s ingress | Public internet | External clients (Cursor, etc.); the automated `production-health-heartbeat.yml` post-merge smoke |
 | `https://gateway.infra.plexplease.com` | Traefik ingress directly (`10.10.10.50`) | Internal/LAN only | Ad hoc manual operator checks from a host on the internal network |
 
 **`ai.plexplease.com` has a Cloudflare WAF rule requiring an extra header — confirmed

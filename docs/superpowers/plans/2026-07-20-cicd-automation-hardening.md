@@ -105,7 +105,7 @@ Zero failure-notification integration exists anywhere in `ai-gateway`'s or
 returns nothing). This is the direct, verified cause of two real incidents
 this session: a 2-day staging pin drift that silently broke a promote
 pipeline, and a fully-dormant CLIProxyAPI weekly-sync workflow that never
-ran once in 3 days. Compounding this, `ai-gateway/.github/workflows/post-merge-gate-d.yml`
+ran once in 3 days. Compounding this, `ai-gateway/.github/workflows/production-health-heartbeat.yml`
 runs `on: push: branches: [main]` and hits the **live production edge**
 immediately on merge — before anything from that specific merge has actually
 reached production (a separate `k3s-01` prod-overlay PR must be reviewed and
@@ -131,7 +131,7 @@ failures behind `continue-on-error` and a misleading "post-merge" name.
 No Slack/webhook/notification integration exists anywhere in ai-gateway or
 CLIProxyAPI workflows. This is why a 2-day staging pin drift and a
 fully-dormant CLIProxyAPI sync workflow both went unnoticed. Separately,
-`post-merge-gate-d.yml` triggers immediately on ai-gateway merge (before
+`production-health-heartbeat.yml` triggers immediately on ai-gateway merge (before
 anything has reached prod) and swallows failures via job-level
 `continue-on-error: true`.
 
@@ -146,7 +146,7 @@ session's audit had to catch it by hand.
 |------:|-------|------|------|
 | 1 | Add failure-notification step to `promote-k3s-images.yml` | ai-gateway | none |
 | 1 | Add failure-notification step to `weekly-upstream-track.yml` | CLIProxyAPI | none |
-| 2 | Fix `post-merge-gate-d.yml` naming/timing/masking | ai-gateway | Soft-depends on Order-1 ai-gateway child |
+| 2 | Fix `production-health-heartbeat.yml` naming/timing/masking | ai-gateway | Soft-depends on Order-1 ai-gateway child |
 | 3 | Add a real post-promotion Gate D in k3s-01 | k3s-01 | Depends on Order-2 child |
 
 ## Non-goals
@@ -159,7 +159,7 @@ session's audit had to catch it by hand.
 - Both `promote-k3s-images.yml` and `weekly-upstream-track.yml` post to a
   webhook on job failure, gated behind `if: secrets.<NAME> != ''` so absence
   of the secret is a no-op, not a hard failure.
-- `post-merge-gate-d.yml` is renamed or re-documented to accurately describe
+- `production-health-heartbeat.yml` is renamed or re-documented to accurately describe
   itself as a production-health heartbeat, not a per-merge gate, and no
   longer hides failures behind `continue-on-error` without an explicit
   failure signal reaching a human.
@@ -297,14 +297,14 @@ merges.
 EOF
 ```
 
-**Order 2 — Fix `post-merge-gate-d.yml` naming/timing/masking** (ai-gateway)
+**Order 2 — Fix `production-health-heartbeat.yml` naming/timing/masking** (ai-gateway)
 
 ```
 gh issue create --repo echoares-lab/ai-gateway \
-  --title "fix(ci): post-merge-gate-d.yml is a prod-health heartbeat, not a per-merge gate" \
+  --title "fix(ci): production-health-heartbeat.yml is a prod-health heartbeat, not a per-merge gate" \
   --label "type:observability" --label "area:infra" --body-file - <<'EOF'
 ## Summary
-`post-merge-gate-d.yml` triggers on every push to `main` and hits the live
+`production-health-heartbeat.yml` triggers on every push to `main` and hits the live
 production edge (`https://ai.plexplease.com`) immediately — but nothing from
 that specific merge has reached production yet (a separate k3s-01
 prod-overlay PR must be reviewed and merged first, sometimes days later).
@@ -343,7 +343,7 @@ Soft-depends on: Order-1 ai-gateway child (reuses its notification step).
 Bundle: #<EPIC_1_NUMBER>
 
 ## Affected files / areas
-`.github/workflows/post-merge-gate-d.yml`
+`.github/workflows/production-health-heartbeat.yml`
 
 ## Execution notes
 Sequential with Order-3 (k3s-01 real Gate D) — settle this workflow's

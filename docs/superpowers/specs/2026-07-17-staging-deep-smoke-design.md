@@ -11,7 +11,7 @@ Provide an on-demand operator deep-smoke that covers production-path gaps CI and
 
 ## Non-goals
 
-- Replace advisory `post-merge-gate-d.yml` (thin prod edge smoke after merge remains).
+- Replace advisory `production-health-heartbeat.yml` (thin prod edge smoke after merge remains).
 - Block every merge to `main`.
 - Require Langfuse credentials (best-effort / warn-only).
 - Harden assertions against a frozen `GET /admin/quota/status` schema (done in #403).
@@ -95,7 +95,7 @@ Defaults:
 |------|------|
 | A/B | Pre-merge CI |
 | C | Opt-in real-provider E2E |
-| D (`post-merge-gate-d`) | Thin advisory prod edge after `main` push |
+| D (`production-health-heartbeat`) | Thin advisory prod edge after `main` push |
 | **Deep smoke `--full` (this)** | **Staging promote gate** before prod digest pin |
 
 ## Artifacts

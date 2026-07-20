@@ -24,7 +24,7 @@ with `REPO_IMPROVEMENT_WORKFLOW.md` (process) and `REPO_IMPROVEMENT_APPENDIX.md`
 | **Required — Fast (A)** | `lint-and-syntax`, `unit-tests` | Yes | Every PR |
 | **Required — Conditional (A/B)** | `multi-repo-isolation`, `credential-prober`, `mock-integration` | Yes | When matching paths change (skipped = pass) |
 | **Advisory — Gate C** | `real-provider-e2e` | No | Opt-in via `run-e2e` label or `workflow_dispatch` (hotspot auto-trigger paused) |
-| **Advisory** | `nightly-integration`, `hotspot-e2e-reminder`, `post-merge-gate-d` | No | Signal, schedule, or post-merge |
+| **Advisory** | `nightly-integration`, `hotspot-e2e-reminder`, `production-health-heartbeat` | No | Signal, schedule, or post-merge |
 
 **Rules**
 

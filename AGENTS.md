@@ -193,7 +193,7 @@ git pull origin main
 ### Step 8 — Gate D: verify production after merge
 
 Real production runs on k3s-01, not this host. The
-[`post-merge-gate-d.yml`](../.github/workflows/post-merge-gate-d.yml) workflow runs
+[`production-health-heartbeat.yml`](../.github/workflows/production-health-heartbeat.yml) workflow runs
 automatically on every push to `main` — it hits `https://ai.plexplease.com` (k8s
 production) directly with a health check, a models-list check, and a smoke completion
 per model. No manual local action is required.
@@ -346,7 +346,7 @@ Never leave uncommitted changes in the stable worktree; they block pulls and Gat
 | A — lint | `make lint` | Before commit / push |
 | B — mock integration | `make test-mock` or `make test-fast` | Before PR; required CI parity |
 | C — real providers | `make test-e2e` or label `run-e2e` | Opt-in only (high-risk changes) |
-| D — production smoke | Automated `post-merge-gate-d` workflow (hits k8s prod directly) | After merge to main |
+| D — production smoke | Automated `production-health-heartbeat` workflow (hits k8s prod directly) | After merge to main |
 | Full integration | `./dev-env.sh test <slot>` | When Gate C needs broader coverage |
 | YAML validation | `python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"` | After editing litellm-config.yaml |
 
@@ -418,7 +418,7 @@ CI (GitHub Actions `.github/workflows/ci.yml`) uses tiered gates on every push/P
 - **Required — Fast (A):** `lint-and-syntax`, `unit-tests` (image build is inside `unit-tests`)
 - **Required — Conditional:** `mock-integration`, `multi-repo-isolation`, `credential-prober` (path-filtered)
 - **Advisory (Gate C — opt-in):** `real-provider-e2e` via `run-e2e` label or `workflow_dispatch` only
-- **Advisory:** `nightly-integration`, `post-merge-gate-d`, `hotspot-e2e-reminder`
+- **Advisory:** `nightly-integration`, `production-health-heartbeat`, `hotspot-e2e-reminder`
 
 See `docs/TESTING.md`, `docs/process/TESTING_AND_PROMOTION_POLICY.md`, and `docs/process/REPO_IMPROVEMENT_APPENDIX.md` for full gate mapping.
 
@@ -435,7 +435,7 @@ See `docs/TESTING.md`, `docs/process/TESTING_AND_PROMOTION_POLICY.md`, and `docs
 | Multi-repo isolation broken | `multi-repo-isolation` job in CI |
 | Wire-format / routing broken | `mock-integration` job (0 skips) |
 | Real provider regressions | Gate C: opt-in via `run-e2e` label or nightly schedule |
-| Post-merge production drift | Gate D: automated `post-merge-gate-d` workflow against k8s prod |
+| Post-merge production drift | Gate D: automated `production-health-heartbeat` workflow against k8s prod |
 | Main checkout accidentally modified during dev | Worktree isolation (step 1) |
 | Direct push bypasses review | Branch protection + PR requirement |
 | Image version drift | Pinned in docker-compose files; upgrade via PR + test |
