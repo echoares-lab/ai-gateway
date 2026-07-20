@@ -9,7 +9,7 @@
 ruff
 pyyaml
 pydantic==2.10.6
-pytest==8.3.5
+pytest==8.4.2
 
 # tests/integration/requirements.txt
 pytest-asyncio==0.24.0
