@@ -250,12 +250,27 @@ async def admin_quota_status(request: Request):
         # fetched_at is success-only upstream; only surface on fresh live results
         if live_status == "fresh" and full.get("fetched_at"):
             quota_entry["live_fetched_at"] = full["fetched_at"]
-        # Per-model breakdown for Antigravity
-        if full.get("models"):
-            quota_entry["models"] = full["models"]
+        # Compute depletion forecasting / risk signal for high-utilization active accounts
+        depletion_forecast = None
+        binding_win = windows.get("binding") or {}
+        bind_util = binding_win.get("utilization_pct")
+        if not stale and bind_util is not None and isinstance(bind_util, (int, float)):
+            if bind_util >= 85:
+                depletion_forecast = {
+                    "risk_level": "critical" if bind_util >= 95 else "warning",
+                    "status_message": f"Account at {bind_util}% quota utilization (exhaustion risk active)",
+                }
+            else:
+                depletion_forecast = {
+                    "risk_level": "normal",
+                    "status_message": f"Account utilization healthy at {bind_util}%",
+                }
+        quota_entry["depletion_forecast"] = depletion_forecast
+
         # Surface fetch error from full endpoint (non-fatal)
         if full.get("error"):
             quota_entry["full_quota_error"] = full["error"]
+
 
         accounts.append(
             {
