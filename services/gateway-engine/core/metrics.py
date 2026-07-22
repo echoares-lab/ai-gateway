@@ -129,4 +129,3 @@ TIME_TO_FIRST_TOKEN = Histogram(
     "Streaming response time-to-first-token in seconds by provider and model",
     ["provider", "model"],
 )
-

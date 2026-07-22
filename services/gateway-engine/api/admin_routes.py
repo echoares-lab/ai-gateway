@@ -271,7 +271,6 @@ async def admin_quota_status(request: Request):
         if full.get("error"):
             quota_entry["full_quota_error"] = full["error"]
 
-
         accounts.append(
             {
                 "credential_id": cred_id,
