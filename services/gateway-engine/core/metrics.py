@@ -107,3 +107,25 @@ TOKEN_CACHE_CANONICAL_OUTPUT = Counter(
     "Total output tokens served from cache by requested provider/model, canonical registry model, and cache type",
     ["provider", "model", "canonical_model_id", "canonical_provider", "canonical_family", "cache_type"],
 )
+
+# --- Extended Telemetry: Reasoning, Prompt Cache & TTFT ---
+TOKEN_REASONING = Counter(
+    "gateway_engine_token_reasoning_total",
+    "Total reasoning/thinking tokens by provider, model, and effort level",
+    ["provider", "model", "effort_level"],
+)
+TOKEN_PROMPT_CACHE_CREATED = Counter(
+    "gateway_engine_prompt_cache_created_tokens_total",
+    "Total prompt tokens written into upstream cache by provider and model",
+    ["provider", "model"],
+)
+TOKEN_PROMPT_CACHE_READ = Counter(
+    "gateway_engine_prompt_cache_read_tokens_total",
+    "Total prompt tokens read from upstream cache by provider and model",
+    ["provider", "model"],
+)
+TIME_TO_FIRST_TOKEN = Histogram(
+    "gateway_engine_time_to_first_token_seconds",
+    "Streaming response time-to-first-token in seconds by provider and model",
+    ["provider", "model"],
+)
