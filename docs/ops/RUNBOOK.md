@@ -18,7 +18,7 @@ Real production and staging run on k3s-01, not this host (see `CLAUDE.md` §
 
 | Endpoint | Path | Reachability | Use |
 |---|---|---|---|
-| `https://ai.plexplease.com` | Cloudflare (public) → tunnel → k3s ingress | Public internet | External clients (Cursor, etc.); the automated `post-merge-gate-d.yml` post-merge smoke |
+| `https://ai.plexplease.com` | Cloudflare (public) → tunnel → k3s ingress | Public internet | External clients (Cursor, etc.); the automated `production-health-heartbeat.yml` post-merge smoke |
 | `https://gateway.infra.plexplease.com` | Traefik ingress directly (`10.10.10.50`) | Internal/LAN only | Ad hoc manual operator checks from a host on the internal network |
 
 **`ai.plexplease.com` has a Cloudflare WAF rule requiring an extra header — confirmed
@@ -188,15 +188,27 @@ For a rendered view, open the read-only dashboard page in a browser:
 the panels plus links to the LiteLLM UI, CLIProxy management, and CPA-Manager).
 
 ### Credential Health Alert Webhook
-The gateway supports real-time Slack alerting webhooks for credential state changes (e.g., shifts to `CRITICAL`, `DEGRADED`, or recovery to `HEALTHY`).
+The gateway supports real-time Slack/Discord alerting webhooks for credential state changes (e.g., shifts to `CRITICAL`, `DEGRADED`, or recovery to `HEALTHY`).
 
 To configure the alerting webhook:
-1. Obtain a Slack incoming webhook URL.
+
+#### Local Development
+1. Obtain a Slack or Discord incoming webhook URL (for Discord, append `/slack` to the URL).
 2. Add it to your `.env` file:
    ```bash
    SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
    ```
-3. Restart the background services or prober to pick up the configuration.
+3. Restart the prober or docker-compose services.
+
+#### Staging & Production (k3s-01 Cluster)
+1. Add the webhook URL to OpenBao:
+   * **Staging:** `kv/staging/workloads/ai-gateway/app` under the `slack_webhook_url` key.
+   * **Production:** `kv/prod/workloads/ai-gateway` under the `slack_webhook_url` key.
+2. The `ExternalSecret` resource (`ai-gateway-secrets`) automatically extracts and syncs all keys to the Kubernetes secret. To force an immediate sync:
+   ```bash
+   kubectl -n ai-gateway annotate externalsecret ai-gateway-secrets force-sync=$(date +%s) --overwrite
+   ```
+3. The `credential-prober` Deployment mounts this secret key as the `SLACK_WEBHOOK_URL` environment variable automatically.
 
 ### List available models
 ```bash

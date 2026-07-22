@@ -44,7 +44,7 @@ Not required to merge (Gate C paused pending e2e refactor). Opt in via label or 
 
 - [ ] `real-provider-e2e` (only when `run-e2e` label or manual dispatch)
 - [ ] `nightly-integration` (scheduled)
-- [ ] `post-merge-gate-d` (after merge to `main`)
+- [ ] `production-health-heartbeat` (after merge to `main`)
 
 ### Gate D — post-merge stable (record in closeout)
 

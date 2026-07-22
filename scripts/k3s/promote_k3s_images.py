@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -25,6 +26,7 @@ from scripts.k3s.resolve_image_digest import (
     ResolveImageDigestError,
     is_digest,
     require_cliproxy_candidate,
+    resolve_reference,
 )
 
 DEFAULT_REL = Path("kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml")
@@ -35,6 +37,8 @@ IMAGE_KEYS = {
     "gateway-engine": "nexus-docker.infra.plexplease.com/ai-gateway/gateway-engine",
     "credential-prober": "nexus-docker.infra.plexplease.com/ai-gateway/credential-prober",
     "docs-server": "nexus-docker.infra.plexplease.com/ai-gateway/docs-server",
+    "langfuse": "docker.io/langfuse/langfuse",
+    "langfuse-worker": "docker.io/langfuse/langfuse-worker",
 }
 
 
@@ -95,6 +99,29 @@ def _set_gateway_version(text: str, version: str) -> str:
     return text[: match.start(1)] + updated + text[match.end(1) :]
 
 
+def _set_litellm_image(text: str, image_pin: str, container_name: str) -> str:
+    """Replace image reference for container_name in YAML text."""
+    # 1. Try block scalar form (e.g. image: >- \n   ghcr.io/...)
+    pattern_block = re.compile(
+        rf"(-\s+name:\s*{re.escape(container_name)}\b(?:[ \t]*\n|[^-\n].*\n)*?[ \t]+image:\s*>\-\s*\n[ \t]+)([^\s\n]+)"
+    )
+    if pattern_block.search(text):
+        new_text, count = pattern_block.subn(rf"\g<1>{image_pin}", text)
+        if count > 0:
+            return new_text
+
+    # 2. Try simple form (e.g. image: ghcr.io/...)
+    pattern_simple = re.compile(
+        rf"(-\s+name:\s*{re.escape(container_name)}\b(?:[ \t]*\n|[^-\n].*\n)*?[ \t]+image:\s*)([^\s\n]+)"
+    )
+    if pattern_simple.search(text):
+        new_text, count = pattern_simple.subn(rf"\g<1>{image_pin}", text)
+        if count > 0:
+            return new_text
+
+    raise RuntimeError(f"failed to find container image for {container_name}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--k3s-repo", type=Path, required=True)
@@ -105,6 +132,9 @@ def main() -> int:
     parser.add_argument("--gateway-version")
     parser.add_argument("--credential-prober", help="short sha tag OR sha256:digest")
     parser.add_argument("--docs-server", help="short sha tag OR sha256:digest")
+    parser.add_argument("--litellm", help="litellm tag or sha256 digest")
+    parser.add_argument("--langfuse", help="langfuse web tag or sha256 digest")
+    parser.add_argument("--langfuse-worker", help="langfuse-worker tag or sha256 digest")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -123,7 +153,14 @@ def main() -> int:
         if value.startswith("sha256:") or (len(value) == 64 and all(c in "0123456789abcdef" for c in value)):
             updates.append((IMAGE_KEYS[key], None, value))
         else:
-            updates.append((IMAGE_KEYS[key], value, None))
+            username = os.environ.get("NEXUS_USERNAME")
+            password = os.environ.get("NEXUS_PASSWORD")
+            try:
+                digest = resolve_reference(IMAGE_KEYS[key], reference=value, username=username, password=password)
+                updates.append((IMAGE_KEYS[key], None, digest))
+            except Exception as e:
+                print(f"Warning: registry lookup failed for {IMAGE_KEYS[key]}:{value} ({e}); falling back to tag")
+                updates.append((IMAGE_KEYS[key], value, None))
 
     cliproxy_digest: str | None = None
     if args.cliproxy:
@@ -132,8 +169,10 @@ def main() -> int:
     add("gateway-engine", args.gateway_engine)
     add("credential-prober", args.credential_prober)
     add("docs-server", args.docs_server)
+    add("langfuse", args.langfuse)
+    add("langfuse-worker", args.langfuse_worker)
 
-    if not updates:
+    if not updates and not args.litellm and not args.gateway_version:
         print("no image updates requested", file=sys.stderr)
         return 2
 
@@ -147,6 +186,21 @@ def main() -> int:
             return 2
         workload_text = _set_gateway_version(workload_path.read_text(encoding="utf-8"), args.gateway_version)
 
+    litellm_db_jobs_text: str | None = None
+    db_jobs_path = workload_path.parent / "db-jobs.yaml"
+
+    if args.litellm:
+        if not workload_path.is_file():
+            print(f"missing workloads file: {workload_path}", file=sys.stderr)
+            return 2
+        if not db_jobs_path.is_file():
+            print(f"missing db-jobs file: {db_jobs_path}", file=sys.stderr)
+            return 2
+
+        base_workload_text = workload_text if workload_text is not None else workload_path.read_text(encoding="utf-8")
+        workload_text = _set_litellm_image(base_workload_text, args.litellm, "litellm")
+        litellm_db_jobs_text = _set_litellm_image(db_jobs_path.read_text(encoding="utf-8"), args.litellm, "migrate")
+
     if args.dry_run:
         sys.stdout.write(text)
         return 0
@@ -154,6 +208,8 @@ def main() -> int:
     path.write_text(text, encoding="utf-8")
     if workload_text is not None:
         workload_path.write_text(workload_text, encoding="utf-8")
+    if litellm_db_jobs_text is not None:
+        db_jobs_path.write_text(litellm_db_jobs_text, encoding="utf-8")
     print(f"updated {path}")
     return 0
 

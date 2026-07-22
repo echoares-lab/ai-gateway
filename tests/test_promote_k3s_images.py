@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.k3s.promote_k3s_images import _set_gateway_version, _set_image_pin, main, require_cliproxy_digest_pin
+from scripts.k3s.promote_k3s_images import _set_gateway_version, _set_image_pin, _set_litellm_image, main, require_cliproxy_digest_pin
 from scripts.k3s.resolve_image_digest import ResolveImageDigestError
 
 FIXTURE = """apiVersion: kustomize.config.k8s.io/v1beta1
@@ -103,6 +103,21 @@ def test_set_gateway_version_rejects_non_label_semver(version: str) -> None:
         _set_gateway_version(WORKLOAD_FIXTURE, version)
 
 
+def test_set_litellm_image() -> None:
+    doc = """
+- name: litellm
+  image: old-image
+"""
+    assert "image: new-image" in _set_litellm_image(doc, "new-image", "litellm")
+
+    doc_block = """
+- name: litellm
+  image: >-
+    old-image
+"""
+    assert "new-image" in _set_litellm_image(doc_block, "new-image", "litellm")
+
+
 def test_main_updates_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = tmp_path / "k3s-01"
     overlay = repo / "kubernetes/workloads/home/ai-gateway/overlays/k3s-01"
@@ -136,3 +151,56 @@ def test_main_updates_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert f"digest: {cliproxy_digest}" in text
     assert 'newTag: "6cf6e68"' not in text
     assert workload_path.read_text(encoding="utf-8").count("app.kubernetes.io/version: 1.2.1") == 2
+
+
+def test_main_updates_ext(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = tmp_path / "k3s-01"
+    overlay = repo / "kubernetes/workloads/home/ai-gateway/overlays/k3s-01"
+    overlay.mkdir(parents=True)
+    path = overlay / "kustomization.yaml"
+    
+    kust_fixture = """apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+images:
+  - name: docker.io/langfuse/langfuse
+    newTag: "3.0.0"
+  - name: docker.io/langfuse/langfuse-worker
+    digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+"""
+    path.write_text(kust_fixture, encoding="utf-8")
+    
+    workload_path = overlay / "core-workloads.yaml"
+    workload_fixture = """
+- name: litellm
+  image: old-litellm
+"""
+    workload_path.write_text(workload_fixture, encoding="utf-8")
+
+    db_jobs_path = overlay / "db-jobs.yaml"
+    db_jobs_fixture = """
+- name: migrate
+  image: old-litellm
+"""
+    db_jobs_path.write_text(db_jobs_fixture, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "scripts/k3s/promote_k3s_images.py",
+            "--k3s-repo",
+            str(repo),
+            "--litellm",
+            "sha256:newlitellm",
+            "--langfuse",
+            "sha256:newweb",
+            "--langfuse-worker",
+            "sha256:newworker",
+        ],
+    )
+    assert main() == 0
+    kust_text = path.read_text(encoding="utf-8")
+    assert "digest: sha256:newweb" in kust_text
+    assert "digest: sha256:newworker" in kust_text
+    assert "image: sha256:newlitellm" in workload_path.read_text(encoding="utf-8")
+    assert "image: sha256:newlitellm" in db_jobs_path.read_text(encoding="utf-8")
+
