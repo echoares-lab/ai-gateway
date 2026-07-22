@@ -173,7 +173,7 @@ services:
     - ./litellm-config.yaml:/config/litellm-config.yaml:ro
   litellm:
     container_name: PROD-litellm
-    image: ghcr.io/berriai/litellm:v1.87.5@sha256:5d7abefa5c9e901b922ba2470094495816269cdbb755b4cb19961ec38aabcbef
+    image: ghcr.io/berriai/litellm:v1.93.0@sha256:a1745e629abfb17d434426ff48b115f54f4f4c4a0f5af241de569e93c63c411e
     restart: always
     environment:
     - OP_CONNECT_TOKEN=${OP_CONNECT_TOKEN}

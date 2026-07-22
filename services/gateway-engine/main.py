@@ -302,7 +302,11 @@ async def _limit_request_size(request: Request, call_next):
                 )
         except (ValueError, TypeError):
             pass
-    return await call_next(request)
+    response = await call_next(request)
+    meta = release_metadata()
+    response.headers["X-Gateway-Version"] = meta.get("version", "0.0.0-dev")
+    response.headers["X-Gateway-Min-Client-Version"] = os.environ.get("MIN_CLIENT_VERSION", "1.0.0")
+    return response
 
 
 @app.middleware("http")

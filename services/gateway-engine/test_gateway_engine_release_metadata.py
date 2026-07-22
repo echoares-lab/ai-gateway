@@ -42,3 +42,5 @@ def test_version_endpoint_returns_release_metadata(monkeypatch):
         "git_sha": FULL_SHA,
         "display_version": "1.2.1+sha.0123456",
     }
+    assert response.headers.get("X-Gateway-Version") == "1.2.1"
+    assert response.headers.get("X-Gateway-Min-Client-Version") == "1.0.0"

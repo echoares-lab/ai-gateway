@@ -61,7 +61,7 @@ services:
     - ${DEV_CLIPROXY_PORT:-8327}:8317
   litellm-migrate:
     container_name: TESTING-litellm-migrate-dev
-    image: ghcr.io/berriai/litellm:v1.87.5@sha256:5d7abefa5c9e901b922ba2470094495816269cdbb755b4cb19961ec38aabcbef
+    image: ghcr.io/berriai/litellm:v1.93.0@sha256:a1745e629abfb17d434426ff48b115f54f4f4c4a0f5af241de569e93c63c411e
     restart: "no"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/litellm
@@ -95,7 +95,7 @@ services:
         condition: service_completed_successfully
   litellm:
     container_name: TESTING-litellm-dev
-    image: ghcr.io/berriai/litellm:v1.87.5@sha256:5d7abefa5c9e901b922ba2470094495816269cdbb755b4cb19961ec38aabcbef
+    image: ghcr.io/berriai/litellm:v1.93.0@sha256:a1745e629abfb17d434426ff48b115f54f4f4c4a0f5af241de569e93c63c411e
     restart: unless-stopped
     depends_on:
       postgres:

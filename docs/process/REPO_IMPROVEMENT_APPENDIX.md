@@ -33,7 +33,7 @@ main -> feat/* worktree/branch -> PR -> main
 | **A** | Lint, schema, unit | `make lint` / `make test-unit` | `lint-and-syntax`, `unit-tests`, path-filtered service tests |
 | **B** | Mock integration (0 skips) | `make test-mock` | `mock-integration` |
 | **C** | Real providers (smoke) | `make test-e2e` or PR label `run-e2e` | `real-provider-e2e` (**opt-in / advisory**) |
-| **D** | Post-merge k8s prod smoke (thin) | Automated — no manual command | `post-merge-gate-d` (advisory) |
+| **D** | Post-merge k8s prod smoke (thin) | Automated — no manual command | `production-health-heartbeat` (advisory) |
 | **Deep smoke** | Staging promote gate | `./scripts/ops/deep-smoke.sh --env staging --full` | **CI:** `staging-deep-smoke.yml` via `promote-k3s-images.yml` (#410) |
 
 **Agent loop (before push):** `make test-fast` (Gate A + B locally, ~5 min). Does **not** run `multi-repo-isolation` — run `bash tests/test-multi-repo-isolation.sh` when touching isolation scripts.
@@ -55,7 +55,7 @@ main -> feat/* worktree/branch -> PR -> main
 | **Required — Fast (A)** | `lint-and-syntax`, `unit-tests` | Yes, every PR |
 | **Required — Conditional** | `mock-integration`, `multi-repo-isolation`, `credential-prober` | Yes, when paths match (skipped = pass) |
 | **Advisory — Gate C** | `real-provider-e2e` | No — opt-in via `run-e2e` / `workflow_dispatch` |
-| **Advisory** | `nightly-integration`, `hotspot-e2e-reminder`, `post-merge-gate-d` | No |
+| **Advisory** | `nightly-integration`, `hotspot-e2e-reminder`, `production-health-heartbeat` | No |
 
 ### Docs-only PRs
 
@@ -73,7 +73,7 @@ Path-filtered (required when triggered):
 
 Advisory:
 - `real-provider-e2e` → Gate C (opt-in)
-- `nightly-integration`, `post-merge-gate-d` → Gate C/D signal
+- `nightly-integration`, `production-health-heartbeat` → Gate C/D signal
 
 ### Third-party dependency updates (#413 / #416)
 
@@ -102,7 +102,7 @@ There is **no** `build-gateway-engine` or `policy-engine-tests` job (image build
 - Local: `./dev-env.sh test <slot>` or `make test-e2e`
 
 **Gate D (post-merge, k8s prod edge — thin, fully automated):**
-- Runs automatically via `.github/workflows/post-merge-gate-d.yml` on every push to `main`
+- Runs automatically via `.github/workflows/production-health-heartbeat.yml` on every push to `main`
   (health check + models list + one smoke completion per model against `https://ai.plexplease.com`).
   No manual command needed; check the workflow run/job summary and record the result in closeout.
 

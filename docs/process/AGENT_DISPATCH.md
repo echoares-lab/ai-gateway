@@ -318,7 +318,7 @@ gh pr merge $PR_NUMBER --repo echoares-lab/ai-gateway --merge
 ## Step 8 — Gate D: post-merge verification against k8s production
 
 Real production runs on k3s-01, not this host. Gate D is fully automated:
-`.github/workflows/post-merge-gate-d.yml` runs on every push to `main`, hitting
+`.github/workflows/production-health-heartbeat.yml` runs on every push to `main`, hitting
 `https://ai.plexplease.com` directly (health check + models list + a smoke completion per
 model). No manual command or local stack is needed. Check the workflow run/job summary for
 the merge commit and record the result in closeout.
@@ -351,7 +351,7 @@ gh issue comment $ISSUE --repo echoares-lab/ai-gateway --body "$(cat <<'EOF'
   - Gate A: lint-and-syntax, unit-tests (test_gateway_engine*.py)
   - Gate B: mock-integration (0 skips)
   - Gate C: real-provider-e2e (if high-risk / run-e2e label)
-  - Gate D: automated `post-merge-gate-d` workflow against k8s prod
+  - Gate D: automated `production-health-heartbeat` workflow against k8s prod
 - Verified on: main (production)
 - Cleanup: slot <slot> stopped, worktree removed, branch deleted
 - Follow-up issues: none / #NNN

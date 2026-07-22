@@ -129,7 +129,7 @@ Do not share slots between concurrent claims without an explicit handoff.
 | During development (Gate A) | `make test-unit` |
 | Before PR (Gate A + B) | `make test-fast` |
 | High-risk pre-merge (Gate C) | `make test-e2e` or PR label `run-e2e` |
-| After merge (Gate D) | Automated `post-merge-gate-d` workflow against k8s prod (no manual action) |
+| After merge (Gate D) | Automated `production-health-heartbeat` workflow against k8s prod (no manual action) |
 
 ---
 

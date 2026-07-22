@@ -131,7 +131,7 @@ first:
 - `litellm`: `ghcr.io/berriai/litellm` (staging may float ahead of the prod-pinned digest).
 
 Because staging runs `:latest`, enable ArgoCD auto-sync (with prune) on the staging app so
-new images roll out automatically; prod stays on pinned/gated rollouts.
+new images roll out automatically. Thanks to the registered GitHub webhook, ArgoCD reconciliation and sync happen within seconds of a commit to the repository; prod stays on pinned/gated rollouts.
 
 ## Config generation
 
