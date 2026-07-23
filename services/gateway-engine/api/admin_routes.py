@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sys
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
 import httpx
+import yaml
 from api.admin_credential_sync import (  # noqa: F401
     _credential_sync_lock,
     _credential_sync_scheduler_loop,
@@ -68,6 +70,7 @@ from core.credential_inventory import (
     CredentialInventorySyncResponse,
     CredentialProbeResponse,
 )
+from core.model_reconciliation import ModelReconciliationService, ReconciliationTrigger
 from core.model_registry import (
     ModelProbeResponse,
     ModelRegistryListResponse,
@@ -587,17 +590,39 @@ async def admin_models_reconcile(request: Request, body: ModelRegistryReconcileR
         "repo:gemini-model-map.json",
     )
     errors = [*loaded.errors, *litellm_errors, *gemini_errors]
-    resources = build_reconcile_resources(
-        loaded.models,
-        current_litellm_config=litellm_text,
-        current_gemini_map=gemini_text,
-        include_disabled=body.include_disabled,
+
+    def render(models):
+        return build_reconcile_resources(
+            models,
+            current_litellm_config=litellm_text,
+            current_gemini_map=gemini_text,
+            include_disabled=body.include_disabled,
+        )
+
+    def validate(resources):
+        for resource in resources:
+            (yaml.safe_load if resource.kind == "yaml" else json.loads)(resource.content)
+
+    service = ModelReconciliationService(
+        discover=lambda: loaded.models,
+        list_models=lambda: [],
+        upsert_models=lambda models: 0,
+        probe_model=lambda model: model,
+        render=render,
+        validate=validate,
+        apply=lambda resources: None,
+        rollback=lambda token: None,
+        reload=lambda: True,
+        read_catalog=lambda: set(),
+        probe_is_stale=lambda model: False,
     )
+    result = await service.run(ReconciliationTrigger.MANUAL, dry_run=True)
+    errors.extend(result.errors)
     return ModelRegistryReconcileResponse(
         dry_run=True,
         source=loaded.source,
         registry_available=loaded.registry_available,
-        resources=resources,
+        resources=result.resources or [],
         errors=errors,
     )
 
@@ -631,19 +656,26 @@ async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
         diffs = diff_discovered_models(loaded_models, existing_models)
 
     imported = 0
-    if not body.dry_run and not errors:
-        try:
-            imported = store.upsert_models(loaded_models)
-        except Exception as exc:
-            errors.append(
-                _admin_error(
-                    "registry_write_error",
-                    f"{type(exc).__name__}: {exc}",
-                    "postgres:model_registry",
-                )
-            )
-    else:
-        imported = len(loaded_models) if body.dry_run else 0
+    if not errors or body.dry_run:
+        service = ModelReconciliationService(
+            discover=lambda: loaded_models,
+            list_models=lambda: existing_models,
+            upsert_models=store.upsert_models,
+            probe_model=lambda model: model,
+            render=lambda models: [],
+            validate=lambda resources: True,
+            apply=lambda resources: None,
+            rollback=lambda token: None,
+            reload=lambda: True,
+            read_catalog=lambda: {model.model_id for model in loaded_models if model.enabled},
+            probe_is_stale=lambda model: False,
+        )
+        result = await service.run(ReconciliationTrigger.MANUAL, dry_run=body.dry_run)
+        loaded_models = result.models
+        diffs = result.diffs
+        errors.extend(result.errors)
+        if result.outcome == "success":
+            imported = len(loaded_models)
     return ModelRegistrySyncResponse(
         dry_run=body.dry_run,
         source=source,
