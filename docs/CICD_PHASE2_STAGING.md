@@ -102,6 +102,57 @@ Staging secrets are **independent** of prod: rotating a staging key never touche
 `prod/workloads/ai-gateway/*`. The OpenBao policy for `k3s-01-external-secrets` must be
 extended to read `kv/…/staging/workloads/*` (analogous to the prod grant).
 
+### Staging launcher-key escrow gate
+
+Enable stable-key creation and recovery in staging before production. Escrow records use
+the dedicated KV-v2 path `kv/data/launcher-keys/<sha256(alias)>` (metadata at
+`kv/metadata/launcher-keys/*`), not the External Secrets application-settings path.
+Configure the staging gateway-engine Deployment with:
+
+```text
+GATEWAY_ENGINE_OPENBAO_ADDR=<internal OpenBao HTTPS address>
+GATEWAY_ENGINE_OPENBAO_AUTH_MOUNT=kubernetes
+GATEWAY_ENGINE_OPENBAO_ROLE=ai-gateway-staging-launcher-keys
+GATEWAY_ENGINE_OPENBAO_KV_MOUNT=kv
+GATEWAY_ENGINE_OPENBAO_KEY_PREFIX=launcher-keys
+GATEWAY_ENGINE_OPENBAO_TIMEOUT=5
+```
+
+These are references and routing settings, not credentials. Authentication uses the
+`ai-gateway-staging` gateway-engine service-account JWT; never add a root, admin, or
+static OpenBao token to an `ExternalSecret`, Deployment, ConfigMap, or pod volume. The
+OpenBao role must be namespace/service-account bound and carry only the launcher escrow
+policy defined in the production deployment document: create/read/update data plus
+read/list metadata, with no delete/destroy capability.
+
+Before promotion, use a short-lived token issued to that exact workload role and a
+disposable path. Do not run this against a real launcher record:
+
+```bash
+test_id="policy-check-$(date +%s)"
+test_path="launcher-keys/policy-check/${test_id}"
+
+bao kv put -mount=kv "${test_path}" schema_version=1 state=disposable
+bao kv get -mount=kv "${test_path}" >/dev/null
+
+# Both commands MUST fail with permission denied. A zero exit status blocks promotion.
+if bao kv delete -mount=kv "${test_path}"; then
+  echo "ERROR: workload policy permits KV version deletion" >&2
+  exit 1
+fi
+if bao kv metadata delete -mount=kv "${test_path}"; then
+  echo "ERROR: workload policy permits metadata destruction" >&2
+  exit 1
+fi
+```
+
+The first two commands must succeed and both deletion attempts must fail. Because the
+runtime role intentionally cannot clean up, record `test_path` and have an OpenBao
+operator remove that disposable record with a separately authenticated operator session.
+Never broaden the workload policy just to perform cleanup. Then exercise gateway admin
+create/recover/import flows and inspect captured logs for absence of the test token and
+Authorization headers. Production enablement is blocked until these staging checks pass.
+
 ## CLIProxy OAuth token persistence
 
 Identical mechanism to production
