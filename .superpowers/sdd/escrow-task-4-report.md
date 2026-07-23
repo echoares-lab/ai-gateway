@@ -28,6 +28,12 @@
   only for an explicit OpenBao `permission denied`; successful deletes and unrelated
   transport, TLS, expiry, or server failures block promotion.
 - `bash -n` on the revised policy-check snippet — passed.
+- Security re-review fix: verified with local `bao write -help` that values beginning
+  with `@` are read from a file, then changed Kubernetes login to
+  `jwt=@<0600-temp-file>`. The JWT is no longer expanded into process arguments.
+  Shell tracing is disabled before credentials are minted, the resulting OpenBao token
+  is captured directly from `-field=token` into `BAO_TOKEN`, and both credentials are
+  removed/unset by the exit trap.
 
 ## Deliberately separate work
 

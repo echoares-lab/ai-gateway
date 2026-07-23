@@ -135,12 +135,15 @@ never a real launcher record:
 
 ```bash
 set -euo pipefail
+set +x
+umask 077
 
 staging_namespace="ai-gateway-staging"
 gateway_service_account="gateway-engine"
 openbao_auth_mount="kubernetes"
 openbao_workload_role="ai-gateway-staging-launcher-keys"
 workload_jwt_file="$(mktemp)"
+chmod 0600 "${workload_jwt_file}"
 trap 'unset BAO_TOKEN; rm -f "${workload_jwt_file}"' EXIT
 
 # BAO_ADDR and the CA trust configuration must match the gateway-engine Deployment.
@@ -151,7 +154,7 @@ unset BAO_TOKEN
 export BAO_TOKEN="$(
   bao write -field=token "auth/${openbao_auth_mount}/login" \
     role="${openbao_workload_role}" \
-    jwt="$(<"${workload_jwt_file}")"
+    jwt="@${workload_jwt_file}"
 )"
 
 test_id="policy-check-$(date +%s)"
