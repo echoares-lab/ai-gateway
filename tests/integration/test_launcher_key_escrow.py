@@ -174,18 +174,62 @@ async def test_pre_escrow_key_import_then_recover_returns_exact_token() -> None:
 
 
 @pytest.mark.parametrize(
-    "failure,backend_options,expected_code",
+    "phase,operation,backend_options,expected_code",
     [
-        ("initial escrow read", {"fail_escrow_read_once": True}, "secret_store_unavailable"),
-        ("pending write", {"fail_pending_write_once": True}, "secret_store_unavailable"),
-        ("pending CAS", {"fail_pending_cas_once": True}, "key_creation_incomplete"),
-        ("LiteLLM generate", {"fail_generate_response_once": True}, "key_creation_incomplete"),
-        ("post-generate verification", {"fail_litellm_info_once": True}, "key_creation_incomplete"),
-        ("activation", {"fail_activation_once": True}, "key_creation_incomplete"),
+        pytest.param(
+            "pre-write",
+            "escrow read",
+            {"fail_escrow_read_once": True},
+            "secret_store_unavailable",
+            id="pre-write-escrow-read",
+        ),
+        pytest.param(
+            "pre-write",
+            "LiteLLM alias lookup",
+            {"fail_litellm_list_once": True},
+            "key_creation_incomplete",
+            id="pre-write-litellm-alias-lookup",
+        ),
+        pytest.param(
+            "write-ahead",
+            "pending write",
+            {"fail_pending_write_once": True},
+            "secret_store_unavailable",
+            id="write-ahead-pending-write",
+        ),
+        pytest.param(
+            "write-ahead",
+            "pending CAS",
+            {"fail_pending_cas_once": True},
+            "key_creation_incomplete",
+            id="write-ahead-pending-cas",
+        ),
+        pytest.param(
+            "remote-create",
+            "LiteLLM generate response",
+            {"fail_generate_response_once": True},
+            "key_creation_incomplete",
+            id="remote-create-response-loss",
+        ),
+        pytest.param(
+            "verify",
+            "post-generate identity",
+            {"fail_litellm_info_once": True},
+            "key_creation_incomplete",
+            id="verify-post-generate-identity",
+        ),
+        pytest.param(
+            "activate",
+            "escrow activation",
+            {"fail_activation_once": True},
+            "key_creation_incomplete",
+            id="activate-escrow-record",
+        ),
     ],
 )
 async def test_every_recoverable_create_boundary_retries_exact_token_without_duplicate_or_delete(
-    failure: str,
+    phase: str,
+    operation: str,
     backend_options: dict[str, bool],
     expected_code: str,
 ) -> None:
@@ -194,7 +238,7 @@ async def test_every_recoverable_create_boundary_retries_exact_token_without_dup
     try:
         with pytest.raises(LauncherKeyServiceError) as exc:
             await service.create_key({"key_alias": ALIAS, "team_id": TEAM_ID})
-        assert exc.value.code == expected_code, failure
+        assert exc.value.code == expected_code, f"{phase}: {operation}"
 
         recovered = await service.create_key({"key_alias": ALIAS, "team_id": TEAM_ID})
 
@@ -207,13 +251,48 @@ async def test_every_recoverable_create_boundary_retries_exact_token_without_dup
 
 
 @pytest.mark.parametrize(
-    "backend_options,expected_code",
+    "phase,operation,backend_options,expected_code",
     [
-        ({"fail_pending_write_once": True}, "secret_store_unavailable"),
-        ({"fail_activation_once": True}, "key_creation_incomplete"),
+        pytest.param(
+            "lookup",
+            "LiteLLM alias lookup",
+            {"fail_litellm_list_once": True},
+            "key_creation_incomplete",
+            id="lookup-litellm-alias",
+        ),
+        pytest.param(
+            "lookup",
+            "escrow read",
+            {"fail_escrow_read_once": True},
+            "secret_store_unavailable",
+            id="lookup-escrow-record",
+        ),
+        pytest.param(
+            "verify",
+            "supplied token",
+            {"fail_litellm_info_once": True},
+            "key_creation_incomplete",
+            id="verify-supplied-token",
+        ),
+        pytest.param(
+            "write-ahead",
+            "pending write",
+            {"fail_pending_write_once": True},
+            "secret_store_unavailable",
+            id="write-ahead-pending-write",
+        ),
+        pytest.param(
+            "activate",
+            "escrow activation",
+            {"fail_activation_once": True},
+            "key_creation_incomplete",
+            id="activate-escrow-record",
+        ),
     ],
 )
 async def test_every_recoverable_import_boundary_retries_exact_token_without_create_or_delete(
+    phase: str,
+    operation: str,
     backend_options: dict[str, bool],
     expected_code: str,
 ) -> None:
@@ -223,7 +302,7 @@ async def test_every_recoverable_import_boundary_retries_exact_token_without_cre
     try:
         with pytest.raises(LauncherKeyServiceError) as exc:
             await service.import_key(ALIAS, LEGACY_TOKEN)
-        assert exc.value.code == expected_code
+        assert exc.value.code == expected_code, f"{phase}: {operation}"
 
         recovered = await service.import_key(ALIAS, LEGACY_TOKEN)
 

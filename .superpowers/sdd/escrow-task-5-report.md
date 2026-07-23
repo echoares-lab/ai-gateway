@@ -63,3 +63,23 @@ Log assertions now lowercase captured output and reject both header names
 values. Revalidation after review: focused suite 14 passed; mock suite 65 passed with
 three deselected and one pre-existing warning; `make test-fast` passed with 324 gateway
 unit tests and the same 65-test mock selection.
+
+## Final boundary audit
+
+Converted the create and import failure matrices to explicit phase/operation tables so
+the service transaction can be audited row by row. Added the remaining boundaries:
+
+- Create pre-write: transient LiteLLM alias lookup failure.
+- Import lookup: transient LiteLLM alias lookup and escrow read failures.
+- Import verification: transient supplied-token verification failure.
+
+Together with the earlier rows, the tables now cover seven recoverable create
+boundaries, five import boundaries, and three recovery boundaries. Every added case
+retries to the exact stable or legacy token, asserts one successful generation for
+create and zero for import, and proves the HTTP ledger contains no `DELETE` request.
+
+Final verification: focused suite 18 passed; mock suite 69 passed with three deselected
+and one pre-existing warning. The initial `make test-fast` invocation collided with a
+concurrent process using the Makefile's fixed test-container name; rerunning through
+the supported `CONTAINER_PREFIX=ESCROW5-` override passed with 324 gateway unit tests
+and the 69-test mock selection.
