@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 import os
 import time
@@ -31,7 +32,8 @@ from core.metrics import (
     TOKEN_OUTPUT,
     TOKEN_REQUESTS,
 )
-from core.model_registry import ModelRegistryRecord
+from core.model_reconciliation import ReconciliationTrigger
+from core.model_registry import ModelRegistryRecord, normalize_discovered_model
 from orchestrator import litellm_admin_get
 from providers.virtual import virtual_provider
 
@@ -46,6 +48,68 @@ _PROVIDER_PREFIXES = (
     ("moonshot", "moonshot"),
     ("virt-", "virtual"),
 )
+
+_UNKNOWN_MODEL_ERROR_MAX_BYTES = 8192
+_UNKNOWN_MODEL_MARKERS = ("invalid model name", "model not found", "unknown model")
+
+
+def is_unknown_model_response(response: httpx.Response) -> bool:
+    """Recognize bounded, typed upstream unknown-model errors."""
+    if response.status_code not in (400, 404):
+        return False
+    content = response.content
+    if len(content) > _UNKNOWN_MODEL_ERROR_MAX_BYTES:
+        return False
+    try:
+        payload = json.loads(content)
+    except (TypeError, ValueError):
+        return False
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return False
+    values = [error.get(name) for name in ("message", "type", "code")]
+    provider_fields = error.get("provider_specific_fields")
+    if isinstance(provider_fields, dict):
+        values.extend(provider_fields.get(name) for name in ("error", "message", "type", "code"))
+    return any(
+        marker in value.lower() for value in values if isinstance(value, str) for marker in _UNKNOWN_MODEL_MARKERS
+    )
+
+
+def _log_refresh_task_result(task: asyncio.Task) -> None:
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        pass
+    except Exception as exc:
+        log.warning("model reconciliation demand request failed: %s", type(exc).__name__)
+
+
+def maybe_enqueue_unknown_model_refresh(
+    response: httpx.Response,
+    requested_model: str,
+    *,
+    authenticated: bool,
+    request_refresh=None,
+) -> httpx.Response:
+    """Enqueue trusted discovery after an authenticated unknown-model response."""
+    if not authenticated or not is_unknown_model_response(response):
+        return response
+    try:
+        normalized_model, _upstream_model = normalize_discovered_model(requested_model)
+    except (TypeError, ValueError):
+        return response
+    callback = request_refresh or _deps().request_model_reconciliation
+    if callback is None:
+        return response
+    try:
+        result = callback(ReconciliationTrigger.DEMAND, normalized_model)
+        if inspect.isawaitable(result):
+            task = asyncio.create_task(result)
+            task.add_done_callback(_log_refresh_task_result)
+    except Exception as exc:
+        log.warning("model reconciliation demand enqueue failed: %s", type(exc).__name__)
+    return response
 
 
 def _provider_of(model: str) -> str:

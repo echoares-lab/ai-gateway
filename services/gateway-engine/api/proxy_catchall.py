@@ -25,6 +25,7 @@ from api.proxy_routing import (
     _model_from_content,
     _normalize_upstream_authorization,
     _record_provider_signal,
+    maybe_enqueue_unknown_model_refresh,
 )
 from core.policy.client_detector import client_detector
 from fastapi import Request
@@ -36,6 +37,9 @@ from providers.virtual import virtual_provider
 
 async def proxy(path: str, request: Request):
     raw = await request.body()
+    client_authenticated = any(
+        bool(request.headers.get(name)) for name in ("authorization", "x-api-key", "x-goog-api-key", "api-key")
+    ) or bool(request.query_params.get("key"))
 
     body, prefix_stripped = _strip_prefix(raw)
     body, fmt_changed = _patch_body(path, body if prefix_stripped else raw)
@@ -144,6 +148,11 @@ async def proxy(path: str, request: Request):
                         _record_provider_signal(signal_model, resp.status_code, time.monotonic() - start)
                     if resp.status_code >= 400:
                         err_content = await resp.aread()
+                        maybe_enqueue_unknown_model_refresh(
+                            resp,
+                            signal_model,
+                            authenticated=client_authenticated,
+                        )
                         log.warning(
                             "Proxy upstream stream error %d for %s: %s",
                             resp.status_code,
@@ -255,6 +264,11 @@ async def proxy(path: str, request: Request):
         _record_provider_signal(signal_model, resp.status_code, time.monotonic() - _proxy_start)
 
     if resp.status_code >= 400:
+        maybe_enqueue_unknown_model_refresh(
+            resp,
+            signal_model,
+            authenticated=client_authenticated,
+        )
         log.warning(
             "Upstream %d for %s — raw: %s",
             resp.status_code,

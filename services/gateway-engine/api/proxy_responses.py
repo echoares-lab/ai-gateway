@@ -30,6 +30,7 @@ from api.proxy_routing import (
     _record_cached_token_usage,
     _record_provider_signal,
     _record_token_usage,
+    maybe_enqueue_unknown_model_refresh,
 )
 from fastapi import Request
 from fastapi.responses import Response, StreamingResponse
@@ -420,6 +421,11 @@ async def responses_proxy(request: Request):
 
         if resp.status_code >= 400:
             err_content = await resp.aread()
+            maybe_enqueue_unknown_model_refresh(
+                resp,
+                oai_body.get("model", ""),
+                authenticated=bool(auth),
+            )
             await resp.aclose()
             log.warning(
                 "Responses upstream stream error %d: %s",
@@ -539,6 +545,11 @@ async def responses_proxy(request: Request):
         )
 
     if resp.status_code >= 400:
+        maybe_enqueue_unknown_model_refresh(
+            resp,
+            oai_body.get("model", ""),
+            authenticated=bool(auth),
+        )
         log.warning("Codex upstream %d: %s", resp.status_code, resp.text[:300])
         return Response(
             content=resp.content,

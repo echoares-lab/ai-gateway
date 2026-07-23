@@ -134,6 +134,13 @@ HTTPX_MAX_CONNECTIONS = config.HTTPX_MAX_CONNECTIONS
 _model_reconciliation_service: ModelReconciliationService | None = None
 
 
+async def _request_model_reconciliation(trigger, requested_model: str | None = None) -> bool:
+    service = _model_reconciliation_service
+    if service is None:
+        return False
+    return await service.request(trigger, requested_model)
+
+
 def _build_model_reconciliation_service() -> ModelReconciliationService:
     store = _model_registry_store()
     artifacts = ReconciliationArtifactManager(
@@ -635,6 +642,7 @@ configure_proxy_routes(
         policy_engine_enabled=lambda: POLICY_ENGINE_ENABLED,
         team_budget_snapshot_enabled=lambda: TEAM_BUDGET_SNAPSHOT_ENABLED,
         team_budget_cache_ttl_sec=TEAM_BUDGET_CACHE_TTL_SEC,
+        request_model_reconciliation=_request_model_reconciliation,
     )
 )
 app.include_router(proxy_router)

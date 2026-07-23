@@ -20,6 +20,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from core.model_reconciliation import ReconciliationTrigger
 
 sys.path.insert(0, os.path.dirname(__file__))
 import main as t
@@ -800,6 +801,116 @@ class _StreamTimeoutContext:
 class _StreamTimeoutClient:
     def stream(self, *args, **kwargs):
         return _StreamTimeoutContext()
+
+
+class _UnknownModelClient:
+    def __init__(self, content):
+        self.content = content
+
+    async def request(self, method, url, **kwargs):
+        return httpx.Response(
+            400,
+            content=self.content,
+            headers={"x-upstream-error": "preserved"},
+            request=httpx.Request(method, url),
+        )
+
+
+class _UnknownModelStreamContext:
+    def __init__(self, content):
+        self.response = httpx.Response(
+            400,
+            content=content,
+            request=httpx.Request("POST", "http://litellm/v1/chat/completions"),
+        )
+
+    async def __aenter__(self):
+        return self.response
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _UnknownModelStreamClient:
+    def __init__(self, content):
+        self.content = content
+
+    def stream(self, *args, **kwargs):
+        return _UnknownModelStreamContext(self.content)
+
+
+class _DemandRecorder:
+    def __init__(self):
+        self.requests = []
+
+    async def request(self, trigger, requested_model=None):
+        self.requests.append((trigger, requested_model))
+        return True
+
+
+def test_authenticated_unknown_model_response_enqueues_refresh_and_is_unchanged():
+    from fastapi.testclient import TestClient
+
+    content = b'{"error":{"message":"Invalid model name passed in model=gpt-5-6-sol"}}'
+    recorder = _DemandRecorder()
+    client = TestClient(t.app)
+    with (
+        patch.object(t, "_client", _UnknownModelClient(content)),
+        patch.object(t, "_model_reconciliation_service", recorder),
+    ):
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"authorization": "Bearer sk-test"},
+            json={"model": "gpt-5.6-sol", "messages": [{"role": "user", "content": "hello"}]},
+        )
+
+    assert response.status_code == 400
+    assert response.content == content
+    assert response.headers["x-upstream-error"] == "preserved"
+    assert recorder.requests == [(ReconciliationTrigger.DEMAND, "gpt-5-6-sol")]
+
+
+def test_unauthenticated_unknown_model_response_does_not_enqueue_refresh():
+    from fastapi.testclient import TestClient
+
+    content = b'{"error":{"message":"Invalid model name passed in model=gpt-5-6-sol"}}'
+    recorder = _DemandRecorder()
+    client = TestClient(t.app)
+    with (
+        patch.object(t, "_client", _UnknownModelClient(content)),
+        patch.object(t, "_model_reconciliation_service", recorder),
+    ):
+        response = client.post(
+            "/v1/chat/completions",
+            json={"model": "gpt-5.6-sol", "messages": [{"role": "user", "content": "hello"}]},
+        )
+
+    assert response.status_code == 400
+    assert recorder.requests == []
+
+
+def test_authenticated_stream_unknown_model_enqueues_refresh_without_mutating_body():
+    from fastapi.testclient import TestClient
+
+    content = b'{"error":{"message":"Invalid model name passed in model=gpt-5-6-sol"}}'
+    recorder = _DemandRecorder()
+    client = TestClient(t.app)
+    with (
+        patch.object(t, "_client", _UnknownModelStreamClient(content)),
+        patch.object(t, "_model_reconciliation_service", recorder),
+    ):
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"authorization": "Bearer sk-test"},
+            json={
+                "model": "gpt-5.6-sol",
+                "stream": True,
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+        )
+
+    assert response.content == content
+    assert recorder.requests == [(ReconciliationTrigger.DEMAND, "gpt-5-6-sol")]
 
 
 def test_proxy_non_stream_timeout_returns_structured_504():

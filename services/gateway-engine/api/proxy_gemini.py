@@ -24,6 +24,7 @@ from api.proxy_routing import (
     _record_cached_token_usage,
     _record_provider_signal,
     _record_token_usage,
+    maybe_enqueue_unknown_model_refresh,
 )
 from fastapi import Request
 from fastapi.responses import Response, StreamingResponse
@@ -160,6 +161,7 @@ async def gemini_proxy(model_action: str, request: Request):
 
         if resp.status_code >= 400:
             err_content = await resp.aread()
+            maybe_enqueue_unknown_model_refresh(resp, model, authenticated=bool(api_key))
             await resp.aclose()
             log.warning(
                 "Gemini upstream stream error %d: %s",
@@ -230,6 +232,7 @@ async def gemini_proxy(model_action: str, request: Request):
     resp = await _post_with_retry(f"{_deps().litellm_url}/v1/chat/completions", headers, oai_bytes)
 
     if resp.status_code >= 400:
+        maybe_enqueue_unknown_model_refresh(resp, model, authenticated=bool(api_key))
         log.warning("Gemini upstream %d: %s", resp.status_code, resp.text[:300])
         return Response(
             content=resp.content,

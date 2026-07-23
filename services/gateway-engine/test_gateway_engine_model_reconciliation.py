@@ -7,7 +7,9 @@ import os
 import stat
 from datetime import datetime, timezone
 
+import httpx
 import pytest
+from api.proxy_routing import is_unknown_model_response, maybe_enqueue_unknown_model_refresh
 from core.model_reconciliation import (
     ModelReconciliationService,
     ReconciliationArtifactManager,
@@ -44,6 +46,91 @@ async def _wait_until(predicate, *, timeout=0.5):
 
 def _resource(name, content):
     return ModelRegistryReconcileResource(name=name, kind="yaml", changed=True, content=content)
+
+
+@pytest.mark.parametrize(
+    "status, body, expected",
+    [
+        (
+            400,
+            {"error": {"message": "/chat/completions: Invalid model name passed in model=gpt-5-6-sol"}},
+            True,
+        ),
+        (404, {"error": {"provider_specific_fields": {"error": "model not found"}}}, True),
+        (400, {"error": {"message": "invalid request body"}}, False),
+        (401, {"error": {"message": "invalid model name"}}, False),
+        (429, {"error": {"message": "invalid model name"}}, False),
+        (503, {"error": {"message": "invalid model name"}}, False),
+        (400, {"message": "invalid model name"}, False),
+        (400, {"error": {"message": "invalid model name" + ("x" * 9000)}}, False),
+    ],
+)
+def test_unknown_model_response_classifier_is_typed_and_status_bounded(status, body, expected):
+    response = httpx.Response(status, json=body)
+    assert is_unknown_model_response(response) is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("authenticated, model", [(False, "gpt-5.6-sol"), (True, "bad model/name")])
+async def test_unknown_model_refresh_rejects_unauthenticated_or_invalid_model(authenticated, model):
+    requested = []
+
+    async def request_refresh(trigger, requested_model):
+        requested.append((trigger, requested_model))
+
+    response = httpx.Response(400, json={"error": {"message": "Invalid model name passed"}})
+    returned = maybe_enqueue_unknown_model_refresh(
+        response,
+        model,
+        authenticated=authenticated,
+        request_refresh=request_refresh,
+    )
+    await asyncio.sleep(0)
+
+    assert returned is response
+    assert requested == []
+
+
+@pytest.mark.asyncio
+async def test_unknown_model_refresh_is_async_and_returns_original_stream_error_unchanged():
+    release = asyncio.Event()
+    requested = []
+
+    async def request_refresh(trigger, requested_model):
+        requested.append((trigger, requested_model))
+        await release.wait()
+
+    content = b'{"error":{"message":"Invalid model name passed in model=gpt-5-6-sol"}}'
+    response = httpx.Response(400, content=content, headers={"x-upstream": "original"})
+    returned = maybe_enqueue_unknown_model_refresh(
+        response,
+        "gpt-5.6-sol",
+        authenticated=True,
+        request_refresh=request_refresh,
+    )
+    await asyncio.sleep(0)
+
+    assert returned is response
+    assert returned.content == content
+    assert returned.headers["x-upstream"] == "original"
+    assert requested == [(ReconciliationTrigger.DEMAND, "gpt-5-6-sol")]
+    release.set()
+
+
+def test_unknown_model_refresh_enqueue_failure_does_not_change_response():
+    response = httpx.Response(400, json={"error": {"message": "Invalid model name passed"}})
+
+    def failed_enqueue(trigger, requested_model):
+        raise RuntimeError("scheduler unavailable")
+
+    returned = maybe_enqueue_unknown_model_refresh(
+        response,
+        "gpt-5.6-sol",
+        authenticated=True,
+        request_refresh=failed_enqueue,
+    )
+
+    assert returned is response
 
 
 def test_atomic_apply_preserves_modes_and_returns_restorable_bytes(tmp_path):
