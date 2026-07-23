@@ -50,6 +50,13 @@
   `bash tests/test-openbao-policy-denial-classifier.sh` passes; `make test-fast` passes
   (324 gateway unit tests, 24 probe-classifier tests, four shell probe cases, two
   compose-migration tests, and 51 mock integration tests; one pre-existing warning).
+- Cross-repository contract fix: aligned the staging env example, workload-identity
+  prose, and executable gate with the authoritative k3s manifest values:
+  ServiceAccount `gateway-engine-openbao` and auth mount `kubernetes-k3s-01`. The
+  executable classifier test now asserts all three documentation declarations exactly,
+  preventing the runbook from silently drifting back to the former
+  `gateway-engine`/`kubernetes` values. The full gate snippet passes `bash -n`, the
+  classifier matrix passes, and `make test-fast` remains green with the counts above.
 
 ## Deliberately separate work
 

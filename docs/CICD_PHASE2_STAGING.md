@@ -111,7 +111,7 @@ Configure the staging gateway-engine Deployment with:
 
 ```text
 GATEWAY_ENGINE_OPENBAO_ADDR=<internal OpenBao HTTPS address>
-GATEWAY_ENGINE_OPENBAO_AUTH_MOUNT=kubernetes
+GATEWAY_ENGINE_OPENBAO_AUTH_MOUNT=kubernetes-k3s-01
 GATEWAY_ENGINE_OPENBAO_ROLE=ai-gateway-staging-launcher-keys
 GATEWAY_ENGINE_OPENBAO_KV_MOUNT=kv
 GATEWAY_ENGINE_OPENBAO_KEY_PREFIX=launcher-keys
@@ -119,16 +119,16 @@ GATEWAY_ENGINE_OPENBAO_TIMEOUT=5
 ```
 
 These are references and routing settings, not credentials. Authentication uses the
-`ai-gateway-staging` gateway-engine service-account JWT; never add a root, admin, or
-static OpenBao token to an `ExternalSecret`, Deployment, ConfigMap, or pod volume. The
-OpenBao role must be namespace/service-account bound and carry only the launcher escrow
-policy defined in the production deployment document: create/read/update data plus
-read/list metadata, with no delete/destroy capability.
+`ai-gateway-staging` `gateway-engine-openbao` service-account JWT; never add a root,
+admin, or static OpenBao token to an `ExternalSecret`, Deployment, ConfigMap, or pod
+volume. The OpenBao role must be namespace/service-account bound and carry only the
+launcher escrow policy defined in the production deployment document:
+create/read/update data plus read/list metadata, with no delete/destroy capability.
 
 Before promotion, log in through the exact identity used by the staging Deployment:
-Kubernetes namespace `ai-gateway-staging`, service account `gateway-engine`, and OpenBao
-role `ai-gateway-staging-launcher-keys`. The role binding in the authoritative GitOps
-manifest must name that namespace and service account exactly. Mint a short-lived
+Kubernetes namespace `ai-gateway-staging`, service account `gateway-engine-openbao`, and
+OpenBao role `ai-gateway-staging-launcher-keys`. The role binding in the authoritative
+GitOps manifest must name that namespace and service account exactly. Mint a short-lived
 service-account JWT and exchange it at the configured Kubernetes auth mount; do not run
 this check with an operator token already present in the shell. Use a disposable path,
 never a real launcher record:
@@ -139,8 +139,8 @@ set +x
 umask 077
 
 staging_namespace="ai-gateway-staging"
-gateway_service_account="gateway-engine"
-openbao_auth_mount="kubernetes"
+gateway_service_account="gateway-engine-openbao"
+openbao_auth_mount="kubernetes-k3s-01"
 openbao_workload_role="ai-gateway-staging-launcher-keys"
 workload_jwt_file="$(mktemp)"
 chmod 0600 "${workload_jwt_file}"
