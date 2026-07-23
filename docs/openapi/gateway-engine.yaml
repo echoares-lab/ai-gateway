@@ -536,7 +536,12 @@ paths:
         Includes model reconciliation scheduler health at
         panels.models.reconciliation. Error summaries are bounded and
         redacted; credentials and unconstrained provider error text are never
-        returned.
+        returned. While active is true, trigger and requested_model describe
+        the current run, while outcome is null, counts are zero, verification
+        is not_run, and errors is empty. Completed-result fields are populated
+        only after the active run finishes. Verification is one of not_run,
+        dry_run, not_required, verified, failed, rollback, or the safe fallback
+        unknown.
       responses:
         '200':
           description: admin-console.v1 JSON payload

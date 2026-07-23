@@ -152,6 +152,56 @@ def test_admin_reconciliation_status_redacts_and_bounds_errors():
     assert set(status["errors"][0]) == {"code", "phase", "message", "redacted"}
 
 
+@pytest.mark.parametrize("trigger", [ReconciliationTrigger.SCHEDULED, ReconciliationTrigger.MANUAL])
+def test_active_reconciliation_does_not_inherit_prior_demand_result(trigger):
+    prior = _reconciliation_result(
+        outcome="degraded",
+        phase="reload",
+        errors=[{"code": "reload_failed", "phase": "reload", "message": "old failure"}],
+    )
+    service = SimpleNamespace(
+        enabled=True,
+        interval_sec=900,
+        active=True,
+        pending=False,
+        phase="discover",
+        current_trigger=trigger,
+        current_requested_model=None,
+        last_attempt_at=datetime(2026, 7, 23, 11, 0, tzinfo=timezone.utc),
+        last_success_at=None,
+        last_result=prior,
+    )
+
+    status = admin_routes._admin_reconciliation_status(service)
+
+    assert status["trigger"] == trigger.value
+    assert status["requested_model"] is None
+    assert status["outcome"] is None
+    assert status["counts"] == {key: 0 for key in prior.counts}
+    assert status["verification"] == "not_run"
+    assert status["errors"] == []
+
+
+def test_admin_reconciliation_status_rejects_unbounded_secret_verification_value():
+    result = _reconciliation_result()
+    result.verification = "Bearer sk-verification-secret " + ("x" * 1000)
+    service = SimpleNamespace(
+        enabled=True,
+        interval_sec=900,
+        active=False,
+        pending=False,
+        phase="complete",
+        last_attempt_at=result.started_at,
+        last_success_at=result.completed_at,
+        last_result=result,
+    )
+
+    status = admin_routes._admin_reconciliation_status(service)
+
+    assert status["verification"] == "unknown"
+    assert "sk-verification-secret" not in str(status)
+
+
 def test_admin_status_nests_reconciliation_on_models_panel(monkeypatch):
     import main
 

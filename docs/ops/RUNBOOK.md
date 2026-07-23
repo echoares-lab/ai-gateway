@@ -210,6 +210,9 @@ curl -fsS http://localhost:4000/admin/status \
 `active` means a run is executing and `pending` means one coalesced rerun is queued.
 `phase` identifies the current or most recently completed phase. `outcome=success`
 with `verification=verified` (or `not_required` for a no-change run) is healthy.
+While a run is active, `trigger` and `requested_model` belong only to that run;
+completion-only `outcome`, `counts`, `verification`, and `errors` are cleared until
+it finishes, so stale details from the prior run cannot be mistaken for live state.
 `degraded` means changed artifacts were rolled back after apply; `failed` means the
 run stopped before a safe apply. Compare `last_attempt_at` with `last_success_at` and
 inspect the bounded, redacted `errors` array. Prometheus exposes bounded run duration,

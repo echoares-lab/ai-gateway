@@ -113,6 +113,7 @@ _RECONCILIATION_PHASES = frozenset(
     }
 )
 _RECONCILIATION_OUTCOMES = frozenset({"success", "degraded", "failed"})
+_RECONCILIATION_VERIFICATIONS = frozenset({"not_run", "dry_run", "not_required", "verified", "failed", "rollback"})
 
 
 @dataclass(frozen=True)
@@ -159,22 +160,27 @@ def _admin_reconciliation_status(service: Any | None) -> dict[str, Any]:
 
     if phase not in _RECONCILIATION_PHASES:
         phase = "idle"
-    raw_outcome = str(getattr(result, "outcome", "")) if result is not None else ""
+    display_result = None if active else result
+    raw_outcome = str(getattr(display_result, "outcome", "")) if display_result is not None else ""
     outcome = raw_outcome if raw_outcome in _RECONCILIATION_OUTCOMES else None
-    raw_trigger = getattr(service, "current_trigger", None) if active else None
-    if raw_trigger is None:
-        raw_trigger = getattr(result, "trigger", None) if result is not None else None
+    raw_trigger = (
+        getattr(service, "current_trigger", None)
+        if active
+        else (getattr(display_result, "trigger", None) if display_result is not None else None)
+    )
     trigger = getattr(raw_trigger, "value", raw_trigger)
     if trigger not in {member.value for member in ReconciliationTrigger}:
         trigger = None
-    requested_model = getattr(service, "current_requested_model", None) if active else None
-    if requested_model is None:
-        requested_model = getattr(result, "requested_model", None) if result is not None else None
+    requested_model = (
+        getattr(service, "current_requested_model", None)
+        if active
+        else (getattr(display_result, "requested_model", None) if display_result is not None else None)
+    )
     if requested_model is not None:
         requested_model = _admin_redact(str(requested_model))[0]
-    counts = getattr(result, "counts", {}) if result is not None else {}
+    counts = getattr(display_result, "counts", {}) if display_result is not None else {}
     errors = []
-    for error in (getattr(result, "errors", []) if result is not None else [])[:10]:
+    for error in (getattr(display_result, "errors", []) if display_result is not None else [])[:10]:
         if not isinstance(error, dict):
             continue
         message, redacted = _admin_redact(str(error.get("message", "")))
@@ -186,6 +192,11 @@ def _admin_reconciliation_status(service: Any | None) -> dict[str, Any]:
         return (
             value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if isinstance(value, datetime) else None
         )
+
+    raw_verification = (
+        str(getattr(display_result, "verification", "not_run")) if display_result is not None else "not_run"
+    )
+    verification = raw_verification if raw_verification in _RECONCILIATION_VERIFICATIONS else "unknown"
 
     return {
         "enabled": enabled,
@@ -199,7 +210,7 @@ def _admin_reconciliation_status(service: Any | None) -> dict[str, Any]:
         "requested_model": requested_model,
         "outcome": outcome,
         "counts": {key: max(0, int(counts.get(key, 0))) for key in _RECONCILIATION_COUNT_KEYS},
-        "verification": str(getattr(result, "verification", "not_run")) if result is not None else "not_run",
+        "verification": verification,
         "errors": errors,
     }
 
