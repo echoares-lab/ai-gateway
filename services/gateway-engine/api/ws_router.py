@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 import websockets
+from api.proxy_common import _log_safe_headers
 from fastapi import APIRouter, WebSocket
 
 log = logging.getLogger("gateway-engine")
@@ -127,14 +128,7 @@ async def _validate_ws_auth_token_async(client_auth: str) -> tuple[bool, str | N
 
 
 def _ws_log_safe_mapping(values: dict[str, str]) -> dict[str, str]:
-    auth_keys = frozenset({"authorization", "api-key", "x-api-key", "key"})
-    safe: dict[str, str] = {}
-    for key, value in values.items():
-        if key.lower() in auth_keys:
-            safe[key] = "[redacted]"
-        else:
-            safe[key] = value
-    return safe
+    return _log_safe_headers(values)
 
 
 def create_ws_router(deps: WsRouterDeps) -> APIRouter:

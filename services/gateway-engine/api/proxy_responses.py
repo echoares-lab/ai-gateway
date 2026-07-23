@@ -11,6 +11,7 @@ from api.proxy_common import (
     _aiter_list,
     _deps,
     _http_client,
+    _log_safe_headers,
     _tee_lines,
     log,
     router,
@@ -328,17 +329,6 @@ async def _oai_to_responses_stream(oai_lines):
             "response": {"id": resp_id, "object": "response", "status": "completed"},
         },
     )
-
-
-def _log_safe_headers(headers: dict) -> dict:
-    sensitive = {
-        "authorization",
-        "x-api-key",
-        "x-goog-api-key",
-        "api-key",
-        "key",
-    }
-    return {k: ("[redacted]" if k.lower() in sensitive else v) for k, v in headers.items()}
 
 
 @router.post("/v1/responses")

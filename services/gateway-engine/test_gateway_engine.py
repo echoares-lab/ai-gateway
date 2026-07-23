@@ -9,6 +9,7 @@ Or locally if deps are installed:
 """
 
 import json
+import logging
 
 # ---------------------------------------------------------------------------
 # Inline-import the module under test.  main.py lives next to this file
@@ -788,6 +789,25 @@ class _TimeoutClient:
 class _ConnectionErrorClient:
     async def request(self, *args, **kwargs):
         raise httpx.ConnectError("connect failed")
+
+
+@pytest.mark.parametrize("header_name", ["authorization", "x-api-key", "x-goog-api-key", "api-key"])
+def test_catchall_request_log_redacts_supported_credential_headers(header_name, caplog):
+    from fastapi.testclient import TestClient
+
+    stable_token = f"stable-secret-for-{header_name}"
+    caplog.set_level(logging.INFO, logger="gateway-engine.proxy_router")
+    client = TestClient(t.app)
+    with patch.object(t, "_client", _ConnectionErrorClient()):
+        response = client.post(
+            "/v1/chat/completions",
+            headers={header_name: stable_token},
+            json={"model": "gpt-5-6-sol", "messages": [{"role": "user", "content": "hello"}]},
+        )
+
+    assert response.status_code == 502
+    assert stable_token not in caplog.text
+    assert f"'{header_name}': '[redacted]'" in caplog.text
 
 
 class _StreamTimeoutContext:

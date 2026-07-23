@@ -14,6 +14,13 @@ log = logging.getLogger("gateway-engine.proxy_router")
 
 router = APIRouter()
 
+_CREDENTIAL_HEADER_NAMES = frozenset({"authorization", "x-api-key", "x-goog-api-key", "api-key", "key"})
+
+
+def _log_safe_headers(headers: dict[str, str]) -> dict[str, str]:
+    """Return headers with every supported credential value redacted."""
+    return {key: "[redacted]" if key.lower() in _CREDENTIAL_HEADER_NAMES else value for key, value in headers.items()}
+
 
 @dataclass(frozen=True)
 class ProxyRouterDeps:

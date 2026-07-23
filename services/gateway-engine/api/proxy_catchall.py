@@ -10,6 +10,7 @@ from api.proxy_common import (
     _deps,
     _enable_virtual_providers,
     _http_client,
+    _log_safe_headers,
     log,
 )
 from api.proxy_normalize import (
@@ -107,7 +108,7 @@ async def proxy(path: str, request: Request):
     log.info(
         "Proxy request path: %s headers: %s",
         path,
-        {k: v for k, v in headers.items() if k.lower() != "authorization"},
+        _log_safe_headers(headers),
     )
     if changed:
         headers["content-length"] = str(len(body))
