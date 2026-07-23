@@ -635,6 +635,13 @@ class ModelReconciliationService:
 
             set_phase("probe")
             additions = {diff["model_id"] for diff in diffs if diff["kind"] == "add"}
+            retryable_unadvertised = {
+                model_id
+                for model_id, model in current_by_id.items()
+                if not model.advertised
+                and model.source == "cliproxy"
+                and (model.probe_status is None or str(model.probe_status).lower() in _RETRYABLE_PROBE_STATUSES)
+            }
             for model_id in additions:
                 merged_by_id[model_id] = merged_by_id[model_id].model_copy(
                     update={"enabled": False, "status": "PENDING"}
@@ -643,10 +650,12 @@ class ModelReconciliationService:
             for model_id, model in list(merged_by_id.items()):
                 if model_id in additions or self._probe_is_stale(model):
                     probed = await _resolve(self._probe_model(model))
-                    advertised = should_advertise_after_probe(
-                        probed.probe_status,
-                        currently_advertised=model.advertised,
-                    )
+                    advertised = model.advertised
+                    if model_id in additions or model_id in retryable_unadvertised:
+                        advertised = should_advertise_after_probe(
+                            probed.probe_status,
+                            currently_advertised=model.advertised,
+                        )
                     probed = probed.model_copy(update={"advertised": advertised})
                     merged_by_id[model_id] = probed
                     probed_ids.add(model_id)

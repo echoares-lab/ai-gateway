@@ -466,6 +466,42 @@ async def test_transient_probe_keeps_already_advertised_model():
 
 
 @pytest.mark.asyncio
+async def test_stale_healthy_probe_preserves_deliberately_unadvertised_model():
+    old_checked_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+    refreshed_at = datetime.now(timezone.utc)
+    existing = _model(
+        advertised=False,
+        retired=False,
+        status="HEALTHY",
+        probe_status="healthy",
+        probe_http_status=200,
+        probe_checked_at=old_checked_at,
+        source="cliproxy",
+    )
+    fakes = Fakes(existing=[existing], discovered=[existing])
+
+    async def healthy_probe(model):
+        return model.model_copy(
+            update={
+                "probe_status": "healthy",
+                "probe_http_status": 204,
+                "probe_checked_at": refreshed_at,
+                "status": "HEALTHY",
+            }
+        )
+
+    fakes.probe = healthy_probe
+    result = await fakes.service(probe_is_stale=lambda model: True).run(ReconciliationTrigger.SCHEDULED)
+
+    assert result.models[0].advertised is False
+    assert result.models[0].retired is False
+    assert result.models[0].probe_status == "healthy"
+    assert result.models[0].probe_http_status == 204
+    assert result.models[0].probe_checked_at == refreshed_at
+    assert result.models[0].status == "HEALTHY"
+
+
+@pytest.mark.asyncio
 async def test_failed_discovered_addition_remains_retryable_and_enables_after_success():
     pending = _model(
         model_id="gpt-5-6-sol",
