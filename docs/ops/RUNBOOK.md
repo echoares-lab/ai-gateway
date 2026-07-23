@@ -719,15 +719,6 @@ Then run login commands from that forwarded session:
 
 ## Connecting Clients
 
-### Bootstrap a repo with tenant-aware keys (epic #30)
-
-```bash
-setup-repo-env.sh --org echoares --workspace core --team eng --env dev /path/to/your-repo
-```
-
-Writes `.envrc` + isolated `CODEX_HOME`. Expected LiteLLM virtual key label:
-`ak-{org}-{workspace}-{team}-{repo}-{environment}`. See [docs/TENANCY.md](./docs/TENANCY.md).
-
 ### Generate config snippets
 
 Print ready-to-paste connection settings for any supported client profile

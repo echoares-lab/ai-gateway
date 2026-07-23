@@ -104,7 +104,6 @@ We propose splitting the execution of Epic #33 into the following sequenced chil
 ---
 
 ## 6. References
-- [Tenancy & Workspace Domain Model](./TENANCY.md)
 - [Client Compatibility Matrix](./CLIENT_COMPATIBILITY.md)
 - [Roadmap Status](./ROADMAP.md)
 - [Architecture Decision Record - MCP Control Plane](./ARCHITECTURE.md)

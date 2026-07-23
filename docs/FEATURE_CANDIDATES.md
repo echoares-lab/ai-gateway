@@ -54,15 +54,14 @@ Everything below stays candidate until promoted.
 
 ## Tenancy and adoption
 
-Parked on the roadmap as coordination anchors; expanded scope remains candidate
-until a multi-tenant decision is made.
+Tenancy epics (#30, #34, #109) were closed and dropped as out of scope for the single-tenant operator gateway architecture.
 
 | ID | Summary | Effort | Risk | Need/fit | Deps / links | Status |
 |----|---------|--------|------|----------|--------------|--------|
-| C-TEN-1 | Full multi-tenant workspace lifecycle (org/workspace/team/repo) | L | H | unclear | [#30](https://github.com/echoares-lab/ai-gateway/issues/30); [TENANCY.md](./TENANCY.md) | candidate |
-| C-TEN-2 | Self-service onboarding for repos, apps, and AI clients | L | M | unclear | [#34](https://github.com/echoares-lab/ai-gateway/issues/34); depends on C-TEN-1 | candidate |
-| C-TEN-3 | Admin tenant/team panel (usage, quota, credential health per tenant) | M | M | unclear | [#109](https://github.com/echoares-lab/ai-gateway/issues/109); depends on C-TEN-1 | candidate |
-| C-TEN-4 | RBAC and identity integration | L | H | unclear | Tenancy + admin/control-plane contracts | candidate |
+| C-TEN-1 | Full multi-tenant workspace lifecycle (org/workspace/team/repo) | L | H | low | Closed #30 | dropped |
+| C-TEN-2 | Self-service onboarding for repos, apps, and AI clients | L | M | low | Closed #34 | dropped |
+| C-TEN-3 | Admin tenant/team panel (usage, quota, credential health per tenant) | M | M | low | Closed #109 | dropped |
+| C-TEN-4 | RBAC and identity integration | L | H | low | Control-plane contracts | candidate |
 
 ---
 
