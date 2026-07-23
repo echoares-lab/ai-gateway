@@ -38,7 +38,7 @@ def _model(model_id: str = "gpt-5-4", **updates) -> ModelRegistryRecord:
         family="openai",
         upstream_model=model_id.replace("-", ".", 2),
         litellm_model=f"openai/{model_id.replace('-', '.', 2)}",
-        enabled=True,
+        advertised=True,
         status="HEALTHY",
         probe_status="healthy",
         probe_checked_at=datetime.now(timezone.utc),
@@ -313,7 +313,7 @@ class Fakes:
         self.applied = []
         self.rollbacks = []
         self.reloads = 0
-        self.catalog = {model.model_id for model in self.models if model.enabled}
+        self.catalog = {model.model_id for model in self.models if model.enabled} or None
         self.validation_error = None
         self.discovery_error = None
         self.reload_ok = True
@@ -360,7 +360,9 @@ class Fakes:
         return self.reload_ok
 
     async def read_catalog(self):
-        return set(self.catalog)
+        if self.catalog is not None:
+            return set(self.catalog)
+        return {model.model_id for model in self.rendered_models if model.enabled}
 
     def service(self, **scheduler_options):
         return ModelReconciliationService(
@@ -419,6 +421,51 @@ async def test_discovered_add_is_probed_applied_reloaded_and_verified():
 
 
 @pytest.mark.asyncio
+async def test_rate_limited_new_discovery_is_advertised_and_applied():
+    fakes = Fakes(discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
+
+    async def rate_limited_probe(model):
+        return model.model_copy(
+            update={"probe_status": "rate_limited", "status": "UNHEALTHY", "probe_http_status": 429}
+        )
+
+    fakes.probe = rate_limited_probe
+    result = await fakes.service().run(ReconciliationTrigger.STARTUP)
+    assert result.outcome == "success"
+    assert result.models[0].advertised is True
+    assert result.models[0].enabled is True
+    assert "model_name: gpt-5-6-sol" in fakes.applied[-1][0].content
+
+
+@pytest.mark.asyncio
+async def test_missing_model_new_discovery_stays_unadvertised():
+    fakes = Fakes(discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
+
+    async def missing_probe(model):
+        return model.model_copy(
+            update={"probe_status": "missing_model", "status": "UNHEALTHY", "probe_http_status": 404}
+        )
+
+    fakes.probe = missing_probe
+    result = await fakes.service().run(ReconciliationTrigger.STARTUP)
+    assert result.models[0].advertised is False
+    assert result.verification in {"not_required", "verified"}
+
+
+@pytest.mark.asyncio
+async def test_transient_probe_keeps_already_advertised_model():
+    existing = _model(advertised=True, enabled=True, status="HEALTHY", probe_status="healthy", source="cliproxy")
+    fakes = Fakes(existing=[existing], discovered=[existing])
+
+    async def transient_probe(model):
+        return model.model_copy(update={"probe_status": "rate_limited", "status": "UNHEALTHY"})
+
+    fakes.probe = transient_probe
+    result = await fakes.service(probe_is_stale=lambda m: True).run(ReconciliationTrigger.SCHEDULED)
+    assert result.models[0].advertised is True
+
+
+@pytest.mark.asyncio
 async def test_failed_discovered_addition_remains_retryable_and_enables_after_success():
     pending = _model(
         model_id="gpt-5-6-sol",
@@ -469,8 +516,9 @@ async def test_pending_legacy_or_auth_failed_additions_remain_retryable(probe_st
 
 
 @pytest.mark.asyncio
-async def test_two_run_transient_addition_then_healthy_applies_and_advertises_alias():
+async def test_two_run_transient_addition_advertises_immediately_then_probes_healthy():
     fakes = Fakes(discovered=[{"id": "gpt-5.6-sol"}])
+    fakes.catalog = {"gpt-5-6-sol"}
     healthy = False
 
     async def probe(model):
@@ -483,18 +531,18 @@ async def test_two_run_transient_addition_then_healthy_applies_and_advertises_al
 
     first = await service.run(ReconciliationTrigger.SCHEDULED)
     assert first.outcome == "success"
-    assert fakes.models[0].enabled is False
+    assert fakes.models[0].enabled is True
+    assert fakes.models[0].advertised is True
+    rendered = next(resource for resource in fakes.applied[-1] if resource.name == "litellm-config.yaml")
+    assert "model_name: gpt-5-6-sol" in rendered.content
 
     healthy = True
-    fakes.catalog = {"gpt-5-6-sol"}
     second = await service.run(ReconciliationTrigger.SCHEDULED)
 
     assert second.outcome == "success"
-    assert second.verification == "verified"
+    assert second.verification == "not_required"
     assert fakes.models[0].enabled is True
-    assert fakes.reloads == 2
-    rendered = next(resource for resource in fakes.applied[-1] if resource.name == "litellm-config.yaml")
-    assert "model_name: gpt-5-6-sol" in rendered.content
+    assert fakes.reloads == 1
 
 
 @pytest.mark.asyncio
@@ -513,19 +561,21 @@ async def test_transient_probe_failure_preserves_enabled_existing_model():
 
 
 @pytest.mark.asyncio
-async def test_unhealthy_discovered_add_remains_disabled_and_is_not_rendered():
+@pytest.mark.parametrize("probe_status", ["unhealthy", "error"])
+async def test_hard_probe_failure_discovered_add_remains_unadvertised_and_is_not_rendered(probe_status):
     fakes = Fakes(discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
 
     async def unhealthy_probe(model):
         fakes.probed.append(model.model_id)
         assert model.enabled is False
         assert model.status == "PENDING"
-        return model.model_copy(update={"probe_status": "unhealthy", "status": "UNHEALTHY"})
+        return model.model_copy(update={"probe_status": probe_status, "status": "UNHEALTHY"})
 
     fakes.probe = unhealthy_probe
     result = await fakes.service().run(ReconciliationTrigger.STARTUP)
 
     assert result.outcome == "success"
+    assert result.models[0].advertised is False
     assert result.models[0].enabled is False
     assert result.counts["enabled"] == 0
     assert result.counts["disabled"] == 1
