@@ -39,6 +39,17 @@
   Added executable `tests/test-openbao-policy-denial-classifier.sh` covering command
   success, a real 403 policy denial, local filesystem permission denial, TLS failure,
   transport failure, expired token, and 5xx response.
+- Latest security-review fix: after each expected destructive-operation denial, the
+  gate immediately repeats the known-allowed `bao kv get` against the disposable path
+  with the same workload token. A generic OpenBao 403 is accepted only when that read
+  succeeds, distinguishing an ACL denial from an expired token with identical output.
+  The executable gate test covers both the valid-token success case and rejection when
+  the post-denial read fails. JWT exchange remains file-backed (`jwt=@0600-temp-file`),
+  and no credential was added to process arguments.
+- Revalidation: extracted documentation snippet and executable test pass `bash -n`;
+  `bash tests/test-openbao-policy-denial-classifier.sh` passes; `make test-fast` passes
+  (324 gateway unit tests, 24 probe-classifier tests, four shell probe cases, two
+  compose-migration tests, and 51 mock integration tests; one pre-existing warning).
 
 ## Deliberately separate work
 

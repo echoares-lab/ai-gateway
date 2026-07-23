@@ -3,10 +3,22 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 classifier="$({
-  sed -n '/^require_permission_denied() {$/,/^}$/p' \
+  sed -n \
+    -e '/^require_permission_denied() {$/,/^}$/p' \
+    -e '/^require_denied_with_valid_token() {$/,/^}$/p' \
     "${repo_root}/docs/CICD_PHASE2_STAGING.md"
 })"
 eval "${classifier}"
+
+test_path="launcher-keys/policy-check/test"
+allowed_read_status=0
+bao() {
+  if [[ "$*" != "kv get -mount=kv ${test_path}" ]]; then
+    echo "ERROR: unexpected bao invocation: $*" >&2
+    return 64
+  fi
+  return "${allowed_read_status}"
+}
 
 success() { return 0; }
 real_policy_denial() {
@@ -35,6 +47,18 @@ server_failure() {
 }
 
 require_permission_denied "real policy denial" real_policy_denial
+
+allowed_read_status=0
+require_denied_with_valid_token "real policy denial with valid token" \
+  real_policy_denial
+
+allowed_read_status=2
+if require_denied_with_valid_token "generic 403 with failed allowed read" \
+  real_policy_denial >/dev/null 2>&1; then
+  echo "ERROR: gate accepted a denial after the known-allowed read failed" >&2
+  exit 1
+fi
+allowed_read_status=0
 
 for rejected in \
   success \

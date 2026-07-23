@@ -186,16 +186,33 @@ require_permission_denied() {
   fi
 }
 
-require_permission_denied "KV version deletion" \
+require_denied_with_valid_token() {
+  local description="$1"
+  shift
+
+  require_permission_denied "${description}" "$@"
+  # A real policy denial and an expired workload token can both be a generic
+  # OpenBao 403. Prove this same token is still usable immediately afterward.
+  if ! bao kv get -mount=kv "${test_path}" >/dev/null; then
+    echo "ERROR: ${description} was denied, but the known-allowed read also failed" >&2
+    echo "       Token validity is unproven; refresh the workload token and rerun." >&2
+    return 1
+  fi
+}
+
+require_denied_with_valid_token "KV version deletion" \
   bao kv delete -mount=kv "${test_path}"
-require_permission_denied "KV metadata destruction" \
+require_denied_with_valid_token "KV metadata destruction" \
   bao kv metadata delete -mount=kv "${test_path}"
 ```
 
 The login and first two KV commands must succeed. Both deletion attempts must return an
 explicit OpenBao `Code: 403` together with `permission denied`; a generic nonzero status
 or a local filesystem `Permission denied` is not evidence of policy enforcement.
-Transport, DNS, TLS, token-expiry, and OpenBao server errors fail the gate.
+Immediately after each denial, the same token must still read the disposable record;
+failure of that known-allowed read makes token validity indistinguishable from ACL
+enforcement and fails the gate. Transport, DNS, TLS, token-expiry, and OpenBao server
+errors fail the gate.
 Because the runtime role intentionally cannot clean up, record `test_path` and have an
 OpenBao operator remove that disposable record with a separately authenticated operator session.
 Never broaden the workload policy just to perform cleanup. Then exercise gateway admin
