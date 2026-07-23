@@ -88,3 +88,50 @@ The pre-existing Starlette `TestClient`/`httpx` deprecation warning remains.
 The required independent review agent could not be spawned because all four
 collaboration slots were occupied. Coordinator review is still required before
 integration.
+
+## Review follow-up
+
+- Declared `Cache-Control: no-store` on every documented response for all three
+  stable-key operations, including shared 404/409/502/503 responses and inline
+  403/422 responses.
+- Typed inline authentication and validation errors with `StableKeyError` and
+  expanded its stable code enum to cover the runtime-emitted
+  `admin_key_required`, `invalid_request`, and `invalid_key_alias` codes.
+- Extended `tests/test-quota-summary.sh` to resolve shared OpenAPI responses and
+  assert that every stable-key status declares `no-store`, every error response
+  has a typed code enum, and all emitted auth/validation codes are documented.
+- Applied Ruff formatting only to the two inherited Task 1/2 files requested by
+  review: `core/launcher_key_escrow.py` and
+  `test_gateway_engine_launcher_key_escrow.py`.
+
+Review RED:
+
+```text
+bash tests/test-quota-summary.sh
+AssertionError: POST /admin/keys response 403 must declare Cache-Control: no-store
+```
+
+Review GREEN:
+
+```text
+make test-scripts
+All 12 quota-summary regression checks passed.
+
+make test-unit
+324 passed in 4.89s
+
+make test-fast
+ruff check: All checks passed
+ruff format --check: 125 files already formatted
+gateway-engine unit: 324 passed in 5.32s
+sync-model probe pytest: 24 passed
+sync-model shell checks: 4 passed
+compose migration: 2 passed
+mock integration: 51 passed, 3 deselected, 1 pre-existing warning
+
+git diff --check
+# exit 0
+```
+
+The earlier format-gate limitation is resolved. The pre-existing Starlette
+`TestClient`/`httpx` deprecation warning remains.

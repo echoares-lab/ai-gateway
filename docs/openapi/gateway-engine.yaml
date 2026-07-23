@@ -122,11 +122,23 @@ paths:
         '200':
           $ref: '#/components/responses/StableKeySuccess'
         '403':
-          description: Invalid admin key
+          description: Gateway Engine admin key is missing or invalid (`admin_key_required`)
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StableKeyError'}
         '409':
           $ref: '#/components/responses/StableKeyConflict'
         '422':
-          description: Invalid request or key alias
+          description: Invalid request body or key alias (`invalid_request` or `invalid_key_alias`)
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StableKeyError'}
         '502':
           $ref: '#/components/responses/StableKeyIncomplete'
         '503':
@@ -148,13 +160,25 @@ paths:
         '200':
           $ref: '#/components/responses/StableKeySuccess'
         '403':
-          description: Invalid admin key
+          description: Gateway Engine admin key is missing or invalid (`admin_key_required`)
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StableKeyError'}
         '404':
           $ref: '#/components/responses/StableKeyNotFound'
         '409':
           $ref: '#/components/responses/StableKeyConflict'
         '422':
-          description: Invalid key alias
+          description: Invalid key alias (`invalid_key_alias`)
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StableKeyError'}
         '502':
           $ref: '#/components/responses/StableKeyIncomplete'
         '503':
@@ -182,13 +206,25 @@ paths:
         '200':
           $ref: '#/components/responses/StableKeySuccess'
         '403':
-          description: Invalid admin key
+          description: Gateway Engine admin key is missing or invalid (`admin_key_required`)
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StableKeyError'}
         '404':
           $ref: '#/components/responses/StableKeyNotFound'
         '409':
           $ref: '#/components/responses/StableKeyConflict'
         '422':
-          description: Invalid request or key alias
+          description: Invalid request body or key alias (`invalid_request` or `invalid_key_alias`)
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StableKeyError'}
         '502':
           $ref: '#/components/responses/StableKeyIncomplete'
         '503':
@@ -1132,7 +1168,7 @@ components:
           properties:
             code:
               type: string
-              enum: [key_alias_not_found, key_secret_not_escrowed, key_identity_mismatch, secret_store_unavailable, key_creation_incomplete]
+              enum: [invalid_request, invalid_key_alias, admin_key_required, key_alias_not_found, key_secret_not_escrowed, key_identity_mismatch, secret_store_unavailable, key_creation_incomplete]
             message: {type: string}
   responses:
     StableKeySuccess:
@@ -1146,21 +1182,36 @@ components:
             $ref: '#/components/schemas/StableKeySecret'
     StableKeyNotFound:
       description: LiteLLM key alias was not found (`key_alias_not_found`)
+      headers:
+        Cache-Control:
+          schema: {type: string, enum: [no-store]}
       content:
         application/json:
           schema: {$ref: '#/components/schemas/StableKeyError'}
     StableKeyConflict:
       description: Secret is absent, incomplete, or has mismatched identity metadata
+      headers:
+        Cache-Control:
+          schema: {type: string, enum: [no-store]}
       content:
         application/json:
           schema: {$ref: '#/components/schemas/StableKeyError'}
     StableKeyIncomplete:
       description: LiteLLM creation or verification did not complete (`key_creation_incomplete`)
+      headers:
+        Cache-Control:
+          schema: {type: string, enum: [no-store]}
       content:
         application/json:
           schema: {$ref: '#/components/schemas/StableKeyError'}
     SecretStoreUnavailable:
-      description: OpenBao is unavailable or not configured (`secret_store_unavailable`)
+      description: >-
+        OpenBao is unavailable or not configured (`secret_store_unavailable`),
+        or Gateway Engine admin authentication is not configured
+        (`admin_key_required`).
+      headers:
+        Cache-Control:
+          schema: {type: string, enum: [no-store]}
       content:
         application/json:
           schema: {$ref: '#/components/schemas/StableKeyError'}

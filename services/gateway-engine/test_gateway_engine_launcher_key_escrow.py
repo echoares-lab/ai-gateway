@@ -249,9 +249,7 @@ async def test_service_recovery_checks_remote_and_escrow_identity():
     def handler(request):
         requests.append(request)
         if request.url.path == "/key/list":
-            return httpx.Response(
-                200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}]
-            )
+            return httpx.Response(200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}])
         assert request.headers["Authorization"] == "Bearer sk-secret-token"
         return httpx.Response(
             200, json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}}
@@ -274,9 +272,7 @@ async def test_service_recovery_refuses_swapped_escrow_token_without_disclosing_
 
     def handler(request):
         if request.url.path == "/key/list":
-            return httpx.Response(
-                200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}]
-            )
+            return httpx.Response(200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}])
         assert request.headers["Authorization"] == "Bearer sk-swapped-token"
         return httpx.Response(
             200, json={"info": {"key_alias": "repo/customer-b", "team_id": "team-2", "key_id": "key-8"}}
@@ -365,9 +361,7 @@ async def test_service_legacy_import_refuses_pending_record_identity_mismatch():
 
     def handler(request):
         if request.url.path == "/key/list":
-            return httpx.Response(
-                200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}]
-            )
+            return httpx.Response(200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}])
         return httpx.Response(
             200, json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}}
         )

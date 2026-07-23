@@ -36,11 +36,7 @@ class EscrowRecord:
             alias=str(value["alias"]),
             token=str(value["token"]),
             team_id=str(value["team_id"]),
-            litellm_key_id=(
-                str(value["litellm_key_id"])
-                if value.get("litellm_key_id") is not None
-                else None
-            ),
+            litellm_key_id=(str(value["litellm_key_id"]) if value.get("litellm_key_id") is not None else None),
             state=str(value["state"]),
             schema_version=int(value["schema_version"]),
             created_at=datetime.fromisoformat(str(value["created_at"])),
@@ -93,9 +89,7 @@ class OpenBaoEscrowClient:
         except asyncio.CancelledError:
             raise
         except Exception:
-            raise SecretStoreUnavailableError(
-                "secret store authentication unavailable"
-            ) from None
+            raise SecretStoreUnavailableError("secret store authentication unavailable") from None
         if not token:
             raise SecretStoreUnavailableError("secret store authentication unavailable")
         return {"X-Vault-Token": cast(str, token)}
@@ -125,9 +119,7 @@ class OpenBaoEscrowClient:
             envelope = response.json()["data"]
             return EscrowRecord.from_dict(envelope["data"]), int(envelope["metadata"]["version"])
         except (KeyError, TypeError, ValueError):
-            raise SecretStoreUnavailableError(
-                "secret store returned an invalid record"
-            ) from None
+            raise SecretStoreUnavailableError("secret store returned an invalid record") from None
 
     async def read(self, alias: str) -> EscrowRecord | None:
         versioned = await self._read_versioned(alias)
@@ -146,8 +138,7 @@ class OpenBaoEscrowClient:
                 body = None
             errors = body.get("errors", []) if isinstance(body, Mapping) else []
             is_cas_conflict = isinstance(errors, list) and any(
-                isinstance(error, str) and "check-and-set" in error.lower()
-                for error in errors
+                isinstance(error, str) and "check-and-set" in error.lower() for error in errors
             )
             if is_cas_conflict:
                 raise EscrowConflictError("secret store write conflict")
