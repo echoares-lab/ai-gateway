@@ -33,6 +33,7 @@ class MockKeyBackends:
     fail_generate_response_once: bool = False
     fail_escrow_read_once: bool = False
     fail_litellm_list_once: bool = False
+    fail_post_creation_list_once: bool = False
     fail_litellm_info_once: bool = False
 
     def seed_remote(self, alias: str, token: str, key_id: str = "key-legacy") -> None:
@@ -98,6 +99,9 @@ class MockKeyBackends:
                 return httpx.Response(503, json={"error": "temporarily unavailable"})
             alias = request.url.params.get("key_alias")
             remote = self.remote_keys.get(alias or "")
+            if remote and self.fail_post_creation_list_once:
+                self.fail_post_creation_list_once = False
+                return httpx.Response(503, json={"error": "temporarily unavailable"})
             assert request.url.params.get("return_full_object") == "true"
             listed = (
                 {
@@ -232,6 +236,13 @@ async def test_pre_escrow_key_import_then_recover_returns_exact_token() -> None:
             id="verify-post-generate-identity",
         ),
         pytest.param(
+            "verify",
+            "post-creation stable identity lookup",
+            {"fail_post_creation_list_once": True},
+            "key_creation_incomplete",
+            id="verify-post-creation-stable-identity-lookup",
+        ),
+        pytest.param(
             "activate",
             "escrow activation",
             {"fail_activation_once": True},
@@ -252,6 +263,10 @@ async def test_every_recoverable_create_boundary_retries_exact_token_without_dup
         with pytest.raises(LauncherKeyServiceError) as exc:
             await service.create_key({"key_alias": ALIAS, "team_id": TEAM_ID})
         assert exc.value.code == expected_code, f"{phase}: {operation}"
+        if operation == "post-creation stable identity lookup":
+            assert backends.escrow_record is not None
+            assert backends.escrow_record["state"] == "pending"
+            assert backends.escrow_record["token"] == STABLE_TOKEN
 
         recovered = await service.create_key({"key_alias": ALIAS, "team_id": TEAM_ID})
 

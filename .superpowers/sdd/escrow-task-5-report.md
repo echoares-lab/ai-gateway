@@ -92,3 +92,19 @@ alias/team identity in `info`. The mock stores the secret separately from the st
 hash, so the integration suite can no longer pass by accidentally treating a returned
 secret or invented `key_id` as identity. Exact-token retry and zero-delete assertions
 remain unchanged.
+
+## Post-creation stable-identity lookup boundary
+
+Added a distinct stateful failure injection for the second full-object `/key/list`
+request, after LiteLLM generation and bearer-token authentication. Unlike the existing
+pre-write list failure, this injection only fires after the remote alias exists. The
+test proves the first attempt leaves the exact generated token in pending escrow, and
+that retry returns that same token with exactly one generation call and no OpenBao
+`DELETE`.
+
+TDD evidence: before wiring the new injection into the stateful backend, the focused
+case failed because creation completed instead of raising at the second list boundary.
+After wiring it, the focused case passed and the integration file passed 19 tests.
+Repository verification with `CONTAINER_PREFIX=ESCROW-POSTLIST- make test-fast`
+passed, including 326 gateway unit tests and 70 mock integration tests with three
+deselected and one pre-existing Starlette warning.
