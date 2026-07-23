@@ -21,6 +21,13 @@
 - `git diff --check` — passed.
 - Confirmed all changed Markdown documents have balanced fenced-code delimiters.
 - Confirmed every newly referenced repository-relative document exists.
+- Review fix: bound the destructive policy check to a short-lived token obtained by
+  exchanging the exact `ai-gateway-staging`/`gateway-engine` service-account JWT for
+  the `ai-gateway-staging-launcher-keys` OpenBao role.
+- Review fix: destructive probes now capture command output and exit status and pass
+  only for an explicit OpenBao `permission denied`; successful deletes and unrelated
+  transport, TLS, expiry, or server failures block promotion.
+- `bash -n` on the revised policy-check snippet — passed.
 
 ## Deliberately separate work
 

@@ -125,30 +125,73 @@ OpenBao role must be namespace/service-account bound and carry only the launcher
 policy defined in the production deployment document: create/read/update data plus
 read/list metadata, with no delete/destroy capability.
 
-Before promotion, use a short-lived token issued to that exact workload role and a
-disposable path. Do not run this against a real launcher record:
+Before promotion, log in through the exact identity used by the staging Deployment:
+Kubernetes namespace `ai-gateway-staging`, service account `gateway-engine`, and OpenBao
+role `ai-gateway-staging-launcher-keys`. The role binding in the authoritative GitOps
+manifest must name that namespace and service account exactly. Mint a short-lived
+service-account JWT and exchange it at the configured Kubernetes auth mount; do not run
+this check with an operator token already present in the shell. Use a disposable path,
+never a real launcher record:
 
 ```bash
+set -euo pipefail
+
+staging_namespace="ai-gateway-staging"
+gateway_service_account="gateway-engine"
+openbao_auth_mount="kubernetes"
+openbao_workload_role="ai-gateway-staging-launcher-keys"
+workload_jwt_file="$(mktemp)"
+trap 'unset BAO_TOKEN; rm -f "${workload_jwt_file}"' EXIT
+
+# BAO_ADDR and the CA trust configuration must match the gateway-engine Deployment.
+: "${BAO_ADDR:?set BAO_ADDR to the internal OpenBao HTTPS address}"
+kubectl --namespace "${staging_namespace}" create token "${gateway_service_account}" \
+  --duration=10m >"${workload_jwt_file}"
+unset BAO_TOKEN
+export BAO_TOKEN="$(
+  bao write -field=token "auth/${openbao_auth_mount}/login" \
+    role="${openbao_workload_role}" \
+    jwt="$(<"${workload_jwt_file}")"
+)"
+
 test_id="policy-check-$(date +%s)"
 test_path="launcher-keys/policy-check/${test_id}"
 
 bao kv put -mount=kv "${test_path}" schema_version=1 state=disposable
 bao kv get -mount=kv "${test_path}" >/dev/null
 
-# Both commands MUST fail with permission denied. A zero exit status blocks promotion.
-if bao kv delete -mount=kv "${test_path}"; then
-  echo "ERROR: workload policy permits KV version deletion" >&2
-  exit 1
-fi
-if bao kv metadata delete -mount=kv "${test_path}"; then
-  echo "ERROR: workload policy permits metadata destruction" >&2
-  exit 1
-fi
+require_permission_denied() {
+  local description="$1"
+  shift
+  local output status
+
+  set +e
+  output="$("$@" 2>&1)"
+  status=$?
+  set -e
+
+  if (( status == 0 )); then
+    echo "ERROR: workload policy permits ${description}" >&2
+    return 1
+  fi
+  if ! grep -Eiq 'permission denied' <<<"${output}"; then
+    echo "ERROR: ${description} probe failed without an OpenBao permission-denied response (status=${status})" >&2
+    echo "       Treat transport, TLS, expired-token, and server failures as test failures; diagnose and rerun." >&2
+    return 1
+  fi
+}
+
+require_permission_denied "KV version deletion" \
+  bao kv delete -mount=kv "${test_path}"
+require_permission_denied "KV metadata destruction" \
+  bao kv metadata delete -mount=kv "${test_path}"
 ```
 
-The first two commands must succeed and both deletion attempts must fail. Because the
-runtime role intentionally cannot clean up, record `test_path` and have an OpenBao
-operator remove that disposable record with a separately authenticated operator session.
+The login and first two KV commands must succeed. Both deletion attempts must return an
+explicit OpenBao `permission denied`; a generic nonzero status is not evidence of policy
+enforcement. Transport, DNS, TLS, token-expiry, and OpenBao server errors fail the gate.
+Because the runtime role intentionally cannot clean up, record `test_path` and have an
+OpenBao operator remove that disposable record with a separately authenticated operator session.
 Never broaden the workload policy just to perform cleanup. Then exercise gateway admin
 create/recover/import flows and inspect captured logs for absence of the test token and
 Authorization headers. Production enablement is blocked until these staging checks pass.
