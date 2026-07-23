@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import inspect
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from typing import Awaitable, Callable, cast
@@ -140,13 +141,14 @@ class OpenBaoEscrowClient:
         )
         if response.status_code == 400:
             try:
-                errors = response.json().get("errors", [])
-                is_cas_conflict = isinstance(errors, list) and any(
-                    isinstance(error, str) and "check-and-set" in error.lower()
-                    for error in errors
-                )
-            except (TypeError, ValueError):
-                is_cas_conflict = False
+                body = response.json()
+            except ValueError:
+                body = None
+            errors = body.get("errors", []) if isinstance(body, Mapping) else []
+            is_cas_conflict = isinstance(errors, list) and any(
+                isinstance(error, str) and "check-and-set" in error.lower()
+                for error in errors
+            )
             if is_cas_conflict:
                 raise EscrowConflictError("secret store write conflict")
             raise SecretStoreUnavailableError("secret store write failed")

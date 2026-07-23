@@ -279,6 +279,19 @@ async def test_non_cas_bad_request_is_store_unavailable():
     assert not isinstance(exc.value, EscrowConflictError)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", [["check-and-set failed"], "check-and-set failed"])
+async def test_non_object_bad_request_is_store_unavailable(body):
+    escrow, http = client(lambda request: httpx.Response(400, json=body))
+    try:
+        with pytest.raises(SecretStoreUnavailableError) as exc:
+            await escrow.write_pending(record())
+    finally:
+        await http.aclose()
+
+    assert not isinstance(exc.value, EscrowConflictError)
+
+
 def test_openbao_config_reports_typed_unavailable_when_required_setting_missing(monkeypatch):
     names = (
         "GATEWAY_ENGINE_OPENBAO_ADDR",
