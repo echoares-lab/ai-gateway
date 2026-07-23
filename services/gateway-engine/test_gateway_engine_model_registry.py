@@ -133,9 +133,11 @@ class _FakeRegistryStore:
         model = self.models.get(model_id)
         if model is None:
             return None
-        disabled = model.model_copy(update={"enabled": False, "status": "DISABLED"})
-        self.models[model_id] = disabled
-        return disabled
+        retired = model.model_copy(
+            update={"retired": True, "advertised": False, "status": "RETIRED"}
+        )
+        self.models[model_id] = retired
+        return retired
 
     def hard_delete_model(self, model_id: str):
         return self.models.pop(model_id, None) is not None
@@ -991,8 +993,66 @@ def test_admin_model_create_patch_and_disable(monkeypatch):
 
     delete = client.delete("/admin/models/gpt-5-4", headers={"x-admin-key": "test-admin"})
     assert delete.status_code == 200
-    assert delete.json()["model"]["enabled"] is False
-    assert delete.json()["model"]["status"] == "DISABLED"
+    body = delete.json()["model"]
+    assert body["enabled"] is False
+    assert body["retired"] is True
+    assert body["advertised"] is False
+    assert body["status"] == "RETIRED"
+    assert "gpt-5-4" in store.models
+
+
+def test_admin_model_hard_delete_rejected(monkeypatch):
+    store = _FakeRegistryStore()
+    store.models["gpt-5-4"] = _registry_model()
+    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+
+    client = TestClient(t.app)
+    resp = client.delete(
+        "/admin/models/gpt-5-4",
+        headers={"x-admin-key": "test-admin"},
+        params={"hard": "true"},
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["accepted"] is False
+    assert resp.json()["errors"][0]["code"] == "hard_delete_disabled"
+    assert store.models["gpt-5-4"].retired is False
+
+
+def test_disable_model_sets_retire_flags(monkeypatch):
+    store = ModelRegistryStore("postgresql://registry")
+    model = _registry_model("gpt-5-6-sol")
+    write_connection = _RecordingConnection()
+
+    class ReadCursor(_RecordingCursor):
+        def __init__(self, rows):
+            super().__init__()
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+    read_before = _RecordingConnection(ReadCursor([model.model_dump()]))
+    read_after = _RecordingConnection(
+        ReadCursor(
+            [
+                model.model_copy(
+                    update={"retired": True, "advertised": False, "status": "RETIRED"}
+                ).model_dump()
+            ]
+        )
+    )
+    connections = iter((read_before, write_connection, read_after))
+    monkeypatch.setattr(store, "_connect", lambda: next(connections))
+
+    result = store.disable_model("gpt-5-6-sol")
+
+    assert result is not None
+    assert result.retired is True
+    assert result.advertised is False
+    assert result.status == "RETIRED"
+    assert result.enabled is False
 
 
 def test_admin_model_patch_missing_returns_404(monkeypatch):

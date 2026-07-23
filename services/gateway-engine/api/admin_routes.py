@@ -94,7 +94,17 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 log = logging.getLogger("gateway-engine.admin_routes")
 
-_RECONCILIATION_COUNT_KEYS = ("discovered", "added", "updated", "enabled", "disabled", "unchanged")
+_RECONCILIATION_COUNT_KEYS = (
+    "discovered",
+    "added",
+    "updated",
+    "enabled",
+    "disabled",
+    "unchanged",
+    "advertised",
+    "retired",
+    "absent",
+)
 _RECONCILIATION_PHASES = frozenset(
     {
         "idle",
@@ -140,6 +150,20 @@ _default_deps: AdminRouteDeps | None = None
 _policy_version_hint: str | None = None
 
 
+def _reconciliation_counts(display_result: Any | None) -> dict[str, int]:
+    """Serialize reconciliation counts with lifecycle fields and enabled/disabled aliases."""
+    raw = getattr(display_result, "counts", {}) if display_result is not None else {}
+    models = getattr(display_result, "models", None) if display_result is not None else None
+    counts = {key: max(0, int(raw.get(key, 0))) for key in _RECONCILIATION_COUNT_KEYS}
+    if models:
+        counts["advertised"] = sum(1 for model in models if model.advertised)
+        counts["retired"] = sum(1 for model in models if model.retired)
+        counts["absent"] = sum(1 for model in models if model.absent_since is not None)
+        counts["enabled"] = sum(1 for model in models if model.enabled)
+        counts["disabled"] = len(models) - counts["enabled"]
+    return counts
+
+
 def _admin_reconciliation_status(service: Any | None) -> dict[str, Any]:
     """Serialize bounded, secret-free reconciliation scheduler state."""
     if service is None:
@@ -181,7 +205,6 @@ def _admin_reconciliation_status(service: Any | None) -> dict[str, Any]:
     )
     if requested_model is not None:
         requested_model = _admin_redact(str(requested_model))[0]
-    counts = getattr(display_result, "counts", {}) if display_result is not None else {}
     errors = []
     for error in (getattr(display_result, "errors", []) if display_result is not None else [])[:10]:
         if not isinstance(error, dict):
@@ -212,7 +235,7 @@ def _admin_reconciliation_status(service: Any | None) -> dict[str, Any]:
         "trigger": trigger,
         "requested_model": requested_model,
         "outcome": outcome,
-        "counts": {key: max(0, int(counts.get(key, 0))) for key in _RECONCILIATION_COUNT_KEYS},
+        "counts": _reconciliation_counts(display_result),
         "verification": verification,
         "errors": errors,
     }
@@ -550,31 +573,45 @@ async def admin_model_patch(
 
 @router.delete("/admin/models/{model_id}", response_model=ModelRegistryMutationResponse)
 async def admin_model_delete(model_id: str, request: Request, hard: bool = False):
-    """Disable one model by default; hard delete only when hard=true."""
+    """Retire one model by default; hard delete is rejected."""
     auth_error = _require_admin_key(request)
     if auth_error is not None:
         return auth_error
     store = _model_registry_store()
+    if hard:
+        current = store.get_model(model_id)
+        if current is None:
+            return JSONResponse(
+                {
+                    "accepted": False,
+                    "registry_available": store.enabled,
+                    "model": None,
+                    "errors": [
+                        _admin_error(
+                            "model_not_found",
+                            f"{model_id} not found",
+                            "postgres:model_registry",
+                        )
+                    ],
+                },
+                status_code=404,
+            )
+        return JSONResponse(
+            {
+                "accepted": False,
+                "registry_available": store.enabled,
+                "model": current.model_dump(mode="json"),
+                "errors": [
+                    _admin_error(
+                        "hard_delete_disabled",
+                        "hard delete is disabled; use soft delete to retire the model",
+                        "postgres:model_registry",
+                    )
+                ],
+            },
+            status_code=409,
+        )
     try:
-        if hard:
-            deleted = store.hard_delete_model(model_id)
-            if not deleted:
-                return JSONResponse(
-                    {
-                        "accepted": False,
-                        "registry_available": store.enabled,
-                        "model": None,
-                        "errors": [
-                            _admin_error(
-                                "model_not_found",
-                                f"{model_id} not found",
-                                "postgres:model_registry",
-                            )
-                        ],
-                    },
-                    status_code=404,
-                )
-            return ModelRegistryMutationResponse(registry_available=store.enabled)
         model = store.disable_model(model_id)
     except Exception as exc:
         return ModelRegistryMutationResponse(
