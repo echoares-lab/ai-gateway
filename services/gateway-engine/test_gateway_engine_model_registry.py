@@ -18,6 +18,8 @@ from core.model_registry import (
     RegistryLoadResult,
     build_reconcile_resources,
     load_models_from_litellm_config,
+    normalize_discovered_model,
+    record_from_cliproxy_model,
 )
 
 
@@ -180,6 +182,51 @@ def _gemini_registry_model() -> ModelRegistryRecord:
             }
         ],
     )
+
+
+@pytest.mark.parametrize(
+    ("model_id", "expected"),
+    [
+        ("gpt-5.6-sol", ("gpt-5-6-sol", "gpt-5.6-sol")),
+        ("gpt-5-6-sol", ("gpt-5-6-sol", "gpt-5-6-sol")),
+        ("claude-sonnet-4.6", ("claude-sonnet-4.6", "claude-sonnet-4.6")),
+        ("gemini-3.flash", ("gemini-3.flash", "gemini-3.flash")),
+        ("AI-Gateway:gpt-5.6-sol", ("gpt-5-6-sol", "gpt-5.6-sol")),
+    ],
+)
+def test_normalize_discovered_model_preserves_provider_upstream_ids(model_id, expected):
+    assert normalize_discovered_model(model_id) == expected
+
+
+@pytest.mark.parametrize("model_id", ["", "AI-Gateway:", "gpt-5/6", "gpt-5 6", "gpt-5@6"])
+def test_normalize_discovered_model_rejects_invalid_identifiers(model_id):
+    with pytest.raises(ValueError, match="model identifier"):
+        normalize_discovered_model(model_id)
+
+
+def test_normalize_discovered_model_records_distinct_identity_aliases():
+    record = record_from_cliproxy_model({"id": "AI-Gateway:gpt-5.6-sol"})
+
+    assert record is not None
+    assert record.model_id == "gpt-5-6-sol"
+    assert record.upstream_model == "gpt-5.6-sol"
+    assert record.aliases == [
+        {
+            "alias": "AI-Gateway:gpt-5.6-sol",
+            "target": "gpt-5-6-sol",
+            "alias_kind": "external",
+        },
+        {
+            "alias": "gpt-5-6-sol",
+            "target": "gpt-5-6-sol",
+            "alias_kind": "registry",
+        },
+        {
+            "alias": "gpt-5.6-sol",
+            "target": "gpt-5-6-sol",
+            "alias_kind": "upstream",
+        },
+    ]
 
 
 def test_reconcile_renderer_outputs_valid_yaml_json_and_diffs():
@@ -379,9 +426,9 @@ def test_admin_models_sync_cliproxy_dry_run_normalizes_and_diffs(monkeypatch):
     assert body["imported_count"] == 2
     assert [model["model_id"] for model in body["models"]] == [
         "gpt-5-4",
-        "claude-sonnet-4-6",
+        "claude-sonnet-4.6",
     ]
-    assert {"kind": "add", "model_id": "claude-sonnet-4-6"} in body["diffs"]
+    assert {"kind": "add", "model_id": "claude-sonnet-4.6"} in body["diffs"]
     assert any(diff["kind"] == "update" and diff["model_id"] == "gpt-5-4" for diff in body["diffs"])
     assert body["models"][0]["policy_metadata"]["manual_note"] == "keep"
     assert fake_client.calls[0]["headers"] == {"authorization": "Bearer cliproxy-key"}
@@ -407,7 +454,7 @@ def test_admin_models_sync_cliproxy_apply_upserts(monkeypatch):
     body = resp.json()
     assert body["imported_count"] == 2
     assert store.models["gpt-5-4"].source == "cliproxy"
-    assert store.models["claude-sonnet-4-6"].upstream_model == "claude-sonnet-4.6"
+    assert store.models["claude-sonnet-4.6"].upstream_model == "claude-sonnet-4.6"
 
 
 def test_admin_models_sync_cliproxy_error_does_not_write(monkeypatch):

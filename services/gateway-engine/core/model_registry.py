@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from difflib import unified_diff
@@ -239,11 +240,16 @@ def cost_tier_of(model: str) -> int | None:
     return 2 if provider_of(m) != "unknown" else None
 
 
+def normalize_discovered_model(model_id: str) -> tuple[str, str]:
+    upstream_id = model_id.removeprefix("AI-Gateway:")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", upstream_id):
+        raise ValueError("invalid model identifier")
+    registry_id = upstream_id.replace(".", "-") if provider_of(upstream_id) == "openai" else upstream_id
+    return registry_id, upstream_id
+
+
 def normalize_model_id(model_id: str) -> str:
-    model = model_id
-    if model.startswith("AI-Gateway:"):
-        model = model[len("AI-Gateway:") :]
-    return model.replace(".", "-")
+    return normalize_discovered_model(model_id)[0]
 
 
 def _error(code: str, message: str, source: str) -> dict[str, Any]:
@@ -292,22 +298,28 @@ def record_from_cliproxy_model(entry: dict[str, Any]) -> ModelRegistryRecord | N
     raw_model_id = entry.get("id") or entry.get("model")
     if not raw_model_id:
         return None
-    model_id = normalize_model_id(str(raw_model_id))
+    external_id = str(raw_model_id)
+    model_id, upstream_id = normalize_discovered_model(external_id)
     provider = provider_of(model_id)
     return ModelRegistryRecord(
         model_id=model_id,
         provider=provider,
         family=family_of(model_id),
-        upstream_model=str(raw_model_id).removeprefix("AI-Gateway:"),
-        litellm_model=f"openai/{str(raw_model_id).removeprefix('AI-Gateway:')}",
+        upstream_model=upstream_id,
+        litellm_model=f"openai/{upstream_id}",
         enabled=True,
         status="UNKNOWN",
         cost_tier=cost_tier_of(model_id),
         policy_metadata={
-            "cliproxy_model_id": str(raw_model_id),
+            "cliproxy_model_id": external_id,
             "owned_by": entry.get("owned_by"),
         },
         source="cliproxy",
+        aliases=[
+            {"alias": external_id, "target": model_id, "alias_kind": "external"},
+            {"alias": model_id, "target": model_id, "alias_kind": "registry"},
+            {"alias": upstream_id, "target": model_id, "alias_kind": "upstream"},
+        ],
     )
 
 
