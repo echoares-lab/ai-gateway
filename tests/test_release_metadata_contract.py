@@ -23,15 +23,15 @@ def test_gateway_image_declares_release_metadata() -> None:
     assert "org.opencontainers.image.version=$APP_VERSION" in dockerfile
     assert "org.opencontainers.image.revision=$GIT_SHA" in dockerfile
     assert "org.opencontainers.image.created=$BUILD_DATE" in dockerfile
-    assert 'ENV APP_VERSION=$APP_VERSION' in dockerfile
-    assert 'GIT_SHA=$GIT_SHA' in dockerfile
+    assert "ENV APP_VERSION=$APP_VERSION" in dockerfile
+    assert "GIT_SHA=$GIT_SHA" in dockerfile
 
 
 def test_ci_builds_with_full_sha_and_publishes_semver_tag() -> None:
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert 'GIT_SHA=$(git rev-parse HEAD)' in workflow
-    assert 'APP_VERSION=$(tr -d' in workflow
-    assert 'grep -Eq \'^[0-9]+\\.[0-9]+\\.[0-9]+$\'' in workflow
+    assert "GIT_SHA=$(git rev-parse HEAD)" in workflow
+    assert "APP_VERSION=$(tr -d" in workflow
+    assert "grep -Eq '^[0-9]+\\.[0-9]+\\.[0-9]+$'" in workflow
     assert "APP_VERSION=${{ env.APP_VERSION }}" in workflow
     assert "BUILD_DATE=${{ env.BUILD_DATE }}" in workflow
     assert "gateway-engine:${{ env.APP_VERSION }}" in workflow
@@ -70,7 +70,7 @@ def test_k3s_promotion_installs_verified_gh_before_pr_creation() -> None:
         "c671d450d7c0e95c84fbc6996591fc851d396848acd53e589ee388031cee9330",
         setup_index,
     )
-    verify_index = workflow.index('gh --version', checksum_index)
+    verify_index = workflow.index("gh --version", checksum_index)
     create_index = workflow.index("gh pr create", verify_index)
     assert setup_index < checksum_index < verify_index < create_index
 

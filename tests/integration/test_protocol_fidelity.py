@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
+
 import pytest
-import httpx
-from conftest import MASTER_KEY
 
 pytestmark = [pytest.mark.mock, pytest.mark.asyncio]
 

@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from scripts.k3s.promote_k3s_images import _set_gateway_version, _set_image_pin, _set_litellm_image, main, require_cliproxy_digest_pin
+from scripts.k3s.promote_k3s_images import (
+    _set_gateway_version,
+    _set_image_pin,
+    _set_litellm_image,
+    main,
+    require_cliproxy_digest_pin,
+)
 from scripts.k3s.resolve_image_digest import ResolveImageDigestError
 
 FIXTURE = """apiVersion: kustomize.config.k8s.io/v1beta1
@@ -158,7 +164,7 @@ def test_main_updates_ext(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     overlay = repo / "kubernetes/workloads/home/ai-gateway/overlays/k3s-01"
     overlay.mkdir(parents=True)
     path = overlay / "kustomization.yaml"
-    
+
     kust_fixture = """apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
@@ -168,7 +174,7 @@ images:
     digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
 """
     path.write_text(kust_fixture, encoding="utf-8")
-    
+
     workload_path = overlay / "core-workloads.yaml"
     workload_fixture = """
 - name: litellm
@@ -203,4 +209,3 @@ images:
     assert "digest: sha256:newworker" in kust_text
     assert "image: sha256:newlitellm" in workload_path.read_text(encoding="utf-8")
     assert "image: sha256:newlitellm" in db_jobs_path.read_text(encoding="utf-8")
-

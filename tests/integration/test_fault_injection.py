@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import re
+
 import httpx
 import pytest
 import respx
-import re
-import json
 
 pytestmark = [pytest.mark.mock, pytest.mark.asyncio]
 
@@ -14,18 +14,12 @@ pytestmark = [pytest.mark.mock, pytest.mark.asyncio]
 async def test_upstream_read_timeout_returns_504(asgi_client):
     """Simulate a LiteLLM timeout and verify the gateway-engine returns 504."""
     with respx.mock(base_url="http://litellm:4000", assert_all_called=False) as respx_mock:
-        respx_mock.post(re.compile(r".*/v1/chat/completions")).mock(
-            side_effect=httpx.ReadTimeout("Simulated timeout")
-        )
+        respx_mock.post(re.compile(r".*/v1/chat/completions")).mock(side_effect=httpx.ReadTimeout("Simulated timeout"))
 
         resp = await asgi_client.post(
-            "/v1/chat/completions",
-            json={
-                "model": "gpt-4",
-                "messages": [{"role": "user", "content": "Say hi."}]
-            }
+            "/v1/chat/completions", json={"model": "gpt-4", "messages": [{"role": "user", "content": "Say hi."}]}
         )
-        
+
         assert resp.status_code == 504
         data = resp.json()
         assert "timed out" in data.get("error", {}).get("message", "").lower()
@@ -40,13 +34,9 @@ async def test_upstream_502_bad_gateway_surfaced(asgi_client):
         )
 
         resp = await asgi_client.post(
-            "/v1/chat/completions",
-            json={
-                "model": "gpt-4",
-                "messages": [{"role": "user", "content": "Say hi."}]
-            }
+            "/v1/chat/completions", json={"model": "gpt-4", "messages": [{"role": "user", "content": "Say hi."}]}
         )
-        
+
         assert resp.status_code == 502
         data = resp.json()
         assert "LiteLLM is down" in str(data)
@@ -60,13 +50,9 @@ async def test_upstream_connection_refused_returns_502(asgi_client):
         )
 
         resp = await asgi_client.post(
-            "/v1/chat/completions",
-            json={
-                "model": "gpt-4",
-                "messages": [{"role": "user", "content": "Say hi."}]
-            }
+            "/v1/chat/completions", json={"model": "gpt-4", "messages": [{"role": "user", "content": "Say hi."}]}
         )
-        
+
         assert resp.status_code == 502
         data = resp.json()
         assert "connection failed" in data.get("error", {}).get("message", "").lower()

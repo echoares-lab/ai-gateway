@@ -800,10 +800,7 @@ def test_cli_check_admin_credentials_fail_on_error() -> None:
 
 
 def test_cli_check_admin_quota_pass_on_openapi_object() -> None:
-    body = (
-        '{"status":"ok","source":"cliproxy","captured_at":"2026-07-17T00:00:00Z",'
-        '"partial":false,"accounts":[]}'
-    )
+    body = '{"status":"ok","source":"cliproxy","captured_at":"2026-07-17T00:00:00Z","partial":false,"accounts":[]}'
     proc = _run_helper(["check-admin-quota"], body)
     assert proc.returncode == 0
 
@@ -1358,8 +1355,7 @@ def test_full_mode_admin_quota_fails_on_unexpected_status() -> None:
         ["--env", "staging", "--full"],
         env_overrides={
             "FAKE_ADMIN_QUOTA_BODY": (
-                '{"status":"degraded","source":"x","captured_at":"2026-07-17T00:00:00Z",'
-                '"partial":false,"accounts":[]}'
+                '{"status":"degraded","source":"x","captured_at":"2026-07-17T00:00:00Z","partial":false,"accounts":[]}'
             )
         },
     )

@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import pytest
-import respx
-from httpx import Response
 from api.proxy_router import _provider_of
 
 pytestmark = [pytest.mark.mock, pytest.mark.asyncio]
