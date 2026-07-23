@@ -11,6 +11,7 @@ import httpx
 import pytest
 from api.proxy_routing import is_unknown_model_response, maybe_enqueue_unknown_model_refresh
 from core.metrics import (
+    MODEL_ABSENT,
     MODEL_RECONCILIATION_CHANGES,
     MODEL_RECONCILIATION_DURATION,
     MODEL_RECONCILIATION_RUNS,
@@ -378,6 +379,23 @@ class Fakes:
             read_catalog=self.read_catalog,
             **scheduler_options,
         )
+
+
+def _gauge_sample_value(gauge, **labels):
+    child = gauge.labels(**labels)
+    return child._value.get()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_absent_advertised_model_exports_lifecycle_absent_gauge():
+    existing = _model(model_id="gpt-5-6-sol", advertised=True, source="cliproxy")
+    fakes = Fakes(existing=[existing], discovered=[])
+
+    await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    assert (
+        _gauge_sample_value(MODEL_ABSENT, model_id="gpt-5-6-sol", family="openai") == 1.0
+    )
 
 
 @pytest.mark.asyncio

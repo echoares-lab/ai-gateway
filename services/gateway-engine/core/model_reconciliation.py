@@ -15,7 +15,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from core.metrics import record_model_reconciliation
+from core.metrics import record_model_lifecycle, record_model_reconciliation
 from core.model_registry import (
     ModelRegistryRecord,
     diff_discovered_models,
@@ -720,6 +720,7 @@ class ModelReconciliationService:
             if not effective_changed_ids:
                 set_phase("persist")
                 persisted_count = int(await _resolve(self._upsert_models(result_models)) or 0)
+                record_model_lifecycle(models)
                 verification = "not_required"
                 return finish("success", "complete")
 
@@ -743,6 +744,7 @@ class ModelReconciliationService:
             verification = "verified"
             set_phase("persist")
             persisted_count = int(await _resolve(self._upsert_models(result_models)) or 0)
+            record_model_lifecycle(models)
             return finish("success", "complete")
         except asyncio.CancelledError:
             # A scheduler timeout cancels this coroutine.  If cancellation lands
