@@ -13,10 +13,10 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from difflib import unified_diff
-from typing import Any
+from typing import Any, Self
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 try:  # pragma: no cover - exercised only when psycopg2 is installed/configured
     import psycopg2
@@ -33,7 +33,9 @@ class ModelRegistryRecord(BaseModel):
     family: str = "unknown"
     upstream_model: str
     litellm_model: str
-    enabled: bool = True
+    advertised: bool = True
+    retired: bool = False
+    absent_since: datetime | None = None
     status: str = "UNKNOWN"
     supports_tools: bool | None = None
     supports_vision: bool | None = None
@@ -48,6 +50,32 @@ class ModelRegistryRecord(BaseModel):
     probe_checked_at: datetime | None = None
     source: str = "manual"
     aliases: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def map_legacy_enabled(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "enabled" not in value:
+            return value
+        mapped = dict(value)
+        enabled = bool(mapped.pop("enabled"))
+        mapped.setdefault("advertised", enabled)
+        if enabled:
+            mapped.setdefault("retired", False)
+        return mapped
+
+    @computed_field
+    @property
+    def enabled(self) -> bool:
+        return self.advertised and not self.retired
+
+    def model_copy(self, *, update: dict[str, Any] | None = None, deep: bool = False) -> Self:
+        mapped_update = dict(update or {})
+        if "enabled" in mapped_update:
+            enabled = bool(mapped_update.pop("enabled"))
+            mapped_update.setdefault("advertised", enabled)
+            if enabled:
+                mapped_update.setdefault("retired", False)
+        return super().model_copy(update=mapped_update, deep=deep)
 
 
 class ModelRegistryListResponse(BaseModel):
@@ -643,17 +671,24 @@ class ModelRegistryStore:
                     """
                     INSERT INTO model_registry (
                         model_id, provider, family, upstream_model, litellm_model,
-                        enabled, status, supports_tools, supports_vision,
+                        advertised, retired, absent_since, enabled,
+                        status, supports_tools, supports_vision,
                         max_input_tokens, max_output_tokens, cost_tier,
                         policy_metadata, source, probe_status,
                         probe_http_status, probe_checked_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
                     ON CONFLICT (model_id) DO UPDATE SET
                         provider = EXCLUDED.provider,
                         family = EXCLUDED.family,
                         upstream_model = EXCLUDED.upstream_model,
                         litellm_model = EXCLUDED.litellm_model,
+                        advertised = EXCLUDED.advertised,
+                        retired = EXCLUDED.retired,
+                        absent_since = EXCLUDED.absent_since,
                         enabled = EXCLUDED.enabled,
                         status = EXCLUDED.status,
                         supports_tools = EXCLUDED.supports_tools,
@@ -673,6 +708,9 @@ class ModelRegistryStore:
                         model.family,
                         model.upstream_model,
                         model.litellm_model,
+                        model.advertised,
+                        model.retired,
+                        model.absent_since,
                         model.enabled,
                         model.status,
                         model.supports_tools,

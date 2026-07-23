@@ -382,11 +382,14 @@ def test_model_registry_store_upsert_models_persists_deduplicated_aliases(monkey
     assert connection.committed is True
 
 
-def test_model_registry_store_upsert_round_trips_complete_probe_state(monkeypatch):
+def test_model_registry_store_upsert_round_trips_advertised_retired_absent_since_and_probe_state(monkeypatch):
     checked_at = datetime(2026, 7, 23, 3, 0, tzinfo=timezone.utc)
+    absent_since = datetime(2026, 7, 20, 3, 0, tzinfo=timezone.utc)
     model = _registry_model("gpt-5-6-sol").model_copy(
         update={
-            "enabled": False,
+            "advertised": False,
+            "retired": True,
+            "absent_since": absent_since,
             "status": "UNHEALTHY",
             "probe_status": "temporarily_unavailable",
             "probe_http_status": 503,
@@ -409,14 +412,40 @@ def test_model_registry_store_upsert_round_trips_complete_probe_state(monkeypatc
     loaded = store.list_models()
 
     query, params = write_connection.cursor_instance.executions[0]
+    assert "advertised = EXCLUDED.advertised" in query
+    assert "retired = EXCLUDED.retired" in query
+    assert "absent_since = EXCLUDED.absent_since" in query
     assert "status = EXCLUDED.status" in query
     assert "probe_status = EXCLUDED.probe_status" in query
     assert params[-3:] == ("temporarily_unavailable", 503, checked_at)
     assert write_connection.committed is True
+    assert loaded.models[0].advertised is False
+    assert loaded.models[0].retired is True
+    assert loaded.models[0].absent_since == absent_since
+    assert loaded.models[0].enabled is False
     assert loaded.models[0].status == "UNHEALTHY"
     assert loaded.models[0].probe_status == "temporarily_unavailable"
     assert loaded.models[0].probe_http_status == 503
     assert loaded.models[0].probe_checked_at == checked_at
+
+
+def test_registry_record_enabled_shim_matches_advertised_and_not_retired():
+    active = ModelRegistryRecord(
+        model_id="gpt-5-6-sol",
+        provider="openai",
+        family="openai",
+        upstream_model="gpt-5.6-sol",
+        litellm_model="openai/gpt-5.6-sol",
+        advertised=True,
+        retired=False,
+        status="UNHEALTHY",
+    )
+    assert active.enabled is True
+    assert active.model_dump()["enabled"] is True
+
+    retired = active.model_copy(update={"retired": True, "advertised": False, "status": "RETIRED"})
+    assert retired.enabled is False
+    assert retired.model_dump()["enabled"] is False
 
 
 def test_model_registry_store_discovered_alias_does_not_replace_other_models_curated_alias(
