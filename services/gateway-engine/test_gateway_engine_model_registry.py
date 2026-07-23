@@ -606,58 +606,32 @@ def test_admin_models_sync_dry_run(monkeypatch, tmp_path):
     assert body["models"][0]["source"] == "litellm-config"
 
 
-@pytest.mark.parametrize(
-    ("probe_response", "expected_enabled", "expected_status", "expected_probe_status"),
-    [
-        (
-            httpx.Response(200, json={"choices": [{"message": {"content": "pong"}}]}),
-            True,
-            "HEALTHY",
-            "healthy",
-        ),
-        (
-            httpx.Response(503, json={"error": {"message": "unavailable"}}),
-            False,
-            "UNHEALTHY",
-            "temporarily_unavailable",
-        ),
-    ],
-)
-def test_admin_models_sync_probes_new_imports_before_enabling(
-    monkeypatch,
-    tmp_path,
-    probe_response,
-    expected_enabled,
-    expected_status,
-    expected_probe_status,
-):
+def test_admin_models_sync_mutation_enqueues_lifespan_scheduler(monkeypatch):
+    class Recorder:
+        def __init__(self):
+            self.calls = []
+
+        async def request(self, trigger, requested_model=None):
+            self.calls.append((trigger, requested_model))
+            return True
+
+    recorder = Recorder()
     store = _FakeRegistryStore()
-    config = tmp_path / "litellm-config.yaml"
-    _write_config(config)
-    fake_client = _FakeProbeClient(response=probe_response)
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
-    monkeypatch.setattr(t, "_client", fake_client)
-    monkeypatch.setattr(t, "LITELLM_CONFIG_PATH", str(config))
+    monkeypatch.setattr(t, "_model_reconciliation_service", recorder)
     monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
 
-    client = TestClient(t.app)
-    resp = client.post(
+    resp = TestClient(t.app).post(
         "/admin/models/sync",
         headers={"x-admin-key": "test-admin"},
-        json={"dry_run": False},
+        json={"source": "cliproxy", "dry_run": False},
     )
 
     assert resp.status_code == 200
-    assert len(fake_client.calls) == 2
-    assert {call["json"]["model"] for call in fake_client.calls} == {
-        "claude-sonnet-4-6",
-        "gemini-3-flash",
-    }
-    for model in store.models.values():
-        assert model.enabled is expected_enabled
-        assert model.status == expected_status
-        assert model.probe_status == expected_probe_status
-        assert model.probe_http_status == probe_response.status_code
+    assert resp.json()["source"] == "scheduler:model-reconciliation"
+    assert resp.json()["errors"] == []
+    assert recorder.calls == [(ReconciliationTrigger.MANUAL, None)]
+    assert store.models == {}
 
 
 def test_admin_models_sync_cliproxy_dry_run_normalizes_and_diffs(monkeypatch):
@@ -700,78 +674,6 @@ def test_admin_models_sync_cliproxy_dry_run_normalizes_and_diffs(monkeypatch):
     assert body["models"][0]["policy_metadata"]["manual_note"] == "keep"
     assert fake_client.calls[0]["headers"] == {"authorization": "Bearer cliproxy-key"}
     assert store.models["gpt-5-4"].upstream_model == "gpt-5.3"
-
-
-def test_admin_models_sync_cliproxy_apply_upserts(monkeypatch):
-    store = _FakeRegistryStore()
-    fake_client = _FakeModelsClient(response=_FakeModelsResponse())
-    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
-    monkeypatch.setattr(t, "_client", fake_client)
-    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
-    monkeypatch.setenv("CLIPROXY_API_KEY", "cliproxy-key")
-
-    client = TestClient(t.app)
-    resp = client.post(
-        "/admin/models/sync",
-        headers={"x-admin-key": "test-admin"},
-        json={"source": "cliproxy", "dry_run": False},
-    )
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["imported_count"] == 2
-    assert store.models["gpt-5-4"].source == "cliproxy"
-    assert store.models["claude-sonnet-4.6"].upstream_model == "claude-sonnet-4.6"
-
-
-def test_admin_models_sync_reports_actual_upsert_count(monkeypatch):
-    store = _FakeRegistryStore()
-    original_upsert = store.upsert_models
-
-    def partial_upsert(models):
-        original_upsert(models)
-        return 1
-
-    store.upsert_models = partial_upsert
-    fake_client = _FakeModelsClient(response=_FakeModelsResponse())
-    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
-    monkeypatch.setattr(t, "_client", fake_client)
-    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
-    monkeypatch.setenv("CLIPROXY_API_KEY", "cliproxy-key")
-
-    client = TestClient(t.app)
-    resp = client.post(
-        "/admin/models/sync",
-        headers={"x-admin-key": "test-admin"},
-        json={"source": "cliproxy", "dry_run": False},
-    )
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["imported_count"] == 1
-    assert body["skipped_count"] == 1
-
-
-def test_admin_models_sync_cliproxy_error_does_not_write(monkeypatch):
-    store = _FakeRegistryStore()
-    fake_client = _FakeModelsClient(response=_FakeModelsResponse(status_code=502))
-    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
-    monkeypatch.setattr(t, "_client", fake_client)
-    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
-    monkeypatch.setenv("CLIPROXY_API_KEY", "cliproxy-key")
-
-    client = TestClient(t.app)
-    resp = client.post(
-        "/admin/models/sync",
-        headers={"x-admin-key": "test-admin"},
-        json={"source": "cliproxy", "dry_run": False},
-    )
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["imported_count"] == 0
-    assert body["errors"][0]["code"] == "cliproxy_http_error"
-    assert store.models == {}
 
 
 def test_admin_model_create_patch_and_disable(monkeypatch):

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import stat
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -21,6 +21,7 @@ from core.model_reconciliation import (
     ReconciliationArtifactManager,
     ReconciliationResult,
     ReconciliationTrigger,
+    model_probe_is_stale,
     request_litellm_reload,
 )
 from core.model_registry import (
@@ -78,6 +79,18 @@ async def _wait_until(predicate, *, timeout=0.5):
 
 def _resource(name, content):
     return ModelRegistryReconcileResource(name=name, kind="yaml", changed=True, content=content)
+
+
+def test_probe_staleness_retries_missing_transient_and_old_results():
+    now = datetime(2026, 7, 23, tzinfo=timezone.utc)
+    fresh = now - timedelta(seconds=30)
+    old = now - timedelta(seconds=301)
+
+    assert model_probe_is_stale(_model(probe_status=None, probe_checked_at=fresh), 300, now=now)
+    for status in ("transient", "temporarily_unavailable", "timeout", "missing_model", "rate_limited", "error"):
+        assert model_probe_is_stale(_model(probe_status=status, probe_checked_at=fresh), 300, now=now)
+    assert model_probe_is_stale(_model(probe_status="healthy", probe_checked_at=old), 300, now=now)
+    assert not model_probe_is_stale(_model(probe_status="healthy", probe_checked_at=fresh), 300, now=now)
 
 
 @pytest.mark.parametrize(
@@ -403,7 +416,44 @@ async def test_discovered_add_is_probed_applied_reloaded_and_verified():
     assert fakes.probed == ["gpt-5-6-sol"]
     assert len(fakes.applied) == 1
     assert fakes.reloads == 1
-    assert result.verification == "verified"
+
+
+@pytest.mark.asyncio
+async def test_failed_discovered_addition_remains_retryable_and_enables_after_success():
+    pending = _model(
+        model_id="gpt-5-6-sol",
+        enabled=False,
+        status="UNHEALTHY",
+        probe_status="temporarily_unavailable",
+        source="cliproxy",
+        upstream_model="gpt-5.6-sol",
+        litellm_model="openai/gpt-5.6-sol",
+    )
+    fakes = Fakes(existing=[pending], discovered=[{"id": "gpt-5.6-sol"}])
+    fakes.catalog = {"gpt-5-6-sol"}
+
+    result = await fakes.service(probe_is_stale=lambda model: model_probe_is_stale(model, 300)).run(
+        ReconciliationTrigger.SCHEDULED
+    )
+
+    assert result.outcome == "success"
+    assert result.models[0].enabled is True
+    assert result.models[0].probe_status == "healthy"
+
+
+@pytest.mark.asyncio
+async def test_transient_probe_failure_preserves_enabled_existing_model():
+    existing = _model(enabled=True, status="HEALTHY", probe_status="timeout", source="cliproxy")
+    fakes = Fakes(existing=[existing], discovered=[existing])
+
+    async def transient_probe(model):
+        return model.model_copy(update={"probe_status": "timeout", "status": "UNHEALTHY"})
+
+    fakes.probe = transient_probe
+    result = await fakes.service(probe_is_stale=lambda model: True).run(ReconciliationTrigger.SCHEDULED)
+
+    assert result.models[0].enabled is True
+    assert result.verification == "not_required"
 
 
 @pytest.mark.asyncio
@@ -753,6 +803,67 @@ def test_concrete_factory_uses_configured_artifacts_admin_client_and_defaults(mo
     assert rendered_doc["litellm_settings"]["cache"] is True
     token = service._apply(resources)
     assert token.snapshots == {}
+
+
+@pytest.mark.asyncio
+async def test_concrete_factory_probes_absent_alias_upstream_then_advertises(monkeypatch, tmp_path):
+    import main
+
+    litellm = tmp_path / "litellm.yaml"
+    gemini = tmp_path / "gemini.json"
+    litellm.write_text("model_list: []\n", encoding="utf-8")
+    gemini.write_text("{}\n", encoding="utf-8")
+
+    class Store:
+        def __init__(self):
+            self.models = {}
+
+        def list_models(self):
+            return type(
+                "Loaded",
+                (),
+                {"registry_available": True, "models": list(self.models.values()), "errors": []},
+            )()
+
+        def upsert_models(self, models):
+            self.models.update({model.model_id: model for model in models})
+            return len(models)
+
+    class Client:
+        def __init__(self):
+            self.calls = []
+
+        async def post(self, url, **kwargs):
+            self.calls.append((url, kwargs))
+            return httpx.Response(200, json={"choices": [{"message": {"content": "pong"}}]})
+
+    async def discover():
+        return [{"id": "gpt-5.6-sol"}], []
+
+    async def catalog():
+        return ["gpt-5-6-sol"], []
+
+    store = Store()
+    client = Client()
+    monkeypatch.setattr(main, "LITELLM_CONFIG_PATH", str(litellm))
+    monkeypatch.setattr(main, "GEMINI_MODEL_MAP_PATH", str(gemini))
+    monkeypatch.setattr(main, "_model_registry_store", lambda: store)
+    monkeypatch.setattr(main, "_fetch_cliproxy_models_for_registry", discover)
+    monkeypatch.setattr(main, "_admin_fetch_visible_models", catalog)
+    monkeypatch.setattr(main, "request_litellm_reload", lambda *args, **kwargs: True)
+    monkeypatch.setattr(main, "_client", client)
+    monkeypatch.setattr(main.config, "CLIPROXY_URL", "http://trusted-cliproxy:8317")
+    monkeypatch.setattr(main.config, "CLIPROXY_API_KEY", "probe-key")
+
+    result = await main._build_model_reconciliation_service().run(ReconciliationTrigger.MANUAL)
+
+    assert result.outcome == "success"
+    assert result.verification == "verified"
+    assert client.calls[0][0] == "http://trusted-cliproxy:8317/v1/chat/completions"
+    assert client.calls[0][1]["json"]["model"] == "gpt-5.6-sol"
+    assert store.models["gpt-5-6-sol"].enabled is True
+    rendered = __import__("yaml").safe_load(litellm.read_text(encoding="utf-8"))
+    assert rendered["model_list"][0]["model_name"] == "gpt-5-6-sol"
 
 
 @pytest.mark.asyncio

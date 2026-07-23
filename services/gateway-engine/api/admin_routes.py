@@ -57,6 +57,7 @@ from api.admin_panels import (  # noqa: F401
     _model_registry_store,
     _nullify_sentinel_reset,
     _probe_model_via_litellm,
+    _probe_result_status,
     _read_text_file_for_reconcile,
     _record_policy_trace,
     _redact_credential_record,
@@ -756,6 +757,28 @@ async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
         return auth_error
 
     store = _model_registry_store()
+    if not body.dry_run:
+        request_reconciliation = _main_attr("_request_model_reconciliation", None)
+        accepted = (
+            await request_reconciliation(ReconciliationTrigger.MANUAL) if request_reconciliation is not None else False
+        )
+        return ModelRegistrySyncResponse(
+            dry_run=False,
+            source="scheduler:model-reconciliation",
+            registry_available=store.enabled,
+            errors=(
+                []
+                if accepted
+                else [
+                    _admin_error(
+                        "model_reconciliation_unavailable",
+                        "model reconciliation scheduler is unavailable",
+                        "scheduler:model-reconciliation",
+                    )
+                ]
+            ),
+        )
+
     existing = store.list_models()
     existing_models = existing.models if existing.registry_available else []
     errors = list(existing.errors)
@@ -797,7 +820,7 @@ async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
             discover=lambda: loaded_models,
             list_models=lambda: existing_models,
             upsert_models=store.upsert_models,
-            probe_model=(lambda model: model) if body.dry_run else probe_model,
+            probe_model=lambda model: model,
             render=lambda models: [],
             validate=lambda resources: True,
             apply=lambda resources: None,
@@ -806,12 +829,11 @@ async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
             read_catalog=lambda: {model.model_id for model in loaded_models if model.enabled},
             probe_is_stale=lambda model: False,
         )
-        result = await service.run(ReconciliationTrigger.MANUAL, dry_run=body.dry_run)
+        result = await service.run(ReconciliationTrigger.MANUAL, dry_run=True)
         loaded_models = result.models
         diffs = result.diffs
         errors.extend(result.errors)
-        if result.outcome == "success":
-            imported = len(loaded_models) if body.dry_run else result.persisted_count
+        imported = len(loaded_models)
     return ModelRegistrySyncResponse(
         dry_run=body.dry_run,
         source=source,

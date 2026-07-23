@@ -189,7 +189,8 @@ Gateway-engine owns the model reconciliation scheduler. It discovers only the tr
 CLIProxy catalog, preserves curated registry metadata, validates generated resources,
 atomically applies changes, reloads LiteLLM, and verifies `/v1/models`. Unknown-model
 requests can enqueue an expedited refresh, but never create the client-supplied name
-inline.
+inline. New additions are probed against their exact CLIProxy `upstream_model` before
+their LiteLLM alias exists; failed or transient additions remain disabled and retryable.
 
 | Variable | Default | Purpose |
 |---|---:|---|
@@ -198,6 +199,7 @@ inline.
 | `GATEWAY_ENGINE_MODEL_RECONCILIATION_INTERVAL_SEC` | `900` | Periodic run interval |
 | `GATEWAY_ENGINE_MODEL_RECONCILIATION_EXPEDITED_MIN_INTERVAL_SEC` | `60` | Global minimum interval between demand triggers |
 | `GATEWAY_ENGINE_MODEL_RECONCILIATION_TIMEOUT_SEC` | `120` | Hard bound for one run |
+| `GATEWAY_ENGINE_MODEL_RECONCILIATION_PROBE_STALE_SEC` | `300` | Re-probe age for a successful health result; missing and transient results retry sooner |
 
 Inspect the secret-free scheduler state:
 

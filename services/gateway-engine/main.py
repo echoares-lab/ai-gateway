@@ -58,7 +58,7 @@ from api.admin_routes import (
     _fetch_cliproxy_models_for_registry,
     _load_model_registry_with_config_fallback,
     _model_registry_store,  # noqa: F401 - re-exported for existing tests
-    _probe_model_via_litellm,
+    _probe_result_status,
     _record_policy_trace,
     _redact_policy_decision_for_admin,  # noqa: F401 - re-exported for existing tests
     _run_scheduled_credential_sync,  # noqa: F401 - re-exported for existing tests
@@ -92,6 +92,7 @@ from core.metrics import (
 from core.model_reconciliation import (
     ModelReconciliationService,
     ReconciliationArtifactManager,
+    model_probe_is_stale,
     request_litellm_reload,
 )
 from core.model_registry import build_reconcile_resources
@@ -124,6 +125,7 @@ GATEWAY_ENGINE_MODEL_RECONCILIATION_STARTUP_DELAY_SEC = config.MODEL_RECONCILIAT
 GATEWAY_ENGINE_MODEL_RECONCILIATION_INTERVAL_SEC = config.MODEL_RECONCILIATION_INTERVAL_SEC
 GATEWAY_ENGINE_MODEL_RECONCILIATION_EXPEDITED_MIN_INTERVAL_SEC = config.MODEL_RECONCILIATION_EXPEDITED_MIN_INTERVAL_SEC
 GATEWAY_ENGINE_MODEL_RECONCILIATION_TIMEOUT_SEC = config.MODEL_RECONCILIATION_TIMEOUT_SEC
+GATEWAY_ENGINE_MODEL_RECONCILIATION_PROBE_STALE_SEC = config.MODEL_RECONCILIATION_PROBE_STALE_SEC
 CACHE_ENABLED = config.CACHE_ENABLED
 CACHE_TTL = config.CACHE_TTL
 MAX_REQUEST_BYTES = config.MAX_REQUEST_BYTES
@@ -168,7 +170,29 @@ def _build_model_reconciliation_service() -> ModelReconciliationService:
         return loaded.models
 
     async def probe_model(model):
-        probe_status, http_status, _errors = await _probe_model_via_litellm(model.model_id)
+        if _client is None:
+            probe_status, http_status = "error", None
+        else:
+            payload = {
+                "model": model.upstream_model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+                "stream": False,
+            }
+            headers = {"authorization": f"Bearer {config.CLIPROXY_API_KEY}"} if config.CLIPROXY_API_KEY else {}
+            try:
+                response = await _client.post(
+                    f"{config.CLIPROXY_URL.rstrip('/')}/v1/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=GATEWAY_ENGINE_MODEL_RECONCILIATION_TIMEOUT_SEC,
+                )
+                probe_status, _errors = _probe_result_status(response)
+                http_status = response.status_code
+            except httpx.TimeoutException:
+                probe_status, http_status = "timeout", None
+            except httpx.HTTPError:
+                probe_status, http_status = "error", None
         healthy = probe_status == "success"
         return model.model_copy(
             update={
@@ -250,6 +274,10 @@ def _build_model_reconciliation_service() -> ModelReconciliationService:
             timeout_sec=GATEWAY_ENGINE_MODEL_RECONCILIATION_TIMEOUT_SEC,
         ),
         read_catalog=read_catalog,
+        probe_is_stale=lambda model: model_probe_is_stale(
+            model,
+            GATEWAY_ENGINE_MODEL_RECONCILIATION_PROBE_STALE_SEC,
+        ),
         enabled=GATEWAY_ENGINE_MODEL_RECONCILIATION_ENABLED,
         startup_delay_sec=GATEWAY_ENGINE_MODEL_RECONCILIATION_STARTUP_DELAY_SEC,
         interval_sec=GATEWAY_ENGINE_MODEL_RECONCILIATION_INTERVAL_SEC,

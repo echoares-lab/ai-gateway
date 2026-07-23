@@ -25,6 +25,35 @@ from core.model_registry import (
 
 _MAX_ERRORS = 10
 _MAX_ERROR_MESSAGE = 300
+_RETRYABLE_PROBE_STATUSES = frozenset(
+    {
+        "transient",
+        "temporarily_unavailable",
+        "timeout",
+        "missing",
+        "missing_model",
+        "rate_limited",
+        "error",
+        "malformed_response",
+    }
+)
+
+
+def model_probe_is_stale(
+    model: ModelRegistryRecord,
+    stale_after_sec: float,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Return whether a model probe must be retried."""
+    status = str(model.probe_status or "").lower()
+    if not status or status in _RETRYABLE_PROBE_STATUSES or model.probe_checked_at is None:
+        return True
+    checked_at = model.probe_checked_at
+    current = now or datetime.now(timezone.utc)
+    if checked_at.tzinfo is None:
+        checked_at = checked_at.replace(tzinfo=timezone.utc)
+    return (current - checked_at).total_seconds() >= max(0, stale_after_sec)
 
 
 @dataclass(frozen=True)
@@ -442,6 +471,13 @@ class ModelReconciliationService:
 
             set_phase("probe")
             additions = {diff["model_id"] for diff in diffs if diff["kind"] == "add"}
+            retryable_additions = {
+                model_id
+                for model_id, model in current_by_id.items()
+                if not model.enabled
+                and model.source == "cliproxy"
+                and str(model.probe_status or "").lower() in _RETRYABLE_PROBE_STATUSES
+            }
             for model_id in additions:
                 merged_by_id[model_id] = merged_by_id[model_id].model_copy(
                     update={"enabled": False, "status": "PENDING"}
@@ -450,7 +486,7 @@ class ModelReconciliationService:
             for model_id, model in list(merged_by_id.items()):
                 if model_id in additions or self._probe_is_stale(model):
                     probed = await _resolve(self._probe_model(model))
-                    if model_id in additions:
+                    if model_id in additions or model_id in retryable_additions:
                         probe_succeeded = str(probed.probe_status or "").lower() == "healthy"
                         probed = probed.model_copy(update={"enabled": probe_succeeded})
                     merged_by_id[model_id] = probed
