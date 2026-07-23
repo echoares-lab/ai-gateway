@@ -357,7 +357,7 @@ def merge_discovered_model(
         {
             key: value
             for key, value in discovered.policy_metadata.items()
-            if value is not None and (not isinstance(value, str) or value.strip())
+            if key not in metadata and value is not None and (not isinstance(value, str) or value.strip())
         }
     )
     return current.model_copy(

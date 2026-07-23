@@ -335,6 +335,16 @@ def test_merge_discovered_model_keeps_existing_aliases_and_adds_discovered_ident
     ]
 
 
+def test_merge_discovered_model_preserves_existing_curated_policy_metadata():
+    current = _registry_model()
+    current.policy_metadata = {"owned_by": "curated-owner"}
+    discovered = record_from_cliproxy_model({"id": "AI-Gateway:gpt-5.4", "owned_by": "generic-discovery-owner"})
+
+    merged = merge_discovered_model(discovered, current)
+
+    assert merged.policy_metadata["owned_by"] == "curated-owner"
+
+
 def test_model_registry_store_upsert_models_persists_deduplicated_aliases(monkeypatch):
     connection = _RecordingConnection()
     store = ModelRegistryStore("postgresql://registry")
