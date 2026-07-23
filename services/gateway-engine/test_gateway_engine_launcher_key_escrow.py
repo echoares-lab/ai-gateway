@@ -14,6 +14,313 @@ from core.launcher_key_escrow import (
 )
 
 
+class FakeEscrow:
+    def __init__(self, stored=None, *, write_error=None):
+        self.stored = stored
+        self.write_error = write_error
+        self.events = []
+
+    async def read(self, alias):
+        self.events.append(("read", alias))
+        return self.stored
+
+    async def write_pending(self, value):
+        self.events.append(("write_pending", value))
+        if self.write_error:
+            raise self.write_error
+        self.stored = value
+
+    async def activate(self, alias, key_id):
+        from dataclasses import replace
+
+        self.events.append(("activate", alias, key_id))
+        self.stored = replace(self.stored, state="active", litellm_key_id=key_id)
+        return self.stored
+
+
+def litellm_client(handler):
+    return httpx.AsyncClient(
+        base_url="http://litellm:4000",
+        transport=httpx.MockTransport(handler),
+    )
+
+
+def service(escrow, http, tokens=None):
+    from core.launcher_key_service import LauncherKeyService
+
+    generated = iter(tokens or ["sk-generated-once"])
+    return LauncherKeyService(
+        escrow=escrow,
+        litellm_http_client=http,
+        litellm_admin_url="http://litellm:4000",
+        litellm_master_key="master-key",
+        token_factory=lambda: next(generated),
+    )
+
+
+def test_service_token_generation_uses_csprng_and_litellm_prefix(monkeypatch):
+    from core import launcher_key_service
+
+    monkeypatch.setattr(launcher_key_service.secrets, "token_urlsafe", lambda size: f"random-{size}")
+    assert launcher_key_service.generate_virtual_key() == "sk-random-32"
+
+
+@pytest.mark.asyncio
+async def test_service_creation_writes_pending_before_exact_token_litellm_creation():
+    escrow = FakeEscrow()
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if request.url.path == "/key/list":
+            return httpx.Response(200, json=[])
+        if request.url.path == "/key/generate":
+            assert escrow.stored is not None
+            body = __import__("json").loads(request.content)
+            assert body["key"] == escrow.stored.token == "sk-stable-token"
+            return httpx.Response(200, json={"key": "sk-stable-token", "key_id": "key-9"})
+        assert request.url.path == "/key/info"
+        assert request.headers["Authorization"] == "Bearer sk-stable-token"
+        return httpx.Response(
+            200,
+            json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}},
+        )
+
+    http = litellm_client(handler)
+    try:
+        result = await service(escrow, http, ["sk-stable-token"]).create_key(
+            {"key_alias": "repo/customer-a", "team_id": "team-1", "models": ["gpt-5"]}
+        )
+    finally:
+        await http.aclose()
+
+    assert result.token == "sk-stable-token"
+    assert result.litellm_key_id == "key-9"
+    assert escrow.stored.state == "active"
+    assert [request.url.path for request in requests] == ["/key/list", "/key/generate", "/key/info"]
+
+
+@pytest.mark.asyncio
+async def test_service_openbao_failure_prevents_litellm_creation():
+    from core.launcher_key_service import LauncherKeyServiceError
+
+    escrow = FakeEscrow(write_error=SecretStoreUnavailableError("unavailable"))
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        assert request.url.path == "/key/list"
+        return httpx.Response(200, json=[])
+
+    http = litellm_client(handler)
+    try:
+        with pytest.raises(LauncherKeyServiceError) as exc:
+            await service(escrow, http).create_key({"key_alias": "repo/customer-a", "team_id": "team-1"})
+    finally:
+        await http.aclose()
+    assert exc.value.code == "secret_store_unavailable"
+    assert not [request for request in requests if request.url.path == "/key/generate"]
+
+
+@pytest.mark.asyncio
+async def test_service_litellm_failure_leaves_pending_without_returning_token():
+    from core.launcher_key_service import LauncherKeyServiceError
+
+    escrow = FakeEscrow()
+
+    def handler(request):
+        if request.url.path == "/key/list":
+            return httpx.Response(200, json=[])
+        return httpx.Response(503, json={"error": "failed sk-do-not-echo"})
+
+    http = litellm_client(handler)
+    try:
+        with pytest.raises(LauncherKeyServiceError) as exc:
+            await service(escrow, http, ["sk-stable-token"]).create_key(
+                {"key_alias": "repo/customer-a", "team_id": "team-1"}
+            )
+    finally:
+        await http.aclose()
+    assert exc.value.code == "key_creation_incomplete"
+    assert "sk-stable-token" not in str(exc.value)
+    assert escrow.stored.state == "pending"
+
+
+@pytest.mark.asyncio
+async def test_service_retry_resumes_pending_with_same_token_without_generating_another():
+    escrow = FakeEscrow(record(token="sk-original-token"))
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        assert request.url.path == "/key/info"
+        assert request.headers["Authorization"] == "Bearer sk-original-token"
+        return httpx.Response(
+            200,
+            json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}},
+        )
+
+    http = litellm_client(handler)
+    try:
+        result = await service(escrow, http, []).create_key({"key_alias": "repo/customer-a", "team_id": "team-1"})
+    finally:
+        await http.aclose()
+    assert result.token == "sk-original-token"
+    assert [request.url.path for request in requests] == ["/key/info"]
+    assert escrow.stored.state == "active"
+
+
+@pytest.mark.asyncio
+async def test_service_retry_recreates_missing_remote_with_exact_pending_token():
+    escrow = FakeEscrow(record(token="sk-original-token"))
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if request.url.path == "/key/info" and len(requests) == 1:
+            return httpx.Response(401, json={"error": "not found"})
+        if request.url.path == "/key/generate":
+            assert __import__("json").loads(request.content)["key"] == "sk-original-token"
+            return httpx.Response(200, json={"key_id": "key-9"})
+        return httpx.Response(
+            200,
+            json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}},
+        )
+
+    http = litellm_client(handler)
+    try:
+        result = await service(escrow, http, []).create_key({"key_alias": "repo/customer-a", "team_id": "team-1"})
+    finally:
+        await http.aclose()
+    assert result.token == "sk-original-token"
+    assert [request.url.path for request in requests] == ["/key/info", "/key/generate", "/key/info"]
+
+
+@pytest.mark.asyncio
+async def test_service_verification_failure_keeps_pending_and_redacts_token():
+    from core.launcher_key_service import LauncherKeyServiceError
+
+    escrow = FakeEscrow()
+
+    def handler(request):
+        if request.url.path == "/key/list":
+            return httpx.Response(200, json=[])
+        if request.url.path == "/key/generate":
+            return httpx.Response(200, json={"key": "sk-stable-token", "key_id": "key-9"})
+        return httpx.Response(200, json={"info": {"key_alias": "other", "team_id": "team-1", "key_id": "key-9"}})
+
+    http = litellm_client(handler)
+    try:
+        with pytest.raises(LauncherKeyServiceError) as exc:
+            await service(escrow, http, ["sk-stable-token"]).create_key(
+                {"key_alias": "repo/customer-a", "team_id": "team-1"}
+            )
+    finally:
+        await http.aclose()
+    assert exc.value.code == "key_creation_incomplete"
+    assert "sk-stable-token" not in str(exc.value)
+    assert escrow.stored.state == "pending"
+
+
+@pytest.mark.asyncio
+async def test_service_existing_remote_alias_is_not_rotated_or_escrowed():
+    from core.launcher_key_service import LauncherKeyServiceError
+
+    escrow = FakeEscrow()
+    http = litellm_client(
+        lambda request: httpx.Response(
+            200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "old-key"}]
+        )
+    )
+    try:
+        with pytest.raises(LauncherKeyServiceError) as exc:
+            await service(escrow, http, []).create_key({"key_alias": "repo/customer-a", "team_id": "team-1"})
+    finally:
+        await http.aclose()
+    assert exc.value.code == "key_secret_not_escrowed"
+    assert not [event for event in escrow.events if event[0] == "write_pending"]
+
+
+@pytest.mark.asyncio
+async def test_service_recovery_checks_remote_and_escrow_identity():
+    escrow = FakeEscrow(record(state="active", litellm_key_id="key-9"))
+    http = litellm_client(
+        lambda request: httpx.Response(
+            200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}]
+        )
+    )
+    try:
+        result = await service(escrow, http).recover_key("repo/customer-a")
+    finally:
+        await http.aclose()
+    assert result.token == "sk-secret-token"
+
+
+@pytest.mark.asyncio
+async def test_service_recovery_returns_stable_missing_and_mismatch_codes():
+    from core.launcher_key_service import LauncherKeyServiceError
+
+    cases = [
+        ([], record(state="active", litellm_key_id="key-9"), "key_alias_not_found"),
+        ([{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}], None, "key_secret_not_escrowed"),
+        (
+            [{"key_alias": "repo/customer-a", "team_id": "team-2", "key_id": "key-9"}],
+            record(state="active", litellm_key_id="key-9"),
+            "key_identity_mismatch",
+        ),
+    ]
+    for remote, stored, code in cases:
+        escrow = FakeEscrow(stored)
+        http = litellm_client(lambda request, remote=remote: httpx.Response(200, json=remote))
+        try:
+            with pytest.raises(LauncherKeyServiceError) as exc:
+                await service(escrow, http).recover_key("repo/customer-a")
+        finally:
+            await http.aclose()
+        assert exc.value.code == code
+
+
+@pytest.mark.asyncio
+async def test_service_legacy_import_authenticates_token_then_escrows_active_identity():
+    escrow = FakeEscrow()
+
+    def handler(request):
+        if request.url.path == "/key/list":
+            return httpx.Response(200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}])
+        assert request.headers["Authorization"] == "Bearer sk-legacy-token"
+        return httpx.Response(
+            200, json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}}
+        )
+
+    http = litellm_client(handler)
+    try:
+        result = await service(escrow, http).import_key("repo/customer-a", "sk-legacy-token")
+    finally:
+        await http.aclose()
+    assert result.token == "sk-legacy-token"
+    assert escrow.stored.state == "active"
+    assert escrow.stored.litellm_key_id == "key-9"
+
+
+@pytest.mark.asyncio
+async def test_service_legacy_import_refuses_different_active_secret():
+    from core.launcher_key_service import LauncherKeyServiceError
+
+    escrow = FakeEscrow(record(token="sk-existing", state="active", litellm_key_id="key-9"))
+    http = litellm_client(
+        lambda request: httpx.Response(
+            200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}]
+        )
+    )
+    try:
+        with pytest.raises(LauncherKeyServiceError) as exc:
+            await service(escrow, http).import_key("repo/customer-a", "sk-different")
+    finally:
+        await http.aclose()
+    assert exc.value.code == "key_identity_mismatch"
+    assert not [event for event in escrow.events if event[0] == "write_pending"]
+
+
 def record(**changes: object) -> EscrowRecord:
     values = {
         "alias": "repo/customer-a",
@@ -56,8 +363,7 @@ async def test_write_pending_uses_kv_v2_cas_zero_and_hashed_alias_path():
 
     request = seen["request"]
     assert request.url.path == (
-        "/v1/launcher-kv/data/stable-keys/"
-        "6cbe8cfb89ed79748484aadb3af916cbe428f63541bc5fca0838184c8ef3a803"
+        "/v1/launcher-kv/data/stable-keys/6cbe8cfb89ed79748484aadb3af916cbe428f63541bc5fca0838184c8ef3a803"
     )
     assert request.headers["X-Vault-Token"] == "workload-token"
     assert request.method == "POST"
@@ -198,9 +504,11 @@ async def test_token_supplier_failure_is_typed_redacted_and_unchained(async_supp
     secret = "supplier leaked workload-token"
 
     if async_supplier:
+
         async def supplier():
             raise RuntimeError(secret)
     else:
+
         def supplier():
             raise RuntimeError(secret)
 
@@ -267,9 +575,7 @@ async def test_malformed_record_is_typed_redacted_and_unchained():
 
 @pytest.mark.asyncio
 async def test_non_cas_bad_request_is_store_unavailable():
-    escrow, http = client(
-        lambda request: httpx.Response(400, json={"errors": ["invalid request"]})
-    )
+    escrow, http = client(lambda request: httpx.Response(400, json={"errors": ["invalid request"]}))
     try:
         with pytest.raises(SecretStoreUnavailableError) as exc:
             await escrow.write_pending(record())
