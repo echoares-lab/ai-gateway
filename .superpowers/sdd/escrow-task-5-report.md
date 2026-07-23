@@ -39,3 +39,27 @@ integration contracts, so no runtime code changed.
   unit tests, 24 probe-classifier tests, four shell probe cases, two compose-migration
   tests, and 58 mock integration tests; one pre-existing warning.
 - `git diff --check` — passed.
+
+## Review expansion
+
+Expanded the stateful HTTP failure ledger to every requested recoverable boundary.
+
+- Create: initial escrow read, pending write, pending CAS conflict, LiteLLM generate
+  response loss after remote creation, post-generate token verification, and escrow
+  activation.
+- Import: pending escrow write and activation.
+- Recovery: escrow read, LiteLLM alias lookup, and LiteLLM token verification.
+
+Every create case retries to `STABLE_TOKEN`, proves the remote key contains that exact
+token, records exactly one successful LiteLLM generation, and records zero OpenBao
+`DELETE` requests. Every import case retries to `LEGACY_TOKEN`, records zero generation
+and zero delete requests. Recovery retries preserve the original token with one prior
+generation and zero deletes. The response-loss case simulates the critical ambiguous
+boundary by creating the remote key before returning HTTP 503; retry discovers it by
+the pending token instead of issuing another generation.
+
+Log assertions now lowercase captured output and reject both header names
+`authorization` and `x-vault-token`, as well as the stable, workload, and master secret
+values. Revalidation after review: focused suite 14 passed; mock suite 65 passed with
+three deselected and one pre-existing warning; `make test-fast` passed with 324 gateway
+unit tests and the same 65-test mock selection.

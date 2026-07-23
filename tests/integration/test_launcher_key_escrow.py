@@ -28,6 +28,9 @@ class MockKeyBackends:
     requests: list[tuple[str, str]] = field(default_factory=list)
     generate_calls: int = 0
     fail_activation_once: bool = False
+    fail_pending_write_once: bool = False
+    fail_pending_cas_once: bool = False
+    fail_generate_response_once: bool = False
     fail_escrow_read_once: bool = False
     fail_litellm_list_once: bool = False
     fail_litellm_info_once: bool = False
@@ -71,6 +74,15 @@ class MockKeyBackends:
         if request.method == "POST":
             body = json.loads(request.read())
             record = body["data"]
+            if record["state"] == "pending" and self.fail_pending_write_once:
+                self.fail_pending_write_once = False
+                return httpx.Response(503, json={"errors": ["temporarily unavailable"]})
+            if record["state"] == "pending" and self.fail_pending_cas_once:
+                self.fail_pending_cas_once = False
+                return httpx.Response(
+                    400,
+                    json={"errors": ["check-and-set parameter did not match current version"]},
+                )
             if record["state"] == "active" and self.fail_activation_once:
                 self.fail_activation_once = False
                 return httpx.Response(503, json={"errors": ["temporarily unavailable"]})
@@ -91,6 +103,9 @@ class MockKeyBackends:
             body = json.loads(request.read())
             self.generate_calls += 1
             self.seed_remote(body["key_alias"], body["key"], key_id="key-created")
+            if self.fail_generate_response_once:
+                self.fail_generate_response_once = False
+                return httpx.Response(503, json={"error": "response lost after creation"})
             return httpx.Response(200, json={"key": body["key"]})
         if request.method == "GET" and request.url.path == "/key/info":
             if self.fail_litellm_info_once:
@@ -159,34 +174,91 @@ async def test_pre_escrow_key_import_then_recover_returns_exact_token() -> None:
 
 
 @pytest.mark.parametrize(
-    "failure",
-    ["activation", "escrow_read", "litellm_lookup", "litellm_verification"],
+    "failure,backend_options,expected_code",
+    [
+        ("initial escrow read", {"fail_escrow_read_once": True}, "secret_store_unavailable"),
+        ("pending write", {"fail_pending_write_once": True}, "secret_store_unavailable"),
+        ("pending CAS", {"fail_pending_cas_once": True}, "key_creation_incomplete"),
+        ("LiteLLM generate", {"fail_generate_response_once": True}, "key_creation_incomplete"),
+        ("post-generate verification", {"fail_litellm_info_once": True}, "key_creation_incomplete"),
+        ("activation", {"fail_activation_once": True}, "key_creation_incomplete"),
+    ],
 )
-async def test_recoverable_failures_never_create_a_second_key_or_delete_escrow(
+async def test_every_recoverable_create_boundary_retries_exact_token_without_duplicate_or_delete(
     failure: str,
+    backend_options: dict[str, bool],
+    expected_code: str,
 ) -> None:
-    backends = MockKeyBackends(fail_activation_once=failure == "activation")
+    backends = MockKeyBackends(**backend_options)
     service, http = build_service(backends)
     try:
-        if failure == "activation":
-            with pytest.raises(LauncherKeyServiceError) as exc:
-                await service.create_key({"key_alias": ALIAS, "team_id": TEAM_ID})
-            assert exc.value.code == "key_creation_incomplete"
-            result = await service.create_key({"key_alias": ALIAS, "team_id": TEAM_ID})
-        else:
+        with pytest.raises(LauncherKeyServiceError) as exc:
             await service.create_key({"key_alias": ALIAS, "team_id": TEAM_ID})
-            if failure == "escrow_read":
-                backends.fail_escrow_read_once = True
-            elif failure == "litellm_lookup":
-                backends.fail_litellm_list_once = True
-            else:
-                backends.fail_litellm_info_once = True
-            with pytest.raises(LauncherKeyServiceError) as exc:
-                await service.recover_key(ALIAS)
-            assert exc.value.code in {"secret_store_unavailable", "key_creation_incomplete"}
-            result = await service.recover_key(ALIAS)
+        assert exc.value.code == expected_code, failure
+
+        recovered = await service.create_key({"key_alias": ALIAS, "team_id": TEAM_ID})
+
+        assert recovered.token == STABLE_TOKEN
+        assert backends.remote_keys[ALIAS]["token"] == STABLE_TOKEN
+        assert backends.generate_calls == 1
+        assert not backends.delete_requests
+    finally:
+        await http.aclose()
+
+
+@pytest.mark.parametrize(
+    "backend_options,expected_code",
+    [
+        ({"fail_pending_write_once": True}, "secret_store_unavailable"),
+        ({"fail_activation_once": True}, "key_creation_incomplete"),
+    ],
+)
+async def test_every_recoverable_import_boundary_retries_exact_token_without_create_or_delete(
+    backend_options: dict[str, bool],
+    expected_code: str,
+) -> None:
+    backends = MockKeyBackends(**backend_options)
+    backends.seed_remote(ALIAS, LEGACY_TOKEN)
+    service, http = build_service(backends)
+    try:
+        with pytest.raises(LauncherKeyServiceError) as exc:
+            await service.import_key(ALIAS, LEGACY_TOKEN)
+        assert exc.value.code == expected_code
+
+        recovered = await service.import_key(ALIAS, LEGACY_TOKEN)
+
+        assert recovered.token == LEGACY_TOKEN
+        assert backends.remote_keys[ALIAS]["token"] == LEGACY_TOKEN
+        assert backends.generate_calls == 0
+        assert not backends.delete_requests
+    finally:
+        await http.aclose()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["escrow_read", "litellm_lookup", "litellm_verification"],
+)
+async def test_every_recoverable_recovery_boundary_never_creates_or_deletes(
+    failure: str,
+) -> None:
+    backends = MockKeyBackends()
+    service, http = build_service(backends)
+    try:
+        await service.create_key({"key_alias": ALIAS, "team_id": TEAM_ID})
+        if failure == "escrow_read":
+            backends.fail_escrow_read_once = True
+        elif failure == "litellm_lookup":
+            backends.fail_litellm_list_once = True
+        else:
+            backends.fail_litellm_info_once = True
+        with pytest.raises(LauncherKeyServiceError) as exc:
+            await service.recover_key(ALIAS)
+        assert exc.value.code in {"secret_store_unavailable", "key_creation_incomplete"}
+        result = await service.recover_key(ALIAS)
 
         assert result.token == STABLE_TOKEN
+        assert backends.remote_keys[ALIAS]["token"] == STABLE_TOKEN
         assert backends.generate_calls == 1
         assert not backends.delete_requests
     finally:
@@ -203,11 +275,12 @@ async def test_logs_never_expose_tokens_or_authorization_headers(caplog) -> None
     finally:
         await http.aclose()
 
-    captured = caplog.text
+    captured = caplog.text.lower()
     for secret in (
         STABLE_TOKEN,
         "openbao-workload-token-do-not-log",
         "litellm-master-token-do-not-log",
     ):
-        assert secret not in captured
-    assert "Authorization" not in captured
+        assert secret.lower() not in captured
+    for header_name in ("authorization", "x-vault-token"):
+        assert header_name not in captured
