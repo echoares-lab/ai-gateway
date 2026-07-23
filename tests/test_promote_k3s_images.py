@@ -7,6 +7,9 @@ from pathlib import Path
 import pytest
 
 from scripts.k3s.promote_k3s_images import (
+    _gateway_workload_path,
+    _litellm_manifest_paths,
+    _pin_file_for_image,
     _set_gateway_version,
     _set_image_pin,
     _set_litellm_image,
@@ -42,6 +45,15 @@ spec:
       labels:
         app: gateway-engine
         app.kubernetes.io/version: 1.2.0
+"""
+
+COMPONENT_PIN = """apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cliproxy.yaml
+images:
+  - name: nexus-docker.infra.plexplease.com/cli-proxy-api
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 """
 
 
@@ -124,6 +136,40 @@ def test_set_litellm_image() -> None:
     assert "new-image" in _set_litellm_image(doc_block, "new-image", "litellm")
 
 
+def test_pin_file_for_image_prefers_component_subdir(tmp_path: Path) -> None:
+    overlay = tmp_path / "overlays" / "k3s-01"
+    (overlay / "cliproxy").mkdir(parents=True)
+    parent = overlay / "kustomization.yaml"
+    parent.write_text("apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n", encoding="utf-8")
+    component = overlay / "cliproxy" / "kustomization.yaml"
+    component.write_text(COMPONENT_PIN, encoding="utf-8")
+
+    assert (
+        _pin_file_for_image(parent, "nexus-docker.infra.plexplease.com/cli-proxy-api")
+        == component
+    )
+
+
+def test_gateway_workload_path_prefers_split_layout(tmp_path: Path) -> None:
+    overlay = tmp_path / "overlays" / "k3s-01"
+    (overlay / "gateway-engine").mkdir(parents=True)
+    missing = overlay / "core-workloads.yaml"
+    split = overlay / "gateway-engine" / "gateway-engine.yaml"
+    split.write_text(WORKLOAD_FIXTURE, encoding="utf-8")
+    assert _gateway_workload_path(overlay, missing) == split
+
+
+def test_litellm_manifest_paths_split_layout(tmp_path: Path) -> None:
+    overlay = tmp_path / "overlays" / "k3s-01"
+    (overlay / "litellm").mkdir(parents=True)
+    (overlay / "foundation").mkdir(parents=True)
+    deploy = overlay / "litellm" / "litellm.yaml"
+    jobs = overlay / "foundation" / "db-jobs.yaml"
+    deploy.write_text("- name: litellm\n  image: old\n", encoding="utf-8")
+    jobs.write_text("- name: migrate\n  image: old\n", encoding="utf-8")
+    assert _litellm_manifest_paths(overlay) == (deploy, jobs)
+
+
 def test_main_updates_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = tmp_path / "k3s-01"
     overlay = repo / "kubernetes/workloads/home/ai-gateway/overlays/k3s-01"
@@ -157,6 +203,104 @@ def test_main_updates_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert f"digest: {cliproxy_digest}" in text
     assert 'newTag: "6cf6e68"' not in text
     assert workload_path.read_text(encoding="utf-8").count("app.kubernetes.io/version: 1.2.1") == 2
+
+
+def test_main_updates_split_component_layout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = tmp_path / "k3s-01"
+    overlay = repo / "kubernetes/workloads/home/ai-gateway/overlays/k3s-01"
+    for component in ("cliproxy", "gateway-engine", "credential-prober", "docs", "langfuse", "litellm", "foundation"):
+        (overlay / component).mkdir(parents=True)
+
+    (overlay / "kustomization.yaml").write_text(
+        "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - cliproxy\n",
+        encoding="utf-8",
+    )
+
+    def write_pin(rel: str, image: str, digest: str) -> Path:
+        path = overlay / rel
+        path.write_text(
+            "apiVersion: kustomize.config.k8s.io/v1beta1\n"
+            "kind: Kustomization\n"
+            "images:\n"
+            f"  - name: {image}\n"
+            f"    digest: {digest}\n",
+            encoding="utf-8",
+        )
+        return path
+
+    cliproxy = write_pin(
+        "cliproxy/kustomization.yaml",
+        "nexus-docker.infra.plexplease.com/cli-proxy-api",
+        "sha256:" + "a" * 64,
+    )
+    gateway = write_pin(
+        "gateway-engine/kustomization.yaml",
+        "nexus-docker.infra.plexplease.com/ai-gateway/gateway-engine",
+        "sha256:" + "b" * 64,
+    )
+    write_pin(
+        "credential-prober/kustomization.yaml",
+        "nexus-docker.infra.plexplease.com/ai-gateway/credential-prober",
+        "sha256:" + "c" * 64,
+    )
+    write_pin(
+        "docs/kustomization.yaml",
+        "nexus-docker.infra.plexplease.com/ai-gateway/docs-server",
+        "sha256:" + "d" * 64,
+    )
+    langfuse = write_pin(
+        "langfuse/kustomization.yaml",
+        "docker.io/langfuse/langfuse",
+        "sha256:" + "e" * 64,
+    )
+    # second image in same file
+    langfuse.write_text(
+        langfuse.read_text(encoding="utf-8")
+        + "  - name: docker.io/langfuse/langfuse-worker\n"
+        + "    digest: sha256:"
+        + ("f" * 64)
+        + "\n",
+        encoding="utf-8",
+    )
+
+    workload = overlay / "gateway-engine" / "gateway-engine.yaml"
+    workload.write_text(WORKLOAD_FIXTURE, encoding="utf-8")
+    litellm_deploy = overlay / "litellm" / "litellm.yaml"
+    litellm_deploy.write_text("- name: litellm\n  image: old-litellm\n", encoding="utf-8")
+    db_jobs = overlay / "foundation" / "db-jobs.yaml"
+    db_jobs.write_text("- name: migrate\n  image: old-litellm\n", encoding="utf-8")
+
+    new_cliproxy = "sha256:" + "1" * 64
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "scripts/k3s/promote_k3s_images.py",
+            "--k3s-repo",
+            str(repo),
+            "--gateway-engine",
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+            "--gateway-version",
+            "1.2.1",
+            "--cliproxy",
+            new_cliproxy,
+            "--litellm",
+            "ghcr.io/berriai/litellm:v1.93.0@sha256:newlitellm",
+            "--langfuse",
+            "sha256:" + "2" * 64,
+        ],
+    )
+    assert main() == 0
+
+    assert f"digest: {new_cliproxy}" in cliproxy.read_text(encoding="utf-8")
+    assert "digest: sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" in gateway.read_text(
+        encoding="utf-8"
+    )
+    assert workload.read_text(encoding="utf-8").count("app.kubernetes.io/version: 1.2.1") == 2
+    assert "image: ghcr.io/berriai/litellm:v1.93.0@sha256:newlitellm" in litellm_deploy.read_text(encoding="utf-8")
+    assert "image: ghcr.io/berriai/litellm:v1.93.0@sha256:newlitellm" in db_jobs.read_text(encoding="utf-8")
+    assert "digest: sha256:" + ("2" * 64) in langfuse.read_text(encoding="utf-8")
+    # Aggregator must stay image-free.
+    assert "images:" not in (overlay / "kustomization.yaml").read_text(encoding="utf-8")
 
 
 def test_main_updates_ext(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
