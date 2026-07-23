@@ -143,6 +143,14 @@ class LauncherKeyService:
             record.alias == remote.alias and record.team_id == remote.team_id and record.litellm_key_id == remote.key_id
         )
 
+    @staticmethod
+    def _pending_identity_matches(record: EscrowRecord, remote: _RemoteKey) -> bool:
+        return (
+            record.alias == remote.alias
+            and record.team_id == remote.team_id
+            and (record.litellm_key_id is None or record.litellm_key_id == remote.key_id)
+        )
+
     async def _read_escrow(self, alias: str) -> EscrowRecord | None:
         try:
             return await self._escrow.read(alias)
@@ -214,6 +222,9 @@ class LauncherKeyService:
             raise LauncherKeyServiceError("key_secret_not_escrowed", "Key secret is not escrowed")
         if not self._identity_matches(stored, remote):
             raise LauncherKeyServiceError("key_identity_mismatch", "Stored key identity does not match")
+        verified = await self._authenticate_token(stored.token)
+        if verified != remote or not self._identity_matches(stored, verified):
+            raise LauncherKeyServiceError("key_identity_mismatch", "Stored key identity does not match")
         return self._result(stored)
 
     async def import_key(self, alias: str, token: str) -> LauncherKeyResult:
@@ -230,6 +241,8 @@ class LauncherKeyService:
         verified = await self._authenticate_token(token)
         if verified != remote:
             raise LauncherKeyServiceError("key_identity_mismatch", "Supplied token does not match key alias")
+        if stored is not None and not self._pending_identity_matches(stored, verified):
+            raise LauncherKeyServiceError("key_identity_mismatch", "Stored key identity does not match")
         if stored is None:
             pending = EscrowRecord(
                 alias=alias,

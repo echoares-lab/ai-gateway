@@ -244,16 +244,52 @@ async def test_service_existing_remote_alias_is_not_rotated_or_escrowed():
 @pytest.mark.asyncio
 async def test_service_recovery_checks_remote_and_escrow_identity():
     escrow = FakeEscrow(record(state="active", litellm_key_id="key-9"))
-    http = litellm_client(
-        lambda request: httpx.Response(
-            200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}]
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if request.url.path == "/key/list":
+            return httpx.Response(
+                200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}]
+            )
+        assert request.headers["Authorization"] == "Bearer sk-secret-token"
+        return httpx.Response(
+            200, json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}}
         )
-    )
+
+    http = litellm_client(handler)
     try:
         result = await service(escrow, http).recover_key("repo/customer-a")
     finally:
         await http.aclose()
     assert result.token == "sk-secret-token"
+    assert [request.url.path for request in requests] == ["/key/list", "/key/info"]
+
+
+@pytest.mark.asyncio
+async def test_service_recovery_refuses_swapped_escrow_token_without_disclosing_it():
+    from core.launcher_key_service import LauncherKeyServiceError
+
+    escrow = FakeEscrow(record(token="sk-swapped-token", state="active", litellm_key_id="key-9"))
+
+    def handler(request):
+        if request.url.path == "/key/list":
+            return httpx.Response(
+                200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}]
+            )
+        assert request.headers["Authorization"] == "Bearer sk-swapped-token"
+        return httpx.Response(
+            200, json={"info": {"key_alias": "repo/customer-b", "team_id": "team-2", "key_id": "key-8"}}
+        )
+
+    http = litellm_client(handler)
+    try:
+        with pytest.raises(LauncherKeyServiceError) as exc:
+            await service(escrow, http).recover_key("repo/customer-a")
+    finally:
+        await http.aclose()
+    assert exc.value.code == "key_identity_mismatch"
+    assert "sk-swapped-token" not in str(exc.value)
 
 
 @pytest.mark.asyncio
@@ -319,6 +355,32 @@ async def test_service_legacy_import_refuses_different_active_secret():
         await http.aclose()
     assert exc.value.code == "key_identity_mismatch"
     assert not [event for event in escrow.events if event[0] == "write_pending"]
+
+
+@pytest.mark.asyncio
+async def test_service_legacy_import_refuses_pending_record_identity_mismatch():
+    from core.launcher_key_service import LauncherKeyServiceError
+
+    escrow = FakeEscrow(record(token="sk-legacy-token", team_id="team-other", litellm_key_id="key-other"))
+
+    def handler(request):
+        if request.url.path == "/key/list":
+            return httpx.Response(
+                200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}]
+            )
+        return httpx.Response(
+            200, json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}}
+        )
+
+    http = litellm_client(handler)
+    try:
+        with pytest.raises(LauncherKeyServiceError) as exc:
+            await service(escrow, http).import_key("repo/customer-a", "sk-legacy-token")
+    finally:
+        await http.aclose()
+    assert exc.value.code == "key_identity_mismatch"
+    assert "sk-legacy-token" not in str(exc.value)
+    assert not [event for event in escrow.events if event[0] == "activate"]
 
 
 def record(**changes: object) -> EscrowRecord:

@@ -48,3 +48,37 @@ The warning is the pre-existing Starlette `TestClient`/`httpx` deprecation warni
 ## Scope note
 
 `admin_api.py` was intentionally not changed: Task 3 owns endpoint wiring and the brief explicitly prohibits adding endpoints in Task 2. The service is dependency-injected and ready for that wiring.
+
+## Integrity follow-up (2026-07-23)
+
+Two review findings were fixed without adding delete or rotation behavior:
+
+- Recovery now authenticates the escrowed token through LiteLLM `/key/info` and requires its alias, team ID, and key ID to match both the active escrow record and the `/key/list` identity before returning the secret.
+- Legacy import now requires an existing pending record's alias and team ID, plus its key ID when present, to match the authenticated remote identity before activation.
+- Identity failures use the stable `key_identity_mismatch` code and never include the token in the error message.
+
+TDD RED:
+
+```text
+python3 -m pytest test_gateway_engine_launcher_key_escrow.py -q -k 'recovery_checks_remote_and_escrow_identity or recovery_refuses_swapped_escrow_token or legacy_import_refuses_pending_record_identity_mismatch'
+3 failed, 28 deselected in 0.14s
+```
+
+Focused GREEN and lint:
+
+```text
+python3 -m pytest test_gateway_engine_launcher_key_escrow.py -q
+31 passed in 0.07s
+
+python3 -m ruff check core/launcher_key_service.py test_gateway_engine_launcher_key_escrow.py
+All checks passed!
+```
+
+Full gateway-engine suite:
+
+```text
+python3 -m pytest -q
+321 passed, 1 warning in 1.34s
+```
+
+The warning remains the pre-existing Starlette `TestClient`/`httpx` deprecation warning.
