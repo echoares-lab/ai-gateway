@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(__file__))
 import main as t
+from core.model_reconciliation import ReconciliationTrigger
 from core.model_registry import (
     ModelRegistryRecord,
     ModelRegistryStore,
@@ -551,6 +552,38 @@ def test_admin_models_reconcile_dry_run_does_not_write_files(monkeypatch, tmp_pa
     assert json.loads(body["resources"][1]["content"])["gemini-3.flash"] == "gemini-3-flash"
     assert litellm_config.read_text(encoding="utf-8") == "model_list: []\n"
     assert gemini_map.read_text(encoding="utf-8") == "{}\n"
+
+
+def test_admin_models_reconcile_force_run_enqueues_manual_scheduler(monkeypatch):
+    class Recorder:
+        def __init__(self):
+            self.calls = []
+
+        async def request(self, trigger, requested_model=None):
+            self.calls.append((trigger, requested_model))
+            return True
+
+    recorder = Recorder()
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "_model_reconciliation_service", recorder)
+    monkeypatch.setattr(t, "_model_registry_store", lambda: type("Store", (), {"enabled": True})())
+
+    response = TestClient(t.app).post(
+        "/admin/models/reconcile",
+        headers={"x-admin-key": "test-admin"},
+        json={"dry_run": False},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "accepted": True,
+        "dry_run": False,
+        "source": "scheduler:model-reconciliation",
+        "registry_available": True,
+        "resources": [],
+        "errors": [],
+    }
+    assert recorder.calls == [(ReconciliationTrigger.MANUAL, None)]
 
 
 def test_admin_models_sync_dry_run(monkeypatch, tmp_path):

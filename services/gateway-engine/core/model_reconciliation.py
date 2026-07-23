@@ -15,6 +15,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from core.metrics import record_model_reconciliation
 from core.model_registry import (
     ModelRegistryRecord,
     diff_discovered_models,
@@ -202,14 +203,39 @@ class ModelReconciliationService:
         self._scheduler_task: asyncio.Task | None = None
         self._scheduler_lock = asyncio.Lock()
         self._wake = asyncio.Event()
-        self._pending: tuple[ReconciliationTrigger, str | None] | None = None
+        self._pending_request: tuple[ReconciliationTrigger, str | None] | None = None
         self._active = False
+        self._current_trigger: ReconciliationTrigger | None = None
+        self._current_requested_model: str | None = None
+        self._phase = "idle" if enabled else "disabled"
+        self.last_attempt_at: datetime | None = None
+        self.last_success_at: datetime | None = None
         self._last_expedited_at: float | None = None
         self.last_result: ReconciliationResult | None = None
 
     @property
     def scheduler_task(self) -> asyncio.Task | None:
         return self._scheduler_task
+
+    @property
+    def active(self) -> bool:
+        return self._active
+
+    @property
+    def pending(self) -> bool:
+        return self._pending_request is not None
+
+    @property
+    def phase(self) -> str:
+        return self._phase
+
+    @property
+    def current_trigger(self) -> ReconciliationTrigger | None:
+        return self._current_trigger
+
+    @property
+    def current_requested_model(self) -> str | None:
+        return self._current_requested_model
 
     def start(self) -> asyncio.Task | None:
         """Start the cancellable scheduler once when reconciliation is enabled."""
@@ -247,7 +273,7 @@ class ModelReconciliationService:
                 ):
                     return False
                 self._last_expedited_at = now
-            self._pending = (trigger, requested_model)
+            self._pending_request = (trigger, requested_model)
             self._wake.set()
         return True
 
@@ -259,20 +285,23 @@ class ModelReconciliationService:
                 await asyncio.wait_for(self._wake.wait(), timeout=delay)
             except asyncio.TimeoutError:
                 async with self._scheduler_lock:
-                    if self._pending is None:
+                    if self._pending_request is None:
                         trigger = ReconciliationTrigger.STARTUP if first_wait else ReconciliationTrigger.SCHEDULED
-                        self._pending = (trigger, None)
+                        self._pending_request = (trigger, None)
             first_wait = False
 
             while True:
                 async with self._scheduler_lock:
-                    pending = self._pending
-                    self._pending = None
+                    pending = self._pending_request
+                    self._pending_request = None
                     if pending is None:
                         self._active = False
+                        self._current_trigger = None
+                        self._current_requested_model = None
                         self._wake.clear()
                         break
                     self._active = True
+                    self._current_trigger, self._current_requested_model = pending
                 await self._run_bounded(*pending)
 
     async def _run_bounded(
@@ -313,6 +342,9 @@ class ModelReconciliationService:
                     }
                 ],
             )
+            self._phase = "timeout"
+            self.last_attempt_at = self.last_attempt_at or now
+            record_model_reconciliation(self.last_result)
 
     async def run(
         self,
@@ -323,6 +355,8 @@ class ModelReconciliationService:
     ) -> ReconciliationResult:
         started_at = datetime.now(timezone.utc)
         phase = "discover"
+        self.last_attempt_at = started_at
+        self._phase = phase
         counts = {
             "discovered": 0,
             "added": 0,
@@ -340,7 +374,7 @@ class ModelReconciliationService:
         persisted_count = 0
 
         def finish(outcome: str, final_phase: str | None = None) -> ReconciliationResult:
-            return ReconciliationResult(
+            result = ReconciliationResult(
                 outcome=outcome,
                 phase=final_phase or phase,
                 trigger=trigger,
@@ -355,6 +389,17 @@ class ModelReconciliationService:
                 diffs=result_diffs,
                 persisted_count=persisted_count,
             )
+            self._phase = result.phase
+            self.last_result = result
+            if outcome == "success":
+                self.last_success_at = result.completed_at
+            record_model_reconciliation(result)
+            return result
+
+        def set_phase(value: str) -> None:
+            nonlocal phase
+            phase = value
+            self._phase = value
 
         def record_error(code: str, exc: Exception | str) -> None:
             if len(errors) >= _MAX_ERRORS:
@@ -380,7 +425,7 @@ class ModelReconciliationService:
             return finish("failed")
 
         try:
-            phase = "merge"
+            set_phase("merge")
             current = await _resolve(self._list_models())
             current_by_id = {model.model_id: model for model in current}
             diffs = diff_discovered_models(discovered, current)
@@ -395,7 +440,7 @@ class ModelReconciliationService:
             merged_by_id = dict(current_by_id)
             merged_by_id.update({model.model_id: model for model in merged_discovered})
 
-            phase = "probe"
+            set_phase("probe")
             additions = {diff["model_id"] for diff in diffs if diff["kind"] == "add"}
             for model_id in additions:
                 merged_by_id[model_id] = merged_by_id[model_id].model_copy(
@@ -418,10 +463,10 @@ class ModelReconciliationService:
             counts["enabled"] = sum(model.enabled for model in models)
             counts["disabled"] = len(models) - counts["enabled"]
 
-            phase = "render"
+            set_phase("render")
             resources = await _resolve(self._render(models))
             result_resources = resources
-            phase = "validate"
+            set_phase("validate")
             validation_result = await _resolve(self._validate(resources))
             if validation_result is False:
                 raise ValueError("rendered resources failed validation")
@@ -431,18 +476,18 @@ class ModelReconciliationService:
                 return finish("success", "complete")
 
             if not changed_ids:
-                phase = "persist"
+                set_phase("persist")
                 persisted_count = int(await _resolve(self._upsert_models(result_models)) or 0)
                 verification = "not_required"
                 return finish("success", "complete")
 
-            phase = "apply"
+            set_phase("apply")
             rollback_token = await _resolve(self._apply(resources))
-            phase = "reload"
+            set_phase("reload")
             if not await _resolve(self._reload()):
                 raise RuntimeError("LiteLLM reload failed")
 
-            phase = "verify"
+            set_phase("verify")
             catalog = set(await _resolve(self._read_catalog()))
             expected = {
                 model.model_id for model in merged_by_id.values() if model.enabled and model.model_id in changed_ids
@@ -452,7 +497,7 @@ class ModelReconciliationService:
                 verification = "failed"
                 raise RuntimeError(f"reconciled models missing from catalog: {', '.join(missing)}")
             verification = "verified"
-            phase = "persist"
+            set_phase("persist")
             persisted_count = int(await _resolve(self._upsert_models(result_models)) or 0)
             return finish("success", "complete")
         except asyncio.CancelledError:
@@ -478,6 +523,6 @@ class ModelReconciliationService:
                     if verification != "failed":
                         verification = "rollback"
                 except Exception as rollback_exc:
-                    phase = "rollback"
+                    set_phase("rollback")
                     record_error("rollback_failed", rollback_exc)
             return finish("degraded" if rollback_token is not None else "failed", failed_phase)

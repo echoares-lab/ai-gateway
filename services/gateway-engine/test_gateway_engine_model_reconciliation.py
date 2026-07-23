@@ -10,9 +10,16 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 from api.proxy_routing import is_unknown_model_response, maybe_enqueue_unknown_model_refresh
+from core.metrics import (
+    MODEL_RECONCILIATION_CHANGES,
+    MODEL_RECONCILIATION_DURATION,
+    MODEL_RECONCILIATION_RUNS,
+    record_model_reconciliation,
+)
 from core.model_reconciliation import (
     ModelReconciliationService,
     ReconciliationArtifactManager,
+    ReconciliationResult,
     ReconciliationTrigger,
     request_litellm_reload,
 )
@@ -36,6 +43,31 @@ def _model(model_id: str = "gpt-5-4", **updates) -> ModelRegistryRecord:
         probe_checked_at=datetime.now(timezone.utc),
     )
     return record.model_copy(update=updates)
+
+
+def test_reconciliation_metrics_use_only_bounded_labels():
+    assert MODEL_RECONCILIATION_RUNS._labelnames == ("outcome", "trigger")
+    assert MODEL_RECONCILIATION_DURATION._labelnames == ("outcome", "trigger")
+    assert MODEL_RECONCILIATION_CHANGES._labelnames == ("change",)
+
+    result = ReconciliationResult(
+        outcome="unexpected-provider-text",
+        phase="complete",
+        trigger=ReconciliationTrigger.DEMAND,
+        requested_model="secret-key-alias",
+        counts={"added": 1, "updated": 2, "enabled": 3, "disabled": 4, "discovered": 5, "unchanged": 6},
+        verification="verified",
+        started_at=datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc),
+        completed_at=datetime(2026, 7, 23, 10, 0, 2, tzinfo=timezone.utc),
+        errors=[{"code": "x", "message": "Bearer sk-secret", "phase": "complete"}],
+    )
+
+    record_model_reconciliation(result)
+
+    samples = [sample for metric in MODEL_RECONCILIATION_RUNS.collect() for sample in metric.samples]
+    assert any(sample.labels == {"outcome": "unknown", "trigger": "demand"} for sample in samples)
+    assert all("secret-key-alias" not in str(sample.labels) for sample in samples)
+    assert all("sk-secret" not in str(sample.labels) for sample in samples)
 
 
 async def _wait_until(predicate, *, timeout=0.5):

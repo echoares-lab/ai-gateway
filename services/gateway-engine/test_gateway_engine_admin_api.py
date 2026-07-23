@@ -1,15 +1,178 @@
 import logging
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import api.admin_routes as admin_routes
 import core.admin_shared as admin_shared
 import httpx
 import pytest
 from core.launcher_key_service import LauncherKeyResult, LauncherKeyServiceError
+from core.model_reconciliation import ReconciliationResult, ReconciliationTrigger
 from core.onboarding.onboarding_service import OnboardingService
 from fastapi.testclient import TestClient
 from main import app
 
 client = TestClient(app)
+
+
+def _reconciliation_result(*, outcome="success", phase="complete", errors=None):
+    return ReconciliationResult(
+        outcome=outcome,
+        phase=phase,
+        trigger=ReconciliationTrigger.DEMAND,
+        requested_model="gpt-5-6-sol",
+        counts={
+            "discovered": 8,
+            "added": 1,
+            "updated": 2,
+            "enabled": 7,
+            "disabled": 1,
+            "unchanged": 5,
+        },
+        verification="verified" if outcome == "success" else "rollback",
+        started_at=datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc),
+        completed_at=datetime(2026, 7, 23, 10, 0, 2, tzinfo=timezone.utc),
+        errors=errors or [],
+    )
+
+
+@pytest.mark.parametrize(
+    ("service", "expected"),
+    [
+        (
+            SimpleNamespace(
+                enabled=True,
+                interval_sec=900,
+                active=False,
+                pending=False,
+                phase="idle",
+                last_attempt_at=None,
+                last_success_at=None,
+                last_result=None,
+            ),
+            {"enabled": True, "active": False, "pending": False, "phase": "idle", "outcome": None},
+        ),
+        (
+            SimpleNamespace(
+                enabled=True,
+                interval_sec=900,
+                active=True,
+                pending=True,
+                phase="probe",
+                current_trigger=ReconciliationTrigger.DEMAND,
+                current_requested_model="gpt-5-6-sol",
+                last_attempt_at=datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc),
+                last_success_at=None,
+                last_result=None,
+            ),
+            {"enabled": True, "active": True, "pending": True, "phase": "probe", "outcome": None},
+        ),
+        (
+            SimpleNamespace(
+                enabled=True,
+                interval_sec=900,
+                active=False,
+                pending=False,
+                phase="complete",
+                last_attempt_at=datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc),
+                last_success_at=datetime(2026, 7, 23, 10, 0, 2, tzinfo=timezone.utc),
+                last_result=_reconciliation_result(),
+            ),
+            {"enabled": True, "active": False, "pending": False, "phase": "complete", "outcome": "success"},
+        ),
+        (
+            SimpleNamespace(
+                enabled=True,
+                interval_sec=900,
+                active=False,
+                pending=False,
+                phase="reload",
+                last_attempt_at=datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc),
+                last_success_at=None,
+                last_result=_reconciliation_result(outcome="degraded", phase="reload"),
+            ),
+            {"enabled": True, "active": False, "pending": False, "phase": "reload", "outcome": "degraded"},
+        ),
+        (
+            SimpleNamespace(
+                enabled=False,
+                interval_sec=900,
+                active=False,
+                pending=False,
+                phase="disabled",
+                last_attempt_at=None,
+                last_success_at=None,
+                last_result=None,
+            ),
+            {"enabled": False, "active": False, "pending": False, "phase": "disabled", "outcome": None},
+        ),
+    ],
+)
+def test_admin_reconciliation_status_states(service, expected):
+    status = admin_routes._admin_reconciliation_status(service)
+
+    assert {key: status[key] for key in expected} == expected
+    assert status["interval_seconds"] == 900
+    assert set(status["counts"]) == {"discovered", "added", "updated", "enabled", "disabled", "unchanged"}
+    if status["active"]:
+        assert status["trigger"] == "demand"
+        assert status["requested_model"] == "gpt-5-6-sol"
+
+
+def test_admin_reconciliation_status_redacts_and_bounds_errors():
+    result = _reconciliation_result(
+        outcome="degraded",
+        phase="reload",
+        errors=[
+            {
+                "code": "reload_failed",
+                "phase": "reload",
+                "message": "Authorization: Bearer sk-secret-value " + ("x" * 1000),
+            }
+        ],
+    )
+    service = SimpleNamespace(
+        enabled=True,
+        interval_sec=900,
+        active=False,
+        pending=False,
+        phase="reload",
+        last_attempt_at=result.started_at,
+        last_success_at=None,
+        last_result=result,
+    )
+
+    status = admin_routes._admin_reconciliation_status(service)
+    serialized = str(status)
+
+    assert "sk-secret-value" not in serialized
+    assert "[redacted]" in serialized
+    assert len(status["errors"][0]["message"]) <= admin_routes.ADMIN_ERROR_MAXLEN + 1
+    assert set(status["errors"][0]) == {"code", "phase", "message", "redacted"}
+
+
+def test_admin_status_nests_reconciliation_on_models_panel(monkeypatch):
+    import main
+
+    service = SimpleNamespace(
+        enabled=True,
+        interval_sec=900,
+        active=False,
+        pending=False,
+        phase="complete",
+        last_attempt_at=None,
+        last_success_at=None,
+        last_result=_reconciliation_result(),
+    )
+    monkeypatch.setattr(main, "_model_reconciliation_service", service)
+
+    response = client.get("/admin/status")
+
+    assert response.status_code == 200
+    models_panel = response.json()["panels"]["models"]
+    assert models_panel["reconciliation"]["outcome"] == "success"
+    assert "reconciliation" not in models_panel["data"]
 
 
 @pytest.fixture

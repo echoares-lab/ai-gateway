@@ -93,6 +93,27 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 log = logging.getLogger("gateway-engine.admin_routes")
 
+_RECONCILIATION_COUNT_KEYS = ("discovered", "added", "updated", "enabled", "disabled", "unchanged")
+_RECONCILIATION_PHASES = frozenset(
+    {
+        "idle",
+        "disabled",
+        "discover",
+        "merge",
+        "probe",
+        "render",
+        "validate",
+        "apply",
+        "reload",
+        "verify",
+        "persist",
+        "rollback",
+        "complete",
+        "timeout",
+    }
+)
+_RECONCILIATION_OUTCOMES = frozenset({"success", "degraded", "failed"})
+
 
 @dataclass(frozen=True)
 class AdminRouteDeps:
@@ -113,6 +134,74 @@ class AdminRouteDeps:
 
 _default_deps: AdminRouteDeps | None = None
 _policy_version_hint: str | None = None
+
+
+def _admin_reconciliation_status(service: Any | None) -> dict[str, Any]:
+    """Serialize bounded, secret-free reconciliation scheduler state."""
+    if service is None:
+        enabled = bool(_main_attr("GATEWAY_ENGINE_MODEL_RECONCILIATION_ENABLED", False))
+        interval = _main_attr("GATEWAY_ENGINE_MODEL_RECONCILIATION_INTERVAL_SEC", 900)
+        active = False
+        pending = False
+        phase = "idle" if enabled else "disabled"
+        last_attempt_at = None
+        last_success_at = None
+        result = None
+    else:
+        enabled = bool(getattr(service, "enabled", False))
+        interval = getattr(service, "interval_sec", 900)
+        active = bool(getattr(service, "active", False))
+        pending = bool(getattr(service, "pending", False))
+        phase = str(getattr(service, "phase", "idle" if enabled else "disabled"))
+        last_attempt_at = getattr(service, "last_attempt_at", None)
+        last_success_at = getattr(service, "last_success_at", None)
+        result = getattr(service, "last_result", None)
+
+    if phase not in _RECONCILIATION_PHASES:
+        phase = "idle"
+    raw_outcome = str(getattr(result, "outcome", "")) if result is not None else ""
+    outcome = raw_outcome if raw_outcome in _RECONCILIATION_OUTCOMES else None
+    raw_trigger = getattr(service, "current_trigger", None) if active else None
+    if raw_trigger is None:
+        raw_trigger = getattr(result, "trigger", None) if result is not None else None
+    trigger = getattr(raw_trigger, "value", raw_trigger)
+    if trigger not in {member.value for member in ReconciliationTrigger}:
+        trigger = None
+    requested_model = getattr(service, "current_requested_model", None) if active else None
+    if requested_model is None:
+        requested_model = getattr(result, "requested_model", None) if result is not None else None
+    if requested_model is not None:
+        requested_model = _admin_redact(str(requested_model))[0]
+    counts = getattr(result, "counts", {}) if result is not None else {}
+    errors = []
+    for error in (getattr(result, "errors", []) if result is not None else [])[:10]:
+        if not isinstance(error, dict):
+            continue
+        message, redacted = _admin_redact(str(error.get("message", "")))
+        code = _admin_redact(str(error.get("code", "unknown")))[0]
+        error_phase = _admin_redact(str(error.get("phase", "unknown")))[0]
+        errors.append({"code": code, "phase": error_phase, "message": message, "redacted": redacted})
+
+    def iso(value: Any) -> str | None:
+        return (
+            value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if isinstance(value, datetime) else None
+        )
+
+    return {
+        "enabled": enabled,
+        "interval_seconds": max(0, int(interval)),
+        "active": active,
+        "pending": pending,
+        "phase": phase,
+        "last_attempt_at": iso(last_attempt_at),
+        "last_success_at": iso(last_success_at),
+        "trigger": trigger,
+        "requested_model": requested_model,
+        "outcome": outcome,
+        "counts": {key: max(0, int(counts.get(key, 0))) for key in _RECONCILIATION_COUNT_KEYS},
+        "verification": str(getattr(result, "verification", "not_run")) if result is not None else "not_run",
+        "errors": errors,
+    }
 
 
 def _main_attr(name: str, default):
@@ -575,10 +664,31 @@ async def admin_model_probe(model_id: str, request: Request):
 
 @router.post("/admin/models/reconcile", response_model=ModelRegistryReconcileResponse)
 async def admin_models_reconcile(request: Request, body: ModelRegistryReconcileRequest):
-    """Render registry-driven LiteLLM/Gemini config changes without writing files."""
+    """Render a dry run or enqueue a full reconciliation on the singleton scheduler."""
     auth_error = _require_admin_key(request)
     if auth_error is not None:
         return auth_error
+
+    if not body.dry_run:
+        service = _main_attr("_model_reconciliation_service", None)
+        accepted = bool(service is not None and await service.request(ReconciliationTrigger.MANUAL))
+        errors = (
+            []
+            if accepted
+            else [
+                _admin_error(
+                    "scheduler_unavailable", "model reconciliation scheduler unavailable", "gateway-engine:scheduler"
+                )
+            ]
+        )
+        return ModelRegistryReconcileResponse(
+            accepted=accepted,
+            dry_run=False,
+            source="scheduler:model-reconciliation",
+            registry_available=bool(_main_attr("_model_registry_store", _model_registry_store)().enabled),
+            resources=[],
+            errors=errors,
+        )
 
     loaded = _load_model_registry_with_config_fallback()
     litellm_text, litellm_errors = _read_text_file_for_reconcile(
@@ -722,9 +832,11 @@ async def admin_status(request: Request):
         policy_version=policy_version,
     )
 
+    models_panel = _admin_models_panel(config, visible_ids, model_errors, registry)
+    models_panel["reconciliation"] = _admin_reconciliation_status(_main_attr("_model_reconciliation_service", None))
     panels = {
         "health": _admin_health_panel(),
-        "models": _admin_models_panel(config, visible_ids, model_errors, registry),
+        "models": models_panel,
         "providers": _admin_providers_panel(),
         "routing": _admin_routing_panel(
             config,
