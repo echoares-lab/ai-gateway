@@ -15,12 +15,16 @@ def test_credential_event_route_registered_before_catchall_proxy():
     credential_idx = None
     catchall_idx = None
     for i, route in enumerate(t.app.routes):
-        path = getattr(route, "path", None)
-        name = getattr(route, "name", None)
-        if path == "/v1/events/credential" or name == "handle_policy_credential_event":
-            credential_idx = i
-        if path == "/{path:path}" or name == "proxy":
-            catchall_idx = i
+        subroutes = getattr(getattr(route, "original_router", None), "routes", [route])
+        for sub in subroutes:
+            path = getattr(sub, "path", None)
+            name = getattr(sub, "name", None)
+            if path == "/v1/events/credential" or name == "handle_policy_credential_event":
+                if credential_idx is None:
+                    credential_idx = i
+            if path == "/{path:path}" or name == "proxy":
+                if catchall_idx is None:
+                    catchall_idx = i
 
     assert credential_idx is not None, "credential event route missing"
     assert catchall_idx is not None, "catch-all proxy route missing"

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
 from scripts.k3s.mirror_external_images import (
-    split_yaml_docs,
     get_resource_name,
-    update_container_image,
     parse_compose_images,
+    split_yaml_docs,
+    update_container_image,
 )
 
 YAML_DOCS_FIXTURE = """# First doc
@@ -40,16 +39,18 @@ services:
     image: docker.io/langfuse/langfuse-worker:3@sha256:worker_digest
 """
 
+
 def test_split_yaml_docs() -> None:
     docs = split_yaml_docs(YAML_DOCS_FIXTURE)
     assert len(docs) == 3
     assert "doc-one" in docs[0][0]
     assert "doc-two" in docs[1][0]
     assert "doc-three" in docs[2][0]
-    
+
     # Rejoining should match the original fixture exactly
     rejoined = "".join(doc + sep for doc, sep in docs)
     assert rejoined == YAML_DOCS_FIXTURE
+
 
 def test_get_resource_name() -> None:
     doc = """
@@ -58,13 +59,14 @@ metadata:
   namespace: test
 """
     assert get_resource_name(doc) == "my-deployment"
-    
+
     doc_quoted = """
 metadata:
   name: "my-quoted-deployment"
   namespace: test
 """
     assert get_resource_name(doc_quoted) == "my-quoted-deployment"
+
 
 def test_update_container_image_simple() -> None:
     doc = """
@@ -77,11 +79,12 @@ def test_update_container_image_simple() -> None:
     assert success
     assert "image: new-image:v1" in updated
     assert "old-image:latest" not in updated
-    
+
     # Negative test
     updated_neg, success_neg = update_container_image(doc, "non-existent-container", "new-image:v1")
     assert not success_neg
     assert updated_neg == doc
+
 
 def test_update_container_image_block_scalar() -> None:
     doc = """
@@ -95,6 +98,7 @@ def test_update_container_image_block_scalar() -> None:
     assert success
     assert "new-image:v1" in updated
     assert "old-image:latest" not in updated
+
 
 def test_parse_compose_images() -> None:
     images = parse_compose_images(COMPOSE_FIXTURE)
