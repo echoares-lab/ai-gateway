@@ -686,6 +686,7 @@ class ModelRegistryStore:
                             alias_kind = EXCLUDED.alias_kind,
                             target = EXCLUDED.target,
                             metadata = EXCLUDED.metadata
+                        WHERE model_aliases.model_id = EXCLUDED.model_id
                         """,
                         (
                             str(alias["alias"]),

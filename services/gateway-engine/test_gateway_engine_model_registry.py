@@ -41,8 +41,8 @@ class _RecordingCursor:
 
 
 class _RecordingConnection:
-    def __init__(self):
-        self.cursor_instance = _RecordingCursor()
+    def __init__(self, cursor=None):
+        self.cursor_instance = cursor or _RecordingCursor()
         self.committed = False
 
     def __enter__(self):
@@ -56,6 +56,28 @@ class _RecordingConnection:
 
     def commit(self):
         self.committed = True
+
+
+class _AliasStateCursor(_RecordingCursor):
+    def __init__(self, aliases):
+        super().__init__()
+        self.aliases = aliases
+
+    def execute(self, query, params):
+        super().execute(query, params)
+        if "INSERT INTO model_aliases" not in query:
+            return
+        alias, model_id, provider, alias_kind, target, metadata = params
+        current = self.aliases.get(alias)
+        same_model_only = "model_aliases.model_id = EXCLUDED.model_id" in query
+        if current is None or not same_model_only or current["model_id"] == model_id:
+            self.aliases[alias] = {
+                "model_id": model_id,
+                "provider": provider,
+                "alias_kind": alias_kind,
+                "target": target,
+                "metadata": metadata,
+            }
 
 
 class _FakeRegistryStore:
@@ -348,6 +370,35 @@ def test_model_registry_store_upsert_models_persists_deduplicated_aliases(monkey
         ),
     ]
     assert connection.committed is True
+
+
+def test_model_registry_store_discovered_alias_does_not_replace_other_models_curated_alias(
+    monkeypatch,
+):
+    curated = {
+        "model_id": "curated-model",
+        "provider": "openai",
+        "alias_kind": "client",
+        "target": "curated-model",
+        "metadata": {"owner": "platform"},
+    }
+    aliases = {"shared-alias": curated.copy()}
+    connection = _RecordingConnection(_AliasStateCursor(aliases))
+    store = ModelRegistryStore("postgresql://registry")
+    monkeypatch.setattr(store, "_connect", lambda: connection)
+    discovered = _registry_model("discovered-model")
+    discovered.aliases = [
+        {
+            "alias": "shared-alias",
+            "target": discovered.model_id,
+            "alias_kind": "external",
+            "metadata": {"discovered": True},
+        }
+    ]
+
+    assert store.upsert_models([discovered]) == 1
+
+    assert aliases["shared-alias"] == curated
 
 
 def test_reconcile_renderer_outputs_valid_yaml_json_and_diffs():

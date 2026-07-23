@@ -42,3 +42,17 @@ Status: FIXED
 - GREEN focused: the same command passed 4 tests, with 38 deselected and one pre-existing Starlette deprecation warning.
 - Full registry verification: `python3 -m pytest test_gateway_engine_model_registry.py -v` passed 42 tests in 0.49s, with one pre-existing Starlette deprecation warning.
 - The prescribed `.venv-ci` interpreter remains unavailable; verification used system Python 3 as in the original task report.
+
+## Important Review Fix: Cross-model alias ownership
+
+- RED command: `python3 -m pytest services/gateway-engine/test_gateway_engine_model_registry.py -k 'discovered_alias_does_not_replace' -v`
+- RED output: `1 failed, 42 deselected, 1 warning in 0.41s` (the curated alias was reassigned to `discovered-model`, with its kind, target, and metadata replaced).
+- GREEN focused command: `python3 -m pytest services/gateway-engine/test_gateway_engine_model_registry.py -k 'discovered_alias_does_not_replace or persists_deduplicated_aliases' -v`
+- GREEN focused output: `2 passed, 41 deselected, 1 warning in 0.33s`.
+- Full registry command: `python3 -m pytest services/gateway-engine/test_gateway_engine_model_registry.py -v`
+- Full registry output: `43 passed, 1 warning in 0.47s`.
+- Lint command: `python3 -m ruff check services/gateway-engine/core/model_registry.py services/gateway-engine/test_gateway_engine_model_registry.py`
+- Lint output: `All checks passed!`
+- Diff hygiene command: `git diff --check`
+- Diff hygiene output: no output (exit 0).
+- Implementation: constrained alias conflict updates with `WHERE model_aliases.model_id = EXCLUDED.model_id`, so same-model/generated identities can refresh while cross-model aliases retain their existing ownership and curated metadata.
