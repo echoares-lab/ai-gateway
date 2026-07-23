@@ -23,7 +23,7 @@
 
 | File | Responsibility |
 |------|----------------|
-| `db/migrations/004_model_registry_lifecycle.sql` | Add `advertised`, `retired`, `absent_since`; expand status check; backfill from `enabled` |
+| `db/migrations/005_model_registry_lifecycle.sql` | Add `advertised`, `retired`, `absent_since`; expand status check; backfill from `enabled` |
 | `services/gateway-engine/core/model_registry.py` | Record fields, `enabled` shim, render fallbacks defaults, store upsert/disable→retire |
 | `services/gateway-engine/core/model_reconciliation.py` | Advertise gate, absence clock, retire on scheduled runs |
 | `services/gateway-engine/core/metrics.py` | Lifecycle gauges |
@@ -40,7 +40,7 @@
 ### Task 1: Schema migration + record fields
 
 **Files:**
-- Create: `db/migrations/004_model_registry_lifecycle.sql`
+- Create: `db/migrations/005_model_registry_lifecycle.sql`
 - Modify: `services/gateway-engine/core/model_registry.py` (`ModelRegistryRecord`, upsert SQL)
 - Test: `services/gateway-engine/test_gateway_engine_model_registry.py`
 
@@ -78,7 +78,7 @@ python -m pytest test_gateway_engine_model_registry.py -k 'enabled_shim or adver
 
 Expected: FAIL (fields missing / attribute errors).
 
-- [ ] **Step 3: Add migration** `db/migrations/004_model_registry_lifecycle.sql`:
+- [ ] **Step 3: Add migration** `db/migrations/005_model_registry_lifecycle.sql`:
 
 ```sql
 \connect litellm
@@ -118,7 +118,7 @@ Mirror staging `\connect litellm_staging` in the k3s staging overlay copy when s
 - [ ] **Step 6: Commit**
 
 ```bash
-git add db/migrations/004_model_registry_lifecycle.sql \
+git add db/migrations/005_model_registry_lifecycle.sql \
   services/gateway-engine/core/model_registry.py \
   services/gateway-engine/test_gateway_engine_model_registry.py
 git commit -m "feat(models): add advertised/retired/absent_since lifecycle columns"
@@ -503,7 +503,7 @@ git commit -m "feat(models): retire via admin delete; reject hard deletes"
 **Files:**
 - Modify: `docs/ops/RUNBOOK.md` (Automatic model reconciliation section)
 - Create or note: alert rule snippet in RUNBOOK for observability gitops handoff
-- Modify k3s-01 overlays in a **follow-up PR** to include `004_model_registry_lifecycle.sql` (prod + staging `\connect`)
+- Modify k3s-01 overlays in a **follow-up PR** to include `005_model_registry_lifecycle.sql` (prod + staging `\connect`)
 
 - [ ] **Step 1: Update RUNBOOK** with lifecycle glossary pointer, advertise-on-transient behavior, absence/retire knobs, and example alert intents:
 
