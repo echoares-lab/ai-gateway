@@ -505,6 +505,36 @@ def test_render_uses_default_cross_family_fallbacks_when_curated_missing():
     assert "claude-sonnet-4-6" in gpt_fb
 
 
+def test_render_honors_empty_curated_fallbacks_over_defaults():
+    gpt = _registry_model(
+        "gpt-5-6-sol",
+        family="openai",
+        advertised=True,
+        policy_metadata={"fallbacks": []},
+    )
+    gem = _registry_model(
+        "gemini-3-flash",
+        provider="gemini",
+        family="gemini",
+        upstream_model="gemini-3.flash",
+        litellm_model="openai/gemini-3.flash",
+        advertised=True,
+    )
+    claude = _registry_model(
+        "claude-sonnet-4-6",
+        provider="anthropic",
+        family="anthropic",
+        upstream_model="claude-sonnet-4.6",
+        litellm_model="openai/claude-sonnet-4.6",
+        advertised=True,
+    )
+    rendered = yaml.safe_load(render_litellm_config_from_registry([gpt, gem, claude]))
+    fallbacks = rendered["litellm_settings"]["fallbacks"]
+    assert all("gpt-5-6-sol" not in item for item in fallbacks)
+    gem_fb = next(item["gemini-3-flash"] for item in fallbacks if "gemini-3-flash" in item)
+    assert "gpt-5-6-sol" in gem_fb
+
+
 def test_render_prefers_curated_fallbacks_over_defaults():
     gpt = _registry_model(
         "gpt-5-6-sol",

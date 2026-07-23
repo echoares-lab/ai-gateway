@@ -469,8 +469,9 @@ def render_litellm_config_from_registry(models: list[ModelRegistryRecord]) -> st
     fallbacks = []
     by_id = {model.model_id: model for model in active}
     for model in active:
-        explicit = model.policy_metadata.get("fallbacks")
-        if isinstance(explicit, list) and explicit:
+        metadata = model.policy_metadata
+        explicit = metadata.get("fallbacks")
+        if "fallbacks" in metadata and isinstance(explicit, list):
             fallback_ids = [str(item) for item in explicit if str(item) in by_id and str(item) != model.model_id]
         else:
             fallback_ids = default_fallbacks_for(model, active)
