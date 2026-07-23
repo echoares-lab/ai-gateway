@@ -640,11 +640,20 @@ class ModelReconciliationService:
             discovered_ids = {model.model_id for model in discovered}
             now = datetime.now(timezone.utc)
             lifecycle_changed_ids: set[str] = set()
+            rediscovered_unretired: set[str] = set()
             for model_id, model in list(merged_by_id.items()):
                 if model_id in discovered_ids:
+                    updates: dict[str, Any] = {}
                     if model.absent_since is not None:
-                        merged_by_id[model_id] = model.model_copy(update={"absent_since": None})
+                        updates["absent_since"] = None
+                    if model.retired:
+                        updates["retired"] = False
+                        rediscovered_unretired.add(model_id)
+                    if updates:
+                        merged_by_id[model_id] = model.model_copy(update=updates)
                         lifecycle_changed_ids.add(model_id)
+                    continue
+                if model.source != "cliproxy":
                     continue
                 absent_since = model.absent_since or now
                 updates: dict[str, Any] = {"absent_since": absent_since}
@@ -681,10 +690,10 @@ class ModelReconciliationService:
                 )
             probed_ids: set[str] = set()
             for model_id, model in list(merged_by_id.items()):
-                if model_id in additions or self._probe_is_stale(model):
+                if model_id in additions or model_id in rediscovered_unretired or self._probe_is_stale(model):
                     probed = await _resolve(self._probe_model(model))
                     advertised = model.advertised
-                    if model_id in additions or model_id in retryable_unadvertised:
+                    if model_id in additions or model_id in retryable_unadvertised or model_id in rediscovered_unretired:
                         advertised = should_advertise_after_probe(
                             probed.probe_status,
                             currently_advertised=model.advertised,

@@ -469,6 +469,83 @@ async def test_rediscovery_clears_absent_since():
 
 
 @pytest.mark.asyncio
+async def test_rediscovery_unretires_model_and_can_advertise_after_healthy_probe():
+    stable_absence = datetime.now(timezone.utc) - timedelta(days=31)
+    existing = _model(
+        model_id="gpt-5-6-sol",
+        advertised=False,
+        retired=True,
+        enabled=False,
+        status="RETIRED",
+        absent_since=stable_absence,
+        probe_status="healthy",
+        source="cliproxy",
+        upstream_model="gpt-5.6-sol",
+        litellm_model="openai/gpt-5.6-sol",
+    )
+    fakes = Fakes(existing=[existing], discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
+
+    result = await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
+    assert row.retired is False
+    assert row.absent_since is None
+    assert row.advertised is True
+    assert row.enabled is True
+    assert "gpt-5-6-sol" in fakes.probed
+
+
+@pytest.mark.asyncio
+async def test_rediscovery_unretires_model_and_can_advertise_after_transient_probe():
+    stable_absence = datetime.now(timezone.utc) - timedelta(days=31)
+    existing = _model(
+        model_id="gpt-5-6-sol",
+        advertised=False,
+        retired=True,
+        enabled=False,
+        status="RETIRED",
+        absent_since=stable_absence,
+        probe_status="timeout",
+        source="cliproxy",
+        upstream_model="gpt-5.6-sol",
+        litellm_model="openai/gpt-5.6-sol",
+    )
+    fakes = Fakes(existing=[existing], discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
+
+    async def transient_probe(model):
+        return model.model_copy(update={"probe_status": "rate_limited", "status": "UNHEALTHY"})
+
+    fakes.probe = transient_probe
+    result = await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
+    assert row.retired is False
+    assert row.absent_since is None
+    assert row.advertised is True
+    assert row.enabled is True
+
+
+@pytest.mark.asyncio
+async def test_non_cliproxy_advertised_model_missing_from_discovery_stays_without_absence():
+    old = datetime.now(timezone.utc) - timedelta(days=31)
+    existing = _model(
+        model_id="manual-model",
+        advertised=True,
+        source="litellm-config",
+        upstream_model="manual-model",
+        litellm_model="openai/manual-model",
+    )
+    fakes = Fakes(existing=[existing], discovered=[])
+
+    await fakes.service(absence_retire_days=30).run(ReconciliationTrigger.SCHEDULED)
+
+    row = next(model for model in fakes.models if model.model_id == "manual-model")
+    assert row.absent_since is None
+    assert row.retired is False
+    assert row.advertised is True
+
+
+@pytest.mark.asyncio
 async def test_reconciliation_counts_use_full_registry_when_models_is_persisted_subset():
     stable_absence = datetime.now(timezone.utc) - timedelta(days=3)
     model_a = _model(model_id="gpt-a", advertised=True, enabled=True)
