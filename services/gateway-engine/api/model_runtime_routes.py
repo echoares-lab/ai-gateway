@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 from api.admin_routes import _admin_error, _model_registry_store
 from core.admin_shared import _require_admin_key
+from core.model_reconciliation import litellm_model_new_payload
 from core.model_registry import (
     LiteLLMRuntimeMutationResult,
     ModelDeleteRequest,
@@ -29,26 +30,7 @@ def _litellm_runtime_url(path: str) -> str:
 
 
 def _litellm_model_new_payload(model) -> dict[str, Any]:
-    litellm_params: dict[str, Any] = {"model": model.litellm_model}
-    api_base = model.policy_metadata.get("api_base")
-    if api_base:
-        litellm_params["api_base"] = api_base
-    info: dict[str, Any] = {}
-    if model.supports_tools is not None:
-        info["supports_function_calling"] = model.supports_tools
-    if model.supports_vision is not None:
-        info["supports_vision"] = model.supports_vision
-    if model.max_input_tokens is not None:
-        info["max_input_tokens"] = model.max_input_tokens
-    if model.max_output_tokens is not None:
-        info["max_output_tokens"] = model.max_output_tokens
-    payload: dict[str, Any] = {
-        "model_name": model.model_id,
-        "litellm_params": litellm_params,
-    }
-    if info:
-        payload["model_info"] = info
-    return payload
+    return litellm_model_new_payload(model)
 
 
 async def _post_litellm_runtime_mutation(path: str, payload: dict[str, Any]) -> LiteLLMRuntimeMutationResult:
