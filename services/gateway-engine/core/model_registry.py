@@ -36,6 +36,8 @@ class ModelRegistryRecord(BaseModel):
     status: str = "UNKNOWN"
     supports_tools: bool | None = None
     supports_vision: bool | None = None
+    supports_reasoning: bool | None = None
+    context_window: int | None = Field(default=None, ge=0)
     max_input_tokens: int | None = Field(default=None, ge=0)
     max_output_tokens: int | None = Field(default=None, ge=0)
     cost_tier: int | None = Field(default=None, ge=1, le=3)
@@ -121,6 +123,8 @@ class ModelRegistryWriteRequest(BaseModel):
     status: str = "UNKNOWN"
     supports_tools: bool | None = None
     supports_vision: bool | None = None
+    supports_reasoning: bool | None = None
+    context_window: int | None = Field(default=None, ge=0)
     max_input_tokens: int | None = Field(default=None, ge=0)
     max_output_tokens: int | None = Field(default=None, ge=0)
     cost_tier: int | None = Field(default=None, ge=1, le=3)
@@ -139,6 +143,8 @@ class ModelRegistryWriteRequest(BaseModel):
             status=self.status,
             supports_tools=self.supports_tools,
             supports_vision=self.supports_vision,
+            supports_reasoning=self.supports_reasoning,
+            context_window=self.context_window,
             max_input_tokens=self.max_input_tokens,
             max_output_tokens=self.max_output_tokens,
             cost_tier=self.cost_tier if self.cost_tier is not None else cost_tier_of(self.model_id),
@@ -183,6 +189,8 @@ class ModelRegistryPatchRequest(BaseModel):
     status: str | None = None
     supports_tools: bool | None = None
     supports_vision: bool | None = None
+    supports_reasoning: bool | None = None
+    context_window: int | None = Field(default=None, ge=0)
     max_input_tokens: int | None = Field(default=None, ge=0)
     max_output_tokens: int | None = Field(default=None, ge=0)
     cost_tier: int | None = Field(default=None, ge=1, le=3)
@@ -266,6 +274,8 @@ def record_from_litellm_entry(entry: dict[str, Any]) -> ModelRegistryRecord | No
         status="UNKNOWN",
         supports_tools=info.get("supports_function_calling"),
         supports_vision=info.get("supports_vision"),
+        supports_reasoning=info.get("supports_reasoning"),
+        context_window=info.get("max_input_tokens"),
         max_input_tokens=info.get("max_input_tokens"),
         max_output_tokens=info.get("max_output_tokens"),
         cost_tier=cost_tier_of(str(model_id)),
@@ -353,7 +363,11 @@ def _litellm_model_info(model: ModelRegistryRecord) -> dict[str, Any]:
         info["supports_function_calling"] = model.supports_tools
     if model.supports_vision is not None:
         info["supports_vision"] = model.supports_vision
-    if model.max_input_tokens is not None:
+    if model.supports_reasoning is not None:
+        info["supports_reasoning"] = model.supports_reasoning
+    if model.context_window is not None:
+        info["max_input_tokens"] = model.context_window
+    elif model.max_input_tokens is not None:
         info["max_input_tokens"] = model.max_input_tokens
     if model.max_output_tokens is not None:
         info["max_output_tokens"] = model.max_output_tokens
