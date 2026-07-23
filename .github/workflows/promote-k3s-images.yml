@@ -141,6 +141,9 @@ jobs:
           path: k3s-01
           token: ${{ steps.token.outputs.token }}
 
+      - name: Install promote script dependencies
+        run: python3 -m pip install --user PyYAML
+
       - name: Mirror external images to staging
         run: |
           set -euo pipefail
@@ -387,19 +390,31 @@ jobs:
           staging_dir = k3s_repo / "kubernetes/workloads/home/ai-gateway/overlays/staging"
           prod_dir = k3s_repo / "kubernetes/workloads/home/ai-gateway/overlays/k3s-01"
 
-          # 1. LiteLLM
+          # 1. LiteLLM (staging monolithic vs production split layout)
           stg_litellm = get_container_image(staging_dir / "core-workloads.yaml", "litellm")
-          prod_litellm = get_container_image(prod_dir / "core-workloads.yaml", "litellm")
+          prod_litellm = get_container_image(prod_dir / "litellm" / "litellm.yaml", "litellm")
+          if not prod_litellm:
+              prod_litellm = get_container_image(prod_dir / "core-workloads.yaml", "litellm")
 
           # 2. Langfuse
           stg_langfuse_raw = get_container_image(staging_dir / "observability.yaml", "langfuse-web")
           stg_langfuse = parse_tag_or_digest(stg_langfuse_raw)
-          prod_langfuse = get_kustomize_image(prod_dir / "kustomization.yaml", "docker.io/langfuse/langfuse")
+          prod_langfuse = get_kustomize_image(
+              prod_dir / "langfuse" / "kustomization.yaml",
+              "docker.io/langfuse/langfuse",
+          )
+          if not prod_langfuse:
+              prod_langfuse = get_kustomize_image(prod_dir / "kustomization.yaml", "docker.io/langfuse/langfuse")
 
           # 3. Langfuse Worker
           stg_worker_raw = get_container_image(staging_dir / "observability.yaml", "langfuse-worker")
           stg_worker = parse_tag_or_digest(stg_worker_raw)
-          prod_worker = get_kustomize_image(prod_dir / "kustomization.yaml", "docker.io/langfuse/langfuse-worker")
+          prod_worker = get_kustomize_image(
+              prod_dir / "langfuse" / "kustomization.yaml",
+              "docker.io/langfuse/langfuse-worker",
+          )
+          if not prod_worker:
+              prod_worker = get_kustomize_image(prod_dir / "kustomization.yaml", "docker.io/langfuse/langfuse-worker")
 
           litellm_val = stg_litellm if stg_litellm != prod_litellm else ""
           langfuse_val = stg_langfuse if stg_langfuse != prod_langfuse else ""
@@ -473,10 +488,7 @@ jobs:
           git config user.name "ai-gateway-ci"
           git config user.email "ci@echoares-lab.invalid"
           git checkout -b "$BRANCH"
-          git add \
-            kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml \
-            kubernetes/workloads/home/ai-gateway/overlays/k3s-01/core-workloads.yaml \
-            kubernetes/workloads/home/ai-gateway/overlays/k3s-01/db-jobs.yaml
+          git add kubernetes/workloads/home/ai-gateway/overlays/k3s-01/
           git commit -m "chore(ai-gateway): promote image and release metadata"
           git push -u origin "$BRANCH"
 
