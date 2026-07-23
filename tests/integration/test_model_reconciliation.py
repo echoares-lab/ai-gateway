@@ -78,7 +78,7 @@ def build_service(tmp_path, client, registry, reload_catalog):
     async def reload():
         response = await client.post(f"{LITELLM_URL}/config/update")
         if response.is_success:
-            reload_catalog()
+            reload_catalog(litellm_path)
         return response.is_success
 
     async def read_catalog():
@@ -112,10 +112,11 @@ async def test_cliproxy_new_gpt_reconciles_reloads_and_appears_as_gateway_alias(
         return_value=httpx.Response(200, json={"data": [{"id": NEW_UPSTREAM_MODEL}]})
     )
 
-    def reload_catalog():
+    def reload_catalog(applied_litellm_path):
         nonlocal reload_calls
         reload_calls += 1
-        catalog[:] = [NEW_GATEWAY_ALIAS]
+        applied = yaml.safe_load(applied_litellm_path.read_text(encoding="utf-8"))
+        catalog[:] = [entry["model_name"] for entry in applied["model_list"]]
 
     mock_litellm_router.post("/config/update").mock(return_value=httpx.Response(200))
     mock_litellm_router.get("/v1/models").mock(
@@ -144,7 +145,7 @@ async def test_client_supplied_model_absent_from_cliproxy_is_never_added(asgi_cl
 
     mock_litellm_router.get(f"{CLIPROXY_URL}/v1/models").mock(return_value=httpx.Response(200, json={"data": []}))
 
-    def reload_catalog():
+    def reload_catalog(_applied_litellm_path):
         nonlocal reload_calls
         reload_calls += 1
 
