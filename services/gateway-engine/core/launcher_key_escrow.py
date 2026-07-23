@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import inspect
 from dataclasses import asdict, dataclass, replace
@@ -84,9 +85,16 @@ class OpenBaoEscrowClient:
         return f"{self._address}/v1/{self._kv_mount}/data/{self._key_prefix}/{digest}"
 
     async def _headers(self) -> dict[str, str]:
-        token = self._token_supplier()
-        if inspect.isawaitable(token):
-            token = await token
+        try:
+            token = self._token_supplier()
+            if inspect.isawaitable(token):
+                token = await token
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            raise SecretStoreUnavailableError(
+                "secret store authentication unavailable"
+            ) from None
         if not token:
             raise SecretStoreUnavailableError("secret store authentication unavailable")
         return {"X-Vault-Token": cast(str, token)}
@@ -115,8 +123,10 @@ class OpenBaoEscrowClient:
         try:
             envelope = response.json()["data"]
             return EscrowRecord.from_dict(envelope["data"]), int(envelope["metadata"]["version"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise SecretStoreUnavailableError("secret store returned an invalid record") from exc
+        except (KeyError, TypeError, ValueError):
+            raise SecretStoreUnavailableError(
+                "secret store returned an invalid record"
+            ) from None
 
     async def read(self, alias: str) -> EscrowRecord | None:
         versioned = await self._read_versioned(alias)
@@ -129,7 +139,17 @@ class OpenBaoEscrowClient:
             json={"data": record.to_dict(), "options": {"cas": cas}},
         )
         if response.status_code == 400:
-            raise EscrowConflictError("secret store write conflict")
+            try:
+                errors = response.json().get("errors", [])
+                is_cas_conflict = isinstance(errors, list) and any(
+                    isinstance(error, str) and "check-and-set" in error.lower()
+                    for error in errors
+                )
+            except (TypeError, ValueError):
+                is_cas_conflict = False
+            if is_cas_conflict:
+                raise EscrowConflictError("secret store write conflict")
+            raise SecretStoreUnavailableError("secret store write failed")
         if not response.is_success:
             raise SecretStoreUnavailableError("secret store write failed")
 
@@ -143,6 +163,8 @@ class OpenBaoEscrowClient:
         if versioned is None:
             raise EscrowConflictError("escrow record does not exist")
         record, version = versioned
+        if record.alias != alias:
+            raise EscrowConflictError("escrow record alias mismatch")
         activated = replace(record, state="active", litellm_key_id=litellm_key_id)
         await self._write(activated, cas=version)
         return activated

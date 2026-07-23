@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 from datetime import datetime, timezone
 
@@ -163,6 +164,119 @@ async def test_activate_preserves_secret_and_uses_current_version_as_cas():
     body = __import__("json").loads(requests[1].content)
     assert body["options"] == {"cas": 7}
     assert body["data"]["token"] == "sk-secret-token"
+
+
+@pytest.mark.asyncio
+async def test_activate_rejects_stored_alias_mismatch_without_writing():
+    requests = []
+
+    def handler(request: httpx.Request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "data": record(alias="repo/redirect-target").to_dict(),
+                    "metadata": {"version": 7},
+                }
+            },
+        )
+
+    escrow, http = client(handler)
+    try:
+        with pytest.raises(EscrowConflictError):
+            await escrow.activate("repo/customer-a", "key-9")
+    finally:
+        await http.aclose()
+
+    assert [request.method for request in requests] == ["GET"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_supplier", [False, True])
+async def test_token_supplier_failure_is_typed_redacted_and_unchained(async_supplier):
+    secret = "supplier leaked workload-token"
+
+    if async_supplier:
+        async def supplier():
+            raise RuntimeError(secret)
+    else:
+        def supplier():
+            raise RuntimeError(secret)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: pytest.fail("no request")))
+    escrow = OpenBaoEscrowClient(
+        http_client=http,
+        address="https://bao.internal",
+        kv_mount="launcher-kv",
+        key_prefix="stable-keys",
+        workload_token_supplier=supplier,
+    )
+    try:
+        with pytest.raises(SecretStoreUnavailableError) as exc:
+            await escrow.read("repo/customer-a")
+    finally:
+        await http.aclose()
+
+    assert exc.value.code == "secret_store_unavailable"
+    assert secret not in str(exc.value)
+    assert exc.value.__cause__ is None
+    assert exc.value.__suppress_context__ is True
+
+
+@pytest.mark.asyncio
+async def test_token_supplier_cancellation_is_preserved():
+    async def supplier():
+        raise asyncio.CancelledError
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: pytest.fail("no request")))
+    escrow = OpenBaoEscrowClient(
+        http_client=http,
+        address="https://bao.internal",
+        kv_mount="launcher-kv",
+        key_prefix="stable-keys",
+        workload_token_supplier=supplier,
+    )
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await escrow.read("repo/customer-a")
+    finally:
+        await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_malformed_record_is_typed_redacted_and_unchained():
+    secret = "malformed sk-secret-token"
+    escrow, http = client(
+        lambda request: httpx.Response(
+            200,
+            json={"data": {"data": {"alias": secret}, "metadata": {"version": 3}}},
+        )
+    )
+    try:
+        with pytest.raises(SecretStoreUnavailableError) as exc:
+            await escrow.read("repo/customer-a")
+    finally:
+        await http.aclose()
+
+    assert exc.value.code == "secret_store_unavailable"
+    assert secret not in str(exc.value)
+    assert exc.value.__cause__ is None
+    assert exc.value.__suppress_context__ is True
+
+
+@pytest.mark.asyncio
+async def test_non_cas_bad_request_is_store_unavailable():
+    escrow, http = client(
+        lambda request: httpx.Response(400, json={"errors": ["invalid request"]})
+    )
+    try:
+        with pytest.raises(SecretStoreUnavailableError) as exc:
+            await escrow.write_pending(record())
+    finally:
+        await http.aclose()
+
+    assert not isinstance(exc.value, EscrowConflictError)
 
 
 def test_openbao_config_reports_typed_unavailable_when_required_setting_missing(monkeypatch):
