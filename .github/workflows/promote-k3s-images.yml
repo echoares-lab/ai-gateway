@@ -141,13 +141,15 @@ jobs:
           path: k3s-01
           token: ${{ steps.token.outputs.token }}
 
-      - name: Install promote script dependencies
-        run: python3 -m pip install --user PyYAML
+      - name: Setup Python for mirror script
+        uses: ./.github/actions/setup-python-venv
+        with:
+          extra-packages: pyyaml
 
       - name: Mirror external images to staging
         run: |
           set -euo pipefail
-          python3 -m scripts.k3s.mirror_external_images --k3s-repo k3s-01
+          .venv-ci/bin/python -m scripts.k3s.mirror_external_images --k3s-repo k3s-01
 
       - name: Install kubectl for Kustomize validation
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
