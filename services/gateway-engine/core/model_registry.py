@@ -16,9 +16,8 @@ from difflib import unified_diff
 from typing import Any, Self
 
 import yaml
-from pydantic import BaseModel, Field, computed_field, model_validator
-
 from core.model_lifecycle_defaults import default_fallbacks_for
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 try:  # pragma: no cover - exercised only when psycopg2 is installed/configured
     import psycopg2

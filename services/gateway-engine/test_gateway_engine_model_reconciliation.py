@@ -485,7 +485,7 @@ async def test_rediscovery_unretires_model_and_can_advertise_after_healthy_probe
     )
     fakes = Fakes(existing=[existing], discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
 
-    result = await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+    await fakes.service().run(ReconciliationTrigger.SCHEDULED)
 
     row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
     assert row.retired is False
@@ -516,7 +516,7 @@ async def test_rediscovery_unretires_model_and_can_advertise_after_transient_pro
         return model.model_copy(update={"probe_status": "rate_limited", "status": "UNHEALTHY"})
 
     fakes.probe = transient_probe
-    result = await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+    await fakes.service().run(ReconciliationTrigger.SCHEDULED)
 
     row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
     assert row.retired is False
@@ -527,7 +527,7 @@ async def test_rediscovery_unretires_model_and_can_advertise_after_transient_pro
 
 @pytest.mark.asyncio
 async def test_non_cliproxy_advertised_model_missing_from_discovery_stays_without_absence():
-    old = datetime.now(timezone.utc) - timedelta(days=31)
+    datetime.now(timezone.utc) - timedelta(days=31)
     existing = _model(
         model_id="manual-model",
         advertised=True,
