@@ -877,21 +877,39 @@ def test_authenticated_unknown_model_response_enqueues_refresh_and_is_unchanged(
     content = b'{"error":{"message":"Invalid model name passed in model=gpt-5-6-sol"}}'
     recorder = _DemandRecorder()
     client = TestClient(t.app)
+    stable_token = "sk-stable-demand-key-12345"
+    validation_client_patch = patch("api.ws_router.httpx.AsyncClient")
+    validation_client_cls = validation_client_patch.start()
+    validation_client = validation_client_cls.return_value.__aenter__.return_value
+    validation_client.get = AsyncMock(return_value=type("R", (), {"status_code": 200})())
     with (
         patch.object(t, "_client", _UnknownModelClient(content)),
         patch.object(t, "_model_reconciliation_service", recorder),
         patch.dict(os.environ, {"LITELLM_MASTER_KEY": "master-secret"}),
+        patch("api.ws_router.log") as auth_log,
+        patch("api.proxy_routing.log") as routing_log,
     ):
-        response = client.post(
-            "/v1/chat/completions",
-            headers={"authorization": "Bearer master-secret"},
-            json={"model": "gpt-5.6-sol", "messages": [{"role": "user", "content": "hello"}]},
-        )
+        try:
+            response = client.post(
+                "/v1/chat/completions",
+                headers={"authorization": f"Bearer {stable_token}"},
+                json={"model": "gpt-5.6-sol", "messages": [{"role": "user", "content": "hello"}]},
+            )
+        finally:
+            validation_client_patch.stop()
 
     assert response.status_code == 400
     assert response.content == content
     assert response.headers["x-upstream-error"] == "preserved"
     assert recorder.requests == [(ReconciliationTrigger.DEMAND, "gpt-5-6-sol")]
+    validation_url = validation_client.get.await_args.args[0]
+    validation_kwargs = validation_client.get.await_args.kwargs
+    assert stable_token not in validation_url
+    assert "?" not in validation_url
+    assert "params" not in validation_kwargs
+    assert validation_kwargs["headers"] == {"Authorization": f"Bearer {stable_token}"}
+    assert stable_token not in repr(auth_log.method_calls)
+    assert stable_token not in repr(routing_log.method_calls)
 
 
 @pytest.mark.parametrize(

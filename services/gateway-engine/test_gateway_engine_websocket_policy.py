@@ -49,12 +49,21 @@ class TestCodexWsAuth(unittest.TestCase):
         assert token == "sk-unknown-key-99"
 
     @patch("api.ws_router.httpx.AsyncClient")
-    def test_validate_ws_auth_async_accepts_litellm_key(self, mock_client_cls):
+    def test_validate_ws_auth_async_accepts_litellm_key_without_token_in_url(self, mock_client_cls):
         mock_client = mock_client_cls.return_value.__aenter__.return_value
         mock_client.get = AsyncMock(return_value=type("R", (), {"status_code": 200})())
-        ok, token = asyncio.run(t._validate_ws_auth_token_async("Bearer sk-valid-key-12345"))
+        stable_token = "sk-valid-key-12345"
+        with patch("api.ws_router.log") as mock_log:
+            ok, token = asyncio.run(t._validate_ws_auth_token_async(f"Bearer {stable_token}"))
         assert ok is True
-        assert token == "sk-valid-key-12345"
+        assert token == stable_token
+        url = mock_client.get.await_args.args[0]
+        kwargs = mock_client.get.await_args.kwargs
+        assert stable_token not in url
+        assert "?" not in url
+        assert "params" not in kwargs
+        assert kwargs["headers"] == {"Authorization": f"Bearer {stable_token}"}
+        assert stable_token not in repr(mock_log.method_calls)
 
 
 class TestCodexWsPolicyBypass(unittest.TestCase):

@@ -98,13 +98,12 @@ def _validate_ws_auth_token(client_auth: str) -> tuple[bool, str | None]:
 
 
 async def _litellm_virtual_key_valid(auth_token: str) -> bool:
-    """Verify sk-* token against LiteLLM key/info (issue #307)."""
+    """Verify sk-* via header-only LiteLLM key/info self-lookup (issue #307)."""
     litellm_url = os.environ.get("LITELLM_URL", "http://litellm:4000").rstrip("/")
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(
                 f"{litellm_url}/key/info",
-                params={"key": auth_token},
                 headers={"Authorization": f"Bearer {auth_token}"},
             )
             return resp.status_code == 200
