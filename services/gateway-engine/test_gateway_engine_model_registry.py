@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from unittest.mock import ANY
 
 import httpx
@@ -37,7 +38,7 @@ class _RecordingCursor:
     def __exit__(self, *_args):
         return False
 
-    def execute(self, query, params):
+    def execute(self, query, params=None):
         self.executions.append((query, params))
 
 
@@ -52,7 +53,7 @@ class _RecordingConnection:
     def __exit__(self, *_args):
         return False
 
-    def cursor(self):
+    def cursor(self, *_args, **_kwargs):
         return self.cursor_instance
 
     def commit(self):
@@ -381,6 +382,43 @@ def test_model_registry_store_upsert_models_persists_deduplicated_aliases(monkey
     assert connection.committed is True
 
 
+def test_model_registry_store_upsert_round_trips_complete_probe_state(monkeypatch):
+    checked_at = datetime(2026, 7, 23, 3, 0, tzinfo=timezone.utc)
+    model = _registry_model("gpt-5-6-sol").model_copy(
+        update={
+            "enabled": False,
+            "status": "UNHEALTHY",
+            "probe_status": "temporarily_unavailable",
+            "probe_http_status": 503,
+            "probe_checked_at": checked_at,
+            "aliases": [],
+        }
+    )
+    write_connection = _RecordingConnection()
+
+    class ReadCursor(_RecordingCursor):
+        def fetchall(self):
+            return [model.model_dump()]
+
+    read_connection = _RecordingConnection(ReadCursor())
+    connections = iter((write_connection, read_connection))
+    store = ModelRegistryStore("postgresql://registry")
+    monkeypatch.setattr(store, "_connect", lambda: next(connections))
+
+    assert store.upsert_models([model]) == 1
+    loaded = store.list_models()
+
+    query, params = write_connection.cursor_instance.executions[0]
+    assert "status = EXCLUDED.status" in query
+    assert "probe_status = EXCLUDED.probe_status" in query
+    assert params[-3:] == ("temporarily_unavailable", 503, checked_at)
+    assert write_connection.committed is True
+    assert loaded.models[0].status == "UNHEALTHY"
+    assert loaded.models[0].probe_status == "temporarily_unavailable"
+    assert loaded.models[0].probe_http_status == 503
+    assert loaded.models[0].probe_checked_at == checked_at
+
+
 def test_model_registry_store_discovered_alias_does_not_replace_other_models_curated_alias(
     monkeypatch,
 ):
@@ -611,14 +649,19 @@ def test_admin_models_sync_mutation_enqueues_lifespan_scheduler(monkeypatch):
         def __init__(self):
             self.calls = []
 
-        async def request(self, trigger, requested_model=None):
-            self.calls.append((trigger, requested_model))
-            return True
+        async def run_exclusive(self, operation, *, trigger=ReconciliationTrigger.MANUAL):
+            self.calls.append(trigger)
+            return await operation()
 
     recorder = Recorder()
     store = _FakeRegistryStore()
+
+    async def no_models():
+        return [], []
+
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
     monkeypatch.setattr(t, "_model_reconciliation_service", recorder)
+    monkeypatch.setattr("api.admin_routes._fetch_cliproxy_models_for_registry", no_models)
     monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
 
     resp = TestClient(t.app).post(
@@ -628,10 +671,48 @@ def test_admin_models_sync_mutation_enqueues_lifespan_scheduler(monkeypatch):
     )
 
     assert resp.status_code == 200
-    assert resp.json()["source"] == "scheduler:model-reconciliation"
+    assert resp.json()["source"] == "cliproxy"
     assert resp.json()["errors"] == []
-    assert recorder.calls == [(ReconciliationTrigger.MANUAL, None)]
+    assert recorder.calls == [ReconciliationTrigger.MANUAL]
     assert store.models == {}
+
+
+def test_admin_models_sync_mutation_preserves_litellm_source_and_counts(monkeypatch, tmp_path):
+    class Scheduler:
+        async def run_exclusive(self, operation, *, trigger=ReconciliationTrigger.MANUAL):
+            return await operation()
+
+    store = _FakeRegistryStore()
+    config = tmp_path / "litellm-config.yaml"
+    _write_config(config)
+    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setattr(t, "_model_reconciliation_service", Scheduler())
+    monkeypatch.setattr(t, "LITELLM_CONFIG_PATH", str(config))
+    monkeypatch.setattr(
+        t,
+        "_client",
+        _FakeProbeClient(
+            response=httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "pong"}}]},
+            )
+        ),
+    )
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+
+    resp = TestClient(t.app).post(
+        "/admin/models/sync",
+        headers={"x-admin-key": "test-admin"},
+        json={"source": "litellm-config", "dry_run": False},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["source"] == "litellm-config"
+    assert body["imported_count"] == 2
+    assert body["skipped_count"] == 0
+    assert body["errors"] == []
+    assert len(store.models) == 2
 
 
 def test_admin_models_sync_cliproxy_dry_run_normalizes_and_diffs(monkeypatch):

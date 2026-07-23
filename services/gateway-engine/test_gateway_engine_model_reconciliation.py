@@ -439,6 +439,62 @@ async def test_failed_discovered_addition_remains_retryable_and_enables_after_su
     assert result.outcome == "success"
     assert result.models[0].enabled is True
     assert result.models[0].probe_status == "healthy"
+    assert len(fakes.applied) == 1
+    assert fakes.reloads == 1
+    assert result.verification == "verified"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("probe_status", [None, "preserve", "auth_failure"])
+async def test_pending_legacy_or_auth_failed_additions_remain_retryable(probe_status):
+    pending = _model(
+        model_id="gpt-5-6-sol",
+        enabled=False,
+        status="UNHEALTHY",
+        probe_status=probe_status,
+        source="cliproxy",
+        upstream_model="gpt-5.6-sol",
+        litellm_model="openai/gpt-5.6-sol",
+    )
+    fakes = Fakes(existing=[pending], discovered=[{"id": "gpt-5.6-sol"}])
+    fakes.catalog = {"gpt-5-6-sol"}
+
+    result = await fakes.service(probe_is_stale=lambda model: model_probe_is_stale(model, 300)).run(
+        ReconciliationTrigger.SCHEDULED
+    )
+
+    assert result.outcome == "success"
+    assert result.models[0].enabled is True
+    assert result.verification == "verified"
+
+
+@pytest.mark.asyncio
+async def test_two_run_transient_addition_then_healthy_applies_and_advertises_alias():
+    fakes = Fakes(discovered=[{"id": "gpt-5.6-sol"}])
+    healthy = False
+
+    async def probe(model):
+        if healthy:
+            return model.model_copy(update={"probe_status": "healthy", "status": "HEALTHY"})
+        return model.model_copy(update={"probe_status": "temporarily_unavailable", "status": "UNHEALTHY"})
+
+    fakes.probe = probe
+    service = fakes.service(probe_is_stale=lambda model: model_probe_is_stale(model, 300))
+
+    first = await service.run(ReconciliationTrigger.SCHEDULED)
+    assert first.outcome == "success"
+    assert fakes.models[0].enabled is False
+
+    healthy = True
+    fakes.catalog = {"gpt-5-6-sol"}
+    second = await service.run(ReconciliationTrigger.SCHEDULED)
+
+    assert second.outcome == "success"
+    assert second.verification == "verified"
+    assert fakes.models[0].enabled is True
+    assert fakes.reloads == 2
+    rendered = next(resource for resource in fakes.applied[-1] if resource.name == "litellm-config.yaml")
+    assert "model_name: gpt-5-6-sol" in rendered.content
 
 
 @pytest.mark.asyncio

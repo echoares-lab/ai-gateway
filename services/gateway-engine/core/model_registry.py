@@ -645,22 +645,27 @@ class ModelRegistryStore:
                         model_id, provider, family, upstream_model, litellm_model,
                         enabled, status, supports_tools, supports_vision,
                         max_input_tokens, max_output_tokens, cost_tier,
-                        policy_metadata, source
+                        policy_metadata, source, probe_status,
+                        probe_http_status, probe_checked_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (model_id) DO UPDATE SET
                         provider = EXCLUDED.provider,
                         family = EXCLUDED.family,
                         upstream_model = EXCLUDED.upstream_model,
                         litellm_model = EXCLUDED.litellm_model,
                         enabled = EXCLUDED.enabled,
+                        status = EXCLUDED.status,
                         supports_tools = EXCLUDED.supports_tools,
                         supports_vision = EXCLUDED.supports_vision,
                         max_input_tokens = EXCLUDED.max_input_tokens,
                         max_output_tokens = EXCLUDED.max_output_tokens,
                         cost_tier = EXCLUDED.cost_tier,
                         policy_metadata = EXCLUDED.policy_metadata,
-                        source = EXCLUDED.source
+                        source = EXCLUDED.source,
+                        probe_status = EXCLUDED.probe_status,
+                        probe_http_status = EXCLUDED.probe_http_status,
+                        probe_checked_at = EXCLUDED.probe_checked_at
                     """,
                     (
                         model.model_id,
@@ -677,6 +682,9 @@ class ModelRegistryStore:
                         model.cost_tier,
                         Json(model.policy_metadata),
                         model.source,
+                        model.probe_status,
+                        model.probe_http_status,
+                        model.probe_checked_at,
                     ),
                 )
                 for alias in _deduplicate_aliases(model.aliases):

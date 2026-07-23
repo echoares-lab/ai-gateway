@@ -33,6 +33,8 @@ _RETRYABLE_PROBE_STATUSES = frozenset(
         "missing",
         "missing_model",
         "rate_limited",
+        "auth_failure",
+        "preserve",
         "error",
         "malformed_response",
     }
@@ -231,6 +233,7 @@ class ModelReconciliationService:
         self.timeout_sec = max(0, timeout_sec)
         self._scheduler_task: asyncio.Task | None = None
         self._scheduler_lock = asyncio.Lock()
+        self._operation_lock = asyncio.Lock()
         self._wake = asyncio.Event()
         self._pending_request: tuple[ReconciliationTrigger, str | None] | None = None
         self._active = False
@@ -339,10 +342,11 @@ class ModelReconciliationService:
         requested_model: str | None,
     ) -> None:
         try:
-            result = await asyncio.wait_for(
-                self.run(trigger, requested_model),
-                timeout=self.timeout_sec,
-            )
+            async with self._operation_lock:
+                result = await asyncio.wait_for(
+                    self.run(trigger, requested_model),
+                    timeout=self.timeout_sec,
+                )
             if isinstance(result, ReconciliationResult):
                 self.last_result = result
         except asyncio.TimeoutError:
@@ -374,6 +378,24 @@ class ModelReconciliationService:
             self._phase = "timeout"
             self.last_attempt_at = self.last_attempt_at or now
             record_model_reconciliation(self.last_result)
+
+    async def run_exclusive(
+        self,
+        operation: Callable[[], Any],
+        *,
+        trigger: ReconciliationTrigger = ReconciliationTrigger.MANUAL,
+    ) -> Any:
+        """Run an admin operation under the scheduler's single-flight lock."""
+        async with self._operation_lock:
+            previous_active = self._active
+            previous_trigger = self._current_trigger
+            self._active = True
+            self._current_trigger = trigger
+            try:
+                return await _resolve(operation())
+            finally:
+                self._active = previous_active
+                self._current_trigger = previous_trigger
 
     async def run(
         self,
@@ -476,7 +498,7 @@ class ModelReconciliationService:
                 for model_id, model in current_by_id.items()
                 if not model.enabled
                 and model.source == "cliproxy"
-                and str(model.probe_status or "").lower() in _RETRYABLE_PROBE_STATUSES
+                and (model.probe_status is None or str(model.probe_status).lower() in _RETRYABLE_PROBE_STATUSES)
             }
             for model_id in additions:
                 merged_by_id[model_id] = merged_by_id[model_id].model_copy(
@@ -493,6 +515,11 @@ class ModelReconciliationService:
                     probed_ids.add(model_id)
 
             models = list(merged_by_id.values())
+            effective_changed_ids = changed_ids | {
+                model_id
+                for model_id, model in merged_by_id.items()
+                if model_id in current_by_id and model.enabled != current_by_id[model_id].enabled
+            }
             discovered_ids = [model.model_id for model in discovered]
             persisted_ids = [*discovered_ids, *sorted(probed_ids - set(discovered_ids))]
             result_models = [merged_by_id[model_id] for model_id in persisted_ids]
@@ -511,7 +538,7 @@ class ModelReconciliationService:
                 verification = "dry_run"
                 return finish("success", "complete")
 
-            if not changed_ids:
+            if not effective_changed_ids:
                 set_phase("persist")
                 persisted_count = int(await _resolve(self._upsert_models(result_models)) or 0)
                 verification = "not_required"
@@ -526,7 +553,9 @@ class ModelReconciliationService:
             set_phase("verify")
             catalog = set(await _resolve(self._read_catalog()))
             expected = {
-                model.model_id for model in merged_by_id.values() if model.enabled and model.model_id in changed_ids
+                model.model_id
+                for model in merged_by_id.values()
+                if model.enabled and model.model_id in effective_changed_ids
             }
             missing = sorted(expected - catalog)
             if missing:
