@@ -573,6 +573,60 @@ def test_admin_models_sync_dry_run(monkeypatch, tmp_path):
     assert body["models"][0]["source"] == "litellm-config"
 
 
+@pytest.mark.parametrize(
+    ("probe_response", "expected_enabled", "expected_status", "expected_probe_status"),
+    [
+        (
+            httpx.Response(200, json={"choices": [{"message": {"content": "pong"}}]}),
+            True,
+            "HEALTHY",
+            "healthy",
+        ),
+        (
+            httpx.Response(503, json={"error": {"message": "unavailable"}}),
+            False,
+            "UNHEALTHY",
+            "temporarily_unavailable",
+        ),
+    ],
+)
+def test_admin_models_sync_probes_new_imports_before_enabling(
+    monkeypatch,
+    tmp_path,
+    probe_response,
+    expected_enabled,
+    expected_status,
+    expected_probe_status,
+):
+    store = _FakeRegistryStore()
+    config = tmp_path / "litellm-config.yaml"
+    _write_config(config)
+    fake_client = _FakeProbeClient(response=probe_response)
+    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setattr(t, "_client", fake_client)
+    monkeypatch.setattr(t, "LITELLM_CONFIG_PATH", str(config))
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+
+    client = TestClient(t.app)
+    resp = client.post(
+        "/admin/models/sync",
+        headers={"x-admin-key": "test-admin"},
+        json={"dry_run": False},
+    )
+
+    assert resp.status_code == 200
+    assert len(fake_client.calls) == 2
+    assert {call["json"]["model"] for call in fake_client.calls} == {
+        "claude-sonnet-4-6",
+        "gemini-3-flash",
+    }
+    for model in store.models.values():
+        assert model.enabled is expected_enabled
+        assert model.status == expected_status
+        assert model.probe_status == expected_probe_status
+        assert model.probe_http_status == probe_response.status_code
+
+
 def test_admin_models_sync_cliproxy_dry_run_normalizes_and_diffs(monkeypatch):
     store = _FakeRegistryStore()
     store.models["gpt-5-4"] = ModelRegistryRecord(

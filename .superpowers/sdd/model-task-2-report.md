@@ -49,3 +49,19 @@ Implemented the single automatic model reconciliation operation and reused it fr
 - GREEN focused: `pytest -q services/gateway-engine/test_gateway_engine_model_registry.py -k 'merge_discovered_model'` — 2 passed, 43 deselected, with one pre-existing Starlette/httpx deprecation warning.
 - GREEN covering suite: `pytest -q services/gateway-engine/test_gateway_engine_model_reconciliation.py services/gateway-engine/test_gateway_engine_model_registry.py services/gateway-engine/test_gateway_engine_admin_api.py services/gateway-engine/test_gateway_engine_admin_policy_trace.py services/gateway-engine/test_gateway_engine_admin_policy_integration.py` — 74 passed with one pre-existing Starlette/httpx deprecation warning.
 - Lint/format: `ruff check services/gateway-engine/core/model_registry.py services/gateway-engine/test_gateway_engine_model_registry.py` and `ruff format --check services/gateway-engine/core/model_registry.py services/gateway-engine/test_gateway_engine_model_registry.py` passed.
+
+## Final Required-Probe Fix
+
+- Replaced the apply-mode admin sync identity probe with the existing bounded LiteLLM probe semantics.
+- Adapted a successful LiteLLM response to reconciliation's approved `healthy` contract, persisting new imports as `HEALTHY` and enabled.
+- Preserved unsuccessful probe classifications and HTTP status, persisting new imports as `UNHEALTHY` and disabled.
+- Kept dry-run sync non-probing and preserved the endpoint's existing response/error shapes.
+- Added parameterized admin regressions for healthy and unhealthy new imports, including persisted enablement, lifecycle status, probe status, and HTTP status.
+
+### Final Fix TDD Evidence
+
+- RED: `pytest -q services/gateway-engine/test_gateway_engine_model_registry.py -k 'sync_probes_new_imports'` — 2 failed because the injected identity probe made zero LiteLLM calls.
+- GREEN focused: `pytest -q services/gateway-engine/test_gateway_engine_model_registry.py -k 'sync_probes_new_imports or sync_dry_run'` — 3 passed, 44 deselected.
+- GREEN admin registry suite: `pytest -q services/gateway-engine/test_gateway_engine_model_registry.py` — 47 passed.
+- GREEN gateway suite: `pytest -q services/gateway-engine/test_gateway_engine*.py` — 308 passed with one pre-existing Starlette/httpx deprecation warning.
+- Lint/format: Ruff check and format check passed for the two touched Python files.

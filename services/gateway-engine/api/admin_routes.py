@@ -657,11 +657,26 @@ async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
 
     imported = 0
     if not errors or body.dry_run:
+
+        async def probe_model(model):
+            probe_status, probe_http_status, _probe_errors = await _main_attr(
+                "_probe_model_via_litellm", _probe_model_via_litellm
+            )(model.model_id)
+            healthy = probe_status == "success"
+            return model.model_copy(
+                update={
+                    "probe_status": "healthy" if healthy else probe_status,
+                    "probe_http_status": probe_http_status,
+                    "probe_checked_at": datetime.now(timezone.utc),
+                    "status": "HEALTHY" if healthy else "UNHEALTHY",
+                }
+            )
+
         service = ModelReconciliationService(
             discover=lambda: loaded_models,
             list_models=lambda: existing_models,
             upsert_models=store.upsert_models,
-            probe_model=lambda model: model,
+            probe_model=(lambda model: model) if body.dry_run else probe_model,
             render=lambda models: [],
             validate=lambda resources: True,
             apply=lambda resources: None,
