@@ -4,6 +4,7 @@ volumes:
   dev_auth: null
   langfuse_postgres_data: null # Align with docker-compose.yml
   dev_cpa_data: null
+  litellm_reconciliation_artifacts: null
 services:
   postgres:
     container_name: TESTING-postgres-dev
@@ -93,6 +94,22 @@ services:
     depends_on:
       litellm-migrate:
         condition: service_completed_successfully
+  litellm-config-init:
+    container_name: TESTING-litellm-config-init-dev
+    image: ghcr.io/berriai/litellm:v1.93.0@sha256:a1745e629abfb17d434426ff48b115f54f4f4c4a0f5af241de569e93c63c411e
+    restart: "no"
+    entrypoint:
+    - /bin/sh
+    - -ec
+    command:
+    - |
+      if [ ! -f /config/litellm-config.yaml ]; then
+        cp /seed/litellm-config.yaml /config/litellm-config.yaml
+      fi
+      chmod 0644 /config/litellm-config.yaml
+    volumes:
+    - ./litellm-config.yaml:/seed/litellm-config.yaml:ro
+    - litellm_reconciliation_artifacts:/config
   litellm:
     container_name: TESTING-litellm-dev
     image: ghcr.io/berriai/litellm:v1.93.0@sha256:a1745e629abfb17d434426ff48b115f54f4f4c4a0f5af241de569e93c63c411e
@@ -106,6 +123,8 @@ services:
         condition: service_completed_successfully
       gateway-migrate:
         condition: service_completed_successfully
+      litellm-config-init:
+        condition: service_completed_successfully
     environment:
       SKIP_MIGRATIONS: "true"
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
@@ -115,10 +134,10 @@ services:
       LITELLM_LOG: ${LITELLM_LOG:-INFO}
       DISABLE_CACHE: 'true'
     volumes:
-    - ./litellm-config.yaml:/app/config.yaml:ro
+    - litellm_reconciliation_artifacts:/config
     command:
     - --config
-    - /app/config.yaml
+    - /config/litellm-config.yaml
     - --port
     - '4000'
     ports:
@@ -187,7 +206,7 @@ services:
     - ${DEV_GATEWAY_ENGINE_PORT:-4010}:4000
     volumes:
     - ./services/gateway-engine:/app
-    - ./litellm-config.yaml:/config/litellm-config.yaml:ro
+    - litellm_reconciliation_artifacts:/config
   cpa-manager:
     container_name: TESTING-cpa-manager-dev
     image: seakee/cpa-manager:1.5.5@sha256:051bff237d8deb0cd6d9825e0c571ae8cd81f1aad91eb5ecf0dc253cf9a89731

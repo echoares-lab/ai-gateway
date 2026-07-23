@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sys
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
 import httpx
+import yaml
 from api.admin_credential_sync import (  # noqa: F401
     _credential_sync_lock,
     _credential_sync_scheduler_loop,
@@ -55,6 +57,7 @@ from api.admin_panels import (  # noqa: F401
     _model_registry_store,
     _nullify_sentinel_reset,
     _probe_model_via_litellm,
+    _probe_result_status,
     _read_text_file_for_reconcile,
     _record_policy_trace,
     _redact_credential_record,
@@ -68,6 +71,7 @@ from core.credential_inventory import (
     CredentialInventorySyncResponse,
     CredentialProbeResponse,
 )
+from core.model_reconciliation import ModelReconciliationService, ReconciliationTrigger
 from core.model_registry import (
     ModelProbeResponse,
     ModelRegistryListResponse,
@@ -90,6 +94,30 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 log = logging.getLogger("gateway-engine.admin_routes")
 
+_RECONCILIATION_COUNT_KEYS = ("discovered", "added", "updated", "enabled", "disabled", "unchanged")
+_RECONCILIATION_PHASES = frozenset(
+    {
+        "idle",
+        "disabled",
+        "discover",
+        "merge",
+        "probe",
+        "render",
+        "validate",
+        "apply",
+        "reload",
+        "verify",
+        "persist",
+        "rollback",
+        "complete",
+        "timeout",
+        "cancelled",
+        "manual",
+    }
+)
+_RECONCILIATION_OUTCOMES = frozenset({"success", "degraded", "failed"})
+_RECONCILIATION_VERIFICATIONS = frozenset({"not_run", "dry_run", "not_required", "verified", "failed", "rollback"})
+
 
 @dataclass(frozen=True)
 class AdminRouteDeps:
@@ -110,6 +138,84 @@ class AdminRouteDeps:
 
 _default_deps: AdminRouteDeps | None = None
 _policy_version_hint: str | None = None
+
+
+def _admin_reconciliation_status(service: Any | None) -> dict[str, Any]:
+    """Serialize bounded, secret-free reconciliation scheduler state."""
+    if service is None:
+        enabled = bool(_main_attr("GATEWAY_ENGINE_MODEL_RECONCILIATION_ENABLED", False))
+        interval = _main_attr("GATEWAY_ENGINE_MODEL_RECONCILIATION_INTERVAL_SEC", 900)
+        active = False
+        pending = False
+        phase = "idle" if enabled else "disabled"
+        last_attempt_at = None
+        last_success_at = None
+        result = None
+    else:
+        enabled = bool(getattr(service, "enabled", False))
+        interval = getattr(service, "interval_sec", 900)
+        active = bool(getattr(service, "active", False))
+        pending = bool(getattr(service, "pending", False))
+        phase = str(getattr(service, "phase", "idle" if enabled else "disabled"))
+        last_attempt_at = getattr(service, "last_attempt_at", None)
+        last_success_at = getattr(service, "last_success_at", None)
+        result = getattr(service, "last_result", None)
+
+    if phase not in _RECONCILIATION_PHASES:
+        phase = "idle"
+    display_result = None if active else result
+    raw_outcome = str(getattr(display_result, "outcome", "")) if display_result is not None else ""
+    outcome = raw_outcome if raw_outcome in _RECONCILIATION_OUTCOMES else None
+    raw_trigger = (
+        getattr(service, "current_trigger", None)
+        if active
+        else (getattr(display_result, "trigger", None) if display_result is not None else None)
+    )
+    trigger = getattr(raw_trigger, "value", raw_trigger)
+    if trigger not in {member.value for member in ReconciliationTrigger}:
+        trigger = None
+    requested_model = (
+        getattr(service, "current_requested_model", None)
+        if active
+        else (getattr(display_result, "requested_model", None) if display_result is not None else None)
+    )
+    if requested_model is not None:
+        requested_model = _admin_redact(str(requested_model))[0]
+    counts = getattr(display_result, "counts", {}) if display_result is not None else {}
+    errors = []
+    for error in (getattr(display_result, "errors", []) if display_result is not None else [])[:10]:
+        if not isinstance(error, dict):
+            continue
+        message, redacted = _admin_redact(str(error.get("message", "")))
+        code = _admin_redact(str(error.get("code", "unknown")))[0]
+        error_phase = _admin_redact(str(error.get("phase", "unknown")))[0]
+        errors.append({"code": code, "phase": error_phase, "message": message, "redacted": redacted})
+
+    def iso(value: Any) -> str | None:
+        return (
+            value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if isinstance(value, datetime) else None
+        )
+
+    raw_verification = (
+        str(getattr(display_result, "verification", "not_run")) if display_result is not None else "not_run"
+    )
+    verification = raw_verification if raw_verification in _RECONCILIATION_VERIFICATIONS else "unknown"
+
+    return {
+        "enabled": enabled,
+        "interval_seconds": max(0, int(interval)),
+        "active": active,
+        "pending": pending,
+        "phase": phase,
+        "last_attempt_at": iso(last_attempt_at),
+        "last_success_at": iso(last_success_at),
+        "trigger": trigger,
+        "requested_model": requested_model,
+        "outcome": outcome,
+        "counts": {key: max(0, int(counts.get(key, 0))) for key in _RECONCILIATION_COUNT_KEYS},
+        "verification": verification,
+        "errors": errors,
+    }
 
 
 def _main_attr(name: str, default):
@@ -572,10 +678,31 @@ async def admin_model_probe(model_id: str, request: Request):
 
 @router.post("/admin/models/reconcile", response_model=ModelRegistryReconcileResponse)
 async def admin_models_reconcile(request: Request, body: ModelRegistryReconcileRequest):
-    """Render registry-driven LiteLLM/Gemini config changes without writing files."""
+    """Render a dry run or enqueue a full reconciliation on the singleton scheduler."""
     auth_error = _require_admin_key(request)
     if auth_error is not None:
         return auth_error
+
+    if not body.dry_run:
+        service = _main_attr("_model_reconciliation_service", None)
+        accepted = bool(service is not None and await service.request(ReconciliationTrigger.MANUAL))
+        errors = (
+            []
+            if accepted
+            else [
+                _admin_error(
+                    "scheduler_unavailable", "model reconciliation scheduler unavailable", "gateway-engine:scheduler"
+                )
+            ]
+        )
+        return ModelRegistryReconcileResponse(
+            accepted=accepted,
+            dry_run=False,
+            source="scheduler:model-reconciliation",
+            registry_available=bool(_main_attr("_model_registry_store", _model_registry_store)().enabled),
+            resources=[],
+            errors=errors,
+        )
 
     loaded = _load_model_registry_with_config_fallback()
     litellm_text, litellm_errors = _read_text_file_for_reconcile(
@@ -587,17 +714,39 @@ async def admin_models_reconcile(request: Request, body: ModelRegistryReconcileR
         "repo:gemini-model-map.json",
     )
     errors = [*loaded.errors, *litellm_errors, *gemini_errors]
-    resources = build_reconcile_resources(
-        loaded.models,
-        current_litellm_config=litellm_text,
-        current_gemini_map=gemini_text,
-        include_disabled=body.include_disabled,
+
+    def render(models):
+        return build_reconcile_resources(
+            models,
+            current_litellm_config=litellm_text,
+            current_gemini_map=gemini_text,
+            include_disabled=body.include_disabled,
+        )
+
+    def validate(resources):
+        for resource in resources:
+            (yaml.safe_load if resource.kind == "yaml" else json.loads)(resource.content)
+
+    service = ModelReconciliationService(
+        discover=lambda: loaded.models,
+        list_models=lambda: loaded.models,
+        upsert_models=lambda models: 0,
+        probe_model=lambda model: model,
+        render=render,
+        validate=validate,
+        apply=lambda resources: None,
+        rollback=lambda token: None,
+        reload=lambda: True,
+        read_catalog=lambda: set(),
+        probe_is_stale=lambda model: False,
     )
+    result = await service.run(ReconciliationTrigger.MANUAL, dry_run=True)
+    errors.extend(result.errors)
     return ModelRegistryReconcileResponse(
         dry_run=True,
         source=loaded.source,
         registry_available=loaded.registry_available,
-        resources=resources,
+        resources=result.resources or [],
         errors=errors,
     )
 
@@ -609,51 +758,129 @@ async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
     if auth_error is not None:
         return auth_error
 
-    store = _model_registry_store()
-    existing = store.list_models()
-    existing_models = existing.models if existing.registry_available else []
-    errors = list(existing.errors)
-    source = body.source
-
-    if source == "cliproxy":
-        entries, fetch_errors = await _fetch_cliproxy_models_for_registry()
-        discovered = [model for model in (record_from_cliproxy_model(entry) for entry in entries) if model is not None]
-        errors.extend(fetch_errors)
-        diffs = diff_discovered_models(discovered, existing_models)
-        loaded_models = [
-            merge_discovered_model(model, {m.model_id: m for m in existing_models}.get(model.model_id))
-            for model in discovered
-        ]
-    else:
-        loaded = load_models_from_litellm_config(_main_attr("LITELLM_CONFIG_PATH", LITELLM_CONFIG_PATH))
-        errors.extend(loaded.errors)
-        loaded_models = loaded.models
-        diffs = diff_discovered_models(loaded_models, existing_models)
-
-    imported = 0
-    if not body.dry_run and not errors:
+    async def sync_operation() -> ModelRegistrySyncResponse:
+        store = None
         try:
-            imported = store.upsert_models(loaded_models)
-        except Exception as exc:
-            errors.append(
-                _admin_error(
-                    "registry_write_error",
-                    f"{type(exc).__name__}: {exc}",
-                    "postgres:model_registry",
-                )
+            store = _model_registry_store()
+            existing = store.list_models()
+            existing_models = existing.models if existing.registry_available else []
+            errors = list(existing.errors)
+
+            if body.source == "cliproxy":
+                entries, fetch_errors = await _fetch_cliproxy_models_for_registry()
+                discovered = [
+                    model for model in (record_from_cliproxy_model(entry) for entry in entries) if model is not None
+                ]
+                errors.extend(fetch_errors)
+                loaded_models = [
+                    merge_discovered_model(model, {m.model_id: m for m in existing_models}.get(model.model_id))
+                    for model in discovered
+                ]
+            else:
+                loaded = load_models_from_litellm_config(_main_attr("LITELLM_CONFIG_PATH", LITELLM_CONFIG_PATH))
+                errors.extend(loaded.errors)
+                loaded_models = loaded.models
+
+            diffs = diff_discovered_models(loaded_models, existing_models)
+            imported = 0
+            if not body.dry_run and not errors:
+                additions = {diff["model_id"] for diff in diffs if diff["kind"] == "add"}
+                probed_models = []
+                for model in loaded_models:
+                    if model.model_id not in additions:
+                        probed_models.append(model)
+                        continue
+                    probe_status, probe_http_status, _probe_errors = await _main_attr(
+                        "_probe_model_via_litellm", _probe_model_via_litellm
+                    )(model.model_id)
+                    healthy = probe_status == "success"
+                    probed_models.append(
+                        model.model_copy(
+                            update={
+                                "enabled": healthy,
+                                "probe_status": "healthy" if healthy else probe_status,
+                                "probe_http_status": probe_http_status,
+                                "probe_checked_at": datetime.now(timezone.utc),
+                                "status": "HEALTHY" if healthy else "UNHEALTHY",
+                            }
+                        )
+                    )
+                loaded_models = probed_models
+                imported = int(store.upsert_models(loaded_models) or 0)
+            elif body.dry_run:
+                imported = len(loaded_models)
+
+            return ModelRegistrySyncResponse(
+                dry_run=body.dry_run,
+                source=body.source,
+                registry_available=store.enabled,
+                imported_count=imported,
+                skipped_count=max(0, len(loaded_models) - imported),
+                models=loaded_models,
+                diffs=diffs,
+                errors=errors,
             )
-    else:
-        imported = len(loaded_models) if body.dry_run else 0
-    return ModelRegistrySyncResponse(
-        dry_run=body.dry_run,
-        source=source,
-        registry_available=store.enabled,
-        imported_count=imported,
-        skipped_count=max(0, len(loaded_models) - imported),
-        models=loaded_models,
-        diffs=diffs,
-        errors=errors,
-    )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return ModelRegistrySyncResponse(
+                dry_run=body.dry_run,
+                source=body.source,
+                registry_available=bool(getattr(store, "enabled", False)),
+                errors=[
+                    _admin_error(
+                        "model_sync_failed",
+                        "manual model sync failed",
+                        f"admin:models/sync:{body.source}",
+                    )
+                ],
+            )
+
+    scheduler = _main_attr("_model_reconciliation_service", None)
+    if scheduler is None:
+        store = _model_registry_store()
+        return ModelRegistrySyncResponse(
+            dry_run=body.dry_run,
+            source=body.source,
+            registry_available=store.enabled,
+            errors=[
+                _admin_error(
+                    "model_reconciliation_unavailable",
+                    "model reconciliation scheduler is unavailable",
+                    "scheduler:model-reconciliation",
+                )
+            ],
+        )
+    try:
+        return await scheduler.run_exclusive(sync_operation)
+    except asyncio.TimeoutError:
+        return ModelRegistrySyncResponse(
+            dry_run=body.dry_run,
+            source=body.source,
+            registry_available=_model_registry_store().enabled,
+            errors=[
+                _admin_error(
+                    "model_reconciliation_timeout",
+                    "manual model sync exceeded the reconciliation timeout",
+                    "scheduler:model-reconciliation",
+                )
+            ],
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        return ModelRegistrySyncResponse(
+            dry_run=body.dry_run,
+            source=body.source,
+            registry_available=_model_registry_store().enabled,
+            errors=[
+                _admin_error(
+                    "model_sync_failed",
+                    "manual model sync failed",
+                    f"admin:models/sync:{body.source}",
+                )
+            ],
+        )
 
 
 @router.get("/admin/status")
@@ -675,9 +902,11 @@ async def admin_status(request: Request):
         policy_version=policy_version,
     )
 
+    models_panel = _admin_models_panel(config, visible_ids, model_errors, registry)
+    models_panel["reconciliation"] = _admin_reconciliation_status(_main_attr("_model_reconciliation_service", None))
     panels = {
         "health": _admin_health_panel(),
-        "models": _admin_models_panel(config, visible_ids, model_errors, registry),
+        "models": models_panel,
         "providers": _admin_providers_panel(),
         "routing": _admin_routing_panel(
             config,

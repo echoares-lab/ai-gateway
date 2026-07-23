@@ -183,6 +183,73 @@ gateway-engine, `litellm-config.yaml`, `/metrics`, and (best-effort) `cliproxy-s
 Read-only and operator-local: it never mutates state and redacts secrets. Degraded sources
 report `warning`/`unknown` rather than failing the response.
 
+### Automatic model reconciliation
+
+Gateway-engine owns the model reconciliation scheduler. It discovers only the trusted
+CLIProxy catalog, preserves curated registry metadata, validates generated resources,
+atomically applies changes, reloads LiteLLM, and verifies `/v1/models`. Unknown-model
+requests can enqueue an expedited refresh, but never create the client-supplied name
+inline. New additions are probed against their exact CLIProxy `upstream_model` before
+their LiteLLM alias exists; failed or transient additions remain disabled and retryable.
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `GATEWAY_ENGINE_MODEL_RECONCILIATION_ENABLED` | `true` | Enable startup, scheduled, demand, and manual runs |
+| `GATEWAY_ENGINE_MODEL_RECONCILIATION_STARTUP_DELAY_SEC` | `30` | Delay before the first run |
+| `GATEWAY_ENGINE_MODEL_RECONCILIATION_INTERVAL_SEC` | `900` | Periodic run interval |
+| `GATEWAY_ENGINE_MODEL_RECONCILIATION_EXPEDITED_MIN_INTERVAL_SEC` | `60` | Global minimum interval between demand triggers |
+| `GATEWAY_ENGINE_MODEL_RECONCILIATION_TIMEOUT_SEC` | `120` | Hard bound for one run |
+| `GATEWAY_ENGINE_MODEL_RECONCILIATION_PROBE_STALE_SEC` | `300` | Re-probe age for a successful health result; missing and transient results retry sooner |
+
+Inspect the secret-free scheduler state:
+
+```bash
+curl -fsS http://localhost:4000/admin/status \
+  -H "x-admin-key: $GATEWAY_ENGINE_ADMIN_KEY" \
+  | jq '.panels.models.reconciliation'
+```
+
+`active` means a run is executing and `pending` means one coalesced rerun is queued.
+`phase` identifies the current or most recently completed phase. `outcome=success`
+with `verification=verified` (or `not_required` for a no-change run) is healthy.
+While a run is active, `trigger` and `requested_model` belong only to that run;
+completion-only `outcome`, `counts`, `verification`, and `errors` are cleared until
+it finishes, so stale details from the prior run cannot be mistaken for live state.
+`degraded` means changed artifacts were rolled back after apply; `failed` means the
+run stopped before a safe apply. Compare `last_attempt_at` with `last_success_at` and
+inspect the bounded, redacted `errors` array. Prometheus exposes bounded run duration,
+outcome, trigger, and change-count metrics; model names, aliases, tokens, and raw error
+text are never metric labels.
+
+Preview generated changes without writing them:
+
+```bash
+curl -fsS -X POST http://localhost:4000/admin/models/reconcile \
+  -H "x-admin-key: $GATEWAY_ENGINE_ADMIN_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"dry_run":true}' | jq .
+```
+
+Force an asynchronous manual run, then poll status until `active` and `pending` are
+both false:
+
+```bash
+curl -fsS -X POST http://localhost:4000/admin/models/reconcile \
+  -H "x-admin-key: $GATEWAY_ENGINE_ADMIN_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"dry_run":false}' | jq .
+```
+
+For emergency rollback, set `GATEWAY_ENGINE_MODEL_RECONCILIATION_ENABLED=false` in
+the deployment environment and restart gateway-engine. This stops automatic and
+manual scheduler runs while retaining the registry and the last known-good generated
+files. A failed apply/reload/verification already restores the pre-run file bytes and
+modes and requests a LiteLLM reload. If an operator deliberately promoted a bad but
+verified configuration, restore both `litellm-config.yaml` and
+`services/gateway-engine/gemini-model-map.json` from the same known-good deployment,
+restart LiteLLM, verify `/v1/models`, and keep the scheduler disabled until the catalog
+or renderer issue is corrected. Do not delete registry rows as a rollback shortcut.
+
 For a rendered view, open the read-only dashboard page in a browser:
 `http://localhost:4000/admin/dashboard` (operator-local; it fetches `/admin/status` and renders
 the panels plus links to the LiteLLM UI, CLIProxy management, and CPA-Manager).

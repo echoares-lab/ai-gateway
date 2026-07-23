@@ -10,6 +10,7 @@ from api.proxy_common import (
     _deps,
     _enable_virtual_providers,
     _http_client,
+    _log_safe_headers,
     log,
 )
 from api.proxy_normalize import (
@@ -25,6 +26,7 @@ from api.proxy_routing import (
     _model_from_content,
     _normalize_upstream_authorization,
     _record_provider_signal,
+    maybe_enqueue_unknown_model_refresh,
 )
 from core.policy.client_detector import client_detector
 from fastapi import Request
@@ -36,6 +38,20 @@ from providers.virtual import virtual_provider
 
 async def proxy(path: str, request: Request):
     raw = await request.body()
+    client_auth = next(
+        (
+            value
+            for value in (
+                request.headers.get("authorization"),
+                request.headers.get("x-api-key"),
+                request.headers.get("x-goog-api-key"),
+                request.headers.get("api-key"),
+                request.query_params.get("key"),
+            )
+            if value and value.strip()
+        ),
+        None,
+    )
 
     body, prefix_stripped = _strip_prefix(raw)
     body, fmt_changed = _patch_body(path, body if prefix_stripped else raw)
@@ -92,7 +108,7 @@ async def proxy(path: str, request: Request):
     log.info(
         "Proxy request path: %s headers: %s",
         path,
-        {k: v for k, v in headers.items() if k.lower() != "authorization"},
+        _log_safe_headers(headers),
     )
     if changed:
         headers["content-length"] = str(len(body))
@@ -124,39 +140,64 @@ async def proxy(path: str, request: Request):
     signal_model = _model_from_content(body) if is_chat else ""
 
     if is_stream:
+        if ck:
+            cached = await _deps().cache_get(ck)
+            if cached is not None:
+                log.info("cache hit (proxy stream) key=%s", ck[:16])
 
-        async def generate():
-            if ck:
-                cached = await _deps().cache_get(ck)
-                if cached is not None:
-                    log.info("cache hit (proxy stream) key=%s", ck[:16])
+                async def cached_generate():
                     for line in cached:
                         yield (line + "\n").encode()
-                    return
+
+                return StreamingResponse(cached_generate(), media_type="text/event-stream")
+
+        start = time.monotonic()
+        stream_context = _http_client().stream(request.method, url, headers=headers, content=body, params=params)
+        try:
+            resp = await stream_context.__aenter__()
+        except Exception as exc:
+            is_timeout = isinstance(exc, httpx.TimeoutException)
+            log.error("Proxy stream upstream error for %s: %s", path, exc)
+            failure_message = (
+                f"Upstream request timed out after {_deps().upstream_timeout} seconds"
+                if is_timeout
+                else f"Upstream connection failed: {exc}"
+            )
+
+            async def failed_generate():
+                err = {
+                    "error": {
+                        "message": failure_message,
+                        "type": "timeout_error" if is_timeout else "connection_error",
+                    }
+                }
+                yield ("data: " + json.dumps(err) + "\n\n").encode()
+
+            return StreamingResponse(failed_generate(), media_type="text/event-stream")
+
+        if is_chat:
+            _record_provider_signal(signal_model, resp.status_code, time.monotonic() - start)
+        if resp.status_code >= 400:
+            err_content = await resp.aread()
+            maybe_enqueue_unknown_model_refresh(resp, signal_model, client_auth=client_auth)
+            await stream_context.__aexit__(None, None, None)
+            log.warning(
+                "Proxy upstream stream error %d for %s: %s",
+                resp.status_code,
+                path,
+                err_content[:300],
+            )
+            return Response(content=err_content, status_code=resp.status_code, headers=dict(resp.headers))
+
+        async def generate():
             buf: list[str] = []
             success = False
-            start = time.monotonic()
             try:
-                async with _http_client().stream(
-                    request.method, url, headers=headers, content=body, params=params
-                ) as resp:
-                    if is_chat:
-                        _record_provider_signal(signal_model, resp.status_code, time.monotonic() - start)
-                    if resp.status_code >= 400:
-                        err_content = await resp.aread()
-                        log.warning(
-                            "Proxy upstream stream error %d for %s: %s",
-                            resp.status_code,
-                            path,
-                            err_content[:300],
-                        )
-                        yield err_content
-                        return
-                    async for chunk in resp.aiter_bytes():
-                        if ck:
-                            buf.append(chunk.decode(errors="replace"))
-                        yield chunk
-                    success = True
+                async for chunk in resp.aiter_bytes():
+                    if ck:
+                        buf.append(chunk.decode(errors="replace"))
+                    yield chunk
+                success = True
             except httpx.TimeoutException as exc:
                 log.error("Proxy stream upstream timed out for %s: %s", path, exc)
                 err = {
@@ -175,6 +216,8 @@ async def proxy(path: str, request: Request):
                     }
                 }
                 yield ("data: " + json.dumps(err) + "\n\n").encode()
+            finally:
+                await stream_context.__aexit__(None, None, None)
             if success and ck and buf:
                 await _deps().cache_set(ck, buf)
 
@@ -255,6 +298,11 @@ async def proxy(path: str, request: Request):
         _record_provider_signal(signal_model, resp.status_code, time.monotonic() - _proxy_start)
 
     if resp.status_code >= 400:
+        maybe_enqueue_unknown_model_refresh(
+            resp,
+            signal_model,
+            client_auth=client_auth,
+        )
         log.warning(
             "Upstream %d for %s — raw: %s",
             resp.status_code,

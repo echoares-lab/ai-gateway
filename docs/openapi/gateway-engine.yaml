@@ -532,6 +532,16 @@ paths:
   /admin/status:
     get:
       summary: Read-only operator status aggregator
+      description: >-
+        Includes model reconciliation scheduler health at
+        panels.models.reconciliation. Error summaries are bounded and
+        redacted; credentials and unconstrained provider error text are never
+        returned. While active is true, trigger and requested_model describe
+        the current run, while outcome is null, counts are zero, verification
+        is not_run, and errors is empty. Completed-result fields are populated
+        only after the active run finishes. Verification is one of not_run,
+        dry_run, not_required, verified, failed, rollback, or the safe fallback
+        unknown.
       responses:
         '200':
           description: admin-console.v1 JSON payload
@@ -540,6 +550,28 @@ paths:
               example:
                 schema_version: "admin-console.v1"
                 panels:
+                  models:
+                    status: "ok"
+                    reconciliation:
+                      enabled: true
+                      interval_seconds: 900
+                      active: false
+                      pending: false
+                      phase: "complete"
+                      last_attempt_at: "2026-07-23T10:00:00Z"
+                      last_success_at: "2026-07-23T10:00:02Z"
+                      trigger: "scheduled"
+                      requested_model: null
+                      outcome: "success"
+                      counts:
+                        discovered: 12
+                        added: 1
+                        updated: 0
+                        enabled: 12
+                        disabled: 0
+                        unchanged: 11
+                      verification: "verified"
+                      errors: []
                   token_analytics:
                     status: "ok"
                     data:
@@ -1015,7 +1047,13 @@ paths:
           description: Admin mutations disabled when GATEWAY_ENGINE_ADMIN_KEY is unset
   /admin/models/reconcile:
     post:
-      summary: Render registry-driven LiteLLM and Gemini map changes without writing files
+      summary: Preview or enqueue model reconciliation
+      description: >-
+        With dry_run true, renders candidate LiteLLM and Gemini map resources
+        without writing files. With dry_run false, asynchronously enqueues a
+        manual run on the singleton reconciliation scheduler; poll
+        /admin/status for completion. Concurrent requests coalesce into at most
+        one pending rerun.
       parameters:
         - name: x-admin-key
           in: header
@@ -1030,7 +1068,7 @@ paths:
                 dry_run:
                   type: boolean
                   default: true
-                  description: Reserved for apply-mode expansion; this endpoint currently renders only.
+                  description: Render only when true; enqueue a full manual scheduler run when false.
                 include_disabled:
                   type: boolean
                   default: false
@@ -1040,26 +1078,31 @@ paths:
               include_disabled: false
       responses:
         '200':
-          description: Dry-run rendered resources and diffs
+          description: Dry-run rendered resources, or manual scheduler enqueue result
           content:
             application/json:
-              example:
-                accepted: true
-                dry_run: true
-                source: "postgres:model_registry"
-                registry_available: true
-                resources:
-                  - name: "litellm-config.yaml"
-                    kind: "yaml"
-                    changed: true
-                    content: "model_list:\n- model_name: gpt-5-4\n"
-                    diff: "--- current/litellm-config.yaml\n+++ desired/litellm-config.yaml\n"
-                  - name: "gemini-model-map.json"
-                    kind: "json"
-                    changed: true
-                    content: "{\n  \"gemini-3.flash\": \"gemini-3-flash\"\n}\n"
-                    diff: "--- current/gemini-model-map.json\n+++ desired/gemini-model-map.json\n"
-                errors: []
+              examples:
+                dryRun:
+                  value:
+                    accepted: true
+                    dry_run: true
+                    source: "postgres:model_registry"
+                    registry_available: true
+                    resources:
+                      - name: "litellm-config.yaml"
+                        kind: "yaml"
+                        changed: true
+                        content: "model_list:\n- model_name: gpt-5-4\n"
+                        diff: "--- current/litellm-config.yaml\n+++ desired/litellm-config.yaml\n"
+                    errors: []
+                forceRun:
+                  value:
+                    accepted: true
+                    dry_run: false
+                    source: "scheduler:model-reconciliation"
+                    registry_available: true
+                    resources: []
+                    errors: []
         '403':
           description: Invalid admin key
         '503':

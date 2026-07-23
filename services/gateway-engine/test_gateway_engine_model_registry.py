@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import datetime, timezone
+from unittest.mock import ANY
 
 import httpx
 import pytest
@@ -13,12 +15,71 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(__file__))
 import main as t
+from core.model_reconciliation import ReconciliationTrigger
 from core.model_registry import (
     ModelRegistryRecord,
+    ModelRegistryStore,
     RegistryLoadResult,
     build_reconcile_resources,
     load_models_from_litellm_config,
+    merge_discovered_model,
+    normalize_discovered_model,
+    record_from_cliproxy_model,
 )
+
+
+class _RecordingCursor:
+    def __init__(self):
+        self.executions = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, query, params=None):
+        self.executions.append((query, params))
+
+
+class _RecordingConnection:
+    def __init__(self, cursor=None):
+        self.cursor_instance = cursor or _RecordingCursor()
+        self.committed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def cursor(self, *_args, **_kwargs):
+        return self.cursor_instance
+
+    def commit(self):
+        self.committed = True
+
+
+class _AliasStateCursor(_RecordingCursor):
+    def __init__(self, aliases):
+        super().__init__()
+        self.aliases = aliases
+
+    def execute(self, query, params):
+        super().execute(query, params)
+        if "INSERT INTO model_aliases" not in query:
+            return
+        alias, model_id, provider, alias_kind, target, metadata = params
+        current = self.aliases.get(alias)
+        same_model_only = "model_aliases.model_id = EXCLUDED.model_id" in query
+        if current is None or not same_model_only or current["model_id"] == model_id:
+            self.aliases[alias] = {
+                "model_id": model_id,
+                "provider": provider,
+                "alias_kind": alias_kind,
+                "target": target,
+                "metadata": metadata,
+            }
 
 
 class _FakeRegistryStore:
@@ -182,6 +243,211 @@ def _gemini_registry_model() -> ModelRegistryRecord:
     )
 
 
+@pytest.mark.parametrize(
+    ("model_id", "expected"),
+    [
+        ("gpt-5.6-sol", ("gpt-5-6-sol", "gpt-5.6-sol")),
+        ("gpt-5-6-sol", ("gpt-5-6-sol", "gpt-5-6-sol")),
+        ("claude-sonnet-4.6", ("claude-sonnet-4.6", "claude-sonnet-4.6")),
+        ("gemini-3.flash", ("gemini-3.flash", "gemini-3.flash")),
+        ("AI-Gateway:gpt-5.6-sol", ("gpt-5-6-sol", "gpt-5.6-sol")),
+    ],
+)
+def test_normalize_discovered_model_preserves_provider_upstream_ids(model_id, expected):
+    assert normalize_discovered_model(model_id) == expected
+
+
+@pytest.mark.parametrize("model_id", ["", "AI-Gateway:", "gpt-5/6", "gpt-5 6", "gpt-5@6"])
+def test_normalize_discovered_model_rejects_invalid_identifiers(model_id):
+    with pytest.raises(ValueError, match="model identifier"):
+        normalize_discovered_model(model_id)
+
+
+def test_normalize_discovered_model_records_distinct_identity_aliases():
+    record = record_from_cliproxy_model({"id": "AI-Gateway:gpt-5.6-sol"})
+
+    assert record is not None
+    assert record.model_id == "gpt-5-6-sol"
+    assert record.upstream_model == "gpt-5.6-sol"
+    assert record.aliases == [
+        {
+            "alias": "AI-Gateway:gpt-5.6-sol",
+            "target": "gpt-5-6-sol",
+            "alias_kind": "external",
+        },
+        {
+            "alias": "gpt-5-6-sol",
+            "target": "gpt-5-6-sol",
+            "alias_kind": "registry",
+        },
+        {
+            "alias": "gpt-5.6-sol",
+            "target": "gpt-5-6-sol",
+            "alias_kind": "upstream",
+        },
+    ]
+
+
+@pytest.mark.parametrize(
+    ("external_id", "expected"),
+    [
+        (
+            "gpt-5-6-sol",
+            [{"alias": "gpt-5-6-sol", "target": "gpt-5-6-sol", "alias_kind": "upstream"}],
+        ),
+        (
+            "AI-Gateway:claude-sonnet-4.6",
+            [
+                {
+                    "alias": "AI-Gateway:claude-sonnet-4.6",
+                    "target": "claude-sonnet-4.6",
+                    "alias_kind": "external",
+                },
+                {
+                    "alias": "claude-sonnet-4.6",
+                    "target": "claude-sonnet-4.6",
+                    "alias_kind": "upstream",
+                },
+            ],
+        ),
+    ],
+)
+def test_cliproxy_identity_aliases_deduplicate_by_semantic_precedence(external_id, expected):
+    record = record_from_cliproxy_model({"id": external_id})
+
+    assert record is not None
+    assert record.aliases == expected
+
+
+def test_merge_discovered_model_keeps_existing_aliases_and_adds_discovered_identities():
+    current = _registry_model()
+    current.aliases = [
+        {"alias": "stable-client", "target": "gpt-5-4", "alias_kind": "client"},
+        {"alias": "gpt-5.4", "target": "gpt-5-4", "alias_kind": "compat"},
+    ]
+    discovered = record_from_cliproxy_model({"id": "AI-Gateway:gpt-5.4"})
+
+    merged = merge_discovered_model(discovered, current)
+
+    assert merged.aliases == [
+        {"alias": "stable-client", "target": "gpt-5-4", "alias_kind": "client"},
+        {"alias": "gpt-5.4", "target": "gpt-5-4", "alias_kind": "compat"},
+        {"alias": "AI-Gateway:gpt-5.4", "target": "gpt-5-4", "alias_kind": "external"},
+        {"alias": "gpt-5-4", "target": "gpt-5-4", "alias_kind": "registry"},
+    ]
+
+
+def test_merge_discovered_model_preserves_existing_curated_policy_metadata():
+    current = _registry_model()
+    current.policy_metadata = {"owned_by": "curated-owner"}
+    discovered = record_from_cliproxy_model({"id": "AI-Gateway:gpt-5.4", "owned_by": "generic-discovery-owner"})
+
+    merged = merge_discovered_model(discovered, current)
+
+    assert merged.policy_metadata["owned_by"] == "curated-owner"
+
+
+def test_model_registry_store_upsert_models_persists_deduplicated_aliases(monkeypatch):
+    connection = _RecordingConnection()
+    store = ModelRegistryStore("postgresql://registry")
+    monkeypatch.setattr(store, "_connect", lambda: connection)
+    model = _registry_model("gpt-5-6-sol")
+    model.aliases = [
+        {"alias": "gpt-5-6-sol", "target": model.model_id, "alias_kind": "registry"},
+        {"alias": "gpt-5-6-sol", "target": model.model_id, "alias_kind": "upstream"},
+        {
+            "alias": "AI-Gateway:gpt-5-6-sol",
+            "target": model.model_id,
+            "alias_kind": "external",
+            "metadata": {"discovered": True},
+        },
+    ]
+
+    assert store.upsert_models([model]) == 1
+
+    alias_writes = [
+        params for query, params in connection.cursor_instance.executions if "INSERT INTO model_aliases" in query
+    ]
+    assert alias_writes == [
+        ("gpt-5-6-sol", model.model_id, "openai", "upstream", model.model_id, ANY),
+        (
+            "AI-Gateway:gpt-5-6-sol",
+            model.model_id,
+            "openai",
+            "external",
+            model.model_id,
+            ANY,
+        ),
+    ]
+    assert connection.committed is True
+
+
+def test_model_registry_store_upsert_round_trips_complete_probe_state(monkeypatch):
+    checked_at = datetime(2026, 7, 23, 3, 0, tzinfo=timezone.utc)
+    model = _registry_model("gpt-5-6-sol").model_copy(
+        update={
+            "enabled": False,
+            "status": "UNHEALTHY",
+            "probe_status": "temporarily_unavailable",
+            "probe_http_status": 503,
+            "probe_checked_at": checked_at,
+            "aliases": [],
+        }
+    )
+    write_connection = _RecordingConnection()
+
+    class ReadCursor(_RecordingCursor):
+        def fetchall(self):
+            return [model.model_dump()]
+
+    read_connection = _RecordingConnection(ReadCursor())
+    connections = iter((write_connection, read_connection))
+    store = ModelRegistryStore("postgresql://registry")
+    monkeypatch.setattr(store, "_connect", lambda: next(connections))
+
+    assert store.upsert_models([model]) == 1
+    loaded = store.list_models()
+
+    query, params = write_connection.cursor_instance.executions[0]
+    assert "status = EXCLUDED.status" in query
+    assert "probe_status = EXCLUDED.probe_status" in query
+    assert params[-3:] == ("temporarily_unavailable", 503, checked_at)
+    assert write_connection.committed is True
+    assert loaded.models[0].status == "UNHEALTHY"
+    assert loaded.models[0].probe_status == "temporarily_unavailable"
+    assert loaded.models[0].probe_http_status == 503
+    assert loaded.models[0].probe_checked_at == checked_at
+
+
+def test_model_registry_store_discovered_alias_does_not_replace_other_models_curated_alias(
+    monkeypatch,
+):
+    curated = {
+        "model_id": "curated-model",
+        "provider": "openai",
+        "alias_kind": "client",
+        "target": "curated-model",
+        "metadata": {"owner": "platform"},
+    }
+    aliases = {"shared-alias": curated.copy()}
+    connection = _RecordingConnection(_AliasStateCursor(aliases))
+    store = ModelRegistryStore("postgresql://registry")
+    monkeypatch.setattr(store, "_connect", lambda: connection)
+    discovered = _registry_model("discovered-model")
+    discovered.aliases = [
+        {
+            "alias": "shared-alias",
+            "target": discovered.model_id,
+            "alias_kind": "external",
+            "metadata": {"discovered": True},
+        }
+    ]
+
+    assert store.upsert_models([discovered]) == 1
+
+    assert aliases["shared-alias"] == curated
+
+
 def test_reconcile_renderer_outputs_valid_yaml_json_and_diffs():
     resources = build_reconcile_resources([_registry_model(), _gemini_registry_model()])
     by_name = {resource.name: resource for resource in resources}
@@ -326,10 +592,47 @@ def test_admin_models_reconcile_dry_run_does_not_write_files(monkeypatch, tmp_pa
     assert gemini_map.read_text(encoding="utf-8") == "{}\n"
 
 
+def test_admin_models_reconcile_force_run_enqueues_manual_scheduler(monkeypatch):
+    class Recorder:
+        def __init__(self):
+            self.calls = []
+
+        async def request(self, trigger, requested_model=None):
+            self.calls.append((trigger, requested_model))
+            return True
+
+    recorder = Recorder()
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+    monkeypatch.setattr(t, "_model_reconciliation_service", recorder)
+    monkeypatch.setattr(t, "_model_registry_store", lambda: type("Store", (), {"enabled": True})())
+
+    response = TestClient(t.app).post(
+        "/admin/models/reconcile",
+        headers={"x-admin-key": "test-admin"},
+        json={"dry_run": False},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "accepted": True,
+        "dry_run": False,
+        "source": "scheduler:model-reconciliation",
+        "registry_available": True,
+        "resources": [],
+        "errors": [],
+    }
+    assert recorder.calls == [(ReconciliationTrigger.MANUAL, None)]
+
+
 def test_admin_models_sync_dry_run(monkeypatch, tmp_path):
+    class Scheduler:
+        async def run_exclusive(self, operation, *, trigger=ReconciliationTrigger.MANUAL):
+            return await operation()
+
     config = tmp_path / "litellm-config.yaml"
     _write_config(config)
     monkeypatch.setattr(t, "LITELLM_CONFIG_PATH", str(config))
+    monkeypatch.setattr(t, "_model_reconciliation_service", Scheduler())
     monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
 
     client = TestClient(t.app)
@@ -346,7 +649,156 @@ def test_admin_models_sync_dry_run(monkeypatch, tmp_path):
     assert body["models"][0]["source"] == "litellm-config"
 
 
+def test_admin_models_sync_dry_run_uses_lifespan_singleton(monkeypatch, tmp_path):
+    class Recorder:
+        def __init__(self):
+            self.calls = []
+
+        async def run_exclusive(self, operation, *, trigger=ReconciliationTrigger.MANUAL):
+            self.calls.append(trigger)
+            return await operation()
+
+    config = tmp_path / "litellm-config.yaml"
+    _write_config(config)
+    recorder = Recorder()
+    monkeypatch.setattr(t, "LITELLM_CONFIG_PATH", str(config))
+    monkeypatch.setattr(t, "_model_reconciliation_service", recorder)
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+
+    response = TestClient(t.app).post(
+        "/admin/models/sync",
+        headers={"x-admin-key": "test-admin"},
+        json={"dry_run": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["dry_run"] is True
+    assert recorder.calls == [ReconciliationTrigger.MANUAL]
+
+
+def test_admin_models_sync_persistence_failure_is_structured_and_recorded(monkeypatch):
+    import core.model_reconciliation as reconciliation
+    from core.model_reconciliation import ModelReconciliationService
+
+    class FailingStore(_FakeRegistryStore):
+        def upsert_models(self, models):
+            raise RuntimeError("database write failed")
+
+    recorded = []
+    store = FailingStore()
+    service = ModelReconciliationService(
+        discover=lambda: [],
+        list_models=lambda: [],
+        upsert_models=lambda models: 0,
+        probe_model=lambda model: model,
+        render=lambda models: [],
+        validate=lambda resources: True,
+        apply=lambda resources: None,
+        rollback=lambda token: None,
+        reload=lambda: True,
+        read_catalog=lambda: set(),
+    )
+
+    async def no_models():
+        return [], []
+
+    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setattr(t, "_model_reconciliation_service", service)
+    monkeypatch.setattr("api.admin_routes._fetch_cliproxy_models_for_registry", no_models)
+    monkeypatch.setattr(reconciliation, "record_model_reconciliation", recorded.append)
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+
+    response = TestClient(t.app, raise_server_exceptions=False).post(
+        "/admin/models/sync",
+        headers={"x-admin-key": "test-admin"},
+        json={"source": "cliproxy", "dry_run": False},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "cliproxy"
+    assert body["errors"][0]["code"] == "model_sync_failed"
+    assert service.last_result is not None
+    assert service.last_result.outcome == "failed"
+    assert recorded[-1] is service.last_result
+
+
+def test_admin_models_sync_mutation_enqueues_lifespan_scheduler(monkeypatch):
+    class Recorder:
+        def __init__(self):
+            self.calls = []
+
+        async def run_exclusive(self, operation, *, trigger=ReconciliationTrigger.MANUAL):
+            self.calls.append(trigger)
+            return await operation()
+
+    recorder = Recorder()
+    store = _FakeRegistryStore()
+
+    async def no_models():
+        return [], []
+
+    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setattr(t, "_model_reconciliation_service", recorder)
+    monkeypatch.setattr("api.admin_routes._fetch_cliproxy_models_for_registry", no_models)
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+
+    resp = TestClient(t.app).post(
+        "/admin/models/sync",
+        headers={"x-admin-key": "test-admin"},
+        json={"source": "cliproxy", "dry_run": False},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["source"] == "cliproxy"
+    assert resp.json()["errors"] == []
+    assert recorder.calls == [ReconciliationTrigger.MANUAL]
+    assert store.models == {}
+
+
+def test_admin_models_sync_mutation_preserves_litellm_source_and_counts(monkeypatch, tmp_path):
+    class Scheduler:
+        async def run_exclusive(self, operation, *, trigger=ReconciliationTrigger.MANUAL):
+            return await operation()
+
+    store = _FakeRegistryStore()
+    config = tmp_path / "litellm-config.yaml"
+    _write_config(config)
+    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setattr(t, "_model_reconciliation_service", Scheduler())
+    monkeypatch.setattr(t, "LITELLM_CONFIG_PATH", str(config))
+    monkeypatch.setattr(
+        t,
+        "_client",
+        _FakeProbeClient(
+            response=httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "pong"}}]},
+            )
+        ),
+    )
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+
+    resp = TestClient(t.app).post(
+        "/admin/models/sync",
+        headers={"x-admin-key": "test-admin"},
+        json={"source": "litellm-config", "dry_run": False},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["source"] == "litellm-config"
+    assert body["imported_count"] == 2
+    assert body["skipped_count"] == 0
+    assert body["errors"] == []
+    assert len(store.models) == 2
+
+
 def test_admin_models_sync_cliproxy_dry_run_normalizes_and_diffs(monkeypatch):
+    class Scheduler:
+        async def run_exclusive(self, operation, *, trigger=ReconciliationTrigger.MANUAL):
+            return await operation()
+
     store = _FakeRegistryStore()
     store.models["gpt-5-4"] = ModelRegistryRecord(
         model_id="gpt-5-4",
@@ -361,6 +813,7 @@ def test_admin_models_sync_cliproxy_dry_run_normalizes_and_diffs(monkeypatch):
     )
     fake_client = _FakeModelsClient(response=_FakeModelsResponse())
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setattr(t, "_model_reconciliation_service", Scheduler())
     monkeypatch.setattr(t, "_client", fake_client)
     monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
     monkeypatch.setenv("CLIPROXY_API_KEY", "cliproxy-key")
@@ -379,57 +832,13 @@ def test_admin_models_sync_cliproxy_dry_run_normalizes_and_diffs(monkeypatch):
     assert body["imported_count"] == 2
     assert [model["model_id"] for model in body["models"]] == [
         "gpt-5-4",
-        "claude-sonnet-4-6",
+        "claude-sonnet-4.6",
     ]
-    assert {"kind": "add", "model_id": "claude-sonnet-4-6"} in body["diffs"]
+    assert {"kind": "add", "model_id": "claude-sonnet-4.6"} in body["diffs"]
     assert any(diff["kind"] == "update" and diff["model_id"] == "gpt-5-4" for diff in body["diffs"])
     assert body["models"][0]["policy_metadata"]["manual_note"] == "keep"
     assert fake_client.calls[0]["headers"] == {"authorization": "Bearer cliproxy-key"}
     assert store.models["gpt-5-4"].upstream_model == "gpt-5.3"
-
-
-def test_admin_models_sync_cliproxy_apply_upserts(monkeypatch):
-    store = _FakeRegistryStore()
-    fake_client = _FakeModelsClient(response=_FakeModelsResponse())
-    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
-    monkeypatch.setattr(t, "_client", fake_client)
-    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
-    monkeypatch.setenv("CLIPROXY_API_KEY", "cliproxy-key")
-
-    client = TestClient(t.app)
-    resp = client.post(
-        "/admin/models/sync",
-        headers={"x-admin-key": "test-admin"},
-        json={"source": "cliproxy", "dry_run": False},
-    )
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["imported_count"] == 2
-    assert store.models["gpt-5-4"].source == "cliproxy"
-    assert store.models["claude-sonnet-4-6"].upstream_model == "claude-sonnet-4.6"
-
-
-def test_admin_models_sync_cliproxy_error_does_not_write(monkeypatch):
-    store = _FakeRegistryStore()
-    fake_client = _FakeModelsClient(response=_FakeModelsResponse(status_code=502))
-    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
-    monkeypatch.setattr(t, "_client", fake_client)
-    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
-    monkeypatch.setenv("CLIPROXY_API_KEY", "cliproxy-key")
-
-    client = TestClient(t.app)
-    resp = client.post(
-        "/admin/models/sync",
-        headers={"x-admin-key": "test-admin"},
-        json={"source": "cliproxy", "dry_run": False},
-    )
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["imported_count"] == 0
-    assert body["errors"][0]["code"] == "cliproxy_http_error"
-    assert store.models == {}
 
 
 def test_admin_model_create_patch_and_disable(monkeypatch):

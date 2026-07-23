@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from difflib import unified_diff
@@ -239,11 +240,37 @@ def cost_tier_of(model: str) -> int | None:
     return 2 if provider_of(m) != "unknown" else None
 
 
+def normalize_discovered_model(model_id: str) -> tuple[str, str]:
+    upstream_id = model_id.removeprefix("AI-Gateway:")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", upstream_id):
+        raise ValueError("invalid model identifier")
+    registry_id = upstream_id.replace(".", "-") if provider_of(upstream_id) == "openai" else upstream_id
+    return registry_id, upstream_id
+
+
 def normalize_model_id(model_id: str) -> str:
-    model = model_id
-    if model.startswith("AI-Gateway:"):
-        model = model[len("AI-Gateway:") :]
-    return model.replace(".", "-")
+    return normalize_discovered_model(model_id)[0]
+
+
+_IDENTITY_ALIAS_PRECEDENCE = {"registry": 10, "external": 20, "upstream": 30}
+
+
+def _deduplicate_aliases(aliases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep one row per schema-level alias, preferring its most useful identity."""
+    deduplicated: dict[str, dict[str, Any]] = {}
+    priorities: dict[str, int] = {}
+    for alias in aliases:
+        if not isinstance(alias, dict):
+            continue
+        alias_name = str(alias.get("alias") or "")
+        if not alias_name:
+            continue
+        alias_kind = str(alias.get("alias_kind") or "client")
+        priority = _IDENTITY_ALIAS_PRECEDENCE.get(alias_kind, 100)
+        if alias_name not in deduplicated or priority > priorities[alias_name]:
+            deduplicated[alias_name] = alias
+            priorities[alias_name] = priority
+    return list(deduplicated.values())
 
 
 def _error(code: str, message: str, source: str) -> dict[str, Any]:
@@ -292,22 +319,30 @@ def record_from_cliproxy_model(entry: dict[str, Any]) -> ModelRegistryRecord | N
     raw_model_id = entry.get("id") or entry.get("model")
     if not raw_model_id:
         return None
-    model_id = normalize_model_id(str(raw_model_id))
+    external_id = str(raw_model_id)
+    model_id, upstream_id = normalize_discovered_model(external_id)
     provider = provider_of(model_id)
     return ModelRegistryRecord(
         model_id=model_id,
         provider=provider,
         family=family_of(model_id),
-        upstream_model=str(raw_model_id).removeprefix("AI-Gateway:"),
-        litellm_model=f"openai/{str(raw_model_id).removeprefix('AI-Gateway:')}",
+        upstream_model=upstream_id,
+        litellm_model=f"openai/{upstream_id}",
         enabled=True,
         status="UNKNOWN",
         cost_tier=cost_tier_of(model_id),
         policy_metadata={
-            "cliproxy_model_id": str(raw_model_id),
+            "cliproxy_model_id": external_id,
             "owned_by": entry.get("owned_by"),
         },
         source="cliproxy",
+        aliases=_deduplicate_aliases(
+            [
+                {"alias": external_id, "target": model_id, "alias_kind": "external"},
+                {"alias": model_id, "target": model_id, "alias_kind": "registry"},
+                {"alias": upstream_id, "target": model_id, "alias_kind": "upstream"},
+            ]
+        ),
     )
 
 
@@ -318,7 +353,13 @@ def merge_discovered_model(
     if current is None:
         return discovered
     metadata = dict(current.policy_metadata)
-    metadata.update(discovered.policy_metadata)
+    metadata.update(
+        {
+            key: value
+            for key, value in discovered.policy_metadata.items()
+            if key not in metadata and value is not None and (not isinstance(value, str) or value.strip())
+        }
+    )
     return current.model_copy(
         update={
             "provider": discovered.provider,
@@ -327,6 +368,7 @@ def merge_discovered_model(
             "litellm_model": discovered.litellm_model,
             "source": discovered.source,
             "policy_metadata": metadata,
+            "aliases": _deduplicate_aliases([*current.aliases, *discovered.aliases]),
         }
     )
 
@@ -603,22 +645,27 @@ class ModelRegistryStore:
                         model_id, provider, family, upstream_model, litellm_model,
                         enabled, status, supports_tools, supports_vision,
                         max_input_tokens, max_output_tokens, cost_tier,
-                        policy_metadata, source
+                        policy_metadata, source, probe_status,
+                        probe_http_status, probe_checked_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (model_id) DO UPDATE SET
                         provider = EXCLUDED.provider,
                         family = EXCLUDED.family,
                         upstream_model = EXCLUDED.upstream_model,
                         litellm_model = EXCLUDED.litellm_model,
                         enabled = EXCLUDED.enabled,
+                        status = EXCLUDED.status,
                         supports_tools = EXCLUDED.supports_tools,
                         supports_vision = EXCLUDED.supports_vision,
                         max_input_tokens = EXCLUDED.max_input_tokens,
                         max_output_tokens = EXCLUDED.max_output_tokens,
                         cost_tier = EXCLUDED.cost_tier,
                         policy_metadata = EXCLUDED.policy_metadata,
-                        source = EXCLUDED.source
+                        source = EXCLUDED.source,
+                        probe_status = EXCLUDED.probe_status,
+                        probe_http_status = EXCLUDED.probe_http_status,
+                        probe_checked_at = EXCLUDED.probe_checked_at
                     """,
                     (
                         model.model_id,
@@ -635,8 +682,35 @@ class ModelRegistryStore:
                         model.cost_tier,
                         Json(model.policy_metadata),
                         model.source,
+                        model.probe_status,
+                        model.probe_http_status,
+                        model.probe_checked_at,
                     ),
                 )
+                for alias in _deduplicate_aliases(model.aliases):
+                    cur.execute(
+                        """
+                        INSERT INTO model_aliases (
+                            alias, model_id, provider, alias_kind, target, metadata
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (alias) DO UPDATE SET
+                            model_id = EXCLUDED.model_id,
+                            provider = EXCLUDED.provider,
+                            alias_kind = EXCLUDED.alias_kind,
+                            target = EXCLUDED.target,
+                            metadata = EXCLUDED.metadata
+                        WHERE model_aliases.model_id = EXCLUDED.model_id
+                        """,
+                        (
+                            str(alias["alias"]),
+                            model.model_id,
+                            str(alias.get("provider") or model.provider),
+                            str(alias.get("alias_kind") or "client"),
+                            str(alias.get("target") or model.model_id),
+                            Json(alias.get("metadata") or {}),
+                        ),
+                    )
             conn.commit()
         return len(models)
 

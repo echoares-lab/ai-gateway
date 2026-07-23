@@ -46,6 +46,7 @@ Gateway-engine owns a single background `ModelReconciliationService`. It runs on
 - interval: 15 minutes
 - expedited-trigger minimum interval: 60 seconds
 - reconciliation timeout: 120 seconds
+- successful probe staleness age: 5 minutes
 
 Only one run may execute at a time. Concurrent scheduled, manual, and expedited requests coalesce into one active run plus at most one pending rerun.
 
@@ -54,7 +55,9 @@ The service uses the existing registry APIs internally rather than invoking `cli
 1. Fetch CLIProxy `/v1/models` using the internal CLIProxy credential.
 2. Normalize and validate discovered model identifiers.
 3. Upsert discovery state while preserving manually curated metadata.
-4. Probe only additions and models whose health state is stale.
+4. Probe additions by their exact trusted CLIProxy `upstream_model` (before a
+   LiteLLM alias exists), plus models whose health state is stale. Missing,
+   timeout, and transient probe states remain retryable.
 5. Render candidate LiteLLM and Gemini resources from enabled registry records.
 6. Parse and validate rendered artifacts.
 7. Apply changed artifacts atomically.

@@ -13,6 +13,10 @@ The index lists every OpenAPI spec mounted from `docs/openapi/`. Direct links:
 - **CPA Manager API**: `http://localhost:8002/docs/cpa-manager.yaml`
 
 Gateway runtime model mutation endpoints (`POST /model/new`, `POST /model/delete`) are documented in `docs/openapi/gateway-engine.yaml`.
+Automatic model reconciliation is documented by `GET /admin/status` at
+`panels.models.reconciliation` and by `POST /admin/models/reconcile`.
+The latter previews changes with `dry_run: true` and enqueues an authenticated
+manual scheduler run with `dry_run: false`.
 
 ### Stable launcher key administration
 

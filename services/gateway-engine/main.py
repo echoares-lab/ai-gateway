@@ -23,10 +23,13 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
+from datetime import datetime, timezone
+from difflib import unified_diff
 
 import core.metrics  # noqa: F401 — register cache hit/miss counters
 import httpx
 import redis.asyncio as aioredis
+import yaml
 from admin_api import router as admin_router
 from api import proxy_router as proxy_routes
 from api.admin_routes import (
@@ -52,8 +55,10 @@ from api.admin_routes import (
     _credential_inventory_store,  # noqa: F401 - re-exported for existing tests
     _credential_sync_scheduler_loop,
     _emit_credential_transition_to_policy,  # noqa: F401 - re-exported for existing tests
+    _fetch_cliproxy_models_for_registry,
     _load_model_registry_with_config_fallback,
     _model_registry_store,  # noqa: F401 - re-exported for existing tests
+    _probe_result_status,
     _record_policy_trace,
     _redact_policy_decision_for_admin,  # noqa: F401 - re-exported for existing tests
     _run_scheduled_credential_sync,  # noqa: F401 - re-exported for existing tests
@@ -84,6 +89,13 @@ from core.metrics import (
     REQUEST_LATENCY,
     UPSTREAM_ERRORS,
 )
+from core.model_reconciliation import (
+    ModelReconciliationService,
+    ReconciliationArtifactManager,
+    model_probe_is_stale,
+    request_litellm_reload,
+)
+from core.model_registry import build_reconcile_resources
 from core.policy import PolicyEvaluator
 from core.policy import policy_version as in_process_policy_version
 from core.policy.evaluate import process_credential_event_async
@@ -108,16 +120,175 @@ GATEWAY_ENGINE_CREDENTIAL_SYNC_ENABLED = config.CREDENTIAL_SYNC_ENABLED
 GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC = config.CREDENTIAL_SYNC_INTERVAL_SEC
 GATEWAY_ENGINE_CREDENTIAL_SYNC_INITIAL_DELAY_SEC = config.CREDENTIAL_SYNC_INITIAL_DELAY_SEC
 GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN = config.CREDENTIAL_SYNC_DRY_RUN
+GATEWAY_ENGINE_MODEL_RECONCILIATION_ENABLED = config.MODEL_RECONCILIATION_ENABLED
+GATEWAY_ENGINE_MODEL_RECONCILIATION_STARTUP_DELAY_SEC = config.MODEL_RECONCILIATION_STARTUP_DELAY_SEC
+GATEWAY_ENGINE_MODEL_RECONCILIATION_INTERVAL_SEC = config.MODEL_RECONCILIATION_INTERVAL_SEC
+GATEWAY_ENGINE_MODEL_RECONCILIATION_EXPEDITED_MIN_INTERVAL_SEC = config.MODEL_RECONCILIATION_EXPEDITED_MIN_INTERVAL_SEC
+GATEWAY_ENGINE_MODEL_RECONCILIATION_TIMEOUT_SEC = config.MODEL_RECONCILIATION_TIMEOUT_SEC
+GATEWAY_ENGINE_MODEL_RECONCILIATION_PROBE_STALE_SEC = config.MODEL_RECONCILIATION_PROBE_STALE_SEC
 CACHE_ENABLED = config.CACHE_ENABLED
 CACHE_TTL = config.CACHE_TTL
 MAX_REQUEST_BYTES = config.MAX_REQUEST_BYTES
 HTTPX_MAX_KEEPALIVE = config.HTTPX_MAX_KEEPALIVE
 HTTPX_MAX_CONNECTIONS = config.HTTPX_MAX_CONNECTIONS
 
+# Lifespan and request handlers share this single scheduler owner.
+_model_reconciliation_service: ModelReconciliationService | None = None
+
+
+async def _request_model_reconciliation(trigger, requested_model: str | None = None) -> bool:
+    service = _model_reconciliation_service
+    if service is None:
+        return False
+    return await service.request(trigger, requested_model)
+
+
+def _build_model_reconciliation_service() -> ModelReconciliationService:
+    store = _model_registry_store()
+    artifacts = ReconciliationArtifactManager(
+        {
+            "litellm-config.yaml": LITELLM_CONFIG_PATH,
+            "gemini-model-map.json": GEMINI_MODEL_MAP_PATH,
+        }
+    )
+
+    async def discover():
+        entries, errors = await _fetch_cliproxy_models_for_registry()
+        if errors:
+            raise RuntimeError(errors[0].get("code", "CLIProxy discovery failed"))
+        return entries
+
+    def list_models():
+        loaded = store.list_models()
+        if not loaded.registry_available:
+            code = (
+                loaded.errors[0].get("code", "model registry unavailable")
+                if loaded.errors
+                else "model registry unavailable"
+            )
+            raise RuntimeError(code)
+        return loaded.models
+
+    async def probe_model(model):
+        if _client is None:
+            probe_status, http_status = "error", None
+        else:
+            payload = {
+                "model": model.upstream_model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+                "stream": False,
+            }
+            headers = {"authorization": f"Bearer {config.CLIPROXY_API_KEY}"} if config.CLIPROXY_API_KEY else {}
+            try:
+                response = await _client.post(
+                    f"{config.CLIPROXY_URL.rstrip('/')}/v1/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=GATEWAY_ENGINE_MODEL_RECONCILIATION_TIMEOUT_SEC,
+                )
+                probe_status, _errors = _probe_result_status(response)
+                http_status = response.status_code
+            except httpx.TimeoutException:
+                probe_status, http_status = "timeout", None
+            except httpx.HTTPError:
+                probe_status, http_status = "error", None
+        healthy = probe_status == "success"
+        return model.model_copy(
+            update={
+                "probe_status": "healthy" if healthy else probe_status,
+                "probe_http_status": http_status,
+                "probe_checked_at": datetime.now(timezone.utc),
+                "status": "HEALTHY" if healthy else "UNHEALTHY",
+            }
+        )
+
+    def render(models):
+        try:
+            with open(LITELLM_CONFIG_PATH, encoding="utf-8") as handle:
+                current_litellm = handle.read()
+        except FileNotFoundError:
+            current_litellm = None
+        try:
+            with open(GEMINI_MODEL_MAP_PATH, encoding="utf-8") as handle:
+                current_gemini = handle.read()
+        except FileNotFoundError:
+            current_gemini = None
+        resources = build_reconcile_resources(
+            models,
+            current_litellm_config=current_litellm,
+            current_gemini_map=current_gemini,
+        )
+        if current_litellm is None:
+            return resources
+        current_doc = yaml.safe_load(current_litellm) or {}
+        for index, resource in enumerate(resources):
+            if resource.name != "litellm-config.yaml":
+                continue
+            desired_doc = yaml.safe_load(resource.content) or {}
+            merged_doc = {**current_doc, **desired_doc}
+            if "litellm_settings" in current_doc or "litellm_settings" in desired_doc:
+                merged_doc["litellm_settings"] = {
+                    **current_doc.get("litellm_settings", {}),
+                    **desired_doc.get("litellm_settings", {}),
+                }
+            content = yaml.safe_dump(merged_doc, sort_keys=False)
+            diff = "\n".join(
+                unified_diff(
+                    current_litellm.splitlines(),
+                    content.splitlines(),
+                    fromfile="current/litellm-config.yaml",
+                    tofile="desired/litellm-config.yaml",
+                    lineterm="",
+                )
+            )
+            resources[index] = resource.model_copy(
+                update={"content": content, "changed": content != current_litellm, "diff": diff}
+            )
+        return resources
+
+    def validate(resources):
+        for resource in resources:
+            (yaml.safe_load if resource.kind == "yaml" else json.loads)(resource.content)
+        return True
+
+    async def read_catalog():
+        model_ids, errors = await _admin_fetch_visible_models()
+        if errors or model_ids is None:
+            raise RuntimeError(errors[0].get("code", "catalog read failed") if errors else "catalog read failed")
+        return set(model_ids)
+
+    return ModelReconciliationService(
+        discover=discover,
+        list_models=list_models,
+        upsert_models=store.upsert_models,
+        probe_model=probe_model,
+        render=render,
+        validate=validate,
+        apply=artifacts.apply,
+        rollback=artifacts.rollback,
+        reload=lambda: request_litellm_reload(
+            _client,
+            LITELLM_ADMIN_URL,
+            config.LITELLM_MASTER_KEY,
+            timeout_sec=GATEWAY_ENGINE_MODEL_RECONCILIATION_TIMEOUT_SEC,
+        ),
+        read_catalog=read_catalog,
+        probe_is_stale=lambda model: model_probe_is_stale(
+            model,
+            GATEWAY_ENGINE_MODEL_RECONCILIATION_PROBE_STALE_SEC,
+        ),
+        enabled=GATEWAY_ENGINE_MODEL_RECONCILIATION_ENABLED,
+        startup_delay_sec=GATEWAY_ENGINE_MODEL_RECONCILIATION_STARTUP_DELAY_SEC,
+        interval_sec=GATEWAY_ENGINE_MODEL_RECONCILIATION_INTERVAL_SEC,
+        expedited_min_interval_sec=GATEWAY_ENGINE_MODEL_RECONCILIATION_EXPEDITED_MIN_INTERVAL_SEC,
+        timeout_sec=GATEWAY_ENGINE_MODEL_RECONCILIATION_TIMEOUT_SEC,
+    )
+
 
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
-    global _client, _redis, _policy_evaluator
+    global _client, _redis, _policy_evaluator, _model_reconciliation_service
     credential_sync_task: asyncio.Task | None = None
     _client = httpx.AsyncClient(
         timeout=httpx.Timeout(UPSTREAM_TIMEOUT, connect=10.0),
@@ -152,15 +323,27 @@ async def _lifespan(application: FastAPI):
             GATEWAY_ENGINE_CREDENTIAL_SYNC_INTERVAL_SEC,
             GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN,
         )
-    yield
-    if credential_sync_task is not None:
-        credential_sync_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await credential_sync_task
-    if _client is not None:
-        await _client.aclose()
-    if _redis is not None:
-        await _redis.aclose()
+    if GATEWAY_ENGINE_MODEL_RECONCILIATION_ENABLED:
+        if _model_reconciliation_service is None:
+            _model_reconciliation_service = _build_model_reconciliation_service()
+        _model_reconciliation_service.start()
+        log.info(
+            "gateway-engine model reconciliation scheduler enabled interval=%ss",
+            GATEWAY_ENGINE_MODEL_RECONCILIATION_INTERVAL_SEC,
+        )
+    try:
+        yield
+    finally:
+        if _model_reconciliation_service is not None:
+            await _model_reconciliation_service.stop()
+        if credential_sync_task is not None:
+            credential_sync_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await credential_sync_task
+        if _client is not None:
+            await _client.aclose()
+        if _redis is not None:
+            await _redis.aclose()
 
 
 app = FastAPI(lifespan=_lifespan)
@@ -487,6 +670,8 @@ configure_proxy_routes(
         policy_engine_enabled=lambda: POLICY_ENGINE_ENABLED,
         team_budget_snapshot_enabled=lambda: TEAM_BUDGET_SNAPSHOT_ENABLED,
         team_budget_cache_ttl_sec=TEAM_BUDGET_CACHE_TTL_SEC,
+        request_model_reconciliation=_request_model_reconciliation,
+        validate_client_auth=lambda token: _validate_ws_auth_token_async(token),
     )
 )
 app.include_router(proxy_router)
