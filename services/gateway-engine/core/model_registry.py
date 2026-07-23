@@ -252,6 +252,27 @@ def normalize_model_id(model_id: str) -> str:
     return normalize_discovered_model(model_id)[0]
 
 
+_IDENTITY_ALIAS_PRECEDENCE = {"registry": 10, "external": 20, "upstream": 30}
+
+
+def _deduplicate_aliases(aliases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep one row per schema-level alias, preferring its most useful identity."""
+    deduplicated: dict[str, dict[str, Any]] = {}
+    priorities: dict[str, int] = {}
+    for alias in aliases:
+        if not isinstance(alias, dict):
+            continue
+        alias_name = str(alias.get("alias") or "")
+        if not alias_name:
+            continue
+        alias_kind = str(alias.get("alias_kind") or "client")
+        priority = _IDENTITY_ALIAS_PRECEDENCE.get(alias_kind, 100)
+        if alias_name not in deduplicated or priority > priorities[alias_name]:
+            deduplicated[alias_name] = alias
+            priorities[alias_name] = priority
+    return list(deduplicated.values())
+
+
 def _error(code: str, message: str, source: str) -> dict[str, Any]:
     return {"code": code, "message": message, "source": source}
 
@@ -315,11 +336,13 @@ def record_from_cliproxy_model(entry: dict[str, Any]) -> ModelRegistryRecord | N
             "owned_by": entry.get("owned_by"),
         },
         source="cliproxy",
-        aliases=[
-            {"alias": external_id, "target": model_id, "alias_kind": "external"},
-            {"alias": model_id, "target": model_id, "alias_kind": "registry"},
-            {"alias": upstream_id, "target": model_id, "alias_kind": "upstream"},
-        ],
+        aliases=_deduplicate_aliases(
+            [
+                {"alias": external_id, "target": model_id, "alias_kind": "external"},
+                {"alias": model_id, "target": model_id, "alias_kind": "registry"},
+                {"alias": upstream_id, "target": model_id, "alias_kind": "upstream"},
+            ]
+        ),
     )
 
 
@@ -339,6 +362,7 @@ def merge_discovered_model(
             "litellm_model": discovered.litellm_model,
             "source": discovered.source,
             "policy_metadata": metadata,
+            "aliases": _deduplicate_aliases([*current.aliases, *discovered.aliases]),
         }
     )
 
@@ -649,6 +673,29 @@ class ModelRegistryStore:
                         model.source,
                     ),
                 )
+                for alias in _deduplicate_aliases(model.aliases):
+                    cur.execute(
+                        """
+                        INSERT INTO model_aliases (
+                            alias, model_id, provider, alias_kind, target, metadata
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (alias) DO UPDATE SET
+                            model_id = EXCLUDED.model_id,
+                            provider = EXCLUDED.provider,
+                            alias_kind = EXCLUDED.alias_kind,
+                            target = EXCLUDED.target,
+                            metadata = EXCLUDED.metadata
+                        """,
+                        (
+                            str(alias["alias"]),
+                            model.model_id,
+                            str(alias.get("provider") or model.provider),
+                            str(alias.get("alias_kind") or "client"),
+                            str(alias.get("target") or model.model_id),
+                            Json(alias.get("metadata") or {}),
+                        ),
+                    )
             conn.commit()
         return len(models)
 

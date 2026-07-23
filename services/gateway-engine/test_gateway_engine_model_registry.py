@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from unittest.mock import ANY
 
 import httpx
 import pytest
@@ -15,12 +16,46 @@ sys.path.insert(0, os.path.dirname(__file__))
 import main as t
 from core.model_registry import (
     ModelRegistryRecord,
+    ModelRegistryStore,
     RegistryLoadResult,
     build_reconcile_resources,
     load_models_from_litellm_config,
+    merge_discovered_model,
     normalize_discovered_model,
     record_from_cliproxy_model,
 )
+
+
+class _RecordingCursor:
+    def __init__(self):
+        self.executions = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, query, params):
+        self.executions.append((query, params))
+
+
+class _RecordingConnection:
+    def __init__(self):
+        self.cursor_instance = _RecordingCursor()
+        self.committed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def cursor(self):
+        return self.cursor_instance
+
+    def commit(self):
+        self.committed = True
 
 
 class _FakeRegistryStore:
@@ -227,6 +262,92 @@ def test_normalize_discovered_model_records_distinct_identity_aliases():
             "alias_kind": "upstream",
         },
     ]
+
+
+@pytest.mark.parametrize(
+    ("external_id", "expected"),
+    [
+        (
+            "gpt-5-6-sol",
+            [{"alias": "gpt-5-6-sol", "target": "gpt-5-6-sol", "alias_kind": "upstream"}],
+        ),
+        (
+            "AI-Gateway:claude-sonnet-4.6",
+            [
+                {
+                    "alias": "AI-Gateway:claude-sonnet-4.6",
+                    "target": "claude-sonnet-4.6",
+                    "alias_kind": "external",
+                },
+                {
+                    "alias": "claude-sonnet-4.6",
+                    "target": "claude-sonnet-4.6",
+                    "alias_kind": "upstream",
+                },
+            ],
+        ),
+    ],
+)
+def test_cliproxy_identity_aliases_deduplicate_by_semantic_precedence(external_id, expected):
+    record = record_from_cliproxy_model({"id": external_id})
+
+    assert record is not None
+    assert record.aliases == expected
+
+
+def test_merge_discovered_model_keeps_existing_aliases_and_adds_discovered_identities():
+    current = _registry_model()
+    current.aliases = [
+        {"alias": "stable-client", "target": "gpt-5-4", "alias_kind": "client"},
+        {"alias": "gpt-5.4", "target": "gpt-5-4", "alias_kind": "compat"},
+    ]
+    discovered = record_from_cliproxy_model({"id": "AI-Gateway:gpt-5.4"})
+
+    merged = merge_discovered_model(discovered, current)
+
+    assert merged.aliases == [
+        {"alias": "stable-client", "target": "gpt-5-4", "alias_kind": "client"},
+        {"alias": "gpt-5.4", "target": "gpt-5-4", "alias_kind": "compat"},
+        {"alias": "AI-Gateway:gpt-5.4", "target": "gpt-5-4", "alias_kind": "external"},
+        {"alias": "gpt-5-4", "target": "gpt-5-4", "alias_kind": "registry"},
+    ]
+
+
+def test_model_registry_store_upsert_models_persists_deduplicated_aliases(monkeypatch):
+    connection = _RecordingConnection()
+    store = ModelRegistryStore("postgresql://registry")
+    monkeypatch.setattr(store, "_connect", lambda: connection)
+    model = _registry_model("gpt-5-6-sol")
+    model.aliases = [
+        {"alias": "gpt-5-6-sol", "target": model.model_id, "alias_kind": "registry"},
+        {"alias": "gpt-5-6-sol", "target": model.model_id, "alias_kind": "upstream"},
+        {
+            "alias": "AI-Gateway:gpt-5-6-sol",
+            "target": model.model_id,
+            "alias_kind": "external",
+            "metadata": {"discovered": True},
+        },
+    ]
+
+    assert store.upsert_models([model]) == 1
+
+    alias_writes = [
+        params
+        for query, params in connection.cursor_instance.executions
+        if "INSERT INTO model_aliases" in query
+    ]
+    assert alias_writes == [
+        ("gpt-5-6-sol", model.model_id, "openai", "upstream", model.model_id, ANY),
+        (
+            "AI-Gateway:gpt-5-6-sol",
+            model.model_id,
+            "openai",
+            "external",
+            model.model_id,
+            ANY,
+        ),
+    ]
+    assert connection.committed is True
 
 
 def test_reconcile_renderer_outputs_valid_yaml_json_and_diffs():
