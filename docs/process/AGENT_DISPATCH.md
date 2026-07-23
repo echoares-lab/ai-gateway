@@ -47,20 +47,7 @@ gh issue list --repo echoares-lab/ai-gateway \
 - Roadmap epics (#29–#38) each have sub-issues (#39–#43 for the MCP epic) — prefer sub-issues over parent epics
 - If all `priority:high` issues are claimed or blocked, take the next available `priority:medium`
 
-**Priority order as of this writing:**
-1. `#39` — MCP architecture decision (high, no deps)
-2. `#40` — MCP Phase 1 servers: filesystem, git, fetch (high, depends on #39)
-3. `#42` — MCP search servers: Brave, Tavily, Exa, Serper (medium, depends on #39)
-4. `#30` — Multi-tenant workspace management (high, foundational)
-5. `#31` — Adaptive provider intelligence (high)
-6. `#32` — Unified admin console (high, benefits from #30)
-7. `#41` — MCP Phase 2 servers: GitHub, memory, sequential-thinking (medium, depends on #40)
-8. `#33` — Credential pool orchestration (medium)
-9. `#34` — Self-service onboarding (medium, depends on #30)
-10. `#35` — Config promotion / release channels (medium)
-11. `#36` — Client compatibility profiles (medium)
-12. `#43` — PostgreSQL MCP custom server (low, depends on #39)
-13. `#37` — Evaluation-driven routing (low)
+**Priority order (refer to `docs/ROADMAP.md` for current approved items):**
 
 ---
 

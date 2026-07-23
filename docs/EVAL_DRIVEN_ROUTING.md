@@ -46,7 +46,7 @@ Non-goals for this stub (full implementation is follow-up):
 | Explicit eval datasets | Curated prompts + golden outputs | per task category | 2 |
 | Human / agent ratings | Admin console or API | per trace sample | 3 |
 
-Tenant/repo/agent dimensions come from `RoutingContext` (TENANCY.md) and must
+Tenant/repo/agent dimensions come from `RoutingContext` and must
 be present on stored decisions for segmented quality scoring.
 
 ---
@@ -145,5 +145,4 @@ Postgres + Langfuse API credentials documented in docs/ops/RUNBOOK.md.
 
 - [ADAPTIVE_ROUTING.md](./ADAPTIVE_ROUTING.md) — health/latency signals
 - [TOKEN_USAGE_ANALYTICS.md](./TOKEN_USAGE_ANALYTICS.md) — Langfuse integration plan
-- [TENANCY.md](./TENANCY.md) — trace metadata dimensions
 - `issues/policy-engine-38-19-eval-routing.md` — issue tracker

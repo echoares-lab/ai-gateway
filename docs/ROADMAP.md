@@ -346,7 +346,7 @@ candidates — do not reopen these epics in place.
 
 - **Local MCP hosting and tool gateway** ([#29](https://github.com/echoares-lab/ai-gateway/issues/29))
 - **Adaptive provider intelligence** ([#31](https://github.com/echoares-lab/ai-gateway/issues/31)) — design/telemetry; runtime in candidates (C-RT-1)
-- **Unified admin console** ([#32](https://github.com/echoares-lab/ai-gateway/issues/32)) — tenant panel parked via #109
+- **Unified admin console** ([#32](https://github.com/echoares-lab/ai-gateway/issues/32))
 - **First-class client compatibility** ([#36](https://github.com/echoares-lab/ai-gateway/issues/36))
 - **Evaluation-driven routing quality loop** ([#37](https://github.com/echoares-lab/ai-gateway/issues/37)) — design done; runtime in candidates (C-RT-2)
 - **Credential pool orchestration** ([#33](https://github.com/echoares-lab/ai-gateway/issues/33)) — candidates C-CRED-*
