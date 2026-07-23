@@ -1157,7 +1157,10 @@ components:
         key_alias: {type: string, example: repo/customer-a}
         key: {type: string, format: password, example: sk-original-token}
         team_id: {type: string, example: team-1}
-        key_id: {type: string, example: key-9}
+        key_id:
+          type: string
+          description: Opaque stable LiteLLM identity (the stored token hash for LiteLLM v1.93.0), not a secret
+          example: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
     StableKeyError:
       type: object
       required: [error]

@@ -82,3 +82,22 @@ python3 -m pytest -q
 ```
 
 The warning remains the pre-existing Starlette `TestClient`/`httpx` deprecation warning.
+
+## Pinned LiteLLM v1.93.0 contract correction
+
+Whole-branch review found the original mocks invented `key_id` fields that the pinned
+LiteLLM API does not return. Inspection of the pinned image source established the
+real contract:
+
+- `/key/list` returns stored token hashes only by default; with
+  `return_full_object=true`, each object carries `token` (the stable hash),
+  `key_alias`, and `team_id`.
+- Bearer-authenticated `/key/info` removes the stored token from `info` and returns no
+  key ID. Gateway-engine ignores its top-level key echo and uses only alias/team proof.
+
+The service now requests full list objects, stores their token hash in the existing
+`litellm_key_id` field as an opaque stable identity, and combines that identity with
+bearer `/key/info` alias/team authentication. Tokens are never placed in query strings,
+and creation, recovery, and import no longer rely on LiteLLM returning a secret or
+invented key ID. Pinned-contract tests first failed on the absent
+`return_full_object=true` request and then passed after the correction.

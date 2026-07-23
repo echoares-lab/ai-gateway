@@ -39,8 +39,8 @@ class MockKeyBackends:
         self.remote_keys[alias] = {
             "key_alias": alias,
             "team_id": TEAM_ID,
-            "key_id": key_id,
-            "token": token,
+            "identity": key_id,
+            "secret": token,
         }
 
     @property
@@ -98,7 +98,17 @@ class MockKeyBackends:
                 return httpx.Response(503, json={"error": "temporarily unavailable"})
             alias = request.url.params.get("key_alias")
             remote = self.remote_keys.get(alias or "")
-            return httpx.Response(200, json={"keys": [remote] if remote else []})
+            assert request.url.params.get("return_full_object") == "true"
+            listed = (
+                {
+                    "token": remote["identity"],
+                    "key_alias": remote["key_alias"],
+                    "team_id": remote["team_id"],
+                }
+                if remote
+                else None
+            )
+            return httpx.Response(200, json={"keys": [listed] if listed else []})
         if request.method == "POST" and request.url.path == "/key/generate":
             body = json.loads(request.read())
             self.generate_calls += 1
@@ -113,12 +123,15 @@ class MockKeyBackends:
                 return httpx.Response(503, json={"error": "temporarily unavailable"})
             token = request.headers.get("Authorization", "").removeprefix("Bearer ")
             remote = next(
-                (value for value in self.remote_keys.values() if value["token"] == token),
+                (value for value in self.remote_keys.values() if value["secret"] == token),
                 None,
             )
             if remote is None:
                 return httpx.Response(401, json={"error": "invalid key"})
-            return httpx.Response(200, json={"info": remote})
+            return httpx.Response(
+                200,
+                json={"info": {"key_alias": remote["key_alias"], "team_id": remote["team_id"]}},
+            )
         return httpx.Response(404, json={"error": "unexpected LiteLLM request"})
 
 
@@ -243,7 +256,7 @@ async def test_every_recoverable_create_boundary_retries_exact_token_without_dup
         recovered = await service.create_key({"key_alias": ALIAS, "team_id": TEAM_ID})
 
         assert recovered.token == STABLE_TOKEN
-        assert backends.remote_keys[ALIAS]["token"] == STABLE_TOKEN
+        assert backends.remote_keys[ALIAS]["secret"] == STABLE_TOKEN
         assert backends.generate_calls == 1
         assert not backends.delete_requests
     finally:
@@ -307,7 +320,7 @@ async def test_every_recoverable_import_boundary_retries_exact_token_without_cre
         recovered = await service.import_key(ALIAS, LEGACY_TOKEN)
 
         assert recovered.token == LEGACY_TOKEN
-        assert backends.remote_keys[ALIAS]["token"] == LEGACY_TOKEN
+        assert backends.remote_keys[ALIAS]["secret"] == LEGACY_TOKEN
         assert backends.generate_calls == 0
         assert not backends.delete_requests
     finally:
@@ -337,7 +350,7 @@ async def test_every_recoverable_recovery_boundary_never_creates_or_deletes(
         result = await service.recover_key(ALIAS)
 
         assert result.token == STABLE_TOKEN
-        assert backends.remote_keys[ALIAS]["token"] == STABLE_TOKEN
+        assert backends.remote_keys[ALIAS]["secret"] == STABLE_TOKEN
         assert backends.generate_calls == 1
         assert not backends.delete_requests
     finally:

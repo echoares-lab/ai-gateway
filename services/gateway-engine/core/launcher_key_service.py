@@ -47,6 +47,12 @@ class _RemoteKey:
     key_id: str
 
 
+@dataclass(frozen=True)
+class _AuthenticatedKey:
+    alias: str
+    team_id: str
+
+
 def generate_virtual_key() -> str:
     """Return a LiteLLM-compatible virtual key using the operating-system CSPRNG."""
 
@@ -88,7 +94,9 @@ class LauncherKeyService:
             return None
         alias = value.get("key_alias") or value.get("key_name")
         team_id = value.get("team_id")
-        key_id = value.get("key_id") or value.get("token")
+        # LiteLLM v1.93.0 returns the stable stored token hash in `token` only
+        # when /key/list is called with return_full_object=true.
+        key_id = value.get("token")
         if not alias or not team_id or not key_id:
             return None
         return _RemoteKey(str(alias), str(team_id), str(key_id))
@@ -98,7 +106,7 @@ class LauncherKeyService:
             "GET",
             "key/list",
             headers=self._master_headers(),
-            params={"key_alias": alias},
+            params={"key_alias": alias, "return_full_object": "true"},
         )
         if not response.is_success:
             raise LauncherKeyServiceError("key_creation_incomplete", "LiteLLM key lookup did not complete")
@@ -113,7 +121,7 @@ class LauncherKeyService:
                 return remote
         return None
 
-    async def _authenticate_token(self, token: str) -> _RemoteKey | None:
+    async def _authenticate_token(self, token: str) -> _AuthenticatedKey | None:
         response = await self._request("GET", "key/info", headers={"Authorization": f"Bearer {token}"})
         if response.status_code in (401, 403, 404):
             return None
@@ -124,7 +132,13 @@ class LauncherKeyService:
         except ValueError:
             return None
         value = body.get("info", body) if isinstance(body, Mapping) else None
-        return self._remote_from(value)
+        if not isinstance(value, Mapping):
+            return None
+        alias = value.get("key_alias") or value.get("key_name")
+        team_id = value.get("team_id")
+        if not alias or not team_id:
+            return None
+        return _AuthenticatedKey(alias=str(alias), team_id=str(team_id))
 
     @staticmethod
     def _result(record: EscrowRecord) -> LauncherKeyResult:
@@ -178,7 +192,10 @@ class LauncherKeyService:
                 verified = await self._authenticate_token(stored.token)
             if verified is None or verified.alias != alias or verified.team_id != team_id:
                 raise LauncherKeyServiceError("key_creation_incomplete", "Key verification did not complete")
-            return self._result(await self._activate(alias, verified.key_id))
+            remote = await self._find_alias(alias)
+            if remote is None or remote.team_id != team_id:
+                raise LauncherKeyServiceError("key_creation_incomplete", "Key verification did not complete")
+            return self._result(await self._activate(alias, remote.key_id))
 
         if await self._find_alias(alias) is not None:
             raise LauncherKeyServiceError("key_secret_not_escrowed", "Key alias already exists without escrow")
@@ -204,7 +221,10 @@ class LauncherKeyService:
         verified = await self._authenticate_token(token)
         if verified is None or verified.alias != alias or verified.team_id != team_id:
             raise LauncherKeyServiceError("key_creation_incomplete", "Key verification did not complete")
-        return self._result(await self._activate(alias, verified.key_id))
+        remote = await self._find_alias(alias)
+        if remote is None or remote.team_id != team_id:
+            raise LauncherKeyServiceError("key_creation_incomplete", "Key verification did not complete")
+        return self._result(await self._activate(alias, remote.key_id))
 
     async def _create_remote(self, request: Mapping[str, object], token: str) -> None:
         body = dict(request)
@@ -223,7 +243,7 @@ class LauncherKeyService:
         if not self._identity_matches(stored, remote):
             raise LauncherKeyServiceError("key_identity_mismatch", "Stored key identity does not match")
         verified = await self._authenticate_token(stored.token)
-        if verified != remote or not self._identity_matches(stored, verified):
+        if verified is None or verified.alias != remote.alias or verified.team_id != remote.team_id:
             raise LauncherKeyServiceError("key_identity_mismatch", "Stored key identity does not match")
         return self._result(stored)
 
@@ -239,9 +259,9 @@ class LauncherKeyService:
                 return self._result(stored)
 
         verified = await self._authenticate_token(token)
-        if verified != remote:
+        if verified is None or verified.alias != remote.alias or verified.team_id != remote.team_id:
             raise LauncherKeyServiceError("key_identity_mismatch", "Supplied token does not match key alias")
-        if stored is not None and not self._pending_identity_matches(stored, verified):
+        if stored is not None and not self._pending_identity_matches(stored, remote):
             raise LauncherKeyServiceError("key_identity_mismatch", "Stored key identity does not match")
         if stored is None:
             pending = EscrowRecord(

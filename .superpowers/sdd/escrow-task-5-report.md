@@ -83,3 +83,12 @@ and one pre-existing warning. The initial `make test-fast` invocation collided w
 concurrent process using the Makefile's fixed test-container name; rerunning through
 the supported `CONTAINER_PREFIX=ESCROW5-` override passed with 324 gateway unit tests
 and the 69-test mock selection.
+
+## Pinned-contract integration correction
+
+Updated the stateful LiteLLM mock to match v1.93.0: `/key/list` requires
+`return_full_object=true` and returns a hash in `token`; `/key/info` returns only
+alias/team identity in `info`. The mock stores the secret separately from the stable
+hash, so the integration suite can no longer pass by accidentally treating a returned
+secret or invented `key_id` as identity. Exact-token retry and zero-delete assertions
+remain unchanged.

@@ -24,7 +24,11 @@ alias when constructing a URL.
 
 Creation writes the generated token to OpenBao before asking LiteLLM to create
 that exact key. Recovery returns a token only after the active escrow metadata
-and LiteLLM identity agree. Import is for pre-escrow aliases whose original
+and LiteLLM identity agree. With the pinned LiteLLM v1.93.0 contract, gateway-engine
+discovers aliases through `/key/list?return_full_object=true`, stores the returned
+token hash as the opaque stable `key_id`, and authenticates the secret through bearer
+`/key/info`; it never sends a token in a URL or expects `/key/info` to return a secret
+or key ID. Import is for pre-escrow aliases whose original
 token is still available; it verifies that token before storage and never
 overwrites a different secret. Successful bodies contain `key`; error bodies
 never do, and every response from these secret-handling routes carries

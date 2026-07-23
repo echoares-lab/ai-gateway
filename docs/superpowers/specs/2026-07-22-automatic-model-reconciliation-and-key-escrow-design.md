@@ -120,7 +120,10 @@ OpenBao policy grants gateway-engine only create, read, update, and metadata acc
 3. Generate a token with the required LiteLLM virtual-key format using the operating system CSPRNG.
 4. Write the token and pending identity metadata to OpenBao.
 5. Ask LiteLLM to create the key using that exact token and alias.
-6. Verify the token against LiteLLM and mark the escrow record active with the returned LiteLLM key identifier.
+6. Authenticate the token against LiteLLM, verify its alias/team, fetch the alias with
+   `return_full_object=true`, and mark the escrow record active using the returned
+   stored token hash as the opaque stable LiteLLM identifier. Never send the token in
+   a URL or rely on `/key/info` returning a secret or key ID.
 7. Return the token only after verification succeeds.
 
 If OpenBao fails before LiteLLM creation, no remote key is created. If LiteLLM creation or verification fails after pending escrow, gateway-engine records a high-severity incomplete-creation condition and returns a non-success response containing no token. It must not silently generate a second key or delete a possibly active LiteLLM identity. Retrying the same alias resumes the pending transaction with the same escrowed token after checking LiteLLM state.

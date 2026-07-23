@@ -58,11 +58,112 @@ def service(escrow, http, tokens=None):
     )
 
 
+def full_key(alias="repo/customer-a", team_id="team-1", identity="key-9"):
+    return {"token": identity, "key_alias": alias, "team_id": team_id}
+
+
+def full_key_list(*keys):
+    return {"keys": list(keys), "total_count": len(keys), "current_page": 1, "total_pages": 1}
+
+
 def test_service_token_generation_uses_csprng_and_litellm_prefix(monkeypatch):
     from core import launcher_key_service
 
     monkeypatch.setattr(launcher_key_service.secrets, "token_urlsafe", lambda size: f"random-{size}")
     assert launcher_key_service.generate_virtual_key() == "sk-random-32"
+
+
+@pytest.mark.asyncio
+async def test_service_matches_pinned_litellm_full_list_and_stripped_key_info_contract():
+    escrow = FakeEscrow()
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if request.url.path == "/key/list":
+            assert request.url.params["return_full_object"] == "true"
+            if len([item for item in requests if item.url.path == "/key/list"]) == 1:
+                return httpx.Response(200, json={"keys": [], "total_count": 0})
+            return httpx.Response(
+                200,
+                json={
+                    "keys": [
+                        {
+                            "token": "sha256-hashed-stable-identity",
+                            "key_alias": "repo/customer-a",
+                            "team_id": "team-1",
+                        }
+                    ],
+                    "total_count": 1,
+                },
+            )
+        if request.url.path == "/key/generate":
+            return httpx.Response(200, json={"key": "sk-stable-token"})
+        assert request.url.path == "/key/info"
+        assert "key" not in request.url.params
+        assert request.headers["Authorization"] == "Bearer sk-stable-token"
+        return httpx.Response(
+            200,
+            json={
+                "key": "sk-stable-token",
+                "info": {"key_alias": "repo/customer-a", "team_id": "team-1"},
+            },
+        )
+
+    http = litellm_client(handler)
+    try:
+        result = await service(escrow, http, ["sk-stable-token"]).create_key(
+            {"key_alias": "repo/customer-a", "team_id": "team-1"}
+        )
+    finally:
+        await http.aclose()
+
+    assert result.litellm_key_id == "sha256-hashed-stable-identity"
+    assert escrow.stored.litellm_key_id == "sha256-hashed-stable-identity"
+    assert [request.url.path for request in requests] == [
+        "/key/list",
+        "/key/generate",
+        "/key/info",
+        "/key/list",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_recovery_matches_pinned_token_stripped_info_to_escrowed_hash_identity():
+    escrow = FakeEscrow(record(state="active", litellm_key_id="sha256-hashed-stable-identity"))
+
+    def handler(request):
+        if request.url.path == "/key/list":
+            assert request.url.params["return_full_object"] == "true"
+            return httpx.Response(
+                200,
+                json={
+                    "keys": [
+                        {
+                            "token": "sha256-hashed-stable-identity",
+                            "key_alias": "repo/customer-a",
+                            "team_id": "team-1",
+                        }
+                    ]
+                },
+            )
+        assert request.url.path == "/key/info"
+        return httpx.Response(
+            200,
+            json={
+                "key": "sk-secret-token",
+                "info": {"key_alias": "repo/customer-a", "team_id": "team-1"},
+            },
+        )
+
+    http = litellm_client(handler)
+    try:
+        result = await service(escrow, http).recover_key("repo/customer-a")
+    finally:
+        await http.aclose()
+
+    assert result.token == "sk-secret-token"
+    assert result.litellm_key_id == "sha256-hashed-stable-identity"
 
 
 @pytest.mark.asyncio
@@ -73,17 +174,18 @@ async def test_service_creation_writes_pending_before_exact_token_litellm_creati
     def handler(request):
         requests.append(request)
         if request.url.path == "/key/list":
-            return httpx.Response(200, json=[])
+            listed = [item for item in requests if item.url.path == "/key/list"]
+            return httpx.Response(200, json=full_key_list() if len(listed) == 1 else full_key_list(full_key()))
         if request.url.path == "/key/generate":
             assert escrow.stored is not None
             body = __import__("json").loads(request.content)
             assert body["key"] == escrow.stored.token == "sk-stable-token"
-            return httpx.Response(200, json={"key": "sk-stable-token", "key_id": "key-9"})
+            return httpx.Response(200, json={"key": "sk-stable-token"})
         assert request.url.path == "/key/info"
         assert request.headers["Authorization"] == "Bearer sk-stable-token"
         return httpx.Response(
             200,
-            json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}},
+            json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1"}},
         )
 
     http = litellm_client(handler)
@@ -97,7 +199,7 @@ async def test_service_creation_writes_pending_before_exact_token_litellm_creati
     assert result.token == "sk-stable-token"
     assert result.litellm_key_id == "key-9"
     assert escrow.stored.state == "active"
-    assert [request.url.path for request in requests] == ["/key/list", "/key/generate", "/key/info"]
+    assert [request.url.path for request in requests] == ["/key/list", "/key/generate", "/key/info", "/key/list"]
 
 
 @pytest.mark.asyncio
@@ -110,7 +212,7 @@ async def test_service_openbao_failure_prevents_litellm_creation():
     def handler(request):
         requests.append(request)
         assert request.url.path == "/key/list"
-        return httpx.Response(200, json=[])
+        return httpx.Response(200, json=full_key_list())
 
     http = litellm_client(handler)
     try:
@@ -130,7 +232,7 @@ async def test_service_litellm_failure_leaves_pending_without_returning_token():
 
     def handler(request):
         if request.url.path == "/key/list":
-            return httpx.Response(200, json=[])
+            return httpx.Response(200, json=full_key_list())
         return httpx.Response(503, json={"error": "failed sk-do-not-echo"})
 
     http = litellm_client(handler)
@@ -153,12 +255,10 @@ async def test_service_retry_resumes_pending_with_same_token_without_generating_
 
     def handler(request):
         requests.append(request)
-        assert request.url.path == "/key/info"
-        assert request.headers["Authorization"] == "Bearer sk-original-token"
-        return httpx.Response(
-            200,
-            json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}},
-        )
+        if request.url.path == "/key/info":
+            assert request.headers["Authorization"] == "Bearer sk-original-token"
+            return httpx.Response(200, json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1"}})
+        return httpx.Response(200, json=full_key_list(full_key()))
 
     http = litellm_client(handler)
     try:
@@ -166,7 +266,7 @@ async def test_service_retry_resumes_pending_with_same_token_without_generating_
     finally:
         await http.aclose()
     assert result.token == "sk-original-token"
-    assert [request.url.path for request in requests] == ["/key/info"]
+    assert [request.url.path for request in requests] == ["/key/info", "/key/list"]
     assert escrow.stored.state == "active"
 
 
@@ -181,11 +281,10 @@ async def test_service_retry_recreates_missing_remote_with_exact_pending_token()
             return httpx.Response(401, json={"error": "not found"})
         if request.url.path == "/key/generate":
             assert __import__("json").loads(request.content)["key"] == "sk-original-token"
-            return httpx.Response(200, json={"key_id": "key-9"})
-        return httpx.Response(
-            200,
-            json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}},
-        )
+            return httpx.Response(200, json={"key": "sk-original-token"})
+        if request.url.path == "/key/info":
+            return httpx.Response(200, json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1"}})
+        return httpx.Response(200, json=full_key_list(full_key()))
 
     http = litellm_client(handler)
     try:
@@ -193,7 +292,7 @@ async def test_service_retry_recreates_missing_remote_with_exact_pending_token()
     finally:
         await http.aclose()
     assert result.token == "sk-original-token"
-    assert [request.url.path for request in requests] == ["/key/info", "/key/generate", "/key/info"]
+    assert [request.url.path for request in requests] == ["/key/info", "/key/generate", "/key/info", "/key/list"]
 
 
 @pytest.mark.asyncio
@@ -204,10 +303,10 @@ async def test_service_verification_failure_keeps_pending_and_redacts_token():
 
     def handler(request):
         if request.url.path == "/key/list":
-            return httpx.Response(200, json=[])
+            return httpx.Response(200, json=full_key_list())
         if request.url.path == "/key/generate":
-            return httpx.Response(200, json={"key": "sk-stable-token", "key_id": "key-9"})
-        return httpx.Response(200, json={"info": {"key_alias": "other", "team_id": "team-1", "key_id": "key-9"}})
+            return httpx.Response(200, json={"key": "sk-stable-token"})
+        return httpx.Response(200, json={"info": {"key_alias": "other", "team_id": "team-1"}})
 
     http = litellm_client(handler)
     try:
@@ -227,11 +326,7 @@ async def test_service_existing_remote_alias_is_not_rotated_or_escrowed():
     from core.launcher_key_service import LauncherKeyServiceError
 
     escrow = FakeEscrow()
-    http = litellm_client(
-        lambda request: httpx.Response(
-            200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "old-key"}]
-        )
-    )
+    http = litellm_client(lambda request: httpx.Response(200, json=full_key_list(full_key(identity="old-key"))))
     try:
         with pytest.raises(LauncherKeyServiceError) as exc:
             await service(escrow, http, []).create_key({"key_alias": "repo/customer-a", "team_id": "team-1"})
@@ -249,11 +344,9 @@ async def test_service_recovery_checks_remote_and_escrow_identity():
     def handler(request):
         requests.append(request)
         if request.url.path == "/key/list":
-            return httpx.Response(200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}])
+            return httpx.Response(200, json=full_key_list(full_key()))
         assert request.headers["Authorization"] == "Bearer sk-secret-token"
-        return httpx.Response(
-            200, json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}}
-        )
+        return httpx.Response(200, json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1"}})
 
     http = litellm_client(handler)
     try:
@@ -272,11 +365,9 @@ async def test_service_recovery_refuses_swapped_escrow_token_without_disclosing_
 
     def handler(request):
         if request.url.path == "/key/list":
-            return httpx.Response(200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}])
+            return httpx.Response(200, json=full_key_list(full_key()))
         assert request.headers["Authorization"] == "Bearer sk-swapped-token"
-        return httpx.Response(
-            200, json={"info": {"key_alias": "repo/customer-b", "team_id": "team-2", "key_id": "key-8"}}
-        )
+        return httpx.Response(200, json={"info": {"key_alias": "repo/customer-b", "team_id": "team-2"}})
 
     http = litellm_client(handler)
     try:
@@ -293,10 +384,10 @@ async def test_service_recovery_returns_stable_missing_and_mismatch_codes():
     from core.launcher_key_service import LauncherKeyServiceError
 
     cases = [
-        ([], record(state="active", litellm_key_id="key-9"), "key_alias_not_found"),
-        ([{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}], None, "key_secret_not_escrowed"),
+        (full_key_list(), record(state="active", litellm_key_id="key-9"), "key_alias_not_found"),
+        (full_key_list(full_key()), None, "key_secret_not_escrowed"),
         (
-            [{"key_alias": "repo/customer-a", "team_id": "team-2", "key_id": "key-9"}],
+            full_key_list(full_key(team_id="team-2")),
             record(state="active", litellm_key_id="key-9"),
             "key_identity_mismatch",
         ),
@@ -318,11 +409,9 @@ async def test_service_legacy_import_authenticates_token_then_escrows_active_ide
 
     def handler(request):
         if request.url.path == "/key/list":
-            return httpx.Response(200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}])
+            return httpx.Response(200, json=full_key_list(full_key()))
         assert request.headers["Authorization"] == "Bearer sk-legacy-token"
-        return httpx.Response(
-            200, json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}}
-        )
+        return httpx.Response(200, json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1"}})
 
     http = litellm_client(handler)
     try:
@@ -339,11 +428,7 @@ async def test_service_legacy_import_refuses_different_active_secret():
     from core.launcher_key_service import LauncherKeyServiceError
 
     escrow = FakeEscrow(record(token="sk-existing", state="active", litellm_key_id="key-9"))
-    http = litellm_client(
-        lambda request: httpx.Response(
-            200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}]
-        )
-    )
+    http = litellm_client(lambda request: httpx.Response(200, json=full_key_list(full_key())))
     try:
         with pytest.raises(LauncherKeyServiceError) as exc:
             await service(escrow, http).import_key("repo/customer-a", "sk-different")
@@ -361,10 +446,8 @@ async def test_service_legacy_import_refuses_pending_record_identity_mismatch():
 
     def handler(request):
         if request.url.path == "/key/list":
-            return httpx.Response(200, json=[{"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}])
-        return httpx.Response(
-            200, json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1", "key_id": "key-9"}}
-        )
+            return httpx.Response(200, json=full_key_list(full_key()))
+        return httpx.Response(200, json={"info": {"key_alias": "repo/customer-a", "team_id": "team-1"}})
 
     http = litellm_client(handler)
     try:
