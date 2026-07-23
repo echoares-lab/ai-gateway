@@ -100,6 +100,99 @@ paths:
       responses:
         '200':
           description: Success
+  /admin/keys:
+    post:
+      summary: Create a stable launcher virtual key
+      description: >-
+        Creates a caller-named LiteLLM key using write-ahead OpenBao escrow. The
+        token is returned only after LiteLLM identity verification and is never
+        returned in an error response. Older gateway-engine versions proxy this
+        operation directly to LiteLLM and therefore do not provide recovery.
+      security:
+        - AdminKey: []
+      parameters:
+        - $ref: '#/components/parameters/AdminKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StableKeyCreateRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/StableKeySuccess'
+        '403':
+          description: Invalid admin key
+        '409':
+          $ref: '#/components/responses/StableKeyConflict'
+        '422':
+          description: Invalid request or key alias
+        '502':
+          $ref: '#/components/responses/StableKeyIncomplete'
+        '503':
+          $ref: '#/components/responses/SecretStoreUnavailable'
+  /admin/keys/{alias}/secret:
+    get:
+      summary: Recover a stable launcher virtual-key secret
+      description: >-
+        Returns the original token only when the LiteLLM and active OpenBao
+        identities agree. Slash-containing aliases must be percent-encoded by
+        clients. All responses include Cache-Control: no-store. A 404 route on
+        an older gateway-engine means recovery is not supported by that version.
+      security:
+        - AdminKey: []
+      parameters:
+        - $ref: '#/components/parameters/AdminKeyHeader'
+        - $ref: '#/components/parameters/StableKeyAlias'
+      responses:
+        '200':
+          $ref: '#/components/responses/StableKeySuccess'
+        '403':
+          description: Invalid admin key
+        '404':
+          $ref: '#/components/responses/StableKeyNotFound'
+        '409':
+          $ref: '#/components/responses/StableKeyConflict'
+        '422':
+          description: Invalid key alias
+        '502':
+          $ref: '#/components/responses/StableKeyIncomplete'
+        '503':
+          $ref: '#/components/responses/SecretStoreUnavailable'
+  /admin/keys/{alias}/import:
+    post:
+      summary: Import a pre-escrow launcher virtual-key secret
+      description: >-
+        Verifies the supplied original token against LiteLLM before escrowing
+        it and refuses to overwrite a different secret. All responses include
+        Cache-Control: no-store. This route is absent on older gateway-engine
+        versions; callers must not interpret that absence as import success.
+      security:
+        - AdminKey: []
+      parameters:
+        - $ref: '#/components/parameters/AdminKeyHeader'
+        - $ref: '#/components/parameters/StableKeyAlias'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StableKeyImportRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/StableKeySuccess'
+        '403':
+          description: Invalid admin key
+        '404':
+          $ref: '#/components/responses/StableKeyNotFound'
+        '409':
+          $ref: '#/components/responses/StableKeyConflict'
+        '422':
+          description: Invalid request or key alias
+        '502':
+          $ref: '#/components/responses/StableKeyIncomplete'
+        '503':
+          $ref: '#/components/responses/SecretStoreUnavailable'
   /admin/quota/status:
     get:
       summary: Get aggregated OAuth account quota status
@@ -989,6 +1082,88 @@ paths:
         '200':
           description: HTML dashboard page
 components:
+  parameters:
+    AdminKeyHeader:
+      name: x-admin-key
+      in: header
+      required: true
+      schema: {type: string}
+    StableKeyAlias:
+      name: alias
+      in: path
+      required: true
+      description: Stable key alias (1-200 characters; slash-delimited alphanumeric, dot, underscore, or hyphen segments).
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+        example: repo/customer-a
+  schemas:
+    StableKeyCreateRequest:
+      type: object
+      required: [key_alias, team_id]
+      additionalProperties: true
+      properties:
+        key_alias: {type: string, example: repo/customer-a}
+        team_id: {type: string, example: team-1}
+        models:
+          type: array
+          items: {type: string}
+    StableKeyImportRequest:
+      type: object
+      required: [key]
+      properties:
+        key: {type: string, writeOnly: true, example: sk-original-token}
+    StableKeySecret:
+      type: object
+      required: [key_alias, key, team_id, key_id]
+      properties:
+        key_alias: {type: string, example: repo/customer-a}
+        key: {type: string, format: password, example: sk-original-token}
+        team_id: {type: string, example: team-1}
+        key_id: {type: string, example: key-9}
+    StableKeyError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [key_alias_not_found, key_secret_not_escrowed, key_identity_mismatch, secret_store_unavailable, key_creation_incomplete]
+            message: {type: string}
+  responses:
+    StableKeySuccess:
+      description: Verified stable key secret
+      headers:
+        Cache-Control:
+          schema: {type: string, enum: [no-store]}
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/StableKeySecret'
+    StableKeyNotFound:
+      description: LiteLLM key alias was not found (`key_alias_not_found`)
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/StableKeyError'}
+    StableKeyConflict:
+      description: Secret is absent, incomplete, or has mismatched identity metadata
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/StableKeyError'}
+    StableKeyIncomplete:
+      description: LiteLLM creation or verification did not complete (`key_creation_incomplete`)
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/StableKeyError'}
+    SecretStoreUnavailable:
+      description: OpenBao is unavailable or not configured (`secret_store_unavailable`)
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/StableKeyError'}
   securitySchemes:
     AdminKey:
       type: apiKey
