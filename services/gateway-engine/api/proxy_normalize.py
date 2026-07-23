@@ -312,6 +312,49 @@ def _add_prefix_to_models_response(body: bytes) -> bytes:
     return json.dumps(data).encode()
 
 
+def _estimate_msg_tokens(msg: dict) -> int:
+    content = msg.get("content")
+    if isinstance(content, str):
+        return max(1, len(content) // 4)
+    if isinstance(content, list):
+        total = 0
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text", item.get("thinking", ""))
+                total += len(text) // 4
+        return max(1, total)
+    return 10
+
+
+def _prune_messages_for_context_window(messages: list, max_tokens: int) -> tuple[list, bool]:
+    if not messages or max_tokens <= 0:
+        return messages, False
+
+    total_tokens = sum(_estimate_msg_tokens(m) for m in messages if isinstance(m, dict))
+    if total_tokens <= max_tokens:
+        return messages, False
+
+    system_msgs = [m for m in messages if isinstance(m, dict) and m.get("role") == "system"]
+    other_msgs = [m for m in messages if isinstance(m, dict) and m.get("role") != "system"]
+
+    if len(other_msgs) <= 1:
+        return messages, False
+
+    last_msg = other_msgs[-1]
+    middle_msgs = other_msgs[:-1]
+
+    target_tokens = int(max_tokens * 0.8)
+    pruned_middle = list(middle_msgs)
+
+    while pruned_middle and (
+        sum(_estimate_msg_tokens(m) for m in system_msgs + pruned_middle + [last_msg]) > target_tokens
+    ):
+        pruned_middle.pop(0)
+
+    result = system_msgs + pruned_middle + [last_msg]
+    return result, len(result) < len(messages)
+
+
 def _patch_body(path: str, body: bytes) -> tuple[bytes, bool]:
     if path.rstrip("/") not in ("v1/chat/completions", "chat/completions"):
         return body, False

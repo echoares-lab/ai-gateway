@@ -33,6 +33,8 @@ inventory.
 | C-BENCH-1 | Cross-model tool-use & protocol benchmark | Roadmap epic [#420](https://github.com/echoares-lab/ai-gateway/issues/420) and atomic children #421–#423 | promoted |
 | C-MDL-3 | External model metadata capability expansion (`supports_reasoning`, `context_window`) | Roadmap epic [#486](https://github.com/echoares-lab/ai-gateway/issues/486) / issue #487 | promoted |
 | C-RT-6 | Cross-provider reasoning/thinking token normalization | Roadmap epic [#486](https://github.com/echoares-lab/ai-gateway/issues/486) / issue #488 | promoted |
+| C-RT-7 | Context-window-aware request normalization and message pruning | Roadmap epic [#489](https://github.com/echoares-lab/ai-gateway/issues/489) / issue #490 | promoted |
+| C-AUD-7 | Extend ruff linting to credential-prober and scripts | Roadmap epic [#489](https://github.com/echoares-lab/ai-gateway/issues/489) / issue #491 | promoted |
 
 ---
 

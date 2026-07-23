@@ -257,6 +257,22 @@ Release invariants:
 
 ---
 
+## Next — Context-Window-Aware Request Normalization and Linting Expansion
+
+Approve epic [#489](https://github.com/echoares-lab/ai-gateway/issues/489) and its atomic children (promoted from candidates `C-RT-7` and `C-AUD-7`). This work implements context-window-aware message pruning in `proxy_normalize.py` when routing to smaller model context windows, and expands `ruff` linting across `services/credential-prober/` and `scripts/`.
+
+| Order | Atomic issue | Repository | State / dependency |
+|------:|--------------|------------|--------------------|
+| 1 | [Context-window-aware message pruning #490](https://github.com/echoares-lab/ai-gateway/issues/490) | `ai-gateway` | Ready; no dependency |
+| 2 | [Extend ruff linting to credential-prober and scripts #491](https://github.com/echoares-lab/ai-gateway/issues/491) | `ai-gateway` | Ready; no dependency |
+
+Release invariants:
+- Parent epic #489 is coordination-only;
+- Message pruning must preserve system instructions and the most recent user prompt;
+- Code style and lint checks must pass cleanly across all python targets.
+
+---
+
 ## Next — Release identity and versioning
 
 Approve atomic implementation issue
