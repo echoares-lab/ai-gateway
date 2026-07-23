@@ -25,6 +25,7 @@ from core.model_registry import (
     merge_discovered_model,
     normalize_discovered_model,
     record_from_cliproxy_model,
+    render_litellm_config_from_registry,
 )
 
 
@@ -205,16 +206,18 @@ class _FakeModelsResponse:
         return self._payload
 
 
-def _registry_model(model_id: str = "gpt-5-4") -> ModelRegistryRecord:
-    return ModelRegistryRecord(
-        model_id=model_id,
-        provider="openai",
-        family="openai",
-        upstream_model="gpt-5.4",
-        litellm_model="openai/gpt-5.4",
-        enabled=True,
-        status="UNKNOWN",
-    )
+def _registry_model(model_id: str = "gpt-5-4", **kwargs) -> ModelRegistryRecord:
+    defaults = {
+        "model_id": model_id,
+        "provider": kwargs.pop("provider", "openai"),
+        "family": kwargs.pop("family", "openai"),
+        "upstream_model": kwargs.pop("upstream_model", model_id.replace("-", ".")),
+        "litellm_model": kwargs.pop("litellm_model", f"openai/{model_id.replace('-', '.')}"),
+        "enabled": kwargs.pop("enabled", True),
+        "status": kwargs.pop("status", "UNKNOWN"),
+    }
+    defaults.update(kwargs)
+    return ModelRegistryRecord(**defaults)
 
 
 def _gemini_registry_model() -> ModelRegistryRecord:
@@ -477,6 +480,61 @@ def test_model_registry_store_discovered_alias_does_not_replace_other_models_cur
     assert aliases["shared-alias"] == curated
 
 
+def test_render_uses_default_cross_family_fallbacks_when_curated_missing():
+    gpt = _registry_model("gpt-5-6-sol", family="openai", advertised=True)
+    gem = _registry_model(
+        "gemini-3-flash",
+        provider="gemini",
+        family="gemini",
+        upstream_model="gemini-3.flash",
+        litellm_model="openai/gemini-3.flash",
+        advertised=True,
+    )
+    claude = _registry_model(
+        "claude-sonnet-4-6",
+        provider="anthropic",
+        family="anthropic",
+        upstream_model="claude-sonnet-4.6",
+        litellm_model="openai/claude-sonnet-4.6",
+        advertised=True,
+    )
+    rendered = yaml.safe_load(render_litellm_config_from_registry([gpt, gem, claude]))
+    fallbacks = rendered["litellm_settings"]["fallbacks"]
+    gpt_fb = next(item["gpt-5-6-sol"] for item in fallbacks if "gpt-5-6-sol" in item)
+    assert "gemini-3-flash" in gpt_fb
+    assert "claude-sonnet-4-6" in gpt_fb
+
+
+def test_render_prefers_curated_fallbacks_over_defaults():
+    gpt = _registry_model(
+        "gpt-5-6-sol",
+        family="openai",
+        advertised=True,
+        policy_metadata={"fallbacks": ["claude-opus-4-8"]},
+    )
+    claude = _registry_model(
+        "claude-opus-4-8",
+        provider="anthropic",
+        family="anthropic",
+        upstream_model="claude-opus-4.8",
+        litellm_model="openai/claude-opus-4.8",
+        advertised=True,
+    )
+    gem = _registry_model(
+        "gemini-3-flash",
+        provider="gemini",
+        family="gemini",
+        upstream_model="gemini-3.flash",
+        litellm_model="openai/gemini-3.flash",
+        advertised=True,
+    )
+    rendered = yaml.safe_load(render_litellm_config_from_registry([gpt, claude, gem]))
+    gpt_fb = next(
+        item["gpt-5-6-sol"] for item in rendered["litellm_settings"]["fallbacks"] if "gpt-5-6-sol" in item
+    )
+    assert gpt_fb == ["claude-opus-4-8"]
+
+
 def test_reconcile_renderer_outputs_valid_yaml_json_and_diffs():
     resources = build_reconcile_resources([_registry_model(), _gemini_registry_model()])
     by_name = {resource.name: resource for resource in resources}
@@ -489,7 +547,10 @@ def test_reconcile_renderer_outputs_valid_yaml_json_and_diffs():
         "gpt-5-4",
     ]
     assert litellm["model_list"][0]["model_info"]["supports_vision"] is True
-    assert litellm["litellm_settings"]["fallbacks"] == [{"gemini-3-flash": ["gpt-5-4"]}]
+    assert litellm["litellm_settings"]["fallbacks"] == [
+        {"gemini-3-flash": ["gpt-5-4"]},
+        {"gpt-5-4": ["gemini-3-flash"]},
+    ]
     assert gemini_map == {
         "gemini-3.flash": "gemini-3-flash",
         "gemini-3.flash-preview": "gemini-3-flash",

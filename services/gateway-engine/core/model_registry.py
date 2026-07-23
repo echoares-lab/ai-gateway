@@ -18,6 +18,8 @@ from typing import Any, Self
 import yaml
 from pydantic import BaseModel, Field, computed_field, model_validator
 
+from core.model_lifecycle_defaults import default_fallbacks_for
+
 try:  # pragma: no cover - exercised only when psycopg2 is installed/configured
     import psycopg2
     from psycopg2.extras import Json, RealDictCursor
@@ -468,16 +470,12 @@ def render_litellm_config_from_registry(models: list[ModelRegistryRecord]) -> st
     by_id = {model.model_id: model for model in active}
     for model in active:
         explicit = model.policy_metadata.get("fallbacks")
-        if isinstance(explicit, list):
+        if isinstance(explicit, list) and explicit:
             fallback_ids = [str(item) for item in explicit if str(item) in by_id and str(item) != model.model_id]
         else:
-            fallback_ids = [
-                candidate.model_id
-                for candidate in active
-                if candidate.model_id != model.model_id and candidate.family == model.family
-            ]
+            fallback_ids = default_fallbacks_for(model, active)
         if fallback_ids:
-            fallbacks.append({model.model_id: sorted(fallback_ids)})
+            fallbacks.append({model.model_id: fallback_ids})
 
     rendered: dict[str, Any] = {"model_list": model_list}
     if fallbacks:
