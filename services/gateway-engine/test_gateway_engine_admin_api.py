@@ -182,6 +182,29 @@ def test_active_reconciliation_does_not_inherit_prior_demand_result(trigger):
     assert status["errors"] == []
 
 
+def test_active_manual_reconciliation_status_preserves_manual_phase_and_timestamps():
+    started_at = datetime(2026, 7, 23, 11, 0, tzinfo=timezone.utc)
+    service = SimpleNamespace(
+        enabled=True,
+        interval_sec=900,
+        active=True,
+        pending=False,
+        phase="manual",
+        current_trigger=ReconciliationTrigger.MANUAL,
+        current_requested_model=None,
+        last_attempt_at=started_at,
+        last_success_at=None,
+        last_result=None,
+    )
+
+    status = admin_routes._admin_reconciliation_status(service)
+
+    assert status["phase"] == "manual"
+    assert status["trigger"] == "manual"
+    assert status["last_attempt_at"] == "2026-07-23T11:00:00Z"
+    assert status["outcome"] is None
+
+
 def test_admin_reconciliation_status_rejects_unbounded_secret_verification_value():
     result = _reconciliation_result()
     result.verification = "Bearer sk-verification-secret " + ("x" * 1000)

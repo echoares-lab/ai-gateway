@@ -327,13 +327,8 @@ class ModelReconciliationService:
                     pending = self._pending_request
                     self._pending_request = None
                     if pending is None:
-                        self._active = False
-                        self._current_trigger = None
-                        self._current_requested_model = None
                         self._wake.clear()
                         break
-                    self._active = True
-                    self._current_trigger, self._current_requested_model = pending
                 await self._run_bounded(*pending)
 
     async def _run_bounded(
@@ -343,12 +338,20 @@ class ModelReconciliationService:
     ) -> None:
         try:
             async with self._operation_lock:
-                result = await asyncio.wait_for(
-                    self.run(trigger, requested_model),
-                    timeout=self.timeout_sec,
-                )
-            if isinstance(result, ReconciliationResult):
-                self.last_result = result
+                self._active = True
+                self._current_trigger = trigger
+                self._current_requested_model = requested_model
+                try:
+                    result = await asyncio.wait_for(
+                        self.run(trigger, requested_model),
+                        timeout=self.timeout_sec,
+                    )
+                    if isinstance(result, ReconciliationResult):
+                        self.last_result = result
+                finally:
+                    self._active = False
+                    self._current_trigger = None
+                    self._current_requested_model = None
         except asyncio.TimeoutError:
             now = datetime.now(timezone.utc)
             self.last_result = ReconciliationResult(
@@ -385,17 +388,136 @@ class ModelReconciliationService:
         *,
         trigger: ReconciliationTrigger = ReconciliationTrigger.MANUAL,
     ) -> Any:
-        """Run an admin operation under the scheduler's single-flight lock."""
+        """Run an admin operation as an authoritative singleton reconciliation."""
         async with self._operation_lock:
-            previous_active = self._active
-            previous_trigger = self._current_trigger
+            started_at = datetime.now(timezone.utc)
             self._active = True
             self._current_trigger = trigger
+            self._current_requested_model = None
+            self._phase = "manual"
+            self.last_attempt_at = started_at
             try:
-                return await _resolve(operation())
+                value = await asyncio.wait_for(_resolve(operation()), timeout=self.timeout_sec)
+                errors = list(getattr(value, "errors", []) or [])
+                models = list(getattr(value, "models", []) or [])
+                imported = int(getattr(value, "imported_count", 0) or 0)
+                result = ReconciliationResult(
+                    outcome="failed" if errors else "success",
+                    phase="complete",
+                    trigger=trigger,
+                    requested_model=None,
+                    counts={
+                        "discovered": len(models),
+                        "added": imported,
+                        "updated": 0,
+                        "enabled": sum(model.enabled for model in models),
+                        "disabled": sum(not model.enabled for model in models),
+                        "unchanged": max(0, len(models) - imported),
+                    },
+                    verification="not_required",
+                    started_at=started_at,
+                    completed_at=datetime.now(timezone.utc),
+                    errors=errors,
+                    models=models,
+                    diffs=list(getattr(value, "diffs", []) or []),
+                    persisted_count=imported,
+                )
+                self.last_result = result
+                self.last_success_at = result.completed_at if result.outcome == "success" else self.last_success_at
+                self._phase = result.phase
+                record_model_reconciliation(result)
+                return value
+            except asyncio.TimeoutError:
+                now = datetime.now(timezone.utc)
+                self.last_result = ReconciliationResult(
+                    outcome="failed",
+                    phase="timeout",
+                    trigger=trigger,
+                    requested_model=None,
+                    counts={
+                        "discovered": 0,
+                        "added": 0,
+                        "updated": 0,
+                        "enabled": 0,
+                        "disabled": 0,
+                        "unchanged": 0,
+                    },
+                    verification="not_run",
+                    started_at=started_at,
+                    completed_at=now,
+                    errors=[
+                        {
+                            "code": "timeout",
+                            "message": f"reconciliation exceeded {self.timeout_sec:g} seconds",
+                            "phase": "timeout",
+                        }
+                    ],
+                )
+                self._phase = "timeout"
+                record_model_reconciliation(self.last_result)
+                raise
+            except asyncio.CancelledError:
+                now = datetime.now(timezone.utc)
+                self.last_result = ReconciliationResult(
+                    outcome="failed",
+                    phase="cancelled",
+                    trigger=trigger,
+                    requested_model=None,
+                    counts={
+                        "discovered": 0,
+                        "added": 0,
+                        "updated": 0,
+                        "enabled": 0,
+                        "disabled": 0,
+                        "unchanged": 0,
+                    },
+                    verification="not_run",
+                    started_at=started_at,
+                    completed_at=now,
+                    errors=[
+                        {
+                            "code": "cancelled",
+                            "message": "manual reconciliation was cancelled",
+                            "phase": "cancelled",
+                        }
+                    ],
+                )
+                self._phase = "cancelled"
+                record_model_reconciliation(self.last_result)
+                raise
+            except Exception as exc:
+                now = datetime.now(timezone.utc)
+                self.last_result = ReconciliationResult(
+                    outcome="failed",
+                    phase="manual",
+                    trigger=trigger,
+                    requested_model=None,
+                    counts={
+                        "discovered": 0,
+                        "added": 0,
+                        "updated": 0,
+                        "enabled": 0,
+                        "disabled": 0,
+                        "unchanged": 0,
+                    },
+                    verification="not_run",
+                    started_at=started_at,
+                    completed_at=now,
+                    errors=[
+                        {
+                            "code": "manual_failed",
+                            "message": type(exc).__name__,
+                            "phase": "manual",
+                        }
+                    ],
+                )
+                self._phase = "manual"
+                record_model_reconciliation(self.last_result)
+                raise
             finally:
-                self._active = previous_active
-                self._current_trigger = previous_trigger
+                self._active = False
+                self._current_trigger = None
+                self._current_requested_model = None
 
     async def run(
         self,

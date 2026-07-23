@@ -111,6 +111,8 @@ _RECONCILIATION_PHASES = frozenset(
         "rollback",
         "complete",
         "timeout",
+        "cancelled",
+        "manual",
     }
 )
 _RECONCILIATION_OUTCOMES = frozenset({"success", "degraded", "failed"})
@@ -756,97 +758,129 @@ async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
     if auth_error is not None:
         return auth_error
 
-    store = _model_registry_store()
-    existing = store.list_models()
-    existing_models = existing.models if existing.registry_available else []
-    errors = list(existing.errors)
-    source = body.source
+    async def sync_operation() -> ModelRegistrySyncResponse:
+        store = None
+        try:
+            store = _model_registry_store()
+            existing = store.list_models()
+            existing_models = existing.models if existing.registry_available else []
+            errors = list(existing.errors)
 
-    if source == "cliproxy":
-        entries, fetch_errors = await _fetch_cliproxy_models_for_registry()
-        discovered = [model for model in (record_from_cliproxy_model(entry) for entry in entries) if model is not None]
-        errors.extend(fetch_errors)
-        diffs = diff_discovered_models(discovered, existing_models)
-        loaded_models = [
-            merge_discovered_model(model, {m.model_id: m for m in existing_models}.get(model.model_id))
-            for model in discovered
-        ]
-    else:
-        loaded = load_models_from_litellm_config(_main_attr("LITELLM_CONFIG_PATH", LITELLM_CONFIG_PATH))
-        errors.extend(loaded.errors)
-        loaded_models = loaded.models
-        diffs = diff_discovered_models(loaded_models, existing_models)
-
-    imported = 0
-    if not errors or body.dry_run:
-
-        async def probe_model(model):
-            probe_status, probe_http_status, _probe_errors = await _main_attr(
-                "_probe_model_via_litellm", _probe_model_via_litellm
-            )(model.model_id)
-            healthy = probe_status == "success"
-            return model.model_copy(
-                update={
-                    "probe_status": "healthy" if healthy else probe_status,
-                    "probe_http_status": probe_http_status,
-                    "probe_checked_at": datetime.now(timezone.utc),
-                    "status": "HEALTHY" if healthy else "UNHEALTHY",
-                }
-            )
-
-        service = ModelReconciliationService(
-            discover=lambda: loaded_models,
-            list_models=lambda: existing_models,
-            upsert_models=store.upsert_models,
-            probe_model=(lambda model: model) if body.dry_run else probe_model,
-            render=lambda models: [],
-            validate=lambda resources: True,
-            apply=lambda resources: None,
-            rollback=lambda token: None,
-            reload=lambda: True,
-            read_catalog=lambda: {model.model_id for model in loaded_models if model.enabled},
-            probe_is_stale=lambda model: False,
-        )
-        if body.dry_run:
-            result = await service.run(ReconciliationTrigger.MANUAL, dry_run=True)
-        else:
-            scheduler = _main_attr("_model_reconciliation_service", None)
-            if scheduler is None:
-                errors.append(
-                    _admin_error(
-                        "model_reconciliation_unavailable",
-                        "model reconciliation scheduler is unavailable",
-                        "scheduler:model-reconciliation",
-                    )
-                )
-                result = None
+            if body.source == "cliproxy":
+                entries, fetch_errors = await _fetch_cliproxy_models_for_registry()
+                discovered = [
+                    model for model in (record_from_cliproxy_model(entry) for entry in entries) if model is not None
+                ]
+                errors.extend(fetch_errors)
+                loaded_models = [
+                    merge_discovered_model(model, {m.model_id: m for m in existing_models}.get(model.model_id))
+                    for model in discovered
+                ]
             else:
-                result = await scheduler.run_exclusive(
-                    lambda: service.run(ReconciliationTrigger.MANUAL),
-                )
-        if result is None:
+                loaded = load_models_from_litellm_config(_main_attr("LITELLM_CONFIG_PATH", LITELLM_CONFIG_PATH))
+                errors.extend(loaded.errors)
+                loaded_models = loaded.models
+
+            diffs = diff_discovered_models(loaded_models, existing_models)
+            imported = 0
+            if not body.dry_run and not errors:
+                additions = {diff["model_id"] for diff in diffs if diff["kind"] == "add"}
+                probed_models = []
+                for model in loaded_models:
+                    if model.model_id not in additions:
+                        probed_models.append(model)
+                        continue
+                    probe_status, probe_http_status, _probe_errors = await _main_attr(
+                        "_probe_model_via_litellm", _probe_model_via_litellm
+                    )(model.model_id)
+                    healthy = probe_status == "success"
+                    probed_models.append(
+                        model.model_copy(
+                            update={
+                                "enabled": healthy,
+                                "probe_status": "healthy" if healthy else probe_status,
+                                "probe_http_status": probe_http_status,
+                                "probe_checked_at": datetime.now(timezone.utc),
+                                "status": "HEALTHY" if healthy else "UNHEALTHY",
+                            }
+                        )
+                    )
+                loaded_models = probed_models
+                imported = int(store.upsert_models(loaded_models) or 0)
+            elif body.dry_run:
+                imported = len(loaded_models)
+
             return ModelRegistrySyncResponse(
                 dry_run=body.dry_run,
-                source=source,
+                source=body.source,
                 registry_available=store.enabled,
+                imported_count=imported,
+                skipped_count=max(0, len(loaded_models) - imported),
                 models=loaded_models,
                 diffs=diffs,
                 errors=errors,
             )
-        loaded_models = result.models
-        diffs = result.diffs
-        errors.extend(result.errors)
-        imported = len(loaded_models) if body.dry_run else result.persisted_count
-    return ModelRegistrySyncResponse(
-        dry_run=body.dry_run,
-        source=source,
-        registry_available=store.enabled,
-        imported_count=imported,
-        skipped_count=max(0, len(loaded_models) - imported),
-        models=loaded_models,
-        diffs=diffs,
-        errors=errors,
-    )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return ModelRegistrySyncResponse(
+                dry_run=body.dry_run,
+                source=body.source,
+                registry_available=bool(getattr(store, "enabled", False)),
+                errors=[
+                    _admin_error(
+                        "model_sync_failed",
+                        "manual model sync failed",
+                        f"admin:models/sync:{body.source}",
+                    )
+                ],
+            )
+
+    scheduler = _main_attr("_model_reconciliation_service", None)
+    if scheduler is None:
+        store = _model_registry_store()
+        return ModelRegistrySyncResponse(
+            dry_run=body.dry_run,
+            source=body.source,
+            registry_available=store.enabled,
+            errors=[
+                _admin_error(
+                    "model_reconciliation_unavailable",
+                    "model reconciliation scheduler is unavailable",
+                    "scheduler:model-reconciliation",
+                )
+            ],
+        )
+    try:
+        return await scheduler.run_exclusive(sync_operation)
+    except asyncio.TimeoutError:
+        return ModelRegistrySyncResponse(
+            dry_run=body.dry_run,
+            source=body.source,
+            registry_available=_model_registry_store().enabled,
+            errors=[
+                _admin_error(
+                    "model_reconciliation_timeout",
+                    "manual model sync exceeded the reconciliation timeout",
+                    "scheduler:model-reconciliation",
+                )
+            ],
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        return ModelRegistrySyncResponse(
+            dry_run=body.dry_run,
+            source=body.source,
+            registry_available=_model_registry_store().enabled,
+            errors=[
+                _admin_error(
+                    "model_sync_failed",
+                    "manual model sync failed",
+                    f"admin:models/sync:{body.source}",
+                )
+            ],
+        )
 
 
 @router.get("/admin/status")

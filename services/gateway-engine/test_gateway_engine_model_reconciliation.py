@@ -726,6 +726,112 @@ async def test_active_requests_coalesce_to_one_pending_rerun():
 
 
 @pytest.mark.asyncio
+async def test_manual_operation_waits_for_scheduled_run_before_taking_snapshot():
+    service = Fakes().service(startup_delay_sec=60)
+    scheduled_started = asyncio.Event()
+    release_scheduled = asyncio.Event()
+    state = {"generation": 0}
+    snapshots = []
+
+    async def scheduled_run(trigger, requested_model=None, *, dry_run=False):
+        scheduled_started.set()
+        await release_scheduled.wait()
+        state["generation"] = 1
+
+    async def manual_operation():
+        snapshots.append(state["generation"])
+        return type(
+            "SyncResult",
+            (),
+            {"errors": [], "models": [], "diffs": [], "imported_count": 0},
+        )()
+
+    service.run = scheduled_run
+    service.start()
+    assert await service.request(ReconciliationTrigger.SCHEDULED)
+    await scheduled_started.wait()
+    manual_task = asyncio.create_task(service.run_exclusive(manual_operation))
+    await asyncio.sleep(0)
+    assert snapshots == []
+    assert service.active is True
+    assert service.current_trigger == ReconciliationTrigger.SCHEDULED
+
+    release_scheduled.set()
+    await manual_task
+    await service.stop()
+
+    assert snapshots == [1]
+    assert service.last_result.trigger == ReconciliationTrigger.MANUAL
+    assert service.last_result.outcome == "success"
+    assert service.last_attempt_at is not None
+    assert service.last_success_at is not None
+    assert service.active is False
+    assert service.current_trigger is None
+    assert service.current_requested_model is None
+    assert service.phase == "complete"
+
+
+@pytest.mark.asyncio
+async def test_queued_scheduler_run_keeps_its_lifecycle_after_manual_sync_finishes():
+    service = Fakes().service(startup_delay_sec=60)
+    manual_started = asyncio.Event()
+    release_manual = asyncio.Event()
+    scheduled_started = asyncio.Event()
+    release_scheduled = asyncio.Event()
+
+    async def manual_operation():
+        manual_started.set()
+        await release_manual.wait()
+        return type("SyncResult", (), {"errors": [], "models": [], "diffs": [], "imported_count": 0})()
+
+    async def scheduled_run(trigger, requested_model=None, *, dry_run=False):
+        scheduled_started.set()
+        await release_scheduled.wait()
+
+    service.run = scheduled_run
+    service.start()
+    manual_task = asyncio.create_task(service.run_exclusive(manual_operation))
+    await manual_started.wait()
+
+    assert await service.request(ReconciliationTrigger.SCHEDULED)
+    await _wait_until(lambda: service.pending)
+    assert service.active is True
+    assert service.current_trigger == ReconciliationTrigger.MANUAL
+
+    release_manual.set()
+    await scheduled_started.wait()
+
+    assert service.active is True
+    assert service.current_trigger == ReconciliationTrigger.SCHEDULED
+    assert service.current_requested_model is None
+
+    release_scheduled.set()
+    await manual_task
+    await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_manual_operation_uses_singleton_timeout_and_cancels_work():
+    service = Fakes().service(timeout_sec=0.01)
+    cancelled = asyncio.Event()
+
+    async def blocking_operation():
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    with pytest.raises(asyncio.TimeoutError):
+        await service.run_exclusive(blocking_operation)
+
+    assert cancelled.is_set()
+    assert service.active is False
+    assert service.last_result.phase == "timeout"
+    assert service.last_result.trigger == ReconciliationTrigger.MANUAL
+    assert service.last_result.errors[0]["code"] == "timeout"
+
+
+@pytest.mark.asyncio
 async def test_expedited_requests_are_rate_limited():
     service = Fakes().service(startup_delay_sec=60, expedited_min_interval_sec=60)
     calls = []

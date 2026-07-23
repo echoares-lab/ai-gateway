@@ -625,9 +625,14 @@ def test_admin_models_reconcile_force_run_enqueues_manual_scheduler(monkeypatch)
 
 
 def test_admin_models_sync_dry_run(monkeypatch, tmp_path):
+    class Scheduler:
+        async def run_exclusive(self, operation, *, trigger=ReconciliationTrigger.MANUAL):
+            return await operation()
+
     config = tmp_path / "litellm-config.yaml"
     _write_config(config)
     monkeypatch.setattr(t, "LITELLM_CONFIG_PATH", str(config))
+    monkeypatch.setattr(t, "_model_reconciliation_service", Scheduler())
     monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
 
     client = TestClient(t.app)
@@ -642,6 +647,80 @@ def test_admin_models_sync_dry_run(monkeypatch, tmp_path):
     assert body["dry_run"] is True
     assert body["imported_count"] == 2
     assert body["models"][0]["source"] == "litellm-config"
+
+
+def test_admin_models_sync_dry_run_uses_lifespan_singleton(monkeypatch, tmp_path):
+    class Recorder:
+        def __init__(self):
+            self.calls = []
+
+        async def run_exclusive(self, operation, *, trigger=ReconciliationTrigger.MANUAL):
+            self.calls.append(trigger)
+            return await operation()
+
+    config = tmp_path / "litellm-config.yaml"
+    _write_config(config)
+    recorder = Recorder()
+    monkeypatch.setattr(t, "LITELLM_CONFIG_PATH", str(config))
+    monkeypatch.setattr(t, "_model_reconciliation_service", recorder)
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+
+    response = TestClient(t.app).post(
+        "/admin/models/sync",
+        headers={"x-admin-key": "test-admin"},
+        json={"dry_run": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["dry_run"] is True
+    assert recorder.calls == [ReconciliationTrigger.MANUAL]
+
+
+def test_admin_models_sync_persistence_failure_is_structured_and_recorded(monkeypatch):
+    import core.model_reconciliation as reconciliation
+    from core.model_reconciliation import ModelReconciliationService
+
+    class FailingStore(_FakeRegistryStore):
+        def upsert_models(self, models):
+            raise RuntimeError("database write failed")
+
+    recorded = []
+    store = FailingStore()
+    service = ModelReconciliationService(
+        discover=lambda: [],
+        list_models=lambda: [],
+        upsert_models=lambda models: 0,
+        probe_model=lambda model: model,
+        render=lambda models: [],
+        validate=lambda resources: True,
+        apply=lambda resources: None,
+        rollback=lambda token: None,
+        reload=lambda: True,
+        read_catalog=lambda: set(),
+    )
+
+    async def no_models():
+        return [], []
+
+    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setattr(t, "_model_reconciliation_service", service)
+    monkeypatch.setattr("api.admin_routes._fetch_cliproxy_models_for_registry", no_models)
+    monkeypatch.setattr(reconciliation, "record_model_reconciliation", recorded.append)
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+
+    response = TestClient(t.app, raise_server_exceptions=False).post(
+        "/admin/models/sync",
+        headers={"x-admin-key": "test-admin"},
+        json={"source": "cliproxy", "dry_run": False},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "cliproxy"
+    assert body["errors"][0]["code"] == "model_sync_failed"
+    assert service.last_result is not None
+    assert service.last_result.outcome == "failed"
+    assert recorded[-1] is service.last_result
 
 
 def test_admin_models_sync_mutation_enqueues_lifespan_scheduler(monkeypatch):
@@ -716,6 +795,10 @@ def test_admin_models_sync_mutation_preserves_litellm_source_and_counts(monkeypa
 
 
 def test_admin_models_sync_cliproxy_dry_run_normalizes_and_diffs(monkeypatch):
+    class Scheduler:
+        async def run_exclusive(self, operation, *, trigger=ReconciliationTrigger.MANUAL):
+            return await operation()
+
     store = _FakeRegistryStore()
     store.models["gpt-5-4"] = ModelRegistryRecord(
         model_id="gpt-5-4",
@@ -730,6 +813,7 @@ def test_admin_models_sync_cliproxy_dry_run_normalizes_and_diffs(monkeypatch):
     )
     fake_client = _FakeModelsClient(response=_FakeModelsResponse())
     monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setattr(t, "_model_reconciliation_service", Scheduler())
     monkeypatch.setattr(t, "_client", fake_client)
     monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
     monkeypatch.setenv("CLIPROXY_API_KEY", "cliproxy-key")
