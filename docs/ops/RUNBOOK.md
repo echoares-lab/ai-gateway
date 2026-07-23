@@ -497,6 +497,52 @@ Read-only admin endpoints are unauthenticated by default (operator-local convent
 
 **Codex WebSocket (`/v1/responses` upgrade):** requires `Authorization`, `api-key`, or `?key=` matching `LITELLM_MASTER_KEY` or a LiteLLM virtual key validated via `/key/info`.
 
+### Launcher stable-key escrow operations
+
+Gateway-engine preserves launcher key identity in OpenBao KV v2 at
+`kv/data/launcher-keys/<sha256(alias)>`. Operators use the protected contracts documented
+in [`API_DOCUMENTATION.md`](../API_DOCUMENTATION.md); do not read or copy escrow payloads
+for routine recovery. Every successful secret response is `Cache-Control: no-store`.
+
+**Legacy import (key exists in LiteLLM but was created before escrow):** obtain the
+original token from the launcher owner's protected local cache and call
+`POST /admin/keys/{alias}/import` over the trusted admin path with `x-admin-key`. Submit
+the token only in the JSON request body. The service first verifies that token and alias
+with LiteLLM, then writes the escrow record. A missing local token is not recoverable from
+LiteLLM's key metadata: do not generate a replacement, rotate the alias, paste the token
+in a URL/terminal history/ticket, or claim import succeeded. Confirm recovery returns the
+same token by comparing hashes in a private operator process; never print either value.
+
+**Incomplete creation (`key_creation_incomplete`):** retry the same `POST /admin/keys`
+request for the same alias/team. A pending escrow record is a write-ahead transaction and
+the retry resumes with its existing token; it must not create a second LiteLLM key. If it
+still fails, check OpenBao reachability/workload authentication, the pending record's
+metadata and state (without displaying its token), and LiteLLM key-info identity. Repair
+the dependency or identity mismatch, then retry. Never delete the pending record or create
+a differently named replacement as an automated repair.
+
+**Redaction rules:** tokens and Authorization/OpenBao headers may appear only in a
+successful protected JSON body or outbound authenticated request. Do not log them, use
+them in metric labels, interpolate them into exceptions, put them in URLs, pass them as
+command-line arguments, or include them in screenshots and incident notes. Treat gateway
+and OpenBao access logs as sensitive and verify incident captures are redacted before
+sharing.
+
+**Rollback:** disable new creation/recovery by removing or invalidating the escrow
+configuration on gateway-engine, or roll the Deployment image back through GitOps. This
+returns typed `secret_store_unavailable` responses and leaves LiteLLM keys and OpenBao
+records untouched. Do not roll back by deleting/destroying OpenBao versions, deleting
+LiteLLM keys, rotating tokens, or widening the runtime policy. Preserve the KV subtree
+through rollback so the same image/config can resume pending transactions later. If a
+mixed-version rollout is active, stop launcher provisioning first, restore a version that
+supports the stable-key contracts, verify recovery in staging, and only then re-enable
+provisioning.
+
+The least-privilege policy, staging allow/deny check, workload-auth model, and GitOps
+ownership boundary are defined in
+[`CICD_PHASE2_CD_K3S.md`](../CICD_PHASE2_CD_K3S.md#launcher-stable-key-escrow) and
+[`CICD_PHASE2_STAGING.md`](../CICD_PHASE2_STAGING.md#staging-launcher-key-escrow-gate).
+
 ---
 
 Maintainers should periodically check for new releases and pin them in the repo to ensure stability.

@@ -7,7 +7,15 @@ an intentional migration). Alias lists are tried in order; first set wins.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from typing import Sequence
+
+
+@dataclass(frozen=True)
+class SecretStoreAvailability:
+    available: bool
+    code: str | None = None
+    missing_settings: tuple[str, ...] = ()
 
 
 def _env_str(names: Sequence[str], default: str) -> str:
@@ -107,6 +115,31 @@ class Config:
         ("TEAM_BUDGET_SNAPSHOT_JSON", "GATEWAY_ENGINE_TEAM_BUDGET_SNAPSHOT_JSON"),
         "",
     )
+
+    OPENBAO_ADDR = _env_str(("GATEWAY_ENGINE_OPENBAO_ADDR",), "")
+    OPENBAO_AUTH_MOUNT = _env_str(("GATEWAY_ENGINE_OPENBAO_AUTH_MOUNT",), "")
+    OPENBAO_ROLE = _env_str(("GATEWAY_ENGINE_OPENBAO_ROLE",), "")
+    OPENBAO_KV_MOUNT = _env_str(("GATEWAY_ENGINE_OPENBAO_KV_MOUNT",), "")
+    OPENBAO_KEY_PREFIX = _env_str(("GATEWAY_ENGINE_OPENBAO_KEY_PREFIX",), "")
+    OPENBAO_TIMEOUT = _env_float(("GATEWAY_ENGINE_OPENBAO_TIMEOUT",), 5.0)
+
+    @classmethod
+    def secret_store_availability(cls) -> SecretStoreAvailability:
+        required = {
+            "GATEWAY_ENGINE_OPENBAO_ADDR": cls.OPENBAO_ADDR,
+            "GATEWAY_ENGINE_OPENBAO_AUTH_MOUNT": cls.OPENBAO_AUTH_MOUNT,
+            "GATEWAY_ENGINE_OPENBAO_ROLE": cls.OPENBAO_ROLE,
+            "GATEWAY_ENGINE_OPENBAO_KV_MOUNT": cls.OPENBAO_KV_MOUNT,
+            "GATEWAY_ENGINE_OPENBAO_KEY_PREFIX": cls.OPENBAO_KEY_PREFIX,
+        }
+        missing = tuple(name for name, value in required.items() if not value)
+        if missing:
+            return SecretStoreAvailability(
+                available=False,
+                code="secret_store_unavailable",
+                missing_settings=missing,
+            )
+        return SecretStoreAvailability(available=True)
 
 
 config = Config()
