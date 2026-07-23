@@ -19,17 +19,20 @@ def msg_to_oai(msg: dict) -> list[dict]:
     if not isinstance(content, list):
         return [{"role": role, "content": str(content)}]
 
-    tool_uses = [c for c in content if c.get("type") == "tool_use"]
-    tool_results = [c for c in content if c.get("type") == "tool_result"]
-    text_blocks = [c for c in content if c.get("type") == "text"]
-    image_blocks = [c for c in content if c.get("type") == "image"]
+    tool_uses = [c for c in content if isinstance(c, dict) and c.get("type") == "tool_use"]
+    tool_results = [c for c in content if isinstance(c, dict) and c.get("type") == "tool_result"]
+    text_blocks = [c for c in content if isinstance(c, dict) and c.get("type") == "text"]
+    image_blocks = [c for c in content if isinstance(c, dict) and c.get("type") == "image"]
+    thinking_blocks = [c for c in content if isinstance(c, dict) and c.get("type") == "thinking"]
 
     if tool_results:
         out = []
         for tr in tool_results:
             tr_content = tr.get("content", "")
             if isinstance(tr_content, list):
-                tr_content = " ".join(b.get("text", "") for b in tr_content if b.get("type") == "text")
+                tr_content = " ".join(
+                    b.get("text", "") for b in tr_content if isinstance(b, dict) and b.get("type") == "text"
+                )
             out.append(
                 {
                     "role": "tool",
@@ -39,26 +42,34 @@ def msg_to_oai(msg: dict) -> list[dict]:
             )
         return out
 
-    if tool_uses:
+    if thinking_blocks or tool_uses:
         text = "".join(b.get("text", "") for b in text_blocks)
-        tool_calls = []
-        for tu in tool_uses:
-            inp = tu.get("input", {})
-            tool_calls.append(
-                {
-                    "id": tu.get("id", ""),
-                    "type": "function",
-                    "function": {
-                        "name": tu.get("name", ""),
-                        "arguments": json.dumps(inp) if isinstance(inp, dict) else str(inp),
-                    },
-                }
-            )
-        return [{"role": "assistant", "content": text or None, "tool_calls": tool_calls}]
+        reasoning_text = "".join(b.get("thinking", "") for b in thinking_blocks)
+        res_msg: dict = {"role": role, "content": text or None}
+        if reasoning_text:
+            res_msg["reasoning_content"] = reasoning_text
+        if tool_uses:
+            tool_calls = []
+            for tu in tool_uses:
+                inp = tu.get("input", {})
+                tool_calls.append(
+                    {
+                        "id": tu.get("id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": tu.get("name", ""),
+                            "arguments": json.dumps(inp) if isinstance(inp, dict) else str(inp),
+                        },
+                    }
+                )
+            res_msg["tool_calls"] = tool_calls
+        return [res_msg]
 
     if image_blocks:
         content_list = []
         for block in content:
+            if not isinstance(block, dict):
+                continue
             if block.get("type") == "text":
                 content_list.append({"type": "text", "text": block.get("text", "")})
             elif block.get("type") == "image":
@@ -83,7 +94,7 @@ def req_to_oai(body: dict, *, resolve_model: ResolveModelFn) -> dict:
 
     system = body.get("system", "")
     if isinstance(system, list):
-        system = "".join(b.get("text", "") for b in system if b.get("type") == "text")
+        system = "".join(b.get("text", "") for b in system if isinstance(b, dict) and b.get("type") == "text")
     if system:
         messages.append({"role": "system", "content": system})
 
@@ -102,6 +113,16 @@ def req_to_oai(body: dict, *, resolve_model: ResolveModelFn) -> dict:
         oai["top_p"] = body["top_p"]
     if "stop_sequences" in body:
         oai["stop"] = body["stop_sequences"]
+
+    thinking = body.get("thinking")
+    if isinstance(thinking, dict) and thinking.get("type") == "enabled":
+        budget = thinking.get("budget_tokens", 2048)
+        if budget <= 1024:
+            oai["reasoning_effort"] = "low"
+        elif budget >= 4096:
+            oai["reasoning_effort"] = "high"
+        else:
+            oai["reasoning_effort"] = "medium"
 
     tools = body.get("tools", [])
     if tools:
@@ -138,6 +159,8 @@ def oai_to_resp(oai: dict) -> dict:
     usage = oai.get("usage", {})
 
     content = []
+    if msg.get("reasoning_content"):
+        content.append({"type": "thinking", "thinking": msg["reasoning_content"], "signature": ""})
     if msg.get("content"):
         content.append({"type": "text", "text": msg["content"]})
 

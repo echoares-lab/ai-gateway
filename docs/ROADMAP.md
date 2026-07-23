@@ -241,6 +241,22 @@ Plan: [`docs/superpowers/plans/2026-07-17-staging-deep-smoke.md`](./superpowers/
 
 ---
 
+## Next — Model Metadata Expansion and Reasoning Normalization
+
+Approve epic [#486](https://github.com/echoares-lab/ai-gateway/issues/486) and its atomic children (promoted from candidates `C-MDL-3` and `C-RT-6`). This work expands model metadata in `config/model-registry.yaml` and `ModelRegistryRecord` with `supports_reasoning` and `context_window` fields, normalizes reasoning parameters and thinking blocks across providers, and updates token usage reporting.
+
+| Order | Atomic issue | Repository | State / dependency |
+|------:|--------------|------------|--------------------|
+| 1 | [Model metadata capability expansion #487](https://github.com/echoares-lab/ai-gateway/issues/487) | `ai-gateway` | Ready; no dependency |
+| 2 | [Reasoning token and parameter normalization #488](https://github.com/echoares-lab/ai-gateway/issues/488) | `ai-gateway` | Depends on #487 |
+
+Release invariants:
+- Parent epic #486 is coordination-only;
+- Model capabilities (`supports_reasoning`, `context_window`) must default gracefully when unspecified;
+- Do not break backward compatibility with existing LiteLLM or Postgres schema contracts.
+
+---
+
 ## Next — Release identity and versioning
 
 Approve atomic implementation issue
