@@ -11,6 +11,7 @@ import httpx
 import pytest
 from api.proxy_routing import is_unknown_model_response, maybe_enqueue_unknown_model_refresh
 from core.metrics import (
+    MODEL_ABSENT,
     MODEL_RECONCILIATION_CHANGES,
     MODEL_RECONCILIATION_DURATION,
     MODEL_RECONCILIATION_RUNS,
@@ -39,7 +40,7 @@ def _model(model_id: str = "gpt-5-4", **updates) -> ModelRegistryRecord:
         family="openai",
         upstream_model=model_id.replace("-", ".", 2),
         litellm_model=f"openai/{model_id.replace('-', '.', 2)}",
-        enabled=True,
+        advertised=True,
         status="HEALTHY",
         probe_status="healthy",
         probe_checked_at=datetime.now(timezone.utc),
@@ -436,7 +437,7 @@ class Fakes:
         self.applied = []
         self.rollbacks = []
         self.reloads = 0
-        self.catalog = {model.model_id for model in self.models if model.enabled}
+        self.catalog = {model.model_id for model in self.models if model.enabled} or None
         self.validation_error = None
         self.discovery_error = None
         self.reload_ok = True
@@ -485,7 +486,9 @@ class Fakes:
         return self.reload_ok
 
     async def read_catalog(self):
-        return set(self.catalog)
+        if self.catalog is not None:
+            return set(self.catalog)
+        return {model.model_id for model in self.rendered_models if model.enabled}
 
     def service(self, **scheduler_options):
         return ModelReconciliationService(
@@ -501,6 +504,201 @@ class Fakes:
             read_catalog=self.read_catalog,
             **scheduler_options,
         )
+
+
+def _gauge_sample_value(gauge, **labels):
+    child = gauge.labels(**labels)
+    return child._value.get()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_absent_advertised_model_exports_lifecycle_absent_gauge():
+    existing = _model(model_id="gpt-5-6-sol", advertised=True, source="cliproxy")
+    fakes = Fakes(existing=[existing], discovered=[])
+
+    await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    assert _gauge_sample_value(MODEL_ABSENT, model_id="gpt-5-6-sol", family="openai") == 1.0
+
+
+@pytest.mark.asyncio
+async def test_scheduled_absence_sets_absent_since_but_keeps_advertised():
+    existing = _model(model_id="gpt-5-6-sol", advertised=True, source="cliproxy")
+    fakes = Fakes(existing=[existing], discovered=[])
+
+    await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
+    assert row.absent_since is not None
+    assert row.advertised is True
+    assert row.retired is False
+
+
+@pytest.mark.asyncio
+async def test_scheduled_absence_past_retire_days_retires_row():
+    old = datetime.now(timezone.utc) - timedelta(days=31)
+    existing = _model(
+        model_id="gpt-5-6-sol",
+        advertised=True,
+        absent_since=old,
+        source="cliproxy",
+    )
+    fakes = Fakes(existing=[existing], discovered=[])
+
+    await fakes.service(absence_retire_days=30).run(ReconciliationTrigger.SCHEDULED)
+
+    row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
+    assert row.retired is True
+    assert row.advertised is False
+    assert row.status == "RETIRED"
+
+
+@pytest.mark.asyncio
+async def test_demand_trigger_does_not_retire_on_long_absence():
+    old = datetime.now(timezone.utc) - timedelta(days=31)
+    existing = _model(
+        model_id="gpt-5-6-sol",
+        advertised=True,
+        absent_since=old,
+        source="cliproxy",
+    )
+    fakes = Fakes(existing=[existing], discovered=[])
+
+    await fakes.service(absence_retire_days=30).run(
+        ReconciliationTrigger.DEMAND,
+        requested_model="gpt-5-6-sol",
+    )
+
+    row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
+    assert row.retired is False
+    assert row.advertised is True
+
+
+@pytest.mark.asyncio
+async def test_rediscovery_clears_absent_since():
+    old = datetime.now(timezone.utc) - timedelta(days=3)
+    existing = _model(
+        model_id="gpt-5-6-sol",
+        advertised=True,
+        absent_since=old,
+        source="cliproxy",
+    )
+    fakes = Fakes(existing=[existing], discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
+
+    await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
+    assert row.absent_since is None
+
+
+@pytest.mark.asyncio
+async def test_rediscovery_unretires_model_and_can_advertise_after_healthy_probe():
+    stable_absence = datetime.now(timezone.utc) - timedelta(days=31)
+    existing = _model(
+        model_id="gpt-5-6-sol",
+        advertised=False,
+        retired=True,
+        enabled=False,
+        status="RETIRED",
+        absent_since=stable_absence,
+        probe_status="healthy",
+        source="cliproxy",
+        upstream_model="gpt-5.6-sol",
+        litellm_model="openai/gpt-5.6-sol",
+    )
+    fakes = Fakes(existing=[existing], discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
+
+    await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
+    assert row.retired is False
+    assert row.absent_since is None
+    assert row.advertised is True
+    assert row.enabled is True
+    assert "gpt-5-6-sol" in fakes.probed
+
+
+@pytest.mark.asyncio
+async def test_rediscovery_unretires_model_and_can_advertise_after_transient_probe():
+    stable_absence = datetime.now(timezone.utc) - timedelta(days=31)
+    existing = _model(
+        model_id="gpt-5-6-sol",
+        advertised=False,
+        retired=True,
+        enabled=False,
+        status="RETIRED",
+        absent_since=stable_absence,
+        probe_status="timeout",
+        source="cliproxy",
+        upstream_model="gpt-5.6-sol",
+        litellm_model="openai/gpt-5.6-sol",
+    )
+    fakes = Fakes(existing=[existing], discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
+
+    async def transient_probe(model):
+        return model.model_copy(update={"probe_status": "rate_limited", "status": "UNHEALTHY"})
+
+    fakes.probe = transient_probe
+    await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
+    assert row.retired is False
+    assert row.absent_since is None
+    assert row.advertised is True
+    assert row.enabled is True
+
+
+@pytest.mark.asyncio
+async def test_non_cliproxy_advertised_model_missing_from_discovery_stays_without_absence():
+    datetime.now(timezone.utc) - timedelta(days=31)
+    existing = _model(
+        model_id="manual-model",
+        advertised=True,
+        source="litellm-config",
+        upstream_model="manual-model",
+        litellm_model="openai/manual-model",
+    )
+    fakes = Fakes(existing=[existing], discovered=[])
+
+    await fakes.service(absence_retire_days=30).run(ReconciliationTrigger.SCHEDULED)
+
+    row = next(model for model in fakes.models if model.model_id == "manual-model")
+    assert row.absent_since is None
+    assert row.retired is False
+    assert row.advertised is True
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_counts_use_full_registry_when_models_is_persisted_subset():
+    stable_absence = datetime.now(timezone.utc) - timedelta(days=3)
+    model_a = _model(model_id="gpt-a", advertised=True, enabled=True)
+    model_b = _model(
+        model_id="gpt-b",
+        advertised=False,
+        retired=True,
+        enabled=False,
+        absent_since=stable_absence,
+    )
+    model_c = _model(
+        model_id="gpt-c",
+        advertised=True,
+        enabled=True,
+        absent_since=stable_absence,
+    )
+    fakes = Fakes(
+        existing=[model_a, model_b, model_c],
+        discovered=[{"id": "AI-Gateway:gpt.a"}],
+    )
+
+    result = await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    assert len(result.models) == 1
+    assert result.models[0].model_id == "gpt-a"
+    assert result.counts["advertised"] == 2
+    assert result.counts["retired"] == 1
+    assert result.counts["absent"] == 2
+    assert result.counts["enabled"] == 2
+    assert result.counts["disabled"] == 1
 
 
 @pytest.mark.asyncio
@@ -523,6 +721,9 @@ async def test_no_change_succeeds_without_apply_or_reload():
         "enabled": 1,
         "disabled": 0,
         "unchanged": 1,
+        "advertised": 1,
+        "retired": 0,
+        "absent": 0,
     }
     assert result.verification == "not_required"
     assert fakes.applied == []
@@ -541,6 +742,87 @@ async def test_discovered_add_is_probed_applied_reloaded_and_verified():
     assert fakes.probed == ["gpt-5-6-sol"]
     assert len(fakes.applied) == 1
     assert fakes.reloads == 1
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_new_discovery_is_advertised_and_applied():
+    fakes = Fakes(discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
+
+    async def rate_limited_probe(model):
+        return model.model_copy(
+            update={"probe_status": "rate_limited", "status": "UNHEALTHY", "probe_http_status": 429}
+        )
+
+    fakes.probe = rate_limited_probe
+    result = await fakes.service().run(ReconciliationTrigger.STARTUP)
+    assert result.outcome == "success"
+    assert result.models[0].advertised is True
+    assert result.models[0].enabled is True
+    assert "model_name: gpt-5-6-sol" in fakes.applied[-1][0].content
+
+
+@pytest.mark.asyncio
+async def test_missing_model_new_discovery_stays_unadvertised():
+    fakes = Fakes(discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
+
+    async def missing_probe(model):
+        return model.model_copy(
+            update={"probe_status": "missing_model", "status": "UNHEALTHY", "probe_http_status": 404}
+        )
+
+    fakes.probe = missing_probe
+    result = await fakes.service().run(ReconciliationTrigger.STARTUP)
+    assert result.models[0].advertised is False
+    assert result.verification in {"not_required", "verified"}
+
+
+@pytest.mark.asyncio
+async def test_transient_probe_keeps_already_advertised_model():
+    existing = _model(advertised=True, enabled=True, status="HEALTHY", probe_status="healthy", source="cliproxy")
+    fakes = Fakes(existing=[existing], discovered=[existing])
+
+    async def transient_probe(model):
+        return model.model_copy(update={"probe_status": "rate_limited", "status": "UNHEALTHY"})
+
+    fakes.probe = transient_probe
+    result = await fakes.service(probe_is_stale=lambda m: True).run(ReconciliationTrigger.SCHEDULED)
+    assert result.models[0].advertised is True
+
+
+@pytest.mark.asyncio
+async def test_stale_healthy_probe_preserves_deliberately_unadvertised_model():
+    old_checked_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+    refreshed_at = datetime.now(timezone.utc)
+    existing = _model(
+        advertised=False,
+        retired=False,
+        status="HEALTHY",
+        probe_status="healthy",
+        probe_http_status=200,
+        probe_checked_at=old_checked_at,
+        source="cliproxy",
+    )
+    fakes = Fakes(existing=[existing], discovered=[existing])
+
+    async def healthy_probe(model):
+        return model.model_copy(
+            update={
+                "probe_status": "healthy",
+                "probe_http_status": 204,
+                "probe_checked_at": refreshed_at,
+                "status": "HEALTHY",
+            }
+        )
+
+    fakes.probe = healthy_probe
+    result = await fakes.service(probe_is_stale=lambda model: True).run(ReconciliationTrigger.SCHEDULED)
+
+    assert result.models[0].advertised is False
+    assert result.models[0].retired is False
+    assert result.models[0].probe_status == "healthy"
+    assert result.models[0].probe_http_status == 204
+    assert result.models[0].probe_checked_at == refreshed_at
+    assert result.models[0].status == "HEALTHY"
 
 
 @pytest.mark.asyncio
@@ -594,8 +876,9 @@ async def test_pending_legacy_or_auth_failed_additions_remain_retryable(probe_st
 
 
 @pytest.mark.asyncio
-async def test_two_run_transient_addition_then_healthy_applies_and_advertises_alias():
+async def test_two_run_transient_addition_advertises_immediately_then_probes_healthy():
     fakes = Fakes(discovered=[{"id": "gpt-5.6-sol"}])
+    fakes.catalog = {"gpt-5-6-sol"}
     healthy = False
 
     async def probe(model):
@@ -608,18 +891,18 @@ async def test_two_run_transient_addition_then_healthy_applies_and_advertises_al
 
     first = await service.run(ReconciliationTrigger.SCHEDULED)
     assert first.outcome == "success"
-    assert fakes.models[0].enabled is False
+    assert fakes.models[0].enabled is True
+    assert fakes.models[0].advertised is True
+    rendered = next(resource for resource in fakes.applied[-1] if resource.name == "litellm-config.yaml")
+    assert "model_name: gpt-5-6-sol" in rendered.content
 
     healthy = True
-    fakes.catalog = {"gpt-5-6-sol"}
     second = await service.run(ReconciliationTrigger.SCHEDULED)
 
     assert second.outcome == "success"
-    assert second.verification == "verified"
+    assert second.verification == "not_required"
     assert fakes.models[0].enabled is True
-    assert fakes.reloads == 2
-    rendered = next(resource for resource in fakes.applied[-1] if resource.name == "litellm-config.yaml")
-    assert "model_name: gpt-5-6-sol" in rendered.content
+    assert fakes.reloads == 1
 
 
 @pytest.mark.asyncio
@@ -638,19 +921,21 @@ async def test_transient_probe_failure_preserves_enabled_existing_model():
 
 
 @pytest.mark.asyncio
-async def test_unhealthy_discovered_add_remains_disabled_and_is_not_rendered():
+@pytest.mark.parametrize("probe_status", ["unhealthy", "error"])
+async def test_hard_probe_failure_discovered_add_remains_unadvertised_and_is_not_rendered(probe_status):
     fakes = Fakes(discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
 
     async def unhealthy_probe(model):
         fakes.probed.append(model.model_id)
         assert model.enabled is False
         assert model.status == "PENDING"
-        return model.model_copy(update={"probe_status": "unhealthy", "status": "UNHEALTHY"})
+        return model.model_copy(update={"probe_status": probe_status, "status": "UNHEALTHY"})
 
     fakes.probe = unhealthy_probe
     result = await fakes.service().run(ReconciliationTrigger.STARTUP)
 
     assert result.outcome == "success"
+    assert result.models[0].advertised is False
     assert result.models[0].enabled is False
     assert result.counts["enabled"] == 0
     assert result.counts["disabled"] == 1

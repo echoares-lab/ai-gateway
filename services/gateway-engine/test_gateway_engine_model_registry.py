@@ -25,6 +25,7 @@ from core.model_registry import (
     merge_discovered_model,
     normalize_discovered_model,
     record_from_cliproxy_model,
+    render_litellm_config_from_registry,
 )
 
 
@@ -132,9 +133,9 @@ class _FakeRegistryStore:
         model = self.models.get(model_id)
         if model is None:
             return None
-        disabled = model.model_copy(update={"enabled": False, "status": "DISABLED"})
-        self.models[model_id] = disabled
-        return disabled
+        retired = model.model_copy(update={"retired": True, "advertised": False, "status": "RETIRED"})
+        self.models[model_id] = retired
+        return retired
 
     def hard_delete_model(self, model_id: str):
         return self.models.pop(model_id, None) is not None
@@ -205,16 +206,18 @@ class _FakeModelsResponse:
         return self._payload
 
 
-def _registry_model(model_id: str = "gpt-5-4") -> ModelRegistryRecord:
-    return ModelRegistryRecord(
-        model_id=model_id,
-        provider="openai",
-        family="openai",
-        upstream_model="gpt-5.4",
-        litellm_model="openai/gpt-5.4",
-        enabled=True,
-        status="UNKNOWN",
-    )
+def _registry_model(model_id: str = "gpt-5-4", **kwargs) -> ModelRegistryRecord:
+    defaults = {
+        "model_id": model_id,
+        "provider": kwargs.pop("provider", "openai"),
+        "family": kwargs.pop("family", "openai"),
+        "upstream_model": kwargs.pop("upstream_model", model_id.replace("-", ".")),
+        "litellm_model": kwargs.pop("litellm_model", f"openai/{model_id.replace('-', '.')}"),
+        "enabled": kwargs.pop("enabled", True),
+        "status": kwargs.pop("status", "UNKNOWN"),
+    }
+    defaults.update(kwargs)
+    return ModelRegistryRecord(**defaults)
 
 
 def _gemini_registry_model() -> ModelRegistryRecord:
@@ -382,11 +385,14 @@ def test_model_registry_store_upsert_models_persists_deduplicated_aliases(monkey
     assert connection.committed is True
 
 
-def test_model_registry_store_upsert_round_trips_complete_probe_state(monkeypatch):
+def test_model_registry_store_upsert_round_trips_advertised_retired_absent_since_and_probe_state(monkeypatch):
     checked_at = datetime(2026, 7, 23, 3, 0, tzinfo=timezone.utc)
+    absent_since = datetime(2026, 7, 20, 3, 0, tzinfo=timezone.utc)
     model = _registry_model("gpt-5-6-sol").model_copy(
         update={
-            "enabled": False,
+            "advertised": False,
+            "retired": True,
+            "absent_since": absent_since,
             "status": "UNHEALTHY",
             "probe_status": "temporarily_unavailable",
             "probe_http_status": 503,
@@ -409,14 +415,40 @@ def test_model_registry_store_upsert_round_trips_complete_probe_state(monkeypatc
     loaded = store.list_models()
 
     query, params = write_connection.cursor_instance.executions[0]
+    assert "advertised = EXCLUDED.advertised" in query
+    assert "retired = EXCLUDED.retired" in query
+    assert "absent_since = EXCLUDED.absent_since" in query
     assert "status = EXCLUDED.status" in query
     assert "probe_status = EXCLUDED.probe_status" in query
     assert params[-3:] == ("temporarily_unavailable", 503, checked_at)
     assert write_connection.committed is True
+    assert loaded.models[0].advertised is False
+    assert loaded.models[0].retired is True
+    assert loaded.models[0].absent_since == absent_since
+    assert loaded.models[0].enabled is False
     assert loaded.models[0].status == "UNHEALTHY"
     assert loaded.models[0].probe_status == "temporarily_unavailable"
     assert loaded.models[0].probe_http_status == 503
     assert loaded.models[0].probe_checked_at == checked_at
+
+
+def test_registry_record_enabled_shim_matches_advertised_and_not_retired():
+    active = ModelRegistryRecord(
+        model_id="gpt-5-6-sol",
+        provider="openai",
+        family="openai",
+        upstream_model="gpt-5.6-sol",
+        litellm_model="openai/gpt-5.6-sol",
+        advertised=True,
+        retired=False,
+        status="UNHEALTHY",
+    )
+    assert active.enabled is True
+    assert active.model_dump()["enabled"] is True
+
+    retired = active.model_copy(update={"retired": True, "advertised": False, "status": "RETIRED"})
+    assert retired.enabled is False
+    assert retired.model_dump()["enabled"] is False
 
 
 def test_model_registry_store_discovered_alias_does_not_replace_other_models_curated_alias(
@@ -448,6 +480,89 @@ def test_model_registry_store_discovered_alias_does_not_replace_other_models_cur
     assert aliases["shared-alias"] == curated
 
 
+def test_render_uses_default_cross_family_fallbacks_when_curated_missing():
+    gpt = _registry_model("gpt-5-6-sol", family="openai", advertised=True)
+    gem = _registry_model(
+        "gemini-3-flash",
+        provider="gemini",
+        family="gemini",
+        upstream_model="gemini-3.flash",
+        litellm_model="openai/gemini-3.flash",
+        advertised=True,
+    )
+    claude = _registry_model(
+        "claude-sonnet-4-6",
+        provider="anthropic",
+        family="anthropic",
+        upstream_model="claude-sonnet-4.6",
+        litellm_model="openai/claude-sonnet-4.6",
+        advertised=True,
+    )
+    rendered = yaml.safe_load(render_litellm_config_from_registry([gpt, gem, claude]))
+    fallbacks = rendered["litellm_settings"]["fallbacks"]
+    gpt_fb = next(item["gpt-5-6-sol"] for item in fallbacks if "gpt-5-6-sol" in item)
+    assert "gemini-3-flash" in gpt_fb
+    assert "claude-sonnet-4-6" in gpt_fb
+
+
+def test_render_honors_empty_curated_fallbacks_over_defaults():
+    gpt = _registry_model(
+        "gpt-5-6-sol",
+        family="openai",
+        advertised=True,
+        policy_metadata={"fallbacks": []},
+    )
+    gem = _registry_model(
+        "gemini-3-flash",
+        provider="gemini",
+        family="gemini",
+        upstream_model="gemini-3.flash",
+        litellm_model="openai/gemini-3.flash",
+        advertised=True,
+    )
+    claude = _registry_model(
+        "claude-sonnet-4-6",
+        provider="anthropic",
+        family="anthropic",
+        upstream_model="claude-sonnet-4.6",
+        litellm_model="openai/claude-sonnet-4.6",
+        advertised=True,
+    )
+    rendered = yaml.safe_load(render_litellm_config_from_registry([gpt, gem, claude]))
+    fallbacks = rendered["litellm_settings"]["fallbacks"]
+    assert all("gpt-5-6-sol" not in item for item in fallbacks)
+    gem_fb = next(item["gemini-3-flash"] for item in fallbacks if "gemini-3-flash" in item)
+    assert "gpt-5-6-sol" in gem_fb
+
+
+def test_render_prefers_curated_fallbacks_over_defaults():
+    gpt = _registry_model(
+        "gpt-5-6-sol",
+        family="openai",
+        advertised=True,
+        policy_metadata={"fallbacks": ["claude-opus-4-8"]},
+    )
+    claude = _registry_model(
+        "claude-opus-4-8",
+        provider="anthropic",
+        family="anthropic",
+        upstream_model="claude-opus-4.8",
+        litellm_model="openai/claude-opus-4.8",
+        advertised=True,
+    )
+    gem = _registry_model(
+        "gemini-3-flash",
+        provider="gemini",
+        family="gemini",
+        upstream_model="gemini-3.flash",
+        litellm_model="openai/gemini-3.flash",
+        advertised=True,
+    )
+    rendered = yaml.safe_load(render_litellm_config_from_registry([gpt, claude, gem]))
+    gpt_fb = next(item["gpt-5-6-sol"] for item in rendered["litellm_settings"]["fallbacks"] if "gpt-5-6-sol" in item)
+    assert gpt_fb == ["claude-opus-4-8"]
+
+
 def test_reconcile_renderer_outputs_valid_yaml_json_and_diffs():
     resources = build_reconcile_resources([_registry_model(), _gemini_registry_model()])
     by_name = {resource.name: resource for resource in resources}
@@ -460,7 +575,10 @@ def test_reconcile_renderer_outputs_valid_yaml_json_and_diffs():
         "gpt-5-4",
     ]
     assert litellm["model_list"][0]["model_info"]["supports_vision"] is True
-    assert litellm["litellm_settings"]["fallbacks"] == [{"gemini-3-flash": ["gpt-5-4"]}]
+    assert litellm["litellm_settings"]["fallbacks"] == [
+        {"gemini-3-flash": ["gpt-5-4"]},
+        {"gpt-5-4": ["gemini-3-flash"]},
+    ]
     assert gemini_map == {
         "gemini-3.flash": "gemini-3-flash",
         "gemini-3.flash-preview": "gemini-3-flash",
@@ -871,8 +989,60 @@ def test_admin_model_create_patch_and_disable(monkeypatch):
 
     delete = client.delete("/admin/models/gpt-5-4", headers={"x-admin-key": "test-admin"})
     assert delete.status_code == 200
-    assert delete.json()["model"]["enabled"] is False
-    assert delete.json()["model"]["status"] == "DISABLED"
+    body = delete.json()["model"]
+    assert body["enabled"] is False
+    assert body["retired"] is True
+    assert body["advertised"] is False
+    assert body["status"] == "RETIRED"
+    assert "gpt-5-4" in store.models
+
+
+def test_admin_model_hard_delete_rejected(monkeypatch):
+    store = _FakeRegistryStore()
+    store.models["gpt-5-4"] = _registry_model()
+    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+
+    client = TestClient(t.app)
+    resp = client.delete(
+        "/admin/models/gpt-5-4",
+        headers={"x-admin-key": "test-admin"},
+        params={"hard": "true"},
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["accepted"] is False
+    assert resp.json()["errors"][0]["code"] == "hard_delete_disabled"
+    assert store.models["gpt-5-4"].retired is False
+
+
+def test_disable_model_sets_retire_flags(monkeypatch):
+    store = ModelRegistryStore("postgresql://registry")
+    model = _registry_model("gpt-5-6-sol")
+    write_connection = _RecordingConnection()
+
+    class ReadCursor(_RecordingCursor):
+        def __init__(self, rows):
+            super().__init__()
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+    read_before = _RecordingConnection(ReadCursor([model.model_dump()]))
+    read_after = _RecordingConnection(
+        ReadCursor([model.model_copy(update={"retired": True, "advertised": False, "status": "RETIRED"}).model_dump()])
+    )
+    connections = iter((read_before, write_connection, read_after))
+    monkeypatch.setattr(store, "_connect", lambda: next(connections))
+
+    result = store.disable_model("gpt-5-6-sol")
+
+    assert result is not None
+    assert result.retired is True
+    assert result.advertised is False
+    assert result.status == "RETIRED"
+    assert result.enabled is False
 
 
 def test_admin_model_patch_missing_returns_404(monkeypatch):

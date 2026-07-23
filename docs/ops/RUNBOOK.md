@@ -190,7 +190,27 @@ CLIProxy catalog, preserves curated registry metadata, validates generated resou
 atomically applies changes, reloads LiteLLM, and verifies `/v1/models`. Unknown-model
 requests can enqueue an expedited refresh, but never create the client-supplied name
 inline. New additions are probed against their exact CLIProxy `upstream_model` before
-their LiteLLM alias exists; failed or transient additions remain disabled and retryable.
+their LiteLLM alias exists.
+
+**Lifecycle glossary:** see
+[`docs/superpowers/specs/2026-07-23-model-registry-lifecycle-never-delete-design.md`](../superpowers/specs/2026-07-23-model-registry-lifecycle-never-delete-design.md)
+for `advertised`, `retired`, `absent_since`, and the legacy `enabled` shim
+(`enabled := advertised && !retired`). Registry rows are never hard-deleted; operator
+`DELETE /admin/models/{id}` retires in place.
+
+**Advertise-on-transient:** new and retryable models advertise when the probe is
+`healthy` or transient (`rate_limited`, timeouts, 5xx). Hard failures (`missing_model`,
+auth errors) stay unadvertised until a later successful probe. Already-advertised models
+remain advertised through transient probe failures (429 never un-advertises). The apply
+set includes every model where `advertised && !retired`; probe health is informational
+for routing/fallbacks, not an apply gate.
+
+**Discovery absence:** on scheduled/startup/manual runs, a row missing from the latest
+CLIProxy catalog keeps `advertised=true`, sets `absent_since` on first continuous miss,
+and clears it on rediscovery. Auto-retire (`retired=true`, `advertised=false`,
+`status=RETIRED`) runs only on scheduled/startup/manual triggers after
+`GATEWAY_ENGINE_MODEL_ABSENCE_RETIRE_DAYS` (default 30) of continuous absence; demand
+runs never evaluate the retire timer.
 
 | Variable | Default | Purpose |
 |---|---:|---|
@@ -200,6 +220,8 @@ their LiteLLM alias exists; failed or transient additions remain disabled and re
 | `GATEWAY_ENGINE_MODEL_RECONCILIATION_EXPEDITED_MIN_INTERVAL_SEC` | `60` | Global minimum interval between demand triggers |
 | `GATEWAY_ENGINE_MODEL_RECONCILIATION_TIMEOUT_SEC` | `120` | Hard bound for one run |
 | `GATEWAY_ENGINE_MODEL_RECONCILIATION_PROBE_STALE_SEC` | `300` | Re-probe age for a successful health result; missing and transient results retry sooner |
+| `GATEWAY_ENGINE_MODEL_ABSENCE_RETIRE_DAYS` | `30` | Continuous discovery absence before auto-retire (scheduled/manual/startup only) |
+| `GATEWAY_ENGINE_MODEL_ABSENCE_ALERT_PENDING_DAYS` | `25` | Threshold documented for pending-retire Alertmanager intent (PromQL lives in observability gitops) |
 
 Inspect the secret-free scheduler state:
 
@@ -217,9 +239,22 @@ completion-only `outcome`, `counts`, `verification`, and `errors` are cleared un
 it finishes, so stale details from the prior run cannot be mistaken for live state.
 `degraded` means changed artifacts were rolled back after apply; `failed` means the
 run stopped before a safe apply. Compare `last_attempt_at` with `last_success_at` and
-inspect the bounded, redacted `errors` array. Prometheus exposes bounded run duration,
-outcome, trigger, and change-count metrics; model names, aliases, tokens, and raw error
-text are never metric labels.
+inspect the bounded, redacted `errors` array. Reconcile `counts` expose `advertised`,
+`retired`, and `absent` alongside legacy `enabled`/`disabled` aliases. Prometheus
+exports lifecycle gauges (`gateway_model_absent`, `gateway_model_absent_days`,
+`gateway_model_advertised`, `gateway_model_retired`) plus bounded run duration, outcome,
+trigger, and change-count metrics; model names, aliases, tokens, and raw error text are
+never metric labels.
+
+**Alertmanager intents** (implement in the observability gitops repo; not applied from
+ai-gateway directly):
+
+```yaml
+# Intent for observability repo — not applied from ai-gateway directly
+# GatewayModelAbsent: gateway_model_absent == 1 for >1h; repeat_interval 24h
+# GatewayModelPendingRetire: gateway_model_absent_days >= 25
+# GatewayModelAutoRetired: gateway_model_retired == 1 and absent transition
+```
 
 Preview generated changes without writing them:
 

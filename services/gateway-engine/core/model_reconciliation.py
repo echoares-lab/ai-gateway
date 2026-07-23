@@ -15,7 +15,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from core.metrics import record_model_reconciliation
+from core.metrics import record_model_lifecycle, record_model_reconciliation
 from core.model_registry import (
     ModelRegistryRecord,
     diff_discovered_models,
@@ -39,6 +39,26 @@ _RETRYABLE_PROBE_STATUSES = frozenset(
         "malformed_response",
     }
 )
+_TRANSIENT_PROBE = frozenset(
+    {
+        "transient",
+        "temporarily_unavailable",
+        "timeout",
+        "rate_limited",
+        "preserve",
+    }
+)
+_MISSING_PROBE = frozenset({"missing", "missing_model"})
+
+
+def should_advertise_after_probe(probe_status: str, *, currently_advertised: bool) -> bool:
+    """Return whether a model should be advertised after its latest probe."""
+    status = str(probe_status or "").lower()
+    if currently_advertised and status not in _MISSING_PROBE:
+        return True
+    if status == "healthy" or status in _TRANSIENT_PROBE:
+        return True
+    return False
 
 
 def model_probe_is_stale(
@@ -435,6 +455,7 @@ class ModelReconciliationService:
         interval_sec: float = 900,
         expedited_min_interval_sec: float = 60,
         timeout_sec: float = 120,
+        absence_retire_days: int = 30,
     ):
         self._discover = discover
         self._list_models = list_models
@@ -452,6 +473,7 @@ class ModelReconciliationService:
         self.interval_sec = max(0, interval_sec)
         self.expedited_min_interval_sec = max(0, expedited_min_interval_sec)
         self.timeout_sec = max(0, timeout_sec)
+        self.absence_retire_days = max(0, absence_retire_days)
         self._scheduler_task: asyncio.Task | None = None
         self._scheduler_lock = asyncio.Lock()
         self._operation_lock = asyncio.Lock()
@@ -758,6 +780,9 @@ class ModelReconciliationService:
             "enabled": 0,
             "disabled": 0,
             "unchanged": 0,
+            "advertised": 0,
+            "retired": 0,
+            "absent": 0,
         }
         errors: list[dict[str, str]] = []
         verification = "not_run"
@@ -833,13 +858,50 @@ class ModelReconciliationService:
             ]
             merged_by_id = dict(current_by_id)
             merged_by_id.update({model.model_id: model for model in merged_discovered})
+            discovered_ids = {model.model_id for model in discovered}
+            now = datetime.now(timezone.utc)
+            lifecycle_changed_ids: set[str] = set()
+            rediscovered_unretired: set[str] = set()
+            for model_id, model in list(merged_by_id.items()):
+                if model_id in discovered_ids:
+                    updates: dict[str, Any] = {}
+                    if model.absent_since is not None:
+                        updates["absent_since"] = None
+                    if model.retired:
+                        updates["retired"] = False
+                        rediscovered_unretired.add(model_id)
+                    if updates:
+                        merged_by_id[model_id] = model.model_copy(update=updates)
+                        lifecycle_changed_ids.add(model_id)
+                    continue
+                if model.source != "cliproxy":
+                    continue
+                absent_since = model.absent_since or now
+                updates: dict[str, Any] = {"absent_since": absent_since}
+                if (
+                    trigger is not ReconciliationTrigger.DEMAND
+                    and not model.retired
+                    and (now - absent_since).days >= self.absence_retire_days
+                ):
+                    updates.update(
+                        {
+                            "retired": True,
+                            "advertised": False,
+                            "status": "RETIRED",
+                            "enabled": False,
+                        }
+                    )
+                updated = model.model_copy(update=updates)
+                merged_by_id[model_id] = updated
+                if updated != model:
+                    lifecycle_changed_ids.add(model_id)
 
             set_phase("probe")
             additions = {diff["model_id"] for diff in diffs if diff["kind"] == "add"}
-            retryable_additions = {
+            retryable_unadvertised = {
                 model_id
                 for model_id, model in current_by_id.items()
-                if not model.enabled
+                if not model.advertised
                 and model.source == "cliproxy"
                 and (model.probe_status is None or str(model.probe_status).lower() in _RETRYABLE_PROBE_STATUSES)
             }
@@ -849,25 +911,43 @@ class ModelReconciliationService:
                 )
             probed_ids: set[str] = set()
             for model_id, model in list(merged_by_id.items()):
-                if model_id in additions or self._probe_is_stale(model):
+                if model_id in additions or model_id in rediscovered_unretired or self._probe_is_stale(model):
                     probed = await _resolve(self._probe_model(model))
-                    if model_id in additions or model_id in retryable_additions:
-                        probe_succeeded = str(probed.probe_status or "").lower() == "healthy"
-                        probed = probed.model_copy(update={"enabled": probe_succeeded})
+                    advertised = model.advertised
+                    if (
+                        model_id in additions
+                        or model_id in retryable_unadvertised
+                        or model_id in rediscovered_unretired
+                    ):
+                        advertised = should_advertise_after_probe(
+                            probed.probe_status,
+                            currently_advertised=model.advertised,
+                        )
+                    probed = probed.model_copy(update={"advertised": advertised})
                     merged_by_id[model_id] = probed
                     probed_ids.add(model_id)
 
             models = list(merged_by_id.values())
-            effective_changed_ids = changed_ids | {
-                model_id
-                for model_id, model in merged_by_id.items()
-                if model_id in current_by_id and model.enabled != current_by_id[model_id].enabled
-            }
-            discovered_ids = [model.model_id for model in discovered]
-            persisted_ids = [*discovered_ids, *sorted(probed_ids - set(discovered_ids))]
+            effective_changed_ids = (
+                changed_ids
+                | lifecycle_changed_ids
+                | {
+                    model_id
+                    for model_id, model in merged_by_id.items()
+                    if model_id in current_by_id and model.enabled != current_by_id[model_id].enabled
+                }
+            )
+            discovered_ids_in_order = [model.model_id for model in discovered]
+            persisted_ids = [
+                *discovered_ids_in_order,
+                *sorted((probed_ids | lifecycle_changed_ids) - set(discovered_ids_in_order)),
+            ]
             result_models = [merged_by_id[model_id] for model_id in persisted_ids]
             counts["enabled"] = sum(model.enabled for model in models)
             counts["disabled"] = len(models) - counts["enabled"]
+            counts["advertised"] = sum(1 for model in models if model.advertised)
+            counts["retired"] = sum(1 for model in models if model.retired)
+            counts["absent"] = sum(1 for model in models if model.absent_since is not None)
 
             set_phase("render")
             resources = await _resolve(self._render(models))
@@ -884,6 +964,7 @@ class ModelReconciliationService:
             if not effective_changed_ids:
                 set_phase("persist")
                 persisted_count = int(await _resolve(self._upsert_models(result_models)) or 0)
+                record_model_lifecycle(models)
                 verification = "not_required"
                 return finish("success", "complete")
 
@@ -912,6 +993,7 @@ class ModelReconciliationService:
             verification = "verified"
             set_phase("persist")
             persisted_count = int(await _resolve(self._upsert_models(result_models)) or 0)
+            record_model_lifecycle(models)
             return finish("success", "complete")
         except asyncio.CancelledError:
             # A scheduler timeout cancels this coroutine.  If cancellation lands
