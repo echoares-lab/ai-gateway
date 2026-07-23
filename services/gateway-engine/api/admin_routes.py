@@ -605,7 +605,7 @@ async def admin_models_reconcile(request: Request, body: ModelRegistryReconcileR
 
     service = ModelReconciliationService(
         discover=lambda: loaded.models,
-        list_models=lambda: [],
+        list_models=lambda: loaded.models,
         upsert_models=lambda models: 0,
         probe_model=lambda model: model,
         render=render,
@@ -675,7 +675,7 @@ async def admin_models_sync(request: Request, body: ModelRegistrySyncRequest):
         diffs = result.diffs
         errors.extend(result.errors)
         if result.outcome == "success":
-            imported = len(loaded_models)
+            imported = len(loaded_models) if body.dry_run else result.persisted_count
     return ModelRegistrySyncResponse(
         dry_run=body.dry_run,
         source=source,

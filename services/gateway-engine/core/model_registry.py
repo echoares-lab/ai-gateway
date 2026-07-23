@@ -353,7 +353,13 @@ def merge_discovered_model(
     if current is None:
         return discovered
     metadata = dict(current.policy_metadata)
-    metadata.update(discovered.policy_metadata)
+    metadata.update(
+        {
+            key: value
+            for key, value in discovered.policy_metadata.items()
+            if value is not None and (not isinstance(value, str) or value.strip())
+        }
+    )
     return current.model_copy(
         update={
             "provider": discovered.provider,

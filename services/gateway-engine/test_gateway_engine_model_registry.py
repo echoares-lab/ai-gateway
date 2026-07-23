@@ -354,9 +354,7 @@ def test_model_registry_store_upsert_models_persists_deduplicated_aliases(monkey
     assert store.upsert_models([model]) == 1
 
     alias_writes = [
-        params
-        for query, params in connection.cursor_instance.executions
-        if "INSERT INTO model_aliases" in query
+        params for query, params in connection.cursor_instance.executions if "INSERT INTO model_aliases" in query
     ]
     assert alias_writes == [
         ("gpt-5-6-sol", model.model_id, "openai", "upstream", model.model_id, ANY),
@@ -627,6 +625,34 @@ def test_admin_models_sync_cliproxy_apply_upserts(monkeypatch):
     assert body["imported_count"] == 2
     assert store.models["gpt-5-4"].source == "cliproxy"
     assert store.models["claude-sonnet-4.6"].upstream_model == "claude-sonnet-4.6"
+
+
+def test_admin_models_sync_reports_actual_upsert_count(monkeypatch):
+    store = _FakeRegistryStore()
+    original_upsert = store.upsert_models
+
+    def partial_upsert(models):
+        original_upsert(models)
+        return 1
+
+    store.upsert_models = partial_upsert
+    fake_client = _FakeModelsClient(response=_FakeModelsResponse())
+    monkeypatch.setattr(t, "_model_registry_store", lambda: store)
+    monkeypatch.setattr(t, "_client", fake_client)
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "test-admin")
+    monkeypatch.setenv("CLIPROXY_API_KEY", "cliproxy-key")
+
+    client = TestClient(t.app)
+    resp = client.post(
+        "/admin/models/sync",
+        headers={"x-admin-key": "test-admin"},
+        json={"source": "cliproxy", "dry_run": False},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["imported_count"] == 1
+    assert body["skipped_count"] == 1
 
 
 def test_admin_models_sync_cliproxy_error_does_not_write(monkeypatch):

@@ -43,6 +43,7 @@ class Fakes:
         self.discovery_error = None
         self.reload_ok = True
         self.rendered_models = []
+        self.upsert_error = None
 
     async def discover(self):
         if self.discovery_error:
@@ -53,6 +54,8 @@ class Fakes:
         return list(self.models)
 
     def upsert(self, models):
+        if self.upsert_error:
+            raise self.upsert_error
         by_id = {model.model_id: model for model in self.models}
         by_id.update({model.model_id: model for model in models})
         self.models = list(by_id.values())
@@ -141,6 +144,27 @@ async def test_discovered_add_is_probed_applied_reloaded_and_verified():
 
 
 @pytest.mark.asyncio
+async def test_unhealthy_discovered_add_remains_disabled_and_is_not_rendered():
+    fakes = Fakes(discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
+
+    async def unhealthy_probe(model):
+        fakes.probed.append(model.model_id)
+        assert model.enabled is False
+        assert model.status == "PENDING"
+        return model.model_copy(update={"probe_status": "unhealthy", "status": "UNHEALTHY"})
+
+    fakes.probe = unhealthy_probe
+    result = await fakes.service().run(ReconciliationTrigger.STARTUP)
+
+    assert result.outcome == "success"
+    assert result.models[0].enabled is False
+    assert result.counts["enabled"] == 0
+    assert result.counts["disabled"] == 1
+    litellm_resource = next(resource for resource in result.resources if resource.kind == "yaml")
+    assert "gpt-5-6-sol" not in litellm_resource.content
+
+
+@pytest.mark.asyncio
 async def test_discovery_merge_preserves_curated_metadata():
     current = _model(
         policy_metadata={"manual_note": "keep", "api_base": "http://old"},
@@ -156,6 +180,18 @@ async def test_discovery_merge_preserves_curated_metadata():
     assert merged.policy_metadata["owned_by"] == "proxy"
     assert merged.supports_tools is True
     assert merged.cost_tier == 3
+
+
+@pytest.mark.asyncio
+async def test_discovery_merge_preserves_curated_metadata_when_discovery_value_is_empty():
+    current = _model(policy_metadata={"owned_by": "curated-owner", "manual_note": "keep"})
+    fakes = Fakes(existing=[current], discovered=[{"id": "AI-Gateway:gpt-5.4", "owned_by": None}])
+
+    await fakes.service().run(ReconciliationTrigger.MANUAL, dry_run=True)
+
+    merged = fakes.rendered_models[0]
+    assert merged.policy_metadata["owned_by"] == "curated-owner"
+    assert merged.policy_metadata["manual_note"] == "keep"
 
 
 @pytest.mark.asyncio
@@ -183,6 +219,18 @@ async def test_validation_failure_prevents_apply_and_reload():
     assert result.phase == "validate"
     assert fakes.applied == []
     assert fakes.reloads == 0
+
+
+@pytest.mark.asyncio
+async def test_upsert_failure_is_reported_as_persist_failure():
+    fakes = Fakes(discovered=[{"id": "gpt-5.6-sol"}])
+    fakes.upsert_error = RuntimeError("database unavailable")
+
+    result = await fakes.service().run(ReconciliationTrigger.MANUAL)
+
+    assert result.outcome == "failed"
+    assert result.phase == "persist"
+    assert result.errors[0]["code"] == "persist_failed"
 
 
 @pytest.mark.asyncio

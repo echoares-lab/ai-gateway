@@ -40,6 +40,7 @@ class ReconciliationResult:
     models: list[ModelRegistryRecord] = field(default_factory=list)
     resources: Any = None
     diffs: list[dict[str, Any]] = field(default_factory=list)
+    persisted_count: int = 0
 
 
 async def _resolve(value):
@@ -101,6 +102,7 @@ class ModelReconciliationService:
         result_models: list[ModelRegistryRecord] = []
         result_resources: Any = None
         result_diffs: list[dict[str, Any]] = []
+        persisted_count = 0
 
         def finish(outcome: str, final_phase: str | None = None) -> ReconciliationResult:
             return ReconciliationResult(
@@ -116,6 +118,7 @@ class ModelReconciliationService:
                 models=result_models,
                 resources=result_resources,
                 diffs=result_diffs,
+                persisted_count=persisted_count,
             )
 
         def record_error(code: str, exc: Exception | str) -> None:
@@ -159,10 +162,18 @@ class ModelReconciliationService:
 
             phase = "probe"
             additions = {diff["model_id"] for diff in diffs if diff["kind"] == "add"}
+            for model_id in additions:
+                merged_by_id[model_id] = merged_by_id[model_id].model_copy(
+                    update={"enabled": False, "status": "PENDING"}
+                )
             probed_ids: set[str] = set()
             for model_id, model in list(merged_by_id.items()):
                 if model_id in additions or self._probe_is_stale(model):
-                    merged_by_id[model_id] = await _resolve(self._probe_model(model))
+                    probed = await _resolve(self._probe_model(model))
+                    if model_id in additions:
+                        probe_succeeded = str(probed.probe_status or "").lower() == "healthy"
+                        probed = probed.model_copy(update={"enabled": probe_succeeded})
+                    merged_by_id[model_id] = probed
                     probed_ids.add(model_id)
 
             models = list(merged_by_id.values())
@@ -184,7 +195,8 @@ class ModelReconciliationService:
                 verification = "dry_run"
                 return finish("success", "complete")
 
-            await _resolve(self._upsert_models(result_models))
+            phase = "persist"
+            persisted_count = int(await _resolve(self._upsert_models(result_models)) or 0)
             if not changed_ids:
                 verification = "not_required"
                 return finish("success", "complete")
