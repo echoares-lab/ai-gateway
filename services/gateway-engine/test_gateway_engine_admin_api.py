@@ -16,10 +16,10 @@ from main import app
 client = TestClient(app)
 
 
-def _reconciliation_result(*, outcome="success", phase="complete", errors=None, models=None):
+def _reconciliation_result(*, outcome="success", phase="complete", errors=None, models=None, counts=None):
     from core.model_registry import ModelRegistryRecord
 
-    default_models = models or [
+    default_models = models if models is not None else [
         ModelRegistryRecord(
             model_id="gpt-5-6-sol",
             provider="openai",
@@ -57,13 +57,17 @@ def _reconciliation_result(*, outcome="success", phase="complete", errors=None, 
         phase=phase,
         trigger=ReconciliationTrigger.DEMAND,
         requested_model="gpt-5-6-sol",
-        counts={
+        counts=counts
+        or {
             "discovered": 8,
             "added": 1,
             "updated": 2,
             "enabled": 7,
             "disabled": 1,
             "unchanged": 5,
+            "advertised": 10,
+            "retired": 2,
+            "absent": 3,
         },
         verification="verified" if outcome == "success" else "rollback",
         started_at=datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc),
@@ -166,7 +170,7 @@ def test_admin_reconciliation_status_states(service, expected):
         assert status["requested_model"] == "gpt-5-6-sol"
 
 
-def test_admin_reconciliation_status_lifecycle_counts_from_models():
+def test_admin_reconciliation_status_lifecycle_counts_from_service():
     service = SimpleNamespace(
         enabled=True,
         interval_sec=900,
@@ -180,10 +184,59 @@ def test_admin_reconciliation_status_lifecycle_counts_from_models():
 
     counts = admin_routes._admin_reconciliation_status(service)["counts"]
 
-    assert counts["advertised"] == 2
-    assert counts["retired"] == 1
-    assert counts["absent"] == 1
-    assert counts["enabled"] == 2
+    assert counts["advertised"] == 10
+    assert counts["retired"] == 2
+    assert counts["absent"] == 3
+    assert counts["enabled"] == 7
+    assert counts["disabled"] == 1
+
+
+def test_admin_reconciliation_status_prefers_service_counts_over_partial_models():
+    """result.models may be a persisted subset; counts must reflect full-registry totals."""
+    from core.model_registry import ModelRegistryRecord
+
+    subset_model = ModelRegistryRecord(
+        model_id="gpt-5-6-sol",
+        provider="openai",
+        family="openai",
+        upstream_model="gpt-5.6-sol",
+        litellm_model="openai/gpt-5.6-sol",
+        advertised=True,
+        retired=False,
+        status="HEALTHY",
+    )
+    result = _reconciliation_result(
+        models=[subset_model],
+        counts={
+            "discovered": 8,
+            "added": 1,
+            "updated": 2,
+            "enabled": 7,
+            "disabled": 1,
+            "unchanged": 5,
+            "advertised": 10,
+            "retired": 2,
+            "absent": 3,
+        },
+    )
+    service = SimpleNamespace(
+        enabled=True,
+        interval_sec=900,
+        active=False,
+        pending=False,
+        phase="complete",
+        last_attempt_at=result.started_at,
+        last_success_at=result.completed_at,
+        last_result=result,
+    )
+
+    counts = admin_routes._admin_reconciliation_status(service)["counts"]
+
+    assert len(result.models) == 1
+    assert counts["advertised"] == 10
+    assert counts["retired"] == 2
+    assert counts["absent"] == 3
+    assert counts["enabled"] == 7
     assert counts["disabled"] == 1
 
 

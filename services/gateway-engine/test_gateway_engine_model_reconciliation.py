@@ -469,6 +469,39 @@ async def test_rediscovery_clears_absent_since():
 
 
 @pytest.mark.asyncio
+async def test_reconciliation_counts_use_full_registry_when_models_is_persisted_subset():
+    stable_absence = datetime.now(timezone.utc) - timedelta(days=3)
+    model_a = _model(model_id="gpt-a", advertised=True, enabled=True)
+    model_b = _model(
+        model_id="gpt-b",
+        advertised=False,
+        retired=True,
+        enabled=False,
+        absent_since=stable_absence,
+    )
+    model_c = _model(
+        model_id="gpt-c",
+        advertised=True,
+        enabled=True,
+        absent_since=stable_absence,
+    )
+    fakes = Fakes(
+        existing=[model_a, model_b, model_c],
+        discovered=[{"id": "AI-Gateway:gpt.a"}],
+    )
+
+    result = await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    assert len(result.models) == 1
+    assert result.models[0].model_id == "gpt-a"
+    assert result.counts["advertised"] == 2
+    assert result.counts["retired"] == 1
+    assert result.counts["absent"] == 2
+    assert result.counts["enabled"] == 2
+    assert result.counts["disabled"] == 1
+
+
+@pytest.mark.asyncio
 async def test_no_change_succeeds_without_apply_or_reload():
     current = _model(
         source="cliproxy",
@@ -488,6 +521,9 @@ async def test_no_change_succeeds_without_apply_or_reload():
         "enabled": 1,
         "disabled": 0,
         "unchanged": 1,
+        "advertised": 1,
+        "retired": 0,
+        "absent": 0,
     }
     assert result.verification == "not_required"
     assert fakes.applied == []

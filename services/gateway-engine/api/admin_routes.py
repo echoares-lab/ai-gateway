@@ -151,17 +151,9 @@ _policy_version_hint: str | None = None
 
 
 def _reconciliation_counts(display_result: Any | None) -> dict[str, int]:
-    """Serialize reconciliation counts with lifecycle fields and enabled/disabled aliases."""
+    """Serialize reconciliation counts from service-computed totals."""
     raw = getattr(display_result, "counts", {}) if display_result is not None else {}
-    models = getattr(display_result, "models", None) if display_result is not None else None
-    counts = {key: max(0, int(raw.get(key, 0))) for key in _RECONCILIATION_COUNT_KEYS}
-    if models:
-        counts["advertised"] = sum(1 for model in models if model.advertised)
-        counts["retired"] = sum(1 for model in models if model.retired)
-        counts["absent"] = sum(1 for model in models if model.absent_since is not None)
-        counts["enabled"] = sum(1 for model in models if model.enabled)
-        counts["disabled"] = len(models) - counts["enabled"]
-    return counts
+    return {key: max(0, int(raw.get(key, 0))) for key in _RECONCILIATION_COUNT_KEYS}
 
 
 def _admin_reconciliation_status(service: Any | None) -> dict[str, Any]:

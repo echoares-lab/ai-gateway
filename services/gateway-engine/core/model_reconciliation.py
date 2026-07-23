@@ -559,6 +559,9 @@ class ModelReconciliationService:
             "enabled": 0,
             "disabled": 0,
             "unchanged": 0,
+            "advertised": 0,
+            "retired": 0,
+            "absent": 0,
         }
         errors: list[dict[str, str]] = []
         verification = "not_run"
@@ -704,6 +707,9 @@ class ModelReconciliationService:
             result_models = [merged_by_id[model_id] for model_id in persisted_ids]
             counts["enabled"] = sum(model.enabled for model in models)
             counts["disabled"] = len(models) - counts["enabled"]
+            counts["advertised"] = sum(1 for model in models if model.advertised)
+            counts["retired"] = sum(1 for model in models if model.retired)
+            counts["absent"] = sum(1 for model in models if model.absent_since is not None)
 
             set_phase("render")
             resources = await _resolve(self._render(models))
