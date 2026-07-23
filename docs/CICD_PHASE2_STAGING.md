@@ -177,8 +177,10 @@ require_permission_denied() {
     echo "ERROR: workload policy permits ${description}" >&2
     return 1
   fi
-  if ! grep -Eiq 'permission denied' <<<"${output}"; then
-    echo "ERROR: ${description} probe failed without an OpenBao permission-denied response (status=${status})" >&2
+  if ! grep -Eiq '^[[:space:]]*Code:[[:space:]]*403([[:space:].]|$)' <<<"${output}" ||
+    ! grep -Eiq 'permission denied' <<<"${output}" ||
+    grep -Eiq '(token[^[:alnum:]]*(expired|invalid|revoked)|expired[^[:alnum:]]*token|invalid client token|missing client token)' <<<"${output}"; then
+    echo "ERROR: ${description} probe failed without an OpenBao HTTP 403 policy-denied response (status=${status})" >&2
     echo "       Treat transport, TLS, expired-token, and server failures as test failures; diagnose and rerun." >&2
     return 1
   fi
@@ -191,8 +193,9 @@ require_permission_denied "KV metadata destruction" \
 ```
 
 The login and first two KV commands must succeed. Both deletion attempts must return an
-explicit OpenBao `permission denied`; a generic nonzero status is not evidence of policy
-enforcement. Transport, DNS, TLS, token-expiry, and OpenBao server errors fail the gate.
+explicit OpenBao `Code: 403` together with `permission denied`; a generic nonzero status
+or a local filesystem `Permission denied` is not evidence of policy enforcement.
+Transport, DNS, TLS, token-expiry, and OpenBao server errors fail the gate.
 Because the runtime role intentionally cannot clean up, record `test_path` and have an
 OpenBao operator remove that disposable record with a separately authenticated operator session.
 Never broaden the workload policy just to perform cleanup. Then exercise gateway admin

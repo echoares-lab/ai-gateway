@@ -34,6 +34,11 @@
   Shell tracing is disabled before credentials are minted, the resulting OpenBao token
   is captured directly from `-field=token` into `BAO_TOKEN`, and both credentials are
   removed/unset by the exit trap.
+- Final denial-classifier fix: require both OpenBao `Code: 403` evidence and
+  `permission denied`, while rejecting explicit expired/invalid/revoked-token errors.
+  Added executable `tests/test-openbao-policy-denial-classifier.sh` covering command
+  success, a real 403 policy denial, local filesystem permission denial, TLS failure,
+  transport failure, expired token, and 5xx response.
 
 ## Deliberately separate work
 
