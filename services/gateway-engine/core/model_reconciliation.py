@@ -114,9 +114,9 @@ async def request_litellm_reload(
     timeout_sec: float,
 ) -> bool:
     """Request LiteLLM's authenticated config reload within a hard timeout."""
-    if client is None:
+    if client is None or not master_key.strip():
         return False
-    headers = {"authorization": f"Bearer {master_key}"} if master_key else {}
+    headers = {"authorization": f"Bearer {master_key}"}
     try:
         async with asyncio.timeout(timeout_sec):
             response = await client.post(
@@ -430,9 +430,9 @@ class ModelReconciliationService:
                 verification = "dry_run"
                 return finish("success", "complete")
 
-            phase = "persist"
-            persisted_count = int(await _resolve(self._upsert_models(result_models)) or 0)
             if not changed_ids:
+                phase = "persist"
+                persisted_count = int(await _resolve(self._upsert_models(result_models)) or 0)
                 verification = "not_required"
                 return finish("success", "complete")
 
@@ -452,6 +452,8 @@ class ModelReconciliationService:
                 verification = "failed"
                 raise RuntimeError(f"reconciled models missing from catalog: {', '.join(missing)}")
             verification = "verified"
+            phase = "persist"
+            persisted_count = int(await _resolve(self._upsert_models(result_models)) or 0)
             return finish("success", "complete")
         except asyncio.CancelledError:
             # A scheduler timeout cancels this coroutine.  If cancellation lands

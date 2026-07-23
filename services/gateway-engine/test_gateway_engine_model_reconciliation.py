@@ -130,6 +130,22 @@ async def test_litellm_reload_timeout_returns_false():
     assert await request_litellm_reload(Client(), "http://litellm:4000", "master", timeout_sec=0.01) is False
 
 
+@pytest.mark.asyncio
+async def test_litellm_reload_with_empty_master_key_fails_before_request():
+    class Client:
+        def __init__(self):
+            self.calls = 0
+
+        async def post(self, url, **kwargs):
+            self.calls += 1
+            raise AssertionError("reload request must not be sent without authentication")
+
+    client = Client()
+
+    assert await request_litellm_reload(client, "http://litellm:4000", "", timeout_sec=0.1) is False
+    assert client.calls == 0
+
+
 class Fakes:
     def __init__(self, existing=None, discovered=None):
         self.models = list(existing or [])
@@ -323,15 +339,19 @@ async def test_validation_failure_prevents_apply_and_reload():
 
 
 @pytest.mark.asyncio
-async def test_upsert_failure_is_reported_as_persist_failure():
+async def test_upsert_failure_after_verification_rolls_back_artifacts():
     fakes = Fakes(discovered=[{"id": "gpt-5.6-sol"}])
+    fakes.catalog = {"gpt-5-6-sol"}
     fakes.upsert_error = RuntimeError("database unavailable")
 
     result = await fakes.service().run(ReconciliationTrigger.MANUAL)
 
-    assert result.outcome == "failed"
+    assert result.outcome == "degraded"
     assert result.phase == "persist"
     assert result.errors[0]["code"] == "persist_failed"
+    assert fakes.rollbacks == ["previous-artifacts"]
+    assert fakes.reloads == 2
+    assert fakes.models == []
 
 
 @pytest.mark.asyncio
@@ -346,6 +366,25 @@ async def test_reload_failure_rolls_back_applied_artifacts():
     assert fakes.rollbacks == ["previous-artifacts"]
     assert fakes.reloads == 2
     assert result.verification == "rollback"
+
+
+@pytest.mark.asyncio
+async def test_reload_failure_does_not_persist_registry_and_next_run_retries():
+    fakes = Fakes(discovered=[{"id": "gpt-5.6-sol"}])
+    fakes.catalog = {"gpt-5-6-sol"}
+    fakes.reload_ok = False
+
+    failed = await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    assert failed.outcome == "degraded"
+    assert fakes.models == []
+
+    fakes.reload_ok = True
+    succeeded = await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    assert succeeded.outcome == "success"
+    assert succeeded.counts["added"] == 1
+    assert [model.model_id for model in fakes.models] == ["gpt-5-6-sol"]
 
 
 @pytest.mark.asyncio
