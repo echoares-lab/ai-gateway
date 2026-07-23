@@ -19,39 +19,43 @@ client = TestClient(app)
 def _reconciliation_result(*, outcome="success", phase="complete", errors=None, models=None, counts=None):
     from core.model_registry import ModelRegistryRecord
 
-    default_models = models if models is not None else [
-        ModelRegistryRecord(
-            model_id="gpt-5-6-sol",
-            provider="openai",
-            family="openai",
-            upstream_model="gpt-5.6-sol",
-            litellm_model="openai/gpt-5.6-sol",
-            advertised=True,
-            retired=False,
-            status="HEALTHY",
-        ),
-        ModelRegistryRecord(
-            model_id="claude-sonnet-4-6",
-            provider="anthropic",
-            family="anthropic",
-            upstream_model="claude-sonnet-4.6",
-            litellm_model="openai/claude-sonnet-4.6",
-            advertised=False,
-            retired=True,
-            status="RETIRED",
-        ),
-        ModelRegistryRecord(
-            model_id="gemini-3-flash",
-            provider="gemini",
-            family="gemini",
-            upstream_model="gemini-3.flash",
-            litellm_model="openai/gemini-3.flash",
-            advertised=True,
-            retired=False,
-            absent_since=datetime(2026, 7, 20, tzinfo=timezone.utc),
-            status="UNHEALTHY",
-        ),
-    ]
+    default_models = (
+        models
+        if models is not None
+        else [
+            ModelRegistryRecord(
+                model_id="gpt-5-6-sol",
+                provider="openai",
+                family="openai",
+                upstream_model="gpt-5.6-sol",
+                litellm_model="openai/gpt-5.6-sol",
+                advertised=True,
+                retired=False,
+                status="HEALTHY",
+            ),
+            ModelRegistryRecord(
+                model_id="claude-sonnet-4-6",
+                provider="anthropic",
+                family="anthropic",
+                upstream_model="claude-sonnet-4.6",
+                litellm_model="openai/claude-sonnet-4.6",
+                advertised=False,
+                retired=True,
+                status="RETIRED",
+            ),
+            ModelRegistryRecord(
+                model_id="gemini-3-flash",
+                provider="gemini",
+                family="gemini",
+                upstream_model="gemini-3.flash",
+                litellm_model="openai/gemini-3.flash",
+                advertised=True,
+                retired=False,
+                absent_since=datetime(2026, 7, 20, tzinfo=timezone.utc),
+                status="UNHEALTHY",
+            ),
+        ]
+    )
     return ReconciliationResult(
         outcome=outcome,
         phase=phase,

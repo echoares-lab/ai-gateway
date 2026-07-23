@@ -693,7 +693,11 @@ class ModelReconciliationService:
                 if model_id in additions or model_id in rediscovered_unretired or self._probe_is_stale(model):
                     probed = await _resolve(self._probe_model(model))
                     advertised = model.advertised
-                    if model_id in additions or model_id in retryable_unadvertised or model_id in rediscovered_unretired:
+                    if (
+                        model_id in additions
+                        or model_id in retryable_unadvertised
+                        or model_id in rediscovered_unretired
+                    ):
                         advertised = should_advertise_after_probe(
                             probed.probe_status,
                             currently_advertised=model.advertised,
@@ -703,11 +707,15 @@ class ModelReconciliationService:
                     probed_ids.add(model_id)
 
             models = list(merged_by_id.values())
-            effective_changed_ids = changed_ids | lifecycle_changed_ids | {
-                model_id
-                for model_id, model in merged_by_id.items()
-                if model_id in current_by_id and model.enabled != current_by_id[model_id].enabled
-            }
+            effective_changed_ids = (
+                changed_ids
+                | lifecycle_changed_ids
+                | {
+                    model_id
+                    for model_id, model in merged_by_id.items()
+                    if model_id in current_by_id and model.enabled != current_by_id[model_id].enabled
+                }
+            )
             discovered_ids_in_order = [model.model_id for model in discovered]
             persisted_ids = [
                 *discovered_ids_in_order,

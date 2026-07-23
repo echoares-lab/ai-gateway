@@ -133,9 +133,7 @@ class _FakeRegistryStore:
         model = self.models.get(model_id)
         if model is None:
             return None
-        retired = model.model_copy(
-            update={"retired": True, "advertised": False, "status": "RETIRED"}
-        )
+        retired = model.model_copy(update={"retired": True, "advertised": False, "status": "RETIRED"})
         self.models[model_id] = retired
         return retired
 
@@ -561,9 +559,7 @@ def test_render_prefers_curated_fallbacks_over_defaults():
         advertised=True,
     )
     rendered = yaml.safe_load(render_litellm_config_from_registry([gpt, claude, gem]))
-    gpt_fb = next(
-        item["gpt-5-6-sol"] for item in rendered["litellm_settings"]["fallbacks"] if "gpt-5-6-sol" in item
-    )
+    gpt_fb = next(item["gpt-5-6-sol"] for item in rendered["litellm_settings"]["fallbacks"] if "gpt-5-6-sol" in item)
     assert gpt_fb == ["claude-opus-4-8"]
 
 
@@ -1035,13 +1031,7 @@ def test_disable_model_sets_retire_flags(monkeypatch):
 
     read_before = _RecordingConnection(ReadCursor([model.model_dump()]))
     read_after = _RecordingConnection(
-        ReadCursor(
-            [
-                model.model_copy(
-                    update={"retired": True, "advertised": False, "status": "RETIRED"}
-                ).model_dump()
-            ]
-        )
+        ReadCursor([model.model_copy(update={"retired": True, "advertised": False, "status": "RETIRED"}).model_dump()])
     )
     connections = iter((read_before, write_connection, read_after))
     monkeypatch.setattr(store, "_connect", lambda: next(connections))

@@ -393,9 +393,7 @@ async def test_reconcile_absent_advertised_model_exports_lifecycle_absent_gauge(
 
     await fakes.service().run(ReconciliationTrigger.SCHEDULED)
 
-    assert (
-        _gauge_sample_value(MODEL_ABSENT, model_id="gpt-5-6-sol", family="openai") == 1.0
-    )
+    assert _gauge_sample_value(MODEL_ABSENT, model_id="gpt-5-6-sol", family="openai") == 1.0
 
 
 @pytest.mark.asyncio

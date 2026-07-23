@@ -758,9 +758,7 @@ class ModelRegistryStore:
         current = self.get_model(model_id)
         if current is None:
             return None
-        retired = current.model_copy(
-            update={"retired": True, "advertised": False, "status": "RETIRED"}
-        )
+        retired = current.model_copy(update={"retired": True, "advertised": False, "status": "RETIRED"})
         return self.upsert_model(retired)
 
     def hard_delete_model(self, model_id: str) -> bool:
