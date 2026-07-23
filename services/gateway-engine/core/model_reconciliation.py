@@ -91,6 +91,205 @@ class ArtifactRollbackToken:
     snapshots: dict[str, ArtifactSnapshot]
 
 
+@dataclass(frozen=True)
+class RuntimeMutation:
+    action: str
+    model_id: str
+    litellm_id: str | None = None
+    payload: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeRollbackToken:
+    mutations: tuple[RuntimeMutation, ...] = ()
+
+
+@dataclass(frozen=True)
+class HybridRollbackToken:
+    """Rollback token spanning optional file artifacts and LiteLLM runtime mutations."""
+
+    file_token: ArtifactRollbackToken | None = None
+    runtime_token: RuntimeRollbackToken | None = None
+
+
+def litellm_model_new_payload(model: ModelRegistryRecord) -> dict[str, Any]:
+    """Build a LiteLLM `/model/new` body from a registry record."""
+    litellm_params: dict[str, Any] = {
+        "model": model.litellm_model,
+        "api_base": model.policy_metadata.get("api_base", "http://cliproxy:8317/v1"),
+        "api_key": "os.environ/CLIPROXY_API_KEY",
+    }
+    info: dict[str, Any] = {}
+    if model.supports_tools is not None:
+        info["supports_function_calling"] = model.supports_tools
+    if model.supports_vision is not None:
+        info["supports_vision"] = model.supports_vision
+    if model.max_input_tokens is not None:
+        info["max_input_tokens"] = model.max_input_tokens
+    if model.max_output_tokens is not None:
+        info["max_output_tokens"] = model.max_output_tokens
+    payload: dict[str, Any] = {
+        "model_name": model.model_id,
+        "litellm_params": litellm_params,
+    }
+    if info:
+        payload["model_info"] = info
+    return payload
+
+
+def _litellm_already_exists(status_code: int, body: Any) -> bool:
+    if status_code not in {400, 409}:
+        return False
+    text = str(body).lower()
+    return "already" in text and "exist" in text
+
+
+class LiteLLMRuntimeApplyManager:
+    """Apply model catalog changes through LiteLLM's runtime mutation APIs."""
+
+    def __init__(
+        self,
+        client,
+        litellm_url: str,
+        master_key: str,
+        *,
+        timeout_sec: float,
+    ):
+        self._client = client
+        self._litellm_url = litellm_url.rstrip("/")
+        self._master_key = master_key
+        self._timeout_sec = timeout_sec
+
+    def _headers(self) -> dict[str, str]:
+        if not self._master_key.strip():
+            return {}
+        return {"authorization": f"Bearer {self._master_key}"}
+
+    async def apply(
+        self,
+        models: list[ModelRegistryRecord],
+        changed_ids: set[str],
+    ) -> RuntimeRollbackToken:
+        if self._client is None:
+            raise RuntimeError("http client not initialized")
+        if not self._master_key.strip():
+            raise RuntimeError("LITELLM_MASTER_KEY is required for runtime apply")
+
+        by_id = {model.model_id: model for model in models}
+        mutations: list[RuntimeMutation] = []
+        try:
+            for model_id in sorted(changed_ids):
+                model = by_id.get(model_id)
+                if model is None:
+                    continue
+                if model.enabled:
+                    mutation = await self._add_model(model)
+                    if mutation is not None:
+                        mutations.append(mutation)
+                else:
+                    mutation = await self._delete_model(model)
+                    if mutation is not None:
+                        mutations.append(mutation)
+        except Exception:
+            if mutations:
+                with suppress(Exception):
+                    await self.rollback(RuntimeRollbackToken(mutations=tuple(mutations)))
+            raise
+        return RuntimeRollbackToken(mutations=tuple(mutations))
+
+    async def rollback(self, token: RuntimeRollbackToken) -> None:
+        for mutation in reversed(token.mutations):
+            if mutation.action == "add" and mutation.litellm_id:
+                await self._post_json("/model/delete", {"id": mutation.litellm_id}, allow_missing=True)
+            elif mutation.action == "delete" and mutation.payload is not None:
+                await self._post_json("/model/new", mutation.payload, allow_exists=True)
+
+    async def _add_model(self, model: ModelRegistryRecord) -> RuntimeMutation | None:
+        payload = litellm_model_new_payload(model)
+        status_code, body = await self._post_json("/model/new", payload, allow_exists=True)
+        if _litellm_already_exists(status_code, body):
+            return None
+        litellm_id = None
+        if isinstance(body, dict):
+            litellm_id = body.get("model_id") or (body.get("model_info") or {}).get("id")
+        if not litellm_id:
+            litellm_id = await self._lookup_model_id(model.model_id)
+        if not litellm_id:
+            raise RuntimeError(f"LiteLLM did not return an id for {model.model_id}")
+        return RuntimeMutation(
+            action="add",
+            model_id=model.model_id,
+            litellm_id=str(litellm_id),
+            payload=payload,
+        )
+
+    async def _delete_model(self, model: ModelRegistryRecord) -> RuntimeMutation | None:
+        litellm_id = await self._lookup_model_id(model.model_id)
+        if not litellm_id:
+            return None
+        payload = litellm_model_new_payload(model)
+        await self._post_json("/model/delete", {"id": litellm_id}, allow_missing=True)
+        return RuntimeMutation(
+            action="delete",
+            model_id=model.model_id,
+            litellm_id=str(litellm_id),
+            payload=payload,
+        )
+
+    async def _lookup_model_id(self, model_name: str) -> str | None:
+        response = await self._client.get(
+            f"{self._litellm_url}/model/info",
+            headers=self._headers(),
+            timeout=self._timeout_sec,
+        )
+        if not (200 <= response.status_code < 300):
+            return None
+        try:
+            payload = response.json()
+        except Exception:
+            return None
+        rows = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            return None
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if row.get("model_name") != model_name:
+                continue
+            model_info = row.get("model_info") if isinstance(row.get("model_info"), dict) else {}
+            found = row.get("model_id") or model_info.get("id")
+            if found:
+                return str(found)
+        return None
+
+    async def _post_json(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        *,
+        allow_exists: bool = False,
+        allow_missing: bool = False,
+    ) -> tuple[int, Any]:
+        response = await self._client.post(
+            f"{self._litellm_url}{path}",
+            headers=self._headers(),
+            json=payload,
+            timeout=self._timeout_sec,
+        )
+        try:
+            body = response.json()
+        except Exception:
+            body = {"raw_response": getattr(response, "text", "")}
+        if 200 <= response.status_code < 300:
+            return response.status_code, body
+        if allow_exists and _litellm_already_exists(response.status_code, body):
+            return response.status_code, body
+        if allow_missing and response.status_code in {404, 400}:
+            return response.status_code, body
+        reason = body.get("error") if isinstance(body, dict) else body
+        raise RuntimeError(f"litellm {path} failed: {reason or response.status_code}")
+
+
 class ReconciliationArtifactManager:
     """Atomically replace known reconciliation artifacts with rollback support."""
 
@@ -210,6 +409,28 @@ async def _resolve(value):
     if inspect.isawaitable(value):
         return await value
     return value
+
+
+def _apply_accepts_models(apply: Callable[..., Any]) -> bool:
+    try:
+        signature = inspect.signature(apply)
+    except (TypeError, ValueError):
+        return False
+    parameters = list(signature.parameters.values())
+    if any(parameter.kind == inspect.Parameter.VAR_POSITIONAL for parameter in parameters):
+        return True
+    return len(parameters) >= 3
+
+
+async def _invoke_apply(
+    apply: Callable[..., Any],
+    resources,
+    models: list[ModelRegistryRecord],
+    changed_ids: set[str],
+):
+    if _apply_accepts_models(apply):
+        return await _resolve(apply(resources, models, changed_ids))
+    return await _resolve(apply(resources))
 
 
 class ModelReconciliationService:
@@ -748,7 +969,12 @@ class ModelReconciliationService:
                 return finish("success", "complete")
 
             set_phase("apply")
-            rollback_token = await _resolve(self._apply(resources))
+            rollback_token = await _invoke_apply(
+                self._apply,
+                resources,
+                result_models,
+                effective_changed_ids,
+            )
             set_phase("reload")
             if not await _resolve(self._reload()):
                 raise RuntimeError("LiteLLM reload failed")

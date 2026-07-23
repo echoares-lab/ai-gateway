@@ -90,6 +90,8 @@ from core.metrics import (
     UPSTREAM_ERRORS,
 )
 from core.model_reconciliation import (
+    HybridRollbackToken,
+    LiteLLMRuntimeApplyManager,
     ModelReconciliationService,
     ReconciliationArtifactManager,
     model_probe_is_stale,
@@ -149,9 +151,14 @@ def _build_model_reconciliation_service() -> ModelReconciliationService:
     store = _model_registry_store()
     artifacts = ReconciliationArtifactManager(
         {
-            "litellm-config.yaml": LITELLM_CONFIG_PATH,
             "gemini-model-map.json": GEMINI_MODEL_MAP_PATH,
         }
+    )
+    runtime = LiteLLMRuntimeApplyManager(
+        _client,
+        LITELLM_ADMIN_URL,
+        config.LITELLM_MASTER_KEY,
+        timeout_sec=GATEWAY_ENGINE_MODEL_RECONCILIATION_TIMEOUT_SEC,
     )
 
     async def discover():
@@ -254,6 +261,30 @@ def _build_model_reconciliation_service() -> ModelReconciliationService:
             (yaml.safe_load if resource.kind == "yaml" else json.loads)(resource.content)
         return True
 
+    async def apply(resources, models, changed_ids):
+        gemini_resources = [
+            resource for resource in resources if resource.name == "gemini-model-map.json" and resource.changed
+        ]
+        file_token = artifacts.apply(gemini_resources) if gemini_resources else None
+        try:
+            # Rebind client each run — lifespan assigns `_client` after service construction.
+            runtime._client = _client
+            runtime_token = await runtime.apply(models, changed_ids)
+        except Exception:
+            if file_token is not None:
+                artifacts.rollback(file_token)
+            raise
+        return HybridRollbackToken(file_token=file_token, runtime_token=runtime_token)
+
+    async def rollback(token):
+        if isinstance(token, HybridRollbackToken):
+            if token.runtime_token is not None:
+                await runtime.rollback(token.runtime_token)
+            if token.file_token is not None:
+                artifacts.rollback(token.file_token)
+            return
+        artifacts.rollback(token)
+
     async def read_catalog():
         model_ids, errors = await _admin_fetch_visible_models()
         if errors or model_ids is None:
@@ -267,8 +298,8 @@ def _build_model_reconciliation_service() -> ModelReconciliationService:
         probe_model=probe_model,
         render=render,
         validate=validate,
-        apply=artifacts.apply,
-        rollback=artifacts.rollback,
+        apply=apply,
+        rollback=rollback,
         reload=lambda: request_litellm_reload(
             _client,
             LITELLM_ADMIN_URL,

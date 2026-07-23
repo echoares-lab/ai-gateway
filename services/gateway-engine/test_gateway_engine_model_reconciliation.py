@@ -18,6 +18,7 @@ from core.metrics import (
     record_model_reconciliation,
 )
 from core.model_reconciliation import (
+    LiteLLMRuntimeApplyManager,
     ModelReconciliationService,
     ReconciliationArtifactManager,
     ReconciliationResult,
@@ -306,6 +307,128 @@ async def test_litellm_reload_with_empty_master_key_fails_before_request():
     assert client.calls == 0
 
 
+class _RuntimeResponse:
+    def __init__(self, status_code=200, payload=None, text=""):
+        self.status_code = status_code
+        self._payload = payload if payload is not None else {"ok": True}
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+class _RuntimeClient:
+    def __init__(self):
+        self.calls = []
+        self._info = {"data": []}
+        self._new_status = 200
+        self._delete_status = 200
+        self._new_error_for = {}
+
+    async def get(self, url, **kwargs):
+        self.calls.append({"method": "GET", "url": url, **kwargs})
+        return _RuntimeResponse(200, self._info)
+
+    async def post(self, url, **kwargs):
+        self.calls.append({"method": "POST", "url": url, **kwargs})
+        payload = kwargs.get("json") or {}
+        if url.endswith("/model/new"):
+            name = payload.get("model_name")
+            if name in self._new_error_for:
+                return _RuntimeResponse(self._new_error_for[name][0], self._new_error_for[name][1])
+            return _RuntimeResponse(self._new_status, {"model_id": f"id-{name}", "model_name": name})
+        if url.endswith("/model/delete"):
+            return _RuntimeResponse(self._delete_status, {"deleted": True})
+        return _RuntimeResponse(200, {})
+
+
+@pytest.mark.asyncio
+async def test_runtime_apply_adds_enabled_and_deletes_disabled_changed_models():
+    client = _RuntimeClient()
+    client._info = {
+        "data": [
+            {
+                "model_name": "legacy-off",
+                "model_info": {"id": "litellm-legacy"},
+            }
+        ]
+    }
+    manager = LiteLLMRuntimeApplyManager(
+        client,
+        "http://litellm:4000",
+        "master-key",
+        timeout_sec=1.0,
+    )
+    enabled = _model("new-on", enabled=True, litellm_model="openai/new.on", upstream_model="new.on")
+    disabled = _model("legacy-off", enabled=False, litellm_model="openai/legacy.off", upstream_model="legacy.off")
+
+    token = await manager.apply([enabled, disabled], {"new-on", "legacy-off"})
+
+    posts = [call for call in client.calls if call["method"] == "POST"]
+    assert [call["url"] for call in posts] == [
+        "http://litellm:4000/model/delete",
+        "http://litellm:4000/model/new",
+    ]
+    assert posts[0]["json"] == {"id": "litellm-legacy"}
+    assert posts[1]["json"]["model_name"] == "new-on"
+    assert posts[1]["headers"]["authorization"] == "Bearer master-key"
+    assert [item.action for item in token.mutations] == ["delete", "add"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_apply_treats_already_exists_as_success():
+    client = _RuntimeClient()
+    client._new_error_for["gpt-5-4"] = (400, {"error": "Model already exists"})
+    manager = LiteLLMRuntimeApplyManager(client, "http://litellm:4000", "master", timeout_sec=1.0)
+
+    token = await manager.apply([_model("gpt-5-4")], {"gpt-5-4"})
+
+    assert token.mutations == ()
+    assert any(call["url"].endswith("/model/new") for call in client.calls)
+
+
+@pytest.mark.asyncio
+async def test_runtime_apply_rolls_back_successful_adds_after_later_failure():
+    client = _RuntimeClient()
+    client._new_error_for["second"] = (500, {"error": "boom"})
+    client._info = {"data": [{"model_name": "first", "model_info": {"id": "id-first"}}]}
+    manager = LiteLLMRuntimeApplyManager(client, "http://litellm:4000", "master", timeout_sec=1.0)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await manager.apply(
+            [
+                _model("first", enabled=True),
+                _model("second", enabled=True),
+            ],
+            {"first", "second"},
+        )
+
+    delete_calls = [call for call in client.calls if call["url"].endswith("/model/delete")]
+    assert delete_calls
+    assert delete_calls[-1]["json"] == {"id": "id-first"}
+
+
+@pytest.mark.asyncio
+async def test_runtime_rollback_reverses_add_and_delete_mutations():
+    client = _RuntimeClient()
+    client._info = {"data": [{"model_name": "gone", "model_info": {"id": "id-gone"}}]}
+    manager = LiteLLMRuntimeApplyManager(client, "http://litellm:4000", "master", timeout_sec=1.0)
+    added = _model("fresh", enabled=True)
+    removed = _model("gone", enabled=False)
+    token = await manager.apply([added, removed], {"fresh", "gone"})
+    client.calls.clear()
+
+    await manager.rollback(token)
+
+    urls = [call["url"] for call in client.calls if call["method"] == "POST"]
+    assert urls == [
+        "http://litellm:4000/model/new",
+        "http://litellm:4000/model/delete",
+    ]
+    assert client.calls[0]["json"]["model_name"] == "gone"
+    assert client.calls[1]["json"] == {"id": "id-fresh"}
+
+
 class Fakes:
     def __init__(self, existing=None, discovered=None):
         self.models = list(existing or [])
@@ -349,8 +472,10 @@ class Fakes:
         if self.validation_error:
             raise self.validation_error
 
-    async def apply(self, resources):
+    async def apply(self, resources, models=None, changed_ids=None):
         self.applied.append(resources)
+        self.applied_models = list(models or [])
+        self.applied_changed_ids = set(changed_ids or [])
         return "previous-artifacts"
 
     async def rollback(self, token):
@@ -1211,7 +1336,8 @@ async def test_lifespan_starts_and_stops_the_reconciliation_service(monkeypatch)
     assert events == ["started", "stopped", "client_closed"]
 
 
-def test_concrete_factory_uses_configured_artifacts_admin_client_and_defaults(monkeypatch, tmp_path):
+@pytest.mark.asyncio
+async def test_concrete_factory_uses_configured_artifacts_admin_client_and_defaults(monkeypatch, tmp_path):
     import main
 
     litellm = tmp_path / "litellm.yaml"
@@ -1230,10 +1356,18 @@ def test_concrete_factory_uses_configured_artifacts_admin_client_and_defaults(mo
         def upsert_models(self, models):
             return len(models)
 
+    class Client:
+        async def get(self, url, **kwargs):
+            return httpx.Response(200, json={"data": []})
+
+        async def post(self, url, **kwargs):
+            return httpx.Response(200, json={"ok": True})
+
     monkeypatch.setattr(main, "LITELLM_CONFIG_PATH", str(litellm))
     monkeypatch.setattr(main, "GEMINI_MODEL_MAP_PATH", str(gemini))
     monkeypatch.setattr(main, "_model_registry_store", lambda: Store())
-    monkeypatch.setattr(main, "_client", object())
+    monkeypatch.setattr(main, "_client", Client())
+    monkeypatch.setattr(main.config, "LITELLM_MASTER_KEY", "master")
 
     service = main._build_model_reconciliation_service()
 
@@ -1248,8 +1382,10 @@ def test_concrete_factory_uses_configured_artifacts_admin_client_and_defaults(mo
     rendered_doc = __import__("yaml").safe_load(rendered_litellm.content)
     assert rendered_doc["general_settings"] == {"master_key": "os.environ/LITELLM_MASTER_KEY"}
     assert rendered_doc["litellm_settings"]["cache"] is True
-    token = service._apply(resources)
-    assert token.snapshots == {}
+    token = await service._apply(resources, [], set())
+    assert token.file_token is None
+    assert token.runtime_token is not None
+    assert token.runtime_token.mutations == ()
 
 
 @pytest.mark.asyncio
@@ -1280,9 +1416,22 @@ async def test_concrete_factory_probes_absent_alias_upstream_then_advertises(mon
         def __init__(self):
             self.calls = []
 
+        async def get(self, url, **kwargs):
+            self.calls.append(("GET", url, kwargs))
+            return httpx.Response(
+                200,
+                json={"data": [{"model_name": "gpt-5-6-sol", "model_info": {"id": "id-gpt-5-6-sol"}}]},
+            )
+
         async def post(self, url, **kwargs):
-            self.calls.append((url, kwargs))
-            return httpx.Response(200, json={"choices": [{"message": {"content": "pong"}}]})
+            self.calls.append(("POST", url, kwargs))
+            if "chat/completions" in url:
+                return httpx.Response(200, json={"choices": [{"message": {"content": "pong"}}]})
+            if url.endswith("/model/new"):
+                return httpx.Response(200, json={"model_id": "id-gpt-5-6-sol", "model_name": "gpt-5-6-sol"})
+            if url.endswith("/config/update"):
+                return httpx.Response(200, json={"message": "Config updated successfully"})
+            return httpx.Response(200, json={"ok": True})
 
     async def discover():
         return [{"id": "gpt-5.6-sol"}], []
@@ -1301,16 +1450,22 @@ async def test_concrete_factory_probes_absent_alias_upstream_then_advertises(mon
     monkeypatch.setattr(main, "_client", client)
     monkeypatch.setattr(main.config, "CLIPROXY_URL", "http://trusted-cliproxy:8317")
     monkeypatch.setattr(main.config, "CLIPROXY_API_KEY", "probe-key")
+    monkeypatch.setattr(main.config, "LITELLM_MASTER_KEY", "master")
+    monkeypatch.setattr(main.config, "LITELLM_ADMIN_URL", "http://litellm:4000")
 
     result = await main._build_model_reconciliation_service().run(ReconciliationTrigger.MANUAL)
 
     assert result.outcome == "success"
     assert result.verification == "verified"
-    assert client.calls[0][0] == "http://trusted-cliproxy:8317/v1/chat/completions"
-    assert client.calls[0][1]["json"]["model"] == "gpt-5.6-sol"
+    probe_calls = [call for call in client.calls if call[0] == "POST" and "chat/completions" in call[1]]
+    assert probe_calls
+    assert probe_calls[0][1] == "http://trusted-cliproxy:8317/v1/chat/completions"
+    assert probe_calls[0][2]["json"]["model"] == "gpt-5.6-sol"
+    assert "gpt-5-6-sol" in store.models
     assert store.models["gpt-5-6-sol"].enabled is True
-    rendered = __import__("yaml").safe_load(litellm.read_text(encoding="utf-8"))
-    assert rendered["model_list"][0]["model_name"] == "gpt-5-6-sol"
+    assert any(call[0] == "POST" and call[1].endswith("/model/new") for call in client.calls)
+    # ConfigMap-backed litellm-config.yaml is not rewritten; runtime API owns the catalog delta.
+    assert __import__("yaml").safe_load(litellm.read_text(encoding="utf-8")) == {"model_list": []}
 
 
 @pytest.mark.asyncio
