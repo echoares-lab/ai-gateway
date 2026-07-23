@@ -381,6 +381,76 @@ class Fakes:
 
 
 @pytest.mark.asyncio
+async def test_scheduled_absence_sets_absent_since_but_keeps_advertised():
+    existing = _model(model_id="gpt-5-6-sol", advertised=True, source="cliproxy")
+    fakes = Fakes(existing=[existing], discovered=[])
+
+    await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
+    assert row.absent_since is not None
+    assert row.advertised is True
+    assert row.retired is False
+
+
+@pytest.mark.asyncio
+async def test_scheduled_absence_past_retire_days_retires_row():
+    old = datetime.now(timezone.utc) - timedelta(days=31)
+    existing = _model(
+        model_id="gpt-5-6-sol",
+        advertised=True,
+        absent_since=old,
+        source="cliproxy",
+    )
+    fakes = Fakes(existing=[existing], discovered=[])
+
+    await fakes.service(absence_retire_days=30).run(ReconciliationTrigger.SCHEDULED)
+
+    row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
+    assert row.retired is True
+    assert row.advertised is False
+    assert row.status == "RETIRED"
+
+
+@pytest.mark.asyncio
+async def test_demand_trigger_does_not_retire_on_long_absence():
+    old = datetime.now(timezone.utc) - timedelta(days=31)
+    existing = _model(
+        model_id="gpt-5-6-sol",
+        advertised=True,
+        absent_since=old,
+        source="cliproxy",
+    )
+    fakes = Fakes(existing=[existing], discovered=[])
+
+    await fakes.service(absence_retire_days=30).run(
+        ReconciliationTrigger.DEMAND,
+        requested_model="gpt-5-6-sol",
+    )
+
+    row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
+    assert row.retired is False
+    assert row.advertised is True
+
+
+@pytest.mark.asyncio
+async def test_rediscovery_clears_absent_since():
+    old = datetime.now(timezone.utc) - timedelta(days=3)
+    existing = _model(
+        model_id="gpt-5-6-sol",
+        advertised=True,
+        absent_since=old,
+        source="cliproxy",
+    )
+    fakes = Fakes(existing=[existing], discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
+
+    await fakes.service().run(ReconciliationTrigger.SCHEDULED)
+
+    row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
+    assert row.absent_since is None
+
+
+@pytest.mark.asyncio
 async def test_no_change_succeeds_without_apply_or_reload():
     current = _model(
         source="cliproxy",

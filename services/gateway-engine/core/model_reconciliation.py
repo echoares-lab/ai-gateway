@@ -234,6 +234,7 @@ class ModelReconciliationService:
         interval_sec: float = 900,
         expedited_min_interval_sec: float = 60,
         timeout_sec: float = 120,
+        absence_retire_days: int = 30,
     ):
         self._discover = discover
         self._list_models = list_models
@@ -251,6 +252,7 @@ class ModelReconciliationService:
         self.interval_sec = max(0, interval_sec)
         self.expedited_min_interval_sec = max(0, expedited_min_interval_sec)
         self.timeout_sec = max(0, timeout_sec)
+        self.absence_retire_days = max(0, absence_retire_days)
         self._scheduler_task: asyncio.Task | None = None
         self._scheduler_lock = asyncio.Lock()
         self._operation_lock = asyncio.Lock()
@@ -632,6 +634,34 @@ class ModelReconciliationService:
             ]
             merged_by_id = dict(current_by_id)
             merged_by_id.update({model.model_id: model for model in merged_discovered})
+            discovered_ids = {model.model_id for model in discovered}
+            now = datetime.now(timezone.utc)
+            lifecycle_changed_ids: set[str] = set()
+            for model_id, model in list(merged_by_id.items()):
+                if model_id in discovered_ids:
+                    if model.absent_since is not None:
+                        merged_by_id[model_id] = model.model_copy(update={"absent_since": None})
+                        lifecycle_changed_ids.add(model_id)
+                    continue
+                absent_since = model.absent_since or now
+                updates: dict[str, Any] = {"absent_since": absent_since}
+                if (
+                    trigger is not ReconciliationTrigger.DEMAND
+                    and not model.retired
+                    and (now - absent_since).days >= self.absence_retire_days
+                ):
+                    updates.update(
+                        {
+                            "retired": True,
+                            "advertised": False,
+                            "status": "RETIRED",
+                            "enabled": False,
+                        }
+                    )
+                updated = model.model_copy(update=updates)
+                merged_by_id[model_id] = updated
+                if updated != model:
+                    lifecycle_changed_ids.add(model_id)
 
             set_phase("probe")
             additions = {diff["model_id"] for diff in diffs if diff["kind"] == "add"}
@@ -661,13 +691,16 @@ class ModelReconciliationService:
                     probed_ids.add(model_id)
 
             models = list(merged_by_id.values())
-            effective_changed_ids = changed_ids | {
+            effective_changed_ids = changed_ids | lifecycle_changed_ids | {
                 model_id
                 for model_id, model in merged_by_id.items()
                 if model_id in current_by_id and model.enabled != current_by_id[model_id].enabled
             }
-            discovered_ids = [model.model_id for model in discovered]
-            persisted_ids = [*discovered_ids, *sorted(probed_ids - set(discovered_ids))]
+            discovered_ids_in_order = [model.model_id for model in discovered]
+            persisted_ids = [
+                *discovered_ids_in_order,
+                *sorted((probed_ids | lifecycle_changed_ids) - set(discovered_ids_in_order)),
+            ]
             result_models = [merged_by_id[model_id] for model_id in persisted_ids]
             counts["enabled"] = sum(model.enabled for model in models)
             counts["disabled"] = len(models) - counts["enabled"]
