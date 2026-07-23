@@ -131,7 +131,7 @@ async def claude_proxy(request: Request):
 
         if resp.status_code >= 400:
             err_content = await resp.aread()
-            maybe_enqueue_unknown_model_refresh(resp, model, authenticated=bool(api_key))
+            maybe_enqueue_unknown_model_refresh(resp, model, client_auth=api_key)
             await resp.aclose()
             log.warning(
                 "Claude upstream stream error %d: %s",
@@ -141,7 +141,7 @@ async def claude_proxy(request: Request):
             return Response(
                 content=err_content,
                 status_code=resp.status_code,
-                headers={"content-type": "application/json"},
+                headers=dict(resp.headers),
             )
 
         async def generate():
@@ -193,12 +193,12 @@ async def claude_proxy(request: Request):
     resp = await _post_with_retry(f"{_deps().litellm_url}/v1/chat/completions", headers, oai_bytes)
 
     if resp.status_code >= 400:
-        maybe_enqueue_unknown_model_refresh(resp, model, authenticated=bool(api_key))
+        maybe_enqueue_unknown_model_refresh(resp, model, client_auth=api_key)
         log.warning("Claude upstream %d: %s", resp.status_code, resp.text[:300])
         return Response(
             content=resp.content,
             status_code=resp.status_code,
-            headers={"content-type": "application/json"},
+            headers=dict(resp.headers),
         )
 
     try:

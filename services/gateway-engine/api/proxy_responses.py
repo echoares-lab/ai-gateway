@@ -424,7 +424,7 @@ async def responses_proxy(request: Request):
             maybe_enqueue_unknown_model_refresh(
                 resp,
                 oai_body.get("model", ""),
-                authenticated=bool(auth),
+                client_auth=auth,
             )
             await resp.aclose()
             log.warning(
@@ -435,7 +435,7 @@ async def responses_proxy(request: Request):
             return Response(
                 content=err_content,
                 status_code=resp.status_code,
-                headers={"content-type": "application/json"},
+                headers=dict(resp.headers),
             )
 
         async def generate():
@@ -548,13 +548,13 @@ async def responses_proxy(request: Request):
         maybe_enqueue_unknown_model_refresh(
             resp,
             oai_body.get("model", ""),
-            authenticated=bool(auth),
+            client_auth=auth,
         )
         log.warning("Codex upstream %d: %s", resp.status_code, resp.text[:300])
         return Response(
             content=resp.content,
             status_code=resp.status_code,
-            headers={"content-type": "application/json"},
+            headers=dict(resp.headers),
         )
 
     try:

@@ -71,8 +71,8 @@ def test_unknown_model_response_classifier_is_typed_and_status_bounded(status, b
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("authenticated, model", [(False, "gpt-5.6-sol"), (True, "bad model/name")])
-async def test_unknown_model_refresh_rejects_unauthenticated_or_invalid_model(authenticated, model):
+@pytest.mark.parametrize("validated, model", [(False, "gpt-5.6-sol"), (True, "bad model/name")])
+async def test_unknown_model_refresh_rejects_unauthenticated_or_invalid_model(validated, model):
     requested = []
 
     async def request_refresh(trigger, requested_model):
@@ -82,7 +82,30 @@ async def test_unknown_model_refresh_rejects_unauthenticated_or_invalid_model(au
     returned = maybe_enqueue_unknown_model_refresh(
         response,
         model,
-        authenticated=authenticated,
+        client_auth="sk-client" if validated else None,
+        validate_auth=lambda _token: validated,
+        request_refresh=request_refresh,
+    )
+    await asyncio.sleep(0)
+
+    assert returned is response
+    assert requested == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("client_auth", ["", "   ", "Bearer ", "junk", "ak-tenant-workspace-team-repo-dev"])
+async def test_unknown_model_refresh_requires_successful_explicit_auth_validation(client_auth):
+    requested = []
+
+    async def request_refresh(trigger, requested_model):
+        requested.append((trigger, requested_model))
+
+    response = httpx.Response(400, json={"error": {"message": "Invalid model name passed"}})
+    returned = maybe_enqueue_unknown_model_refresh(
+        response,
+        "gpt-5.6-sol",
+        client_auth=client_auth,
+        validate_auth=lambda _token: False,
         request_refresh=request_refresh,
     )
     await asyncio.sleep(0)
@@ -105,7 +128,8 @@ async def test_unknown_model_refresh_is_async_and_returns_original_stream_error_
     returned = maybe_enqueue_unknown_model_refresh(
         response,
         "gpt-5.6-sol",
-        authenticated=True,
+        client_auth="sk-client",
+        validate_auth=lambda _token: True,
         request_refresh=request_refresh,
     )
     await asyncio.sleep(0)
@@ -117,7 +141,8 @@ async def test_unknown_model_refresh_is_async_and_returns_original_stream_error_
     release.set()
 
 
-def test_unknown_model_refresh_enqueue_failure_does_not_change_response():
+@pytest.mark.asyncio
+async def test_unknown_model_refresh_enqueue_failure_does_not_change_response():
     response = httpx.Response(400, json={"error": {"message": "Invalid model name passed"}})
 
     def failed_enqueue(trigger, requested_model):
@@ -126,9 +151,11 @@ def test_unknown_model_refresh_enqueue_failure_does_not_change_response():
     returned = maybe_enqueue_unknown_model_refresh(
         response,
         "gpt-5.6-sol",
-        authenticated=True,
+        client_auth="sk-client",
+        validate_auth=lambda _token: True,
         request_refresh=failed_enqueue,
     )
+    await asyncio.sleep(0)
 
     assert returned is response
 

@@ -85,28 +85,44 @@ def _log_refresh_task_result(task: asyncio.Task) -> None:
         log.warning("model reconciliation demand request failed: %s", type(exc).__name__)
 
 
+async def _validate_and_enqueue_refresh(validate_auth, request_refresh, client_auth, normalized_model) -> None:
+    try:
+        validation = validate_auth(client_auth)
+        if inspect.isawaitable(validation):
+            validation = await validation
+        validated = validation[0] if isinstance(validation, tuple) else validation
+        if not validated:
+            return
+        result = request_refresh(ReconciliationTrigger.DEMAND, normalized_model)
+        if inspect.isawaitable(result):
+            await result
+    except Exception as exc:
+        log.warning("model reconciliation demand enqueue failed: %s", type(exc).__name__)
+
+
 def maybe_enqueue_unknown_model_refresh(
     response: httpx.Response,
     requested_model: str,
     *,
-    authenticated: bool,
+    client_auth: str | None,
+    validate_auth=None,
     request_refresh=None,
 ) -> httpx.Response:
     """Enqueue trusted discovery after an authenticated unknown-model response."""
-    if not authenticated or not is_unknown_model_response(response):
+    if not client_auth or not client_auth.strip() or not is_unknown_model_response(response):
         return response
     try:
         normalized_model, _upstream_model = normalize_discovered_model(requested_model)
     except (TypeError, ValueError):
         return response
-    callback = request_refresh or _deps().request_model_reconciliation
-    if callback is None:
+    deps = None if request_refresh is not None and validate_auth is not None else _deps()
+    callback = request_refresh or deps.request_model_reconciliation
+    validator = validate_auth or deps.validate_client_auth
+    if callback is None or validator is None:
         return response
     try:
-        result = callback(ReconciliationTrigger.DEMAND, normalized_model)
-        if inspect.isawaitable(result):
-            task = asyncio.create_task(result)
-            task.add_done_callback(_log_refresh_task_result)
+        task = asyncio.create_task(_validate_and_enqueue_refresh(validator, callback, client_auth, normalized_model))
+        task.add_done_callback(_log_refresh_task_result)
     except Exception as exc:
         log.warning("model reconciliation demand enqueue failed: %s", type(exc).__name__)
     return response

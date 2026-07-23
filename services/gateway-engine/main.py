@@ -643,6 +643,7 @@ configure_proxy_routes(
         team_budget_snapshot_enabled=lambda: TEAM_BUDGET_SNAPSHOT_ENABLED,
         team_budget_cache_ttl_sec=TEAM_BUDGET_CACHE_TTL_SEC,
         request_model_reconciliation=_request_model_reconciliation,
+        validate_client_auth=lambda token: _validate_ws_auth_token_async(token),
     )
 )
 app.include_router(proxy_router)

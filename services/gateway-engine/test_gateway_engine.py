@@ -821,6 +821,7 @@ class _UnknownModelStreamContext:
         self.response = httpx.Response(
             400,
             content=content,
+            headers={"x-upstream-error": "preserved-stream"},
             request=httpx.Request("POST", "http://litellm/v1/chat/completions"),
         )
 
@@ -837,6 +838,28 @@ class _UnknownModelStreamClient:
 
     def stream(self, *args, **kwargs):
         return _UnknownModelStreamContext(self.content)
+
+
+class _ProtocolUnknownClient:
+    def __init__(self, content):
+        self.content = content
+
+    def _response(self, request):
+        return httpx.Response(
+            400,
+            content=self.content,
+            headers={"content-type": "application/problem+json", "x-upstream-error": "protocol-preserved"},
+            request=request,
+        )
+
+    async def post(self, url, headers=None, content=None):
+        return self._response(httpx.Request("POST", url, headers=headers, content=content))
+
+    def build_request(self, method, url, **kwargs):
+        return httpx.Request(method, url, **kwargs)
+
+    async def send(self, request, stream=False):
+        return self._response(request)
 
 
 class _DemandRecorder:
@@ -857,10 +880,11 @@ def test_authenticated_unknown_model_response_enqueues_refresh_and_is_unchanged(
     with (
         patch.object(t, "_client", _UnknownModelClient(content)),
         patch.object(t, "_model_reconciliation_service", recorder),
+        patch.dict(os.environ, {"LITELLM_MASTER_KEY": "master-secret"}),
     ):
         response = client.post(
             "/v1/chat/completions",
-            headers={"authorization": "Bearer sk-test"},
+            headers={"authorization": "Bearer master-secret"},
             json={"model": "gpt-5.6-sol", "messages": [{"role": "user", "content": "hello"}]},
         )
 
@@ -870,7 +894,17 @@ def test_authenticated_unknown_model_response_enqueues_refresh_and_is_unchanged(
     assert recorder.requests == [(ReconciliationTrigger.DEMAND, "gpt-5-6-sol")]
 
 
-def test_unauthenticated_unknown_model_response_does_not_enqueue_refresh():
+@pytest.mark.parametrize(
+    "path, headers",
+    [
+        ("/v1/chat/completions", {}),
+        ("/v1/chat/completions", {"authorization": "Bearer junk"}),
+        ("/v1/chat/completions", {"authorization": "Bearer ak-tenant-workspace-team-repo-dev"}),
+        ("/v1/chat/completions", {"x-api-key": "junk"}),
+        ("/v1/chat/completions?key=junk", {}),
+    ],
+)
+def test_unvalidated_unknown_model_response_does_not_enqueue_refresh(path, headers):
     from fastapi.testclient import TestClient
 
     content = b'{"error":{"message":"Invalid model name passed in model=gpt-5-6-sol"}}'
@@ -879,9 +913,11 @@ def test_unauthenticated_unknown_model_response_does_not_enqueue_refresh():
     with (
         patch.object(t, "_client", _UnknownModelClient(content)),
         patch.object(t, "_model_reconciliation_service", recorder),
+        patch.dict(os.environ, {"LITELLM_ROUTING_KEY": "routing-secret", "LITELLM_MASTER_KEY": "master-secret"}),
     ):
         response = client.post(
-            "/v1/chat/completions",
+            path,
+            headers=headers,
             json={"model": "gpt-5.6-sol", "messages": [{"role": "user", "content": "hello"}]},
         )
 
@@ -898,10 +934,11 @@ def test_authenticated_stream_unknown_model_enqueues_refresh_without_mutating_bo
     with (
         patch.object(t, "_client", _UnknownModelStreamClient(content)),
         patch.object(t, "_model_reconciliation_service", recorder),
+        patch.dict(os.environ, {"LITELLM_MASTER_KEY": "master-secret"}),
     ):
         response = client.post(
             "/v1/chat/completions",
-            headers={"authorization": "Bearer sk-test"},
+            headers={"authorization": "Bearer master-secret"},
             json={
                 "model": "gpt-5.6-sol",
                 "stream": True,
@@ -909,7 +946,52 @@ def test_authenticated_stream_unknown_model_enqueues_refresh_without_mutating_bo
             },
         )
 
+    assert response.status_code == 400
     assert response.content == content
+    assert response.headers["x-upstream-error"] == "preserved-stream"
+    assert recorder.requests == [(ReconciliationTrigger.DEMAND, "gpt-5-6-sol")]
+
+
+@pytest.mark.parametrize(
+    "path, headers, body",
+    [
+        ("/v1/responses", {"authorization": "Bearer master-secret"}, {"model": "gpt-5.6-sol", "input": "hi"}),
+        (
+            "/v1/responses",
+            {"authorization": "Bearer master-secret"},
+            {"model": "gpt-5.6-sol", "input": "hi", "stream": True},
+        ),
+        ("/v1/messages", {"x-api-key": "master-secret"}, {"model": "gpt-5.6-sol", "messages": []}),
+        (
+            "/v1/messages",
+            {"x-api-key": "master-secret"},
+            {"model": "gpt-5.6-sol", "messages": [], "stream": True},
+        ),
+        ("/v1beta/models/gpt-5.6-sol:generateContent?key=master-secret", {}, {"contents": []}),
+        (
+            "/v1beta/models/gpt-5.6-sol:streamGenerateContent?key=master-secret",
+            {},
+            {"contents": []},
+        ),
+    ],
+)
+def test_protocol_unknown_model_errors_preserve_status_headers_and_bytes(path, headers, body):
+    from fastapi.testclient import TestClient
+
+    content = b'{"error":{"message":"Invalid model name passed in model=gpt-5-6-sol"}}'
+    recorder = _DemandRecorder()
+    client = TestClient(t.app)
+    with (
+        patch.object(t, "_client", _ProtocolUnknownClient(content)),
+        patch.object(t, "_model_reconciliation_service", recorder),
+        patch.dict(os.environ, {"LITELLM_MASTER_KEY": "master-secret"}),
+    ):
+        response = client.post(path, headers=headers, json=body)
+
+    assert response.status_code == 400
+    assert response.content == content
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.headers["x-upstream-error"] == "protocol-preserved"
     assert recorder.requests == [(ReconciliationTrigger.DEMAND, "gpt-5-6-sol")]
 
 
