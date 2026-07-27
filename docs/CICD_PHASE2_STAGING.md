@@ -102,6 +102,123 @@ Staging secrets are **independent** of prod: rotating a staging key never touche
 `prod/workloads/ai-gateway/*`. The OpenBao policy for `k3s-01-external-secrets` must be
 extended to read `kv/…/staging/workloads/*` (analogous to the prod grant).
 
+### Staging launcher-key escrow gate
+
+Enable stable-key creation and recovery in staging before production. Escrow records use
+the dedicated KV-v2 path `kv/data/launcher-keys/<sha256(alias)>` (metadata at
+`kv/metadata/launcher-keys/*`), not the External Secrets application-settings path.
+Configure the staging gateway-engine Deployment with:
+
+```text
+GATEWAY_ENGINE_OPENBAO_ADDR=<internal OpenBao HTTPS address>
+GATEWAY_ENGINE_OPENBAO_AUTH_MOUNT=kubernetes-k3s-01
+GATEWAY_ENGINE_OPENBAO_ROLE=ai-gateway-staging-launcher-keys
+GATEWAY_ENGINE_OPENBAO_KV_MOUNT=kv
+GATEWAY_ENGINE_OPENBAO_KEY_PREFIX=launcher-keys
+GATEWAY_ENGINE_OPENBAO_TIMEOUT=5
+```
+
+These are references and routing settings, not credentials. Authentication uses the
+`ai-gateway-staging` `gateway-engine-openbao` service-account JWT; never add a root,
+admin, or static OpenBao token to an `ExternalSecret`, Deployment, ConfigMap, or pod
+volume. The OpenBao role must be namespace/service-account bound and carry only the
+launcher escrow policy defined in the production deployment document:
+create/read/update data plus read/list metadata, with no delete/destroy capability.
+
+Before promotion, log in through the exact identity used by the staging Deployment:
+Kubernetes namespace `ai-gateway-staging`, service account `gateway-engine-openbao`, and
+OpenBao role `ai-gateway-staging-launcher-keys`. The role binding in the authoritative
+GitOps manifest must name that namespace and service account exactly. Mint a short-lived
+service-account JWT and exchange it at the configured Kubernetes auth mount; do not run
+this check with an operator token already present in the shell. Use a disposable path,
+never a real launcher record:
+
+```bash
+set -euo pipefail
+set +x
+umask 077
+
+staging_namespace="ai-gateway-staging"
+gateway_service_account="gateway-engine-openbao"
+openbao_auth_mount="kubernetes-k3s-01"
+openbao_workload_role="ai-gateway-staging-launcher-keys"
+workload_jwt_file="$(mktemp)"
+chmod 0600 "${workload_jwt_file}"
+trap 'unset BAO_TOKEN; rm -f "${workload_jwt_file}"' EXIT
+
+# BAO_ADDR and the CA trust configuration must match the gateway-engine Deployment.
+: "${BAO_ADDR:?set BAO_ADDR to the internal OpenBao HTTPS address}"
+kubectl --namespace "${staging_namespace}" create token "${gateway_service_account}" \
+  --duration=10m >"${workload_jwt_file}"
+unset BAO_TOKEN
+export BAO_TOKEN="$(
+  bao write -field=token "auth/${openbao_auth_mount}/login" \
+    role="${openbao_workload_role}" \
+    jwt="@${workload_jwt_file}"
+)"
+
+test_id="policy-check-$(date +%s)"
+test_path="launcher-keys/policy-check/${test_id}"
+
+bao kv put -mount=kv "${test_path}" schema_version=1 state=disposable
+bao kv get -mount=kv "${test_path}" >/dev/null
+
+require_permission_denied() {
+  local description="$1"
+  shift
+  local output status
+
+  set +e
+  output="$("$@" 2>&1)"
+  status=$?
+  set -e
+
+  if (( status == 0 )); then
+    echo "ERROR: workload policy permits ${description}" >&2
+    return 1
+  fi
+  if ! grep -Eiq '^[[:space:]]*Code:[[:space:]]*403([[:space:].]|$)' <<<"${output}" ||
+    ! grep -Eiq 'permission denied' <<<"${output}" ||
+    grep -Eiq '(token[^[:alnum:]]*(expired|invalid|revoked)|expired[^[:alnum:]]*token|invalid client token|missing client token)' <<<"${output}"; then
+    echo "ERROR: ${description} probe failed without an OpenBao HTTP 403 policy-denied response (status=${status})" >&2
+    echo "       Treat transport, TLS, expired-token, and server failures as test failures; diagnose and rerun." >&2
+    return 1
+  fi
+}
+
+require_denied_with_valid_token() {
+  local description="$1"
+  shift
+
+  require_permission_denied "${description}" "$@"
+  # A real policy denial and an expired workload token can both be a generic
+  # OpenBao 403. Prove this same token is still usable immediately afterward.
+  if ! bao kv get -mount=kv "${test_path}" >/dev/null; then
+    echo "ERROR: ${description} was denied, but the known-allowed read also failed" >&2
+    echo "       Token validity is unproven; refresh the workload token and rerun." >&2
+    return 1
+  fi
+}
+
+require_denied_with_valid_token "KV version deletion" \
+  bao kv delete -mount=kv "${test_path}"
+require_denied_with_valid_token "KV metadata destruction" \
+  bao kv metadata delete -mount=kv "${test_path}"
+```
+
+The login and first two KV commands must succeed. Both deletion attempts must return an
+explicit OpenBao `Code: 403` together with `permission denied`; a generic nonzero status
+or a local filesystem `Permission denied` is not evidence of policy enforcement.
+Immediately after each denial, the same token must still read the disposable record;
+failure of that known-allowed read makes token validity indistinguishable from ACL
+enforcement and fails the gate. Transport, DNS, TLS, token-expiry, and OpenBao server
+errors fail the gate.
+Because the runtime role intentionally cannot clean up, record `test_path` and have an
+OpenBao operator remove that disposable record with a separately authenticated operator session.
+Never broaden the workload policy just to perform cleanup. Then exercise gateway admin
+create/recover/import flows and inspect captured logs for absence of the test token and
+Authorization headers. Production enablement is blocked until these staging checks pass.
+
 ## CLIProxy OAuth token persistence
 
 Identical mechanism to production

@@ -85,6 +85,49 @@ Path `prod/workloads/ai-gateway/*`, surfaced as k8s Secrets in the `ai-gateway` 
 `minio_root_password`, `nextauth_secret`, `langfuse_salt`, `langfuse_encryption_key`,
 plus optional search/MCP keys. Plus `cliproxy_auth_tar_b64` for the CLIProxy OAuth seed.
 
+### Launcher stable-key escrow
+
+Launcher-managed LiteLLM virtual-key secrets use a separate KV-v2 subtree. With the
+deployment defaults (`GATEWAY_ENGINE_OPENBAO_KV_MOUNT=kv` and
+`GATEWAY_ENGINE_OPENBAO_KEY_PREFIX=launcher-keys`), a record is stored at
+`kv/data/launcher-keys/<sha256(alias)>`; the alias is hashed by gateway-engine and is
+also verified against the encrypted record after reading it. KV-v2 metadata is under
+`kv/metadata/launcher-keys/*`. This subtree contains the stable token and must never be
+synced into a Kubernetes Secret by External Secrets.
+
+The gateway-engine workload policy is deliberately narrower than an operator policy:
+
+```hcl
+path "kv/data/launcher-keys/*" {
+  capabilities = ["create", "read", "update"]
+}
+
+path "kv/metadata/launcher-keys" {
+  capabilities = ["read", "list"]
+}
+
+path "kv/metadata/launcher-keys/*" {
+  capabilities = ["read", "list"]
+}
+```
+
+Do not add `delete`, `sudo`, or KV-v2 `destroy` privileges. In particular, the role must
+not update `kv/delete/launcher-keys/*`, `kv/undelete/launcher-keys/*`, or
+`kv/destroy/launcher-keys/*`, and must not delete `kv/metadata/launcher-keys/*`.
+Stable key identity depends on retaining every existing record and version.
+
+Gateway-engine authenticates with its pod service-account JWT at the configured
+Kubernetes auth mount. Bind a dedicated OpenBao role to only the gateway-engine service
+account and namespace, with a short token TTL and the policy above. The Deployment
+references the non-secret settings `GATEWAY_ENGINE_OPENBAO_ADDR`,
+`GATEWAY_ENGINE_OPENBAO_AUTH_MOUNT`, `GATEWAY_ENGINE_OPENBAO_ROLE`,
+`GATEWAY_ENGINE_OPENBAO_KV_MOUNT`, `GATEWAY_ENGINE_OPENBAO_KEY_PREFIX`, and
+`GATEWAY_ENGINE_OPENBAO_TIMEOUT`. Do not mount or inject a root token, general admin
+token, static `BAO_TOKEN`, or OpenBao client token. Roll this out and verify it in the
+staging overlay before adding the same binding and settings to production. The
+authoritative service account, role binding, policy provisioning, and Deployment env
+references live in the separately reviewed `echoares-lab/k3s-01` GitOps change.
+
 ## CLIProxy OAuth token persistence
 
 CLIProxy refreshes OAuth tokens at runtime and writes them back to `~/.cli-proxy-api`. On k8s:

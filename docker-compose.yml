@@ -170,7 +170,23 @@ services:
     - UPSTREAM_TIMEOUT=${UPSTREAM_TIMEOUT:-30.0}
     - LITELLM_CONFIG_PATH=/config/litellm-config.yaml
     volumes:
-    - ./litellm-config.yaml:/config/litellm-config.yaml:ro
+    - litellm_reconciliation_artifacts:/config
+  litellm-config-init:
+    container_name: PROD-litellm-config-init
+    image: ghcr.io/berriai/litellm:v1.93.0@sha256:a1745e629abfb17d434426ff48b115f54f4f4c4a0f5af241de569e93c63c411e
+    restart: "no"
+    entrypoint:
+    - /bin/sh
+    - -ec
+    command:
+    - |
+      if [ ! -f /config/litellm-config.yaml ]; then
+        cp /seed/litellm-config.yaml /config/litellm-config.yaml
+      fi
+      chmod 0644 /config/litellm-config.yaml
+    volumes:
+    - ./litellm-config.yaml:/seed/litellm-config.yaml:ro
+    - litellm_reconciliation_artifacts:/config
   litellm:
     container_name: PROD-litellm
     image: ghcr.io/berriai/litellm:v1.93.0@sha256:a1745e629abfb17d434426ff48b115f54f4f4c4a0f5af241de569e93c63c411e
@@ -201,13 +217,15 @@ services:
         condition: service_started
       redis:
         condition: service_started
+      litellm-config-init:
+        condition: service_completed_successfully
     ports:
     - 4001:4000
     volumes:
-    - ./litellm-config.yaml:/app/config.yaml
+    - litellm_reconciliation_artifacts:/config
     command:
     - --config
-    - /app/config.yaml
+    - /config/litellm-config.yaml
     - --port
     - '4000'
     healthcheck:
@@ -343,6 +361,8 @@ services:
         condition: service_started
 volumes:
   cpa_manager_data:
+    driver: local
+  litellm_reconciliation_artifacts:
     driver: local
   langfuse_postgres_data:
     driver: local

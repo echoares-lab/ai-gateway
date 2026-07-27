@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 import websockets
+from api.proxy_common import _log_safe_headers
 from fastapi import APIRouter, WebSocket
 
 log = logging.getLogger("gateway-engine")
@@ -98,13 +99,12 @@ def _validate_ws_auth_token(client_auth: str) -> tuple[bool, str | None]:
 
 
 async def _litellm_virtual_key_valid(auth_token: str) -> bool:
-    """Verify sk-* token against LiteLLM key/info (issue #307)."""
+    """Verify sk-* via header-only LiteLLM key/info self-lookup (issue #307)."""
     litellm_url = os.environ.get("LITELLM_URL", "http://litellm:4000").rstrip("/")
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(
                 f"{litellm_url}/key/info",
-                params={"key": auth_token},
                 headers={"Authorization": f"Bearer {auth_token}"},
             )
             return resp.status_code == 200
@@ -128,14 +128,7 @@ async def _validate_ws_auth_token_async(client_auth: str) -> tuple[bool, str | N
 
 
 def _ws_log_safe_mapping(values: dict[str, str]) -> dict[str, str]:
-    auth_keys = frozenset({"authorization", "api-key", "x-api-key", "key"})
-    safe: dict[str, str] = {}
-    for key, value in values.items():
-        if key.lower() in auth_keys:
-            safe[key] = "[redacted]"
-        else:
-            safe[key] = value
-    return safe
+    return _log_safe_headers(values)
 
 
 def create_ws_router(deps: WsRouterDeps) -> APIRouter:

@@ -1,14 +1,375 @@
 import logging
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import api.admin_routes as admin_routes
 import core.admin_shared as admin_shared
 import httpx
 import pytest
+from core.launcher_key_service import LauncherKeyResult, LauncherKeyServiceError
+from core.model_reconciliation import ReconciliationResult, ReconciliationTrigger
 from core.onboarding.onboarding_service import OnboardingService
 from fastapi.testclient import TestClient
 from main import app
 
 client = TestClient(app)
+
+
+def _reconciliation_result(*, outcome="success", phase="complete", errors=None, models=None, counts=None):
+    from core.model_registry import ModelRegistryRecord
+
+    default_models = (
+        models
+        if models is not None
+        else [
+            ModelRegistryRecord(
+                model_id="gpt-5-6-sol",
+                provider="openai",
+                family="openai",
+                upstream_model="gpt-5.6-sol",
+                litellm_model="openai/gpt-5.6-sol",
+                advertised=True,
+                retired=False,
+                status="HEALTHY",
+            ),
+            ModelRegistryRecord(
+                model_id="claude-sonnet-4-6",
+                provider="anthropic",
+                family="anthropic",
+                upstream_model="claude-sonnet-4.6",
+                litellm_model="openai/claude-sonnet-4.6",
+                advertised=False,
+                retired=True,
+                status="RETIRED",
+            ),
+            ModelRegistryRecord(
+                model_id="gemini-3-flash",
+                provider="gemini",
+                family="gemini",
+                upstream_model="gemini-3.flash",
+                litellm_model="openai/gemini-3.flash",
+                advertised=True,
+                retired=False,
+                absent_since=datetime(2026, 7, 20, tzinfo=timezone.utc),
+                status="UNHEALTHY",
+            ),
+        ]
+    )
+    return ReconciliationResult(
+        outcome=outcome,
+        phase=phase,
+        trigger=ReconciliationTrigger.DEMAND,
+        requested_model="gpt-5-6-sol",
+        counts=counts
+        or {
+            "discovered": 8,
+            "added": 1,
+            "updated": 2,
+            "enabled": 7,
+            "disabled": 1,
+            "unchanged": 5,
+            "advertised": 10,
+            "retired": 2,
+            "absent": 3,
+        },
+        verification="verified" if outcome == "success" else "rollback",
+        started_at=datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc),
+        completed_at=datetime(2026, 7, 23, 10, 0, 2, tzinfo=timezone.utc),
+        errors=errors or [],
+        models=default_models,
+    )
+
+
+@pytest.mark.parametrize(
+    ("service", "expected"),
+    [
+        (
+            SimpleNamespace(
+                enabled=True,
+                interval_sec=900,
+                active=False,
+                pending=False,
+                phase="idle",
+                last_attempt_at=None,
+                last_success_at=None,
+                last_result=None,
+            ),
+            {"enabled": True, "active": False, "pending": False, "phase": "idle", "outcome": None},
+        ),
+        (
+            SimpleNamespace(
+                enabled=True,
+                interval_sec=900,
+                active=True,
+                pending=True,
+                phase="probe",
+                current_trigger=ReconciliationTrigger.DEMAND,
+                current_requested_model="gpt-5-6-sol",
+                last_attempt_at=datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc),
+                last_success_at=None,
+                last_result=None,
+            ),
+            {"enabled": True, "active": True, "pending": True, "phase": "probe", "outcome": None},
+        ),
+        (
+            SimpleNamespace(
+                enabled=True,
+                interval_sec=900,
+                active=False,
+                pending=False,
+                phase="complete",
+                last_attempt_at=datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc),
+                last_success_at=datetime(2026, 7, 23, 10, 0, 2, tzinfo=timezone.utc),
+                last_result=_reconciliation_result(),
+            ),
+            {"enabled": True, "active": False, "pending": False, "phase": "complete", "outcome": "success"},
+        ),
+        (
+            SimpleNamespace(
+                enabled=True,
+                interval_sec=900,
+                active=False,
+                pending=False,
+                phase="reload",
+                last_attempt_at=datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc),
+                last_success_at=None,
+                last_result=_reconciliation_result(outcome="degraded", phase="reload"),
+            ),
+            {"enabled": True, "active": False, "pending": False, "phase": "reload", "outcome": "degraded"},
+        ),
+        (
+            SimpleNamespace(
+                enabled=False,
+                interval_sec=900,
+                active=False,
+                pending=False,
+                phase="disabled",
+                last_attempt_at=None,
+                last_success_at=None,
+                last_result=None,
+            ),
+            {"enabled": False, "active": False, "pending": False, "phase": "disabled", "outcome": None},
+        ),
+    ],
+)
+def test_admin_reconciliation_status_states(service, expected):
+    status = admin_routes._admin_reconciliation_status(service)
+
+    assert {key: status[key] for key in expected} == expected
+    assert status["interval_seconds"] == 900
+    assert set(status["counts"]) == {
+        "discovered",
+        "added",
+        "updated",
+        "enabled",
+        "disabled",
+        "unchanged",
+        "advertised",
+        "retired",
+        "absent",
+    }
+    if status["active"]:
+        assert status["trigger"] == "demand"
+        assert status["requested_model"] == "gpt-5-6-sol"
+
+
+def test_admin_reconciliation_status_lifecycle_counts_from_service():
+    service = SimpleNamespace(
+        enabled=True,
+        interval_sec=900,
+        active=False,
+        pending=False,
+        phase="complete",
+        last_attempt_at=datetime(2026, 7, 23, 10, 0, tzinfo=timezone.utc),
+        last_success_at=datetime(2026, 7, 23, 10, 0, 2, tzinfo=timezone.utc),
+        last_result=_reconciliation_result(),
+    )
+
+    counts = admin_routes._admin_reconciliation_status(service)["counts"]
+
+    assert counts["advertised"] == 10
+    assert counts["retired"] == 2
+    assert counts["absent"] == 3
+    assert counts["enabled"] == 7
+    assert counts["disabled"] == 1
+
+
+def test_admin_reconciliation_status_prefers_service_counts_over_partial_models():
+    """result.models may be a persisted subset; counts must reflect full-registry totals."""
+    from core.model_registry import ModelRegistryRecord
+
+    subset_model = ModelRegistryRecord(
+        model_id="gpt-5-6-sol",
+        provider="openai",
+        family="openai",
+        upstream_model="gpt-5.6-sol",
+        litellm_model="openai/gpt-5.6-sol",
+        advertised=True,
+        retired=False,
+        status="HEALTHY",
+    )
+    result = _reconciliation_result(
+        models=[subset_model],
+        counts={
+            "discovered": 8,
+            "added": 1,
+            "updated": 2,
+            "enabled": 7,
+            "disabled": 1,
+            "unchanged": 5,
+            "advertised": 10,
+            "retired": 2,
+            "absent": 3,
+        },
+    )
+    service = SimpleNamespace(
+        enabled=True,
+        interval_sec=900,
+        active=False,
+        pending=False,
+        phase="complete",
+        last_attempt_at=result.started_at,
+        last_success_at=result.completed_at,
+        last_result=result,
+    )
+
+    counts = admin_routes._admin_reconciliation_status(service)["counts"]
+
+    assert len(result.models) == 1
+    assert counts["advertised"] == 10
+    assert counts["retired"] == 2
+    assert counts["absent"] == 3
+    assert counts["enabled"] == 7
+    assert counts["disabled"] == 1
+
+
+def test_admin_reconciliation_status_redacts_and_bounds_errors():
+    result = _reconciliation_result(
+        outcome="degraded",
+        phase="reload",
+        errors=[
+            {
+                "code": "reload_failed",
+                "phase": "reload",
+                "message": "Authorization: Bearer sk-secret-value " + ("x" * 1000),
+            }
+        ],
+    )
+    service = SimpleNamespace(
+        enabled=True,
+        interval_sec=900,
+        active=False,
+        pending=False,
+        phase="reload",
+        last_attempt_at=result.started_at,
+        last_success_at=None,
+        last_result=result,
+    )
+
+    status = admin_routes._admin_reconciliation_status(service)
+    serialized = str(status)
+
+    assert "sk-secret-value" not in serialized
+    assert "[redacted]" in serialized
+    assert len(status["errors"][0]["message"]) <= admin_routes.ADMIN_ERROR_MAXLEN + 1
+    assert set(status["errors"][0]) == {"code", "phase", "message", "redacted"}
+
+
+@pytest.mark.parametrize("trigger", [ReconciliationTrigger.SCHEDULED, ReconciliationTrigger.MANUAL])
+def test_active_reconciliation_does_not_inherit_prior_demand_result(trigger):
+    prior = _reconciliation_result(
+        outcome="degraded",
+        phase="reload",
+        errors=[{"code": "reload_failed", "phase": "reload", "message": "old failure"}],
+    )
+    service = SimpleNamespace(
+        enabled=True,
+        interval_sec=900,
+        active=True,
+        pending=False,
+        phase="discover",
+        current_trigger=trigger,
+        current_requested_model=None,
+        last_attempt_at=datetime(2026, 7, 23, 11, 0, tzinfo=timezone.utc),
+        last_success_at=None,
+        last_result=prior,
+    )
+
+    status = admin_routes._admin_reconciliation_status(service)
+
+    assert status["trigger"] == trigger.value
+    assert status["requested_model"] is None
+    assert status["outcome"] is None
+    assert status["counts"] == {key: 0 for key in admin_routes._RECONCILIATION_COUNT_KEYS}
+    assert status["verification"] == "not_run"
+    assert status["errors"] == []
+
+
+def test_active_manual_reconciliation_status_preserves_manual_phase_and_timestamps():
+    started_at = datetime(2026, 7, 23, 11, 0, tzinfo=timezone.utc)
+    service = SimpleNamespace(
+        enabled=True,
+        interval_sec=900,
+        active=True,
+        pending=False,
+        phase="manual",
+        current_trigger=ReconciliationTrigger.MANUAL,
+        current_requested_model=None,
+        last_attempt_at=started_at,
+        last_success_at=None,
+        last_result=None,
+    )
+
+    status = admin_routes._admin_reconciliation_status(service)
+
+    assert status["phase"] == "manual"
+    assert status["trigger"] == "manual"
+    assert status["last_attempt_at"] == "2026-07-23T11:00:00Z"
+    assert status["outcome"] is None
+
+
+def test_admin_reconciliation_status_rejects_unbounded_secret_verification_value():
+    result = _reconciliation_result()
+    result.verification = "Bearer sk-verification-secret " + ("x" * 1000)
+    service = SimpleNamespace(
+        enabled=True,
+        interval_sec=900,
+        active=False,
+        pending=False,
+        phase="complete",
+        last_attempt_at=result.started_at,
+        last_success_at=result.completed_at,
+        last_result=result,
+    )
+
+    status = admin_routes._admin_reconciliation_status(service)
+
+    assert status["verification"] == "unknown"
+    assert "sk-verification-secret" not in str(status)
+
+
+def test_admin_status_nests_reconciliation_on_models_panel(monkeypatch):
+    import main
+
+    service = SimpleNamespace(
+        enabled=True,
+        interval_sec=900,
+        active=False,
+        pending=False,
+        phase="complete",
+        last_attempt_at=None,
+        last_success_at=None,
+        last_result=_reconciliation_result(),
+    )
+    monkeypatch.setattr(main, "_model_reconciliation_service", service)
+
+    response = client.get("/admin/status")
+
+    assert response.status_code == 200
+    models_panel = response.json()["panels"]["models"]
+    assert models_panel["reconciliation"]["outcome"] == "success"
+    assert "reconciliation" not in models_panel["data"]
 
 
 @pytest.fixture
@@ -101,16 +462,136 @@ async def test_admin_teams_create_success(admin_key):
 
 @pytest.mark.asyncio
 async def test_admin_keys_create_success(admin_key):
-    mock_response = {"key": "sk-123"}
-    key_data = {"team_id": "team-1"}
+    result = LauncherKeyResult("repo/customer-a", "sk-123", "team-1", "key-9")
+    service = AsyncMock()
+    service.create_key.return_value = result
+    key_data = {"key_alias": "repo/customer-a", "team_id": "team-1", "models": ["gpt-5"]}
 
-    with patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_request:
-        mock_request.return_value = httpx.Response(200, json=mock_response)
-
+    with patch("admin_api._launcher_key_service", return_value=service):
         response = client.post("/admin/keys", headers={"x-admin-key": admin_key}, json=key_data)
 
-        assert response.status_code == 200
-        assert response.json() == mock_response
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == {
+        "key_alias": "repo/customer-a",
+        "key": "sk-123",
+        "team_id": "team-1",
+        "key_id": "key-9",
+    }
+    service.create_key.assert_awaited_once_with(key_data)
+
+
+@pytest.mark.parametrize("path", ["secret", "import"])
+def test_admin_key_secret_routes_require_admin_key(admin_key, path):
+    method = client.get if path == "secret" else client.post
+    kwargs = {} if path == "secret" else {"json": {"key": "sk-private"}}
+    response = method(f"/admin/keys/repo/customer-a/{path}", headers={"x-admin-key": "wrong"}, **kwargs)
+
+    assert response.status_code == 403
+    assert response.headers["cache-control"] == "no-store"
+    assert "sk-private" not in response.text
+
+
+@pytest.mark.parametrize("alias", ["%2E%2E", "repo//customer", "repo/customer%20a"])
+def test_admin_key_secret_rejects_invalid_path_alias(admin_key, alias):
+    response = client.get(f"/admin/keys/{alias}/secret", headers={"x-admin-key": admin_key})
+
+    assert response.status_code == 422
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_admin_key_secret_recovers_slash_alias(admin_key):
+    service = AsyncMock()
+    service.recover_key.return_value = LauncherKeyResult("repo/customer-a", "sk-original", "team-1", "key-9")
+
+    with patch("admin_api._launcher_key_service", return_value=service):
+        response = client.get("/admin/keys/repo/customer-a/secret", headers={"x-admin-key": admin_key})
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == {
+        "key_alias": "repo/customer-a",
+        "key": "sk-original",
+        "team_id": "team-1",
+        "key_id": "key-9",
+    }
+    service.recover_key.assert_awaited_once_with("repo/customer-a")
+
+
+def test_admin_key_import_verifies_and_returns_token(admin_key):
+    service = AsyncMock()
+    service.import_key.return_value = LauncherKeyResult("repo/customer-a", "sk-legacy", "team-1", "key-9")
+
+    with patch("admin_api._launcher_key_service", return_value=service):
+        response = client.post(
+            "/admin/keys/repo/customer-a/import",
+            headers={"x-admin-key": admin_key},
+            json={"key": "sk-legacy"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json()["key"] == "sk-legacy"
+    service.import_key.assert_awaited_once_with("repo/customer-a", "sk-legacy")
+
+
+@pytest.mark.parametrize(
+    ("code", "status"),
+    [
+        ("key_alias_not_found", 404),
+        ("key_secret_not_escrowed", 409),
+        ("key_identity_mismatch", 409),
+        ("secret_store_unavailable", 503),
+        ("key_creation_incomplete", 502),
+    ],
+)
+def test_admin_key_errors_have_typed_status_and_redacted_body(admin_key, code, status):
+    service = AsyncMock()
+    service.recover_key.side_effect = LauncherKeyServiceError(code, "redacted failure")
+
+    with patch("admin_api._launcher_key_service", return_value=service):
+        response = client.get("/admin/keys/repo/customer-a/secret", headers={"x-admin-key": admin_key})
+
+    assert response.status_code == status
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json()["error"]["code"] == code
+    assert response.json()["error"]["message"] != "redacted failure"
+
+
+def test_admin_key_import_error_never_echoes_supplied_token(admin_key):
+    token = "sk-must-never-leak"
+    service = AsyncMock()
+    service.import_key.side_effect = LauncherKeyServiceError("key_identity_mismatch", f"mismatch: {token}")
+
+    with patch("admin_api._launcher_key_service", return_value=service):
+        response = client.post(
+            "/admin/keys/repo/customer-a/import",
+            headers={"x-admin-key": admin_key},
+            json={"key": token},
+        )
+
+    assert response.status_code == 409
+    assert token not in response.text
+    assert response.json()["error"]["code"] == "key_identity_mismatch"
+
+
+def test_admin_key_import_validation_is_no_store_and_redacted(admin_key):
+    response = client.post(
+        "/admin/keys/repo/customer-a/import",
+        headers={"x-admin-key": admin_key},
+        json={"key": {"secret": "sk-nested-must-not-leak"}},
+    )
+
+    assert response.status_code == 422
+    assert response.headers["cache-control"] == "no-store"
+    assert "sk-nested-must-not-leak" not in response.text
+
+
+def test_admin_key_create_auth_precedes_body_validation(admin_key):
+    response = client.post("/admin/keys", headers={"x-admin-key": "wrong"}, content=b"not-json")
+
+    assert response.status_code == 403
+    assert response.headers["cache-control"] == "no-store"
 
 
 @pytest.mark.asyncio

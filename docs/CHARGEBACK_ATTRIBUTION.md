@@ -4,8 +4,7 @@
 
 > **Status:** Design only (no runtime behavior change). Implements the Phase 5
 > optional scope for Epic #38 issue 38-21 ([#140](https://github.com/echoares-lab/ai-gateway/issues/140)).
-> Builds on the routing decision audit log (38-16), budget gates (38-09), and
-> tenancy telemetry plan ([TENANCY.md](./TENANCY.md) §3.1).
+> Builds on the routing decision audit log (38-16) and budget gates (38-09).
 
 ---
 
@@ -40,9 +39,7 @@ Non-goals for this stub:
 
 ---
 
-## 3. Attribution dimensions
-
-Chargeback rolls up along the tenancy hierarchy defined in TENANCY.md:
+Chargeback rolls up along team, repository, and agent dimensions:
 
 | Dimension | Source | Chargeback use |
 |-----------|--------|----------------|
@@ -88,7 +85,7 @@ LiteLLM into Langfuse trace metadata (`metadata.request_id`). Audit log already
 stores the same `request_id`. Offline aggregation job joins on this field.
 
 Fail-open: traces without `request_id` fall back to `(team_id, repo_name)` from
-Langfuse metadata tags (TENANCY.md §3.1).
+Langfuse metadata tags.
 
 ---
 
@@ -181,7 +178,6 @@ wire; **5c** requires stable `request_id` join path.
 
 ## 9. References
 
-- [TENANCY.md](./TENANCY.md) — §3.1 Langfuse metadata tags
 - [TOKEN_USAGE_ANALYTICS.md](./TOKEN_USAGE_ANALYTICS.md) — admin console cost schema
 - [ADMIN_CONSOLE.md](./ADMIN_CONSOLE.md) — per-tenant usage panels (deferred)
 - `issues/policy-engine-38-16-audit-log.md` — `routing_decisions_log` writer

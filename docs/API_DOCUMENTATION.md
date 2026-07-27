@@ -13,6 +13,39 @@ The index lists every OpenAPI spec mounted from `docs/openapi/`. Direct links:
 - **CPA Manager API**: `http://localhost:8002/docs/cpa-manager.yaml`
 
 Gateway runtime model mutation endpoints (`POST /model/new`, `POST /model/delete`) are documented in `docs/openapi/gateway-engine.yaml`.
+Automatic model reconciliation is documented by `GET /admin/status` at
+`panels.models.reconciliation` and by `POST /admin/models/reconcile`.
+The latter previews changes with `dry_run: true` and enqueues an authenticated
+manual scheduler run with `dry_run: false`.
+
+### Stable launcher key administration
+
+Gateway-engine owns stable launcher-key creation and OpenBao recovery through
+`POST /admin/keys`, `GET /admin/keys/{alias}/secret`, and
+`POST /admin/keys/{alias}/import`. All require `x-admin-key`. Alias path segments
+may contain slash-delimited repository names; clients should percent-encode the
+alias when constructing a URL.
+
+Creation writes the generated token to OpenBao before asking LiteLLM to create
+that exact key. Recovery returns a token only after the active escrow metadata
+and LiteLLM identity agree. With the pinned LiteLLM v1.93.0 contract, gateway-engine
+discovers aliases through `/key/list?return_full_object=true`, stores the returned
+token hash as the opaque stable `key_id`, and authenticates the secret through bearer
+`/key/info`; it never sends a token in a URL or expects `/key/info` to return a secret
+or key ID. Import is for pre-escrow aliases whose original
+token is still available; it verifies that token before storage and never
+overwrites a different secret. Successful bodies contain `key`; error bodies
+never do, and every response from these secret-handling routes carries
+`Cache-Control: no-store`.
+
+Callers branch on the documented error codes (`key_alias_not_found`,
+`key_secret_not_escrowed`, `key_identity_mismatch`,
+`secret_store_unavailable`, and `key_creation_incomplete`), not their messages.
+During a mixed-version rollout, a route-level 404 from an older gateway-engine
+means recovery/import is unsupported; it must not trigger key generation,
+rotation, deletion, or a claim that import succeeded. Older `POST /admin/keys`
+implementations proxy directly to LiteLLM and create keys that are not
+recoverable until an operator imports the original token.
 
 ### Production quota status
 

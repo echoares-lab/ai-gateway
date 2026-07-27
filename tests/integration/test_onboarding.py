@@ -1,15 +1,13 @@
+import httpx  # Add this line
 import pytest
-from httpx import AsyncClient
-import httpx # Add this line
-from main import app
-from core.onboarding.onboarding_service import onboarding_service
-import os
+
 
 @pytest.fixture(autouse=True)
 def mock_env_vars(monkeypatch):
     monkeypatch.setenv("LITELLM_MASTER_KEY", "mock-master-key")
     monkeypatch.setenv("ADMIN_API_KEY", "mock-admin-key")
     monkeypatch.setenv("LITELLM_ADMIN_URL", "http://mock-litellm")
+
 
 @pytest.fixture
 def mock_httpx_responses(respx_mock):
@@ -23,12 +21,13 @@ def mock_httpx_responses(respx_mock):
     )
     return respx_mock
 
+
 @pytest.mark.asyncio
 async def test_register_tenant_success(asgi_client, mock_httpx_responses, monkeypatch):
     response = await asgi_client.post(
         "/admin/onboarding/register",
         headers={"X-Admin-Key": "mock-admin-key"},
-        json={"tenant_id": "test-tenant", "email": "test@example.com"}
+        json={"tenant_id": "test-tenant", "email": "test@example.com"},
     )
     assert response.status_code == 200
     assert response.json()["success"] is True
@@ -36,15 +35,17 @@ async def test_register_tenant_success(asgi_client, mock_httpx_responses, monkey
     assert response.json()["api_key"] == "new-api-key"
     assert response.json()["team_id"] == "new-tenant-id"
 
+
 @pytest.mark.asyncio
 async def test_register_tenant_unauthorized(asgi_client, mock_httpx_responses):
     response = await asgi_client.post(
         "/admin/onboarding/register",
         headers={"X-Admin-Key": "wrong-key"},
-        json={"tenant_id": "test-tenant", "email": "test@example.com"}
+        json={"tenant_id": "test-tenant", "email": "test@example.com"},
     )
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "unauthorized"
+
 
 @pytest.mark.asyncio
 async def test_register_tenant_litellm_failure(asgi_client, mock_httpx_responses, monkeypatch):
@@ -54,7 +55,7 @@ async def test_register_tenant_litellm_failure(asgi_client, mock_httpx_responses
     response = await asgi_client.post(
         "/admin/onboarding/register",
         headers={"X-Admin-Key": "mock-admin-key"},
-        json={"tenant_id": "test-tenant", "email": "test@example.com"}
+        json={"tenant_id": "test-tenant", "email": "test@example.com"},
     )
     assert response.status_code == 500
     assert response.json()["success"] is False

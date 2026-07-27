@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Update immutable image pins in the k3s-01 ai-gateway overlay.
 
-Edits kubernetes/workloads/home/ai-gateway/overlays/k3s-01/kustomization.yaml
-`images:` entries so ArgoCD sees a Git diff and rolls out new tags/digests.
+Supports both layouts:
+
+- Staging (monolithic): ``overlays/staging/kustomization.yaml`` holds all
+  ``images:`` entries; workloads live beside it as ``core-workloads.yaml``.
+- Production (split, post k3s-01 #147): each Argo Application owns a component
+  subdir under ``overlays/k3s-01/<component>/kustomization.yaml``.
 
 Usage:
   python3 scripts/k3s/promote_k3s_images.py \\
@@ -11,7 +15,7 @@ Usage:
     --gateway-version 1.2.1 \\
     --credential-prober sha256:abc... \\
     --docs-server sha256:def... \\
-    --cliproxy 6cf6e68
+    --cliproxy sha256:...
 """
 
 from __future__ import annotations
@@ -39,6 +43,17 @@ IMAGE_KEYS = {
     "docs-server": "nexus-docker.infra.plexplease.com/ai-gateway/docs-server",
     "langfuse": "docker.io/langfuse/langfuse",
     "langfuse-worker": "docker.io/langfuse/langfuse-worker",
+}
+
+# Relative to the overlay directory (parent of the --overlay kustomization).
+# Used when production was split into per-component Applications.
+COMPONENT_PIN_REL = {
+    IMAGE_KEYS["cliproxy"]: Path("cliproxy/kustomization.yaml"),
+    IMAGE_KEYS["gateway-engine"]: Path("gateway-engine/kustomization.yaml"),
+    IMAGE_KEYS["credential-prober"]: Path("credential-prober/kustomization.yaml"),
+    IMAGE_KEYS["docs-server"]: Path("docs/kustomization.yaml"),
+    IMAGE_KEYS["langfuse"]: Path("langfuse/kustomization.yaml"),
+    IMAGE_KEYS["langfuse-worker"]: Path("langfuse/kustomization.yaml"),
 }
 
 
@@ -72,6 +87,47 @@ def _set_image_pin(text: str, image_name: str, *, tag: str | None, digest: str |
     if n != 1:
         raise RuntimeError(f"failed to update image pin for {image_name} (matches={n})")
     return new_text
+
+
+def _pin_file_for_image(overlay_file: Path, image_name: str) -> Path:
+    """Return the kustomization that owns ``image_name`` under this overlay."""
+    overlay_dir = overlay_file.parent
+    rel = COMPONENT_PIN_REL.get(image_name)
+    if rel is not None:
+        candidate = overlay_dir / rel
+        if candidate.is_file():
+            content = candidate.read_text(encoding="utf-8")
+            if f"name: {image_name}" in content:
+                return candidate
+    return overlay_file
+
+
+def _gateway_workload_path(overlay_dir: Path, workloads_arg: Path) -> Path:
+    """Locate the Deployment YAML that carries gateway version labels."""
+    if workloads_arg.is_file():
+        return workloads_arg
+    for candidate in (
+        overlay_dir / "gateway-engine" / "gateway-engine.yaml",
+        overlay_dir / "core-workloads.yaml",
+    ):
+        if candidate.is_file():
+            return candidate
+    return workloads_arg
+
+
+def _litellm_manifest_paths(overlay_dir: Path) -> tuple[Path, Path]:
+    """Return (litellm deployment YAML, migrate Job YAML) for this overlay."""
+    deploy_candidates = (
+        overlay_dir / "litellm" / "litellm.yaml",
+        overlay_dir / "core-workloads.yaml",
+    )
+    jobs_candidates = (
+        overlay_dir / "foundation" / "db-jobs.yaml",
+        overlay_dir / "db-jobs.yaml",
+    )
+    deploy = next((p for p in deploy_candidates if p.is_file()), deploy_candidates[-1])
+    jobs = next((p for p in jobs_candidates if p.is_file()), jobs_candidates[-1])
+    return deploy, jobs
 
 
 def _set_gateway_version(text: str, version: str) -> str:
@@ -143,8 +199,8 @@ def main() -> int:
         print(f"missing overlay file: {path}", file=sys.stderr)
         return 2
 
-    text = path.read_text(encoding="utf-8")
-    workload_path = args.k3s_repo / args.workloads
+    overlay_dir = path.parent
+    workload_arg = args.k3s_repo / args.workloads
     updates: list[tuple[str, str | None, str | None]] = []
 
     def add(key: str, value: str | None) -> None:
@@ -176,41 +232,68 @@ def main() -> int:
         print("no image updates requested", file=sys.stderr)
         return 2
 
+    file_texts: dict[Path, str] = {}
     for image_name, tag, digest in updates:
-        text = _set_image_pin(text, image_name, tag=tag, digest=digest)
+        pin_path = _pin_file_for_image(path, image_name)
+        if pin_path not in file_texts:
+            if not pin_path.is_file():
+                print(f"missing pin file for {image_name}: {pin_path}", file=sys.stderr)
+                return 2
+            file_texts[pin_path] = pin_path.read_text(encoding="utf-8")
+        file_texts[pin_path] = _set_image_pin(file_texts[pin_path], image_name, tag=tag, digest=digest)
 
+    workload_path: Path | None = None
     workload_text: str | None = None
     if args.gateway_version:
+        workload_path = _gateway_workload_path(overlay_dir, workload_arg)
         if not workload_path.is_file():
             print(f"missing workloads file: {workload_path}", file=sys.stderr)
             return 2
         workload_text = _set_gateway_version(workload_path.read_text(encoding="utf-8"), args.gateway_version)
 
+    litellm_db_jobs_path: Path | None = None
     litellm_db_jobs_text: str | None = None
-    db_jobs_path = workload_path.parent / "db-jobs.yaml"
+    litellm_deploy_path: Path | None = None
 
     if args.litellm:
-        if not workload_path.is_file():
-            print(f"missing workloads file: {workload_path}", file=sys.stderr)
+        litellm_deploy_path, litellm_db_jobs_path = _litellm_manifest_paths(overlay_dir)
+        if not litellm_deploy_path.is_file():
+            print(f"missing litellm deployment file: {litellm_deploy_path}", file=sys.stderr)
             return 2
-        if not db_jobs_path.is_file():
-            print(f"missing db-jobs file: {db_jobs_path}", file=sys.stderr)
+        if not litellm_db_jobs_path.is_file():
+            print(f"missing db-jobs file: {litellm_db_jobs_path}", file=sys.stderr)
             return 2
 
-        base_workload_text = workload_text if workload_text is not None else workload_path.read_text(encoding="utf-8")
-        workload_text = _set_litellm_image(base_workload_text, args.litellm, "litellm")
-        litellm_db_jobs_text = _set_litellm_image(db_jobs_path.read_text(encoding="utf-8"), args.litellm, "migrate")
+        if workload_path == litellm_deploy_path and workload_text is not None:
+            base_workload_text = workload_text
+        else:
+            base_workload_text = litellm_deploy_path.read_text(encoding="utf-8")
+        updated_deploy = _set_litellm_image(base_workload_text, args.litellm, "litellm")
+        if workload_path == litellm_deploy_path:
+            workload_text = updated_deploy
+        else:
+            file_texts[litellm_deploy_path] = updated_deploy
+        litellm_db_jobs_text = _set_litellm_image(
+            litellm_db_jobs_path.read_text(encoding="utf-8"), args.litellm, "migrate"
+        )
 
     if args.dry_run:
-        sys.stdout.write(text)
+        # Preserve prior dry-run behavior: print the primary overlay (or first pin file).
+        primary = file_texts.get(path)
+        if primary is None and file_texts:
+            primary = next(iter(file_texts.values()))
+        sys.stdout.write(primary or path.read_text(encoding="utf-8"))
         return 0
 
-    path.write_text(text, encoding="utf-8")
-    if workload_text is not None:
+    for pin_path, text in file_texts.items():
+        pin_path.write_text(text, encoding="utf-8")
+        print(f"updated {pin_path}")
+    if workload_text is not None and workload_path is not None:
         workload_path.write_text(workload_text, encoding="utf-8")
-    if litellm_db_jobs_text is not None:
-        db_jobs_path.write_text(litellm_db_jobs_text, encoding="utf-8")
-    print(f"updated {path}")
+        print(f"updated {workload_path}")
+    if litellm_db_jobs_text is not None and litellm_db_jobs_path is not None:
+        litellm_db_jobs_path.write_text(litellm_db_jobs_text, encoding="utf-8")
+        print(f"updated {litellm_db_jobs_path}")
     return 0
 
 

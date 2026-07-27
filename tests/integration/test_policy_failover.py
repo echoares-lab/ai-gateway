@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import os
-import re
 import uuid
-import json
 
 import httpx
 import pytest
 import pytest_asyncio
-
 from conftest import MASTER_KEY
 
 pytestmark = [pytest.mark.mock, pytest.mark.asyncio]
@@ -158,7 +154,7 @@ async def test_quota_429_preemptive_deprioritizes_credentials(client, policy_deb
 @pytest.mark.mock
 async def test_quota_429_preemptive_from_gateway_engine_rate_limit_signals(client, policy_debug, mock_litellm_router):
     # Mocking logic moved to conftest.py _chat_completion_mock side effect
-    
+
     seed = await _chat(
         client,
         model="claude-sonnet-4-6",
@@ -172,9 +168,9 @@ async def test_quota_429_preemptive_from_gateway_engine_rate_limit_signals(clien
 
     context = await _last_context(policy_debug)
     rate_limits = context.get("rate_limits") or []
-    assert any(
-        isinstance(rl, dict) and rl.get("pre_emptive_degraded") for rl in rate_limits
-    ), f"expected pre_emptive_degraded rate_limits in context, got {rate_limits}"
+    assert any(isinstance(rl, dict) and rl.get("pre_emptive_degraded") for rl in rate_limits), (
+        f"expected pre_emptive_degraded rate_limits in context, got {rate_limits}"
+    )
 
     decision = await _last_decision(policy_debug)
     assert decision.get("quota_aware_mode") is True
