@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
+
 import pytest
-import httpx
-from conftest import MASTER_KEY
 
 pytestmark = [pytest.mark.mock, pytest.mark.asyncio]
 
@@ -36,7 +35,7 @@ async def test_cursor_protocol_header_injection(asgi_client, mock_litellm_router
 async def test_x_force_model_header_override(asgi_client, mock_litellm_router, monkeypatch):
     """Verify that the X-Force-Model header overrides target model routing."""
     monkeypatch.setenv("ALLOW_DEV_MODEL_FORCE", "true")
-    
+
     resp = await asgi_client.post(
         "/v1/chat/completions",
         headers={
@@ -49,7 +48,7 @@ async def test_x_force_model_header_override(asgi_client, mock_litellm_router, m
         },
     )
     assert resp.status_code == 200
-    
+
     last_request = mock_litellm_router.calls.last.request
     sent_body = json.loads(last_request.read())
     assert sent_body["model"] == "claude-sonnet-4-6"
@@ -64,18 +63,32 @@ async def test_claude_protocol_system_prompt_normalization(asgi_client, mock_lit
         },
         json={
             "model": "claude-sonnet-4-6",
-            "system": [
-                {"type": "text", "text": "You are a specialized translator."}
-            ],
+            "system": [{"type": "text", "text": "You are a specialized translator."}],
             "messages": [{"role": "user", "content": "hello"}],
             "max_tokens": 10,
         },
     )
     assert resp.status_code == 200
-    
+
     last_request = mock_litellm_router.calls.last.request
     sent_body = json.loads(last_request.read())
-    
+
     # Verify OpenAI payload has system message at the beginning
     assert sent_body["messages"][0]["role"] == "system"
     assert sent_body["messages"][0]["content"] == "You are a specialized translator."
+
+
+async def test_claude_protocol_streaming_tool_calls(asgi_client, mock_litellm_router):
+    """Verify Anthropic messages API streaming response handles tool call deltas correctly."""
+    resp = await asgi_client.post(
+        "/v1/messages",
+        headers={"x-api-key": _TENANT_KEY},
+        json={
+            "model": "claude-sonnet-4-6",
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 50,
+            "stream": True,
+        },
+    )
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers["content-type"]

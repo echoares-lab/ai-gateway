@@ -4,12 +4,8 @@
 
 > **Status:** Phase 5b runtime resolver in policy-engine (`allowed_mcp_servers` /
 > `denied_mcp_servers` on `RoutingDecision`). LiteLLM tool-list filter (5c) pending.
-> Implements the Phase 5
-> optional scope for Epic #38 issue 38-20 ([#139](https://github.com/echoares-lab/ai-gateway/issues/139)),
-> child of tenancy epic [#30](https://github.com/echoares-lab/ai-gateway/issues/30)
-> follow-up **TENANCY-4** (workspace-level MCP tool visibility filters).
-> Builds on [TENANCY.md](./TENANCY.md) §4.3 and [ARCHITECTURE.md](./ARCHITECTURE.md)
-> (LiteLLM as MCP control plane).
+> Implements the Phase 5 optional scope for Epic #38 issue 38-20 ([#139](https://github.com/echoares-lab/ai-gateway/issues/139)).
+> Builds on [ARCHITECTURE.md](./ARCHITECTURE.md) (LiteLLM as MCP control plane).
 
 ---
 
@@ -20,7 +16,7 @@ MCP servers are registered **globally** in `litellm-config.yaml` under
 LiteLLM currently sees the same MCP catalog regardless of organization,
 workspace, team, or repository.
 
-[TENANCY.md](./TENANCY.md) requires workspace-level isolation: teams must not
+Policy-engine requires workspace-level isolation: teams must not
 discover or invoke MCP tools outside their approved scope (e.g. production repos
 must not expose `mcp-postgres` write paths or cross-workspace filesystem roots).
 
@@ -60,7 +56,7 @@ Merge order: **repo → team → workspace → org** (most specific wins), consi
 with budget and rate-limit profile resolution in the policy-engine.
 
 Tenant metadata from `ak-{org}-{workspace}-{team}-{repo}-{environment}` keys
-(TENANCY.md §2.2) populates `RoutingContext` for lookup.
+populates `RoutingContext` for lookup.
 
 ---
 
@@ -152,7 +148,6 @@ wire but MCP filter can prototype on policy-engine + mock integration first.
 
 ## 8. References
 
-- [TENANCY.md](./TENANCY.md) — §4.3 MCP Tool Access, §5 child issue TENANCY-4
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — LiteLLM MCP control plane ADR
 - [RUNBOOK.md](ops/RUNBOOK.md) — MCP server registration
 - `issues/policy-engine-38-20-mcp-visibility.md` — issue tracker

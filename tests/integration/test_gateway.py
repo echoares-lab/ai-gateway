@@ -4,7 +4,6 @@ Set GATEWAY_URL (default: http://localhost:4010) and LITELLM_MASTER_KEY before r
     pytest tests/integration/ -m integration
 """
 
-import json
 import os
 from pathlib import Path
 
@@ -117,10 +116,7 @@ async def test_admin_status_endpoint_fallbacks_have_no_via_gcli_references(asgi_
     fallbacks = resp.json()["panels"]["routing"]["data"]["fallbacks"]
     assert fallbacks, "deployment fallback graph was not loaded by /admin/status"
     references = [
-        model
-        for fallback in fallbacks
-        for model in (fallback["model"], *fallback["targets"])
-        if "via-gcli" in model
+        model for fallback in fallbacks for model in (fallback["model"], *fallback["targets"]) if "via-gcli" in model
     ]
     assert not references
 
@@ -282,7 +278,9 @@ class TestGeminiCliFormat:
     @pytest.mark.mock
     @pytest.mark.smoke
     async def test_stream_generate_content(self, asgi_client, mock_litellm_router):
-        async with asgi_client.stream("POST", f"/v1beta/models/{_GEMINI_MODEL}:streamGenerateContent", json=_GEMINI_BODY) as resp:
+        async with asgi_client.stream(
+            "POST", f"/v1beta/models/{_GEMINI_MODEL}:streamGenerateContent", json=_GEMINI_BODY
+        ) as resp:
             if _should_skip(resp):
                 pytest.skip(f"model unavailable ({resp.status_code})")
             assert resp.status_code == 200
@@ -723,10 +721,9 @@ class TestCodexCliFormat:
     @pytest.mark.mock
     async def test_websocket_unauthorized_rejected(self):
         """In-memory ASGI WebSocket: missing auth is rejected after accept (close 1008)."""
+        from main import app
         from starlette.testclient import TestClient
         from starlette.websockets import WebSocketDisconnect
-
-        from main import app
 
         with TestClient(app) as sync_client:
             with pytest.raises(WebSocketDisconnect) as exc_info:

@@ -183,6 +183,108 @@ gateway-engine, `litellm-config.yaml`, `/metrics`, and (best-effort) `cliproxy-s
 Read-only and operator-local: it never mutates state and redacts secrets. Degraded sources
 report `warning`/`unknown` rather than failing the response.
 
+### Automatic model reconciliation
+
+Gateway-engine owns the model reconciliation scheduler. It discovers only the trusted
+CLIProxy catalog, preserves curated registry metadata, validates generated resources,
+atomically applies changes, reloads LiteLLM, and verifies `/v1/models`. Unknown-model
+requests can enqueue an expedited refresh, but never create the client-supplied name
+inline. New additions are probed against their exact CLIProxy `upstream_model` before
+their LiteLLM alias exists.
+
+**Lifecycle glossary:** see
+[`docs/superpowers/specs/2026-07-23-model-registry-lifecycle-never-delete-design.md`](../superpowers/specs/2026-07-23-model-registry-lifecycle-never-delete-design.md)
+for `advertised`, `retired`, `absent_since`, and the legacy `enabled` shim
+(`enabled := advertised && !retired`). Registry rows are never hard-deleted; operator
+`DELETE /admin/models/{id}` retires in place.
+
+**Advertise-on-transient:** new and retryable models advertise when the probe is
+`healthy` or transient (`rate_limited`, timeouts, 5xx). Hard failures (`missing_model`,
+auth errors) stay unadvertised until a later successful probe. Already-advertised models
+remain advertised through transient probe failures (429 never un-advertises). The apply
+set includes every model where `advertised && !retired`; probe health is informational
+for routing/fallbacks, not an apply gate.
+
+**Discovery absence:** on scheduled/startup/manual runs, a row missing from the latest
+CLIProxy catalog keeps `advertised=true`, sets `absent_since` on first continuous miss,
+and clears it on rediscovery. Auto-retire (`retired=true`, `advertised=false`,
+`status=RETIRED`) runs only on scheduled/startup/manual triggers after
+`GATEWAY_ENGINE_MODEL_ABSENCE_RETIRE_DAYS` (default 30) of continuous absence; demand
+runs never evaluate the retire timer.
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `GATEWAY_ENGINE_MODEL_RECONCILIATION_ENABLED` | `true` | Enable startup, scheduled, demand, and manual runs |
+| `GATEWAY_ENGINE_MODEL_RECONCILIATION_STARTUP_DELAY_SEC` | `30` | Delay before the first run |
+| `GATEWAY_ENGINE_MODEL_RECONCILIATION_INTERVAL_SEC` | `900` | Periodic run interval |
+| `GATEWAY_ENGINE_MODEL_RECONCILIATION_EXPEDITED_MIN_INTERVAL_SEC` | `60` | Global minimum interval between demand triggers |
+| `GATEWAY_ENGINE_MODEL_RECONCILIATION_TIMEOUT_SEC` | `120` | Hard bound for one run |
+| `GATEWAY_ENGINE_MODEL_RECONCILIATION_PROBE_STALE_SEC` | `300` | Re-probe age for a successful health result; missing and transient results retry sooner |
+| `GATEWAY_ENGINE_MODEL_ABSENCE_RETIRE_DAYS` | `30` | Continuous discovery absence before auto-retire (scheduled/manual/startup only) |
+| `GATEWAY_ENGINE_MODEL_ABSENCE_ALERT_PENDING_DAYS` | `25` | Threshold documented for pending-retire Alertmanager intent (PromQL lives in observability gitops) |
+
+Inspect the secret-free scheduler state:
+
+```bash
+curl -fsS http://localhost:4000/admin/status \
+  -H "x-admin-key: $GATEWAY_ENGINE_ADMIN_KEY" \
+  | jq '.panels.models.reconciliation'
+```
+
+`active` means a run is executing and `pending` means one coalesced rerun is queued.
+`phase` identifies the current or most recently completed phase. `outcome=success`
+with `verification=verified` (or `not_required` for a no-change run) is healthy.
+While a run is active, `trigger` and `requested_model` belong only to that run;
+completion-only `outcome`, `counts`, `verification`, and `errors` are cleared until
+it finishes, so stale details from the prior run cannot be mistaken for live state.
+`degraded` means changed artifacts were rolled back after apply; `failed` means the
+run stopped before a safe apply. Compare `last_attempt_at` with `last_success_at` and
+inspect the bounded, redacted `errors` array. Reconcile `counts` expose `advertised`,
+`retired`, and `absent` alongside legacy `enabled`/`disabled` aliases. Prometheus
+exports lifecycle gauges (`gateway_model_absent`, `gateway_model_absent_days`,
+`gateway_model_advertised`, `gateway_model_retired`) plus bounded run duration, outcome,
+trigger, and change-count metrics; model names, aliases, tokens, and raw error text are
+never metric labels.
+
+**Alertmanager intents** (implement in the observability gitops repo; not applied from
+ai-gateway directly):
+
+```yaml
+# Intent for observability repo — not applied from ai-gateway directly
+# GatewayModelAbsent: gateway_model_absent == 1 for >1h; repeat_interval 24h
+# GatewayModelPendingRetire: gateway_model_absent_days >= 25
+# GatewayModelAutoRetired: gateway_model_retired == 1 and absent transition
+```
+
+Preview generated changes without writing them:
+
+```bash
+curl -fsS -X POST http://localhost:4000/admin/models/reconcile \
+  -H "x-admin-key: $GATEWAY_ENGINE_ADMIN_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"dry_run":true}' | jq .
+```
+
+Force an asynchronous manual run, then poll status until `active` and `pending` are
+both false:
+
+```bash
+curl -fsS -X POST http://localhost:4000/admin/models/reconcile \
+  -H "x-admin-key: $GATEWAY_ENGINE_ADMIN_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"dry_run":false}' | jq .
+```
+
+For emergency rollback, set `GATEWAY_ENGINE_MODEL_RECONCILIATION_ENABLED=false` in
+the deployment environment and restart gateway-engine. This stops automatic and
+manual scheduler runs while retaining the registry and the last known-good generated
+files. A failed apply/reload/verification already restores the pre-run file bytes and
+modes and requests a LiteLLM reload. If an operator deliberately promoted a bad but
+verified configuration, restore both `litellm-config.yaml` and
+`services/gateway-engine/gemini-model-map.json` from the same known-good deployment,
+restart LiteLLM, verify `/v1/models`, and keep the scheduler disabled until the catalog
+or renderer issue is corrected. Do not delete registry rows as a rollback shortcut.
+
 For a rendered view, open the read-only dashboard page in a browser:
 `http://localhost:4000/admin/dashboard` (operator-local; it fetches `/admin/status` and renders
 the panels plus links to the LiteLLM UI, CLIProxy management, and CPA-Manager).
@@ -497,6 +599,52 @@ Read-only admin endpoints are unauthenticated by default (operator-local convent
 
 **Codex WebSocket (`/v1/responses` upgrade):** requires `Authorization`, `api-key`, or `?key=` matching `LITELLM_MASTER_KEY` or a LiteLLM virtual key validated via `/key/info`.
 
+### Launcher stable-key escrow operations
+
+Gateway-engine preserves launcher key identity in OpenBao KV v2 at
+`kv/data/launcher-keys/<sha256(alias)>`. Operators use the protected contracts documented
+in [`API_DOCUMENTATION.md`](../API_DOCUMENTATION.md); do not read or copy escrow payloads
+for routine recovery. Every successful secret response is `Cache-Control: no-store`.
+
+**Legacy import (key exists in LiteLLM but was created before escrow):** obtain the
+original token from the launcher owner's protected local cache and call
+`POST /admin/keys/{alias}/import` over the trusted admin path with `x-admin-key`. Submit
+the token only in the JSON request body. The service first verifies that token and alias
+with LiteLLM, then writes the escrow record. A missing local token is not recoverable from
+LiteLLM's key metadata: do not generate a replacement, rotate the alias, paste the token
+in a URL/terminal history/ticket, or claim import succeeded. Confirm recovery returns the
+same token by comparing hashes in a private operator process; never print either value.
+
+**Incomplete creation (`key_creation_incomplete`):** retry the same `POST /admin/keys`
+request for the same alias/team. A pending escrow record is a write-ahead transaction and
+the retry resumes with its existing token; it must not create a second LiteLLM key. If it
+still fails, check OpenBao reachability/workload authentication, the pending record's
+metadata and state (without displaying its token), and LiteLLM key-info identity. Repair
+the dependency or identity mismatch, then retry. Never delete the pending record or create
+a differently named replacement as an automated repair.
+
+**Redaction rules:** tokens and Authorization/OpenBao headers may appear only in a
+successful protected JSON body or outbound authenticated request. Do not log them, use
+them in metric labels, interpolate them into exceptions, put them in URLs, pass them as
+command-line arguments, or include them in screenshots and incident notes. Treat gateway
+and OpenBao access logs as sensitive and verify incident captures are redacted before
+sharing.
+
+**Rollback:** disable new creation/recovery by removing or invalidating the escrow
+configuration on gateway-engine, or roll the Deployment image back through GitOps. This
+returns typed `secret_store_unavailable` responses and leaves LiteLLM keys and OpenBao
+records untouched. Do not roll back by deleting/destroying OpenBao versions, deleting
+LiteLLM keys, rotating tokens, or widening the runtime policy. Preserve the KV subtree
+through rollback so the same image/config can resume pending transactions later. If a
+mixed-version rollout is active, stop launcher provisioning first, restore a version that
+supports the stable-key contracts, verify recovery in staging, and only then re-enable
+provisioning.
+
+The least-privilege policy, staging allow/deny check, workload-auth model, and GitOps
+ownership boundary are defined in
+[`CICD_PHASE2_CD_K3S.md`](../CICD_PHASE2_CD_K3S.md#launcher-stable-key-escrow) and
+[`CICD_PHASE2_STAGING.md`](../CICD_PHASE2_STAGING.md#staging-launcher-key-escrow-gate).
+
 ---
 
 Maintainers should periodically check for new releases and pin them in the repo to ensure stability.
@@ -605,15 +753,6 @@ Then run login commands from that forwarded session:
 ---
 
 ## Connecting Clients
-
-### Bootstrap a repo with tenant-aware keys (epic #30)
-
-```bash
-setup-repo-env.sh --org echoares --workspace core --team eng --env dev /path/to/your-repo
-```
-
-Writes `.envrc` + isolated `CODEX_HOME`. Expected LiteLLM virtual key label:
-`ak-{org}-{workspace}-{team}-{repo}-{environment}`. See [docs/TENANCY.md](./docs/TENANCY.md).
 
 ### Generate config snippets
 

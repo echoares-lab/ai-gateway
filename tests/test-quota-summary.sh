@@ -145,6 +145,40 @@ assert "errors" in schema_props, "partial errors are not documented"
 description = operation.get("description") or ""
 assert "partial" in description.lower()
 assert "live_status" in description
+
+stable_key_paths = {
+    "/admin/keys": "post",
+    "/admin/keys/{alias}/secret": "get",
+    "/admin/keys/{alias}/import": "post",
+}
+emitted_codes = {
+    "invalid_request",
+    "invalid_key_alias",
+    "admin_key_required",
+}
+documented_codes = set()
+for path, method in stable_key_paths.items():
+    responses = spec["paths"][path][method]["responses"]
+    for status, response in responses.items():
+        if "$ref" in response:
+            response = spec["components"]["responses"][response["$ref"].rsplit("/", 1)[-1]]
+        cache_control = response.get("headers", {}).get("Cache-Control", {})
+        assert cache_control.get("schema", {}).get("enum") == ["no-store"], (
+            f"{method.upper()} {path} response {status} must declare Cache-Control: no-store"
+        )
+        schema = response.get("content", {}).get("application/json", {}).get("schema", {})
+        if "$ref" in schema:
+            schema = spec["components"]["schemas"][schema["$ref"].rsplit("/", 1)[-1]]
+        code_schema = schema.get("properties", {}).get("error", {}).get("properties", {}).get("code", {})
+        if status != "200":
+            assert code_schema.get("enum"), (
+                f"{method.upper()} {path} response {status} must use a typed stable-key error schema"
+            )
+        documented_codes.update(code_schema.get("enum", []))
+
+assert emitted_codes <= documented_codes, (
+    f"stable-key error schemas omit emitted codes: {sorted(emitted_codes - documented_codes)}"
+)
 PY
 pass "documents the production quota endpoint contract and examples"
 

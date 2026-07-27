@@ -81,10 +81,7 @@ def test_fetch_manifest_digest_returns_docker_content_digest() -> None:
     response.__exit__ = mock.Mock(return_value=False)
 
     with mock.patch("urllib.request.urlopen", return_value=response):
-        assert (
-            fetch_manifest_digest("cli-proxy-api", "abc1234")
-            == digest
-        )
+        assert fetch_manifest_digest("cli-proxy-api", "abc1234") == digest
 
 
 def test_fetch_manifest_digest_rejects_missing_digest_header() -> None:

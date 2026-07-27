@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from difflib import unified_diff
-from typing import Any
+from typing import Any, Self
 
 import yaml
-from pydantic import BaseModel, Field
+from core.model_lifecycle_defaults import default_fallbacks_for
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 try:  # pragma: no cover - exercised only when psycopg2 is installed/configured
     import psycopg2
@@ -32,10 +34,14 @@ class ModelRegistryRecord(BaseModel):
     family: str = "unknown"
     upstream_model: str
     litellm_model: str
-    enabled: bool = True
+    advertised: bool = True
+    retired: bool = False
+    absent_since: datetime | None = None
     status: str = "UNKNOWN"
     supports_tools: bool | None = None
     supports_vision: bool | None = None
+    supports_reasoning: bool | None = None
+    context_window: int | None = Field(default=None, ge=0)
     max_input_tokens: int | None = Field(default=None, ge=0)
     max_output_tokens: int | None = Field(default=None, ge=0)
     cost_tier: int | None = Field(default=None, ge=1, le=3)
@@ -45,6 +51,32 @@ class ModelRegistryRecord(BaseModel):
     probe_checked_at: datetime | None = None
     source: str = "manual"
     aliases: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def map_legacy_enabled(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "enabled" not in value:
+            return value
+        mapped = dict(value)
+        enabled = bool(mapped.pop("enabled"))
+        mapped.setdefault("advertised", enabled)
+        if enabled:
+            mapped.setdefault("retired", False)
+        return mapped
+
+    @computed_field
+    @property
+    def enabled(self) -> bool:
+        return self.advertised and not self.retired
+
+    def model_copy(self, *, update: dict[str, Any] | None = None, deep: bool = False) -> Self:
+        mapped_update = dict(update or {})
+        if "enabled" in mapped_update:
+            enabled = bool(mapped_update.pop("enabled"))
+            mapped_update.setdefault("advertised", enabled)
+            if enabled:
+                mapped_update.setdefault("retired", False)
+        return super().model_copy(update=mapped_update, deep=deep)
 
 
 class ModelRegistryListResponse(BaseModel):
@@ -121,6 +153,8 @@ class ModelRegistryWriteRequest(BaseModel):
     status: str = "UNKNOWN"
     supports_tools: bool | None = None
     supports_vision: bool | None = None
+    supports_reasoning: bool | None = None
+    context_window: int | None = Field(default=None, ge=0)
     max_input_tokens: int | None = Field(default=None, ge=0)
     max_output_tokens: int | None = Field(default=None, ge=0)
     cost_tier: int | None = Field(default=None, ge=1, le=3)
@@ -139,6 +173,8 @@ class ModelRegistryWriteRequest(BaseModel):
             status=self.status,
             supports_tools=self.supports_tools,
             supports_vision=self.supports_vision,
+            supports_reasoning=self.supports_reasoning,
+            context_window=self.context_window,
             max_input_tokens=self.max_input_tokens,
             max_output_tokens=self.max_output_tokens,
             cost_tier=self.cost_tier if self.cost_tier is not None else cost_tier_of(self.model_id),
@@ -183,6 +219,8 @@ class ModelRegistryPatchRequest(BaseModel):
     status: str | None = None
     supports_tools: bool | None = None
     supports_vision: bool | None = None
+    supports_reasoning: bool | None = None
+    context_window: int | None = Field(default=None, ge=0)
     max_input_tokens: int | None = Field(default=None, ge=0)
     max_output_tokens: int | None = Field(default=None, ge=0)
     cost_tier: int | None = Field(default=None, ge=1, le=3)
@@ -231,11 +269,37 @@ def cost_tier_of(model: str) -> int | None:
     return 2 if provider_of(m) != "unknown" else None
 
 
+def normalize_discovered_model(model_id: str) -> tuple[str, str]:
+    upstream_id = model_id.removeprefix("AI-Gateway:")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", upstream_id):
+        raise ValueError("invalid model identifier")
+    registry_id = upstream_id.replace(".", "-") if provider_of(upstream_id) == "openai" else upstream_id
+    return registry_id, upstream_id
+
+
 def normalize_model_id(model_id: str) -> str:
-    model = model_id
-    if model.startswith("AI-Gateway:"):
-        model = model[len("AI-Gateway:") :]
-    return model.replace(".", "-")
+    return normalize_discovered_model(model_id)[0]
+
+
+_IDENTITY_ALIAS_PRECEDENCE = {"registry": 10, "external": 20, "upstream": 30}
+
+
+def _deduplicate_aliases(aliases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep one row per schema-level alias, preferring its most useful identity."""
+    deduplicated: dict[str, dict[str, Any]] = {}
+    priorities: dict[str, int] = {}
+    for alias in aliases:
+        if not isinstance(alias, dict):
+            continue
+        alias_name = str(alias.get("alias") or "")
+        if not alias_name:
+            continue
+        alias_kind = str(alias.get("alias_kind") or "client")
+        priority = _IDENTITY_ALIAS_PRECEDENCE.get(alias_kind, 100)
+        if alias_name not in deduplicated or priority > priorities[alias_name]:
+            deduplicated[alias_name] = alias
+            priorities[alias_name] = priority
+    return list(deduplicated.values())
 
 
 def _error(code: str, message: str, source: str) -> dict[str, Any]:
@@ -266,6 +330,8 @@ def record_from_litellm_entry(entry: dict[str, Any]) -> ModelRegistryRecord | No
         status="UNKNOWN",
         supports_tools=info.get("supports_function_calling"),
         supports_vision=info.get("supports_vision"),
+        supports_reasoning=info.get("supports_reasoning"),
+        context_window=info.get("max_input_tokens"),
         max_input_tokens=info.get("max_input_tokens"),
         max_output_tokens=info.get("max_output_tokens"),
         cost_tier=cost_tier_of(str(model_id)),
@@ -282,22 +348,30 @@ def record_from_cliproxy_model(entry: dict[str, Any]) -> ModelRegistryRecord | N
     raw_model_id = entry.get("id") or entry.get("model")
     if not raw_model_id:
         return None
-    model_id = normalize_model_id(str(raw_model_id))
+    external_id = str(raw_model_id)
+    model_id, upstream_id = normalize_discovered_model(external_id)
     provider = provider_of(model_id)
     return ModelRegistryRecord(
         model_id=model_id,
         provider=provider,
         family=family_of(model_id),
-        upstream_model=str(raw_model_id).removeprefix("AI-Gateway:"),
-        litellm_model=f"openai/{str(raw_model_id).removeprefix('AI-Gateway:')}",
+        upstream_model=upstream_id,
+        litellm_model=f"openai/{upstream_id}",
         enabled=True,
         status="UNKNOWN",
         cost_tier=cost_tier_of(model_id),
         policy_metadata={
-            "cliproxy_model_id": str(raw_model_id),
+            "cliproxy_model_id": external_id,
             "owned_by": entry.get("owned_by"),
         },
         source="cliproxy",
+        aliases=_deduplicate_aliases(
+            [
+                {"alias": external_id, "target": model_id, "alias_kind": "external"},
+                {"alias": model_id, "target": model_id, "alias_kind": "registry"},
+                {"alias": upstream_id, "target": model_id, "alias_kind": "upstream"},
+            ]
+        ),
     )
 
 
@@ -308,7 +382,13 @@ def merge_discovered_model(
     if current is None:
         return discovered
     metadata = dict(current.policy_metadata)
-    metadata.update(discovered.policy_metadata)
+    metadata.update(
+        {
+            key: value
+            for key, value in discovered.policy_metadata.items()
+            if key not in metadata and value is not None and (not isinstance(value, str) or value.strip())
+        }
+    )
     return current.model_copy(
         update={
             "provider": discovered.provider,
@@ -317,6 +397,7 @@ def merge_discovered_model(
             "litellm_model": discovered.litellm_model,
             "source": discovered.source,
             "policy_metadata": metadata,
+            "aliases": _deduplicate_aliases([*current.aliases, *discovered.aliases]),
         }
     )
 
@@ -353,7 +434,11 @@ def _litellm_model_info(model: ModelRegistryRecord) -> dict[str, Any]:
         info["supports_function_calling"] = model.supports_tools
     if model.supports_vision is not None:
         info["supports_vision"] = model.supports_vision
-    if model.max_input_tokens is not None:
+    if model.supports_reasoning is not None:
+        info["supports_reasoning"] = model.supports_reasoning
+    if model.context_window is not None:
+        info["max_input_tokens"] = model.context_window
+    elif model.max_input_tokens is not None:
         info["max_input_tokens"] = model.max_input_tokens
     if model.max_output_tokens is not None:
         info["max_output_tokens"] = model.max_output_tokens
@@ -383,17 +468,14 @@ def render_litellm_config_from_registry(models: list[ModelRegistryRecord]) -> st
     fallbacks = []
     by_id = {model.model_id: model for model in active}
     for model in active:
-        explicit = model.policy_metadata.get("fallbacks")
-        if isinstance(explicit, list):
+        metadata = model.policy_metadata
+        explicit = metadata.get("fallbacks")
+        if "fallbacks" in metadata and isinstance(explicit, list):
             fallback_ids = [str(item) for item in explicit if str(item) in by_id and str(item) != model.model_id]
         else:
-            fallback_ids = [
-                candidate.model_id
-                for candidate in active
-                if candidate.model_id != model.model_id and candidate.family == model.family
-            ]
+            fallback_ids = default_fallbacks_for(model, active)
         if fallback_ids:
-            fallbacks.append({model.model_id: sorted(fallback_ids)})
+            fallbacks.append({model.model_id: fallback_ids})
 
     rendered: dict[str, Any] = {"model_list": model_list}
     if fallbacks:
@@ -587,24 +669,36 @@ class ModelRegistryStore:
                     """
                     INSERT INTO model_registry (
                         model_id, provider, family, upstream_model, litellm_model,
-                        enabled, status, supports_tools, supports_vision,
+                        advertised, retired, absent_since, enabled,
+                        status, supports_tools, supports_vision,
                         max_input_tokens, max_output_tokens, cost_tier,
-                        policy_metadata, source
+                        policy_metadata, source, probe_status,
+                        probe_http_status, probe_checked_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
                     ON CONFLICT (model_id) DO UPDATE SET
                         provider = EXCLUDED.provider,
                         family = EXCLUDED.family,
                         upstream_model = EXCLUDED.upstream_model,
                         litellm_model = EXCLUDED.litellm_model,
+                        advertised = EXCLUDED.advertised,
+                        retired = EXCLUDED.retired,
+                        absent_since = EXCLUDED.absent_since,
                         enabled = EXCLUDED.enabled,
+                        status = EXCLUDED.status,
                         supports_tools = EXCLUDED.supports_tools,
                         supports_vision = EXCLUDED.supports_vision,
                         max_input_tokens = EXCLUDED.max_input_tokens,
                         max_output_tokens = EXCLUDED.max_output_tokens,
                         cost_tier = EXCLUDED.cost_tier,
                         policy_metadata = EXCLUDED.policy_metadata,
-                        source = EXCLUDED.source
+                        source = EXCLUDED.source,
+                        probe_status = EXCLUDED.probe_status,
+                        probe_http_status = EXCLUDED.probe_http_status,
+                        probe_checked_at = EXCLUDED.probe_checked_at
                     """,
                     (
                         model.model_id,
@@ -612,6 +706,9 @@ class ModelRegistryStore:
                         model.family,
                         model.upstream_model,
                         model.litellm_model,
+                        model.advertised,
+                        model.retired,
+                        model.absent_since,
                         model.enabled,
                         model.status,
                         model.supports_tools,
@@ -621,8 +718,35 @@ class ModelRegistryStore:
                         model.cost_tier,
                         Json(model.policy_metadata),
                         model.source,
+                        model.probe_status,
+                        model.probe_http_status,
+                        model.probe_checked_at,
                     ),
                 )
+                for alias in _deduplicate_aliases(model.aliases):
+                    cur.execute(
+                        """
+                        INSERT INTO model_aliases (
+                            alias, model_id, provider, alias_kind, target, metadata
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (alias) DO UPDATE SET
+                            model_id = EXCLUDED.model_id,
+                            provider = EXCLUDED.provider,
+                            alias_kind = EXCLUDED.alias_kind,
+                            target = EXCLUDED.target,
+                            metadata = EXCLUDED.metadata
+                        WHERE model_aliases.model_id = EXCLUDED.model_id
+                        """,
+                        (
+                            str(alias["alias"]),
+                            model.model_id,
+                            str(alias.get("provider") or model.provider),
+                            str(alias.get("alias_kind") or "client"),
+                            str(alias.get("target") or model.model_id),
+                            Json(alias.get("metadata") or {}),
+                        ),
+                    )
             conn.commit()
         return len(models)
 
@@ -634,8 +758,8 @@ class ModelRegistryStore:
         current = self.get_model(model_id)
         if current is None:
             return None
-        disabled = current.model_copy(update={"enabled": False, "status": "DISABLED"})
-        return self.upsert_model(disabled)
+        retired = current.model_copy(update={"retired": True, "advertised": False, "status": "RETIRED"})
+        return self.upsert_model(retired)
 
     def hard_delete_model(self, model_id: str) -> bool:
         if not self.enabled:

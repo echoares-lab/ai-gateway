@@ -1,0 +1,1023 @@
+"""Safe, collaborator-driven model reconciliation orchestration."""
+
+from __future__ import annotations
+
+import asyncio
+import inspect
+import os
+import stat
+import tempfile
+import time
+from contextlib import suppress
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from pathlib import Path
+from typing import Any, Callable, Mapping
+
+from core.metrics import record_model_lifecycle, record_model_reconciliation
+from core.model_registry import (
+    ModelRegistryRecord,
+    diff_discovered_models,
+    merge_discovered_model,
+    record_from_cliproxy_model,
+)
+
+_MAX_ERRORS = 10
+_MAX_ERROR_MESSAGE = 300
+_RETRYABLE_PROBE_STATUSES = frozenset(
+    {
+        "transient",
+        "temporarily_unavailable",
+        "timeout",
+        "missing",
+        "missing_model",
+        "rate_limited",
+        "auth_failure",
+        "preserve",
+        "error",
+        "malformed_response",
+    }
+)
+_TRANSIENT_PROBE = frozenset(
+    {
+        "transient",
+        "temporarily_unavailable",
+        "timeout",
+        "rate_limited",
+        "preserve",
+    }
+)
+_MISSING_PROBE = frozenset({"missing", "missing_model"})
+
+
+def should_advertise_after_probe(probe_status: str, *, currently_advertised: bool) -> bool:
+    """Return whether a model should be advertised after its latest probe."""
+    status = str(probe_status or "").lower()
+    if currently_advertised and status not in _MISSING_PROBE:
+        return True
+    if status == "healthy" or status in _TRANSIENT_PROBE:
+        return True
+    return False
+
+
+def model_probe_is_stale(
+    model: ModelRegistryRecord,
+    stale_after_sec: float,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Return whether a model probe must be retried."""
+    status = str(model.probe_status or "").lower()
+    if not status or status in _RETRYABLE_PROBE_STATUSES or model.probe_checked_at is None:
+        return True
+    checked_at = model.probe_checked_at
+    current = now or datetime.now(timezone.utc)
+    if checked_at.tzinfo is None:
+        checked_at = checked_at.replace(tzinfo=timezone.utc)
+    return (current - checked_at).total_seconds() >= max(0, stale_after_sec)
+
+
+@dataclass(frozen=True)
+class ArtifactSnapshot:
+    path: Path
+    existed: bool
+    content: bytes
+    mode: int
+
+
+@dataclass(frozen=True)
+class ArtifactRollbackToken:
+    snapshots: dict[str, ArtifactSnapshot]
+
+
+@dataclass(frozen=True)
+class RuntimeMutation:
+    action: str
+    model_id: str
+    litellm_id: str | None = None
+    payload: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeRollbackToken:
+    mutations: tuple[RuntimeMutation, ...] = ()
+
+
+@dataclass(frozen=True)
+class HybridRollbackToken:
+    """Rollback token spanning optional file artifacts and LiteLLM runtime mutations."""
+
+    file_token: ArtifactRollbackToken | None = None
+    runtime_token: RuntimeRollbackToken | None = None
+
+
+def litellm_model_new_payload(model: ModelRegistryRecord) -> dict[str, Any]:
+    """Build a LiteLLM `/model/new` body from a registry record."""
+    litellm_params: dict[str, Any] = {
+        "model": model.litellm_model,
+        "api_base": model.policy_metadata.get("api_base", "http://cliproxy:8317/v1"),
+        "api_key": "os.environ/CLIPROXY_API_KEY",
+    }
+    info: dict[str, Any] = {}
+    if model.supports_tools is not None:
+        info["supports_function_calling"] = model.supports_tools
+    if model.supports_vision is not None:
+        info["supports_vision"] = model.supports_vision
+    if model.max_input_tokens is not None:
+        info["max_input_tokens"] = model.max_input_tokens
+    if model.max_output_tokens is not None:
+        info["max_output_tokens"] = model.max_output_tokens
+    payload: dict[str, Any] = {
+        "model_name": model.model_id,
+        "litellm_params": litellm_params,
+    }
+    if info:
+        payload["model_info"] = info
+    return payload
+
+
+def _litellm_already_exists(status_code: int, body: Any) -> bool:
+    if status_code not in {400, 409}:
+        return False
+    text = str(body).lower()
+    return "already" in text and "exist" in text
+
+
+class LiteLLMRuntimeApplyManager:
+    """Apply model catalog changes through LiteLLM's runtime mutation APIs."""
+
+    def __init__(
+        self,
+        client,
+        litellm_url: str,
+        master_key: str,
+        *,
+        timeout_sec: float,
+    ):
+        self._client = client
+        self._litellm_url = litellm_url.rstrip("/")
+        self._master_key = master_key
+        self._timeout_sec = timeout_sec
+
+    def _headers(self) -> dict[str, str]:
+        if not self._master_key.strip():
+            return {}
+        return {"authorization": f"Bearer {self._master_key}"}
+
+    async def apply(
+        self,
+        models: list[ModelRegistryRecord],
+        changed_ids: set[str],
+    ) -> RuntimeRollbackToken:
+        if self._client is None:
+            raise RuntimeError("http client not initialized")
+        if not self._master_key.strip():
+            raise RuntimeError("LITELLM_MASTER_KEY is required for runtime apply")
+
+        by_id = {model.model_id: model for model in models}
+        mutations: list[RuntimeMutation] = []
+        try:
+            for model_id in sorted(changed_ids):
+                model = by_id.get(model_id)
+                if model is None:
+                    continue
+                if model.enabled:
+                    mutation = await self._add_model(model)
+                    if mutation is not None:
+                        mutations.append(mutation)
+                else:
+                    mutation = await self._delete_model(model)
+                    if mutation is not None:
+                        mutations.append(mutation)
+        except Exception:
+            if mutations:
+                with suppress(Exception):
+                    await self.rollback(RuntimeRollbackToken(mutations=tuple(mutations)))
+            raise
+        return RuntimeRollbackToken(mutations=tuple(mutations))
+
+    async def rollback(self, token: RuntimeRollbackToken) -> None:
+        for mutation in reversed(token.mutations):
+            if mutation.action == "add" and mutation.litellm_id:
+                await self._post_json("/model/delete", {"id": mutation.litellm_id}, allow_missing=True)
+            elif mutation.action == "delete" and mutation.payload is not None:
+                await self._post_json("/model/new", mutation.payload, allow_exists=True)
+
+    async def _add_model(self, model: ModelRegistryRecord) -> RuntimeMutation | None:
+        payload = litellm_model_new_payload(model)
+        status_code, body = await self._post_json("/model/new", payload, allow_exists=True)
+        if _litellm_already_exists(status_code, body):
+            return None
+        litellm_id = None
+        if isinstance(body, dict):
+            litellm_id = body.get("model_id") or (body.get("model_info") or {}).get("id")
+        if not litellm_id:
+            litellm_id = await self._lookup_model_id(model.model_id)
+        if not litellm_id:
+            raise RuntimeError(f"LiteLLM did not return an id for {model.model_id}")
+        return RuntimeMutation(
+            action="add",
+            model_id=model.model_id,
+            litellm_id=str(litellm_id),
+            payload=payload,
+        )
+
+    async def _delete_model(self, model: ModelRegistryRecord) -> RuntimeMutation | None:
+        litellm_id = await self._lookup_model_id(model.model_id)
+        if not litellm_id:
+            return None
+        payload = litellm_model_new_payload(model)
+        await self._post_json("/model/delete", {"id": litellm_id}, allow_missing=True)
+        return RuntimeMutation(
+            action="delete",
+            model_id=model.model_id,
+            litellm_id=str(litellm_id),
+            payload=payload,
+        )
+
+    async def _lookup_model_id(self, model_name: str) -> str | None:
+        response = await self._client.get(
+            f"{self._litellm_url}/model/info",
+            headers=self._headers(),
+            timeout=self._timeout_sec,
+        )
+        if not (200 <= response.status_code < 300):
+            return None
+        try:
+            payload = response.json()
+        except Exception:
+            return None
+        rows = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            return None
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if row.get("model_name") != model_name:
+                continue
+            model_info = row.get("model_info") if isinstance(row.get("model_info"), dict) else {}
+            found = row.get("model_id") or model_info.get("id")
+            if found:
+                return str(found)
+        return None
+
+    async def _post_json(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        *,
+        allow_exists: bool = False,
+        allow_missing: bool = False,
+    ) -> tuple[int, Any]:
+        response = await self._client.post(
+            f"{self._litellm_url}{path}",
+            headers=self._headers(),
+            json=payload,
+            timeout=self._timeout_sec,
+        )
+        try:
+            body = response.json()
+        except Exception:
+            body = {"raw_response": getattr(response, "text", "")}
+        if 200 <= response.status_code < 300:
+            return response.status_code, body
+        if allow_exists and _litellm_already_exists(response.status_code, body):
+            return response.status_code, body
+        if allow_missing and response.status_code in {404, 400}:
+            return response.status_code, body
+        reason = body.get("error") if isinstance(body, dict) else body
+        raise RuntimeError(f"litellm {path} failed: {reason or response.status_code}")
+
+
+class ReconciliationArtifactManager:
+    """Atomically replace known reconciliation artifacts with rollback support."""
+
+    def __init__(self, paths: Mapping[str, str | Path]):
+        self._paths = {name: Path(path) for name, path in paths.items()}
+
+    def apply(self, resources) -> ArtifactRollbackToken:
+        changed = [resource for resource in resources if resource.changed]
+        unknown = [resource.name for resource in changed if resource.name not in self._paths]
+        if unknown:
+            raise ValueError(f"unknown reconciliation artifact: {', '.join(unknown)}")
+
+        snapshots = {resource.name: self._snapshot(self._paths[resource.name]) for resource in changed}
+        token = ArtifactRollbackToken(snapshots=snapshots)
+        replaced: list[str] = []
+        try:
+            for resource in changed:
+                snapshot = snapshots[resource.name]
+                self._atomic_write(snapshot.path, resource.content.encode("utf-8"), snapshot.mode)
+                replaced.append(resource.name)
+        except Exception:
+            self.rollback(
+                ArtifactRollbackToken(
+                    snapshots={name: snapshots[name] for name in replaced},
+                )
+            )
+            raise
+        return token
+
+    def rollback(self, token: ArtifactRollbackToken) -> None:
+        for snapshot in token.snapshots.values():
+            if snapshot.existed:
+                self._atomic_write(snapshot.path, snapshot.content, snapshot.mode)
+            else:
+                snapshot.path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _snapshot(path: Path) -> ArtifactSnapshot:
+        try:
+            file_stat = path.stat()
+            return ArtifactSnapshot(
+                path=path,
+                existed=True,
+                content=path.read_bytes(),
+                mode=stat.S_IMODE(file_stat.st_mode),
+            )
+        except FileNotFoundError:
+            return ArtifactSnapshot(path=path, existed=False, content=b"", mode=0o600)
+
+    @staticmethod
+    def _atomic_write(path: Path, content: bytes, mode: int) -> None:
+        path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+        temporary_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", delete=False) as handle:
+                temporary_path = handle.name
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(temporary_path, mode)
+            os.replace(temporary_path, path)
+            temporary_path = None
+        finally:
+            if temporary_path is not None:
+                Path(temporary_path).unlink(missing_ok=True)
+
+
+async def request_litellm_reload(
+    client,
+    litellm_url: str,
+    master_key: str,
+    *,
+    timeout_sec: float,
+) -> bool:
+    """Request LiteLLM's authenticated config reload within a hard timeout."""
+    if client is None or not master_key.strip():
+        return False
+    headers = {"authorization": f"Bearer {master_key}"}
+    try:
+        async with asyncio.timeout(timeout_sec):
+            response = await client.post(
+                f"{litellm_url.rstrip('/')}/config/update",
+                headers=headers,
+                json={},
+                timeout=timeout_sec,
+            )
+        return 200 <= response.status_code < 300
+    except Exception:
+        return False
+
+
+class ReconciliationTrigger(str, Enum):
+    STARTUP = "startup"
+    SCHEDULED = "scheduled"
+    DEMAND = "demand"
+    MANUAL = "manual"
+
+
+@dataclass
+class ReconciliationResult:
+    outcome: str
+    phase: str
+    trigger: ReconciliationTrigger
+    requested_model: str | None
+    counts: dict[str, int]
+    verification: str
+    started_at: datetime
+    completed_at: datetime
+    errors: list[dict[str, str]] = field(default_factory=list)
+    models: list[ModelRegistryRecord] = field(default_factory=list)
+    resources: Any = None
+    diffs: list[dict[str, Any]] = field(default_factory=list)
+    persisted_count: int = 0
+
+
+async def _resolve(value):
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+def _apply_accepts_models(apply: Callable[..., Any]) -> bool:
+    try:
+        signature = inspect.signature(apply)
+    except (TypeError, ValueError):
+        return False
+    parameters = list(signature.parameters.values())
+    if any(parameter.kind == inspect.Parameter.VAR_POSITIONAL for parameter in parameters):
+        return True
+    return len(parameters) >= 3
+
+
+async def _invoke_apply(
+    apply: Callable[..., Any],
+    resources,
+    models: list[ModelRegistryRecord],
+    changed_ids: set[str],
+):
+    if _apply_accepts_models(apply):
+        return await _resolve(apply(resources, models, changed_ids))
+    return await _resolve(apply(resources))
+
+
+class ModelReconciliationService:
+    """Run one reconciliation without owning scheduling or concrete I/O."""
+
+    def __init__(
+        self,
+        *,
+        discover: Callable[[], Any],
+        list_models: Callable[[], Any],
+        upsert_models: Callable[[list[ModelRegistryRecord]], Any],
+        probe_model: Callable[[ModelRegistryRecord], Any],
+        render: Callable[[list[ModelRegistryRecord]], Any],
+        validate: Callable[[Any], Any],
+        apply: Callable[[Any], Any],
+        rollback: Callable[[Any], Any],
+        reload: Callable[[], Any],
+        read_catalog: Callable[[], Any],
+        probe_is_stale: Callable[[ModelRegistryRecord], bool] | None = None,
+        enabled: bool = True,
+        startup_delay_sec: float = 30,
+        interval_sec: float = 900,
+        expedited_min_interval_sec: float = 60,
+        timeout_sec: float = 120,
+        absence_retire_days: int = 30,
+    ):
+        self._discover = discover
+        self._list_models = list_models
+        self._upsert_models = upsert_models
+        self._probe_model = probe_model
+        self._render = render
+        self._validate = validate
+        self._apply = apply
+        self._rollback = rollback
+        self._reload = reload
+        self._read_catalog = read_catalog
+        self._probe_is_stale = probe_is_stale or (lambda model: model.probe_status is None)
+        self.enabled = enabled
+        self.startup_delay_sec = max(0, startup_delay_sec)
+        self.interval_sec = max(0, interval_sec)
+        self.expedited_min_interval_sec = max(0, expedited_min_interval_sec)
+        self.timeout_sec = max(0, timeout_sec)
+        self.absence_retire_days = max(0, absence_retire_days)
+        self._scheduler_task: asyncio.Task | None = None
+        self._scheduler_lock = asyncio.Lock()
+        self._operation_lock = asyncio.Lock()
+        self._wake = asyncio.Event()
+        self._pending_request: tuple[ReconciliationTrigger, str | None] | None = None
+        self._active = False
+        self._current_trigger: ReconciliationTrigger | None = None
+        self._current_requested_model: str | None = None
+        self._phase = "idle" if enabled else "disabled"
+        self.last_attempt_at: datetime | None = None
+        self.last_success_at: datetime | None = None
+        self._last_expedited_at: float | None = None
+        self.last_result: ReconciliationResult | None = None
+
+    @property
+    def scheduler_task(self) -> asyncio.Task | None:
+        return self._scheduler_task
+
+    @property
+    def active(self) -> bool:
+        return self._active
+
+    @property
+    def pending(self) -> bool:
+        return self._pending_request is not None
+
+    @property
+    def phase(self) -> str:
+        return self._phase
+
+    @property
+    def current_trigger(self) -> ReconciliationTrigger | None:
+        return self._current_trigger
+
+    @property
+    def current_requested_model(self) -> str | None:
+        return self._current_requested_model
+
+    def start(self) -> asyncio.Task | None:
+        """Start the cancellable scheduler once when reconciliation is enabled."""
+        if not self.enabled:
+            return None
+        if self._scheduler_task is None or self._scheduler_task.done():
+            self._scheduler_task = asyncio.create_task(self._scheduler_loop())
+        return self._scheduler_task
+
+    async def stop(self) -> None:
+        """Cancel and await the scheduler and any reconciliation it owns."""
+        task = self._scheduler_task
+        if task is None:
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        if self._scheduler_task is task:
+            self._scheduler_task = None
+
+    async def request(
+        self,
+        trigger: ReconciliationTrigger,
+        requested_model: str | None = None,
+    ) -> bool:
+        """Queue at most one rerun, returning whether the request was accepted."""
+        if not self.enabled:
+            return False
+        now = time.monotonic()
+        async with self._scheduler_lock:
+            if trigger is ReconciliationTrigger.DEMAND:
+                if (
+                    self._last_expedited_at is not None
+                    and now - self._last_expedited_at < self.expedited_min_interval_sec
+                ):
+                    return False
+                self._last_expedited_at = now
+            self._pending_request = (trigger, requested_model)
+            self._wake.set()
+        return True
+
+    async def _scheduler_loop(self) -> None:
+        first_wait = True
+        while True:
+            delay = self.startup_delay_sec if first_wait else self.interval_sec
+            try:
+                await asyncio.wait_for(self._wake.wait(), timeout=delay)
+            except asyncio.TimeoutError:
+                async with self._scheduler_lock:
+                    if self._pending_request is None:
+                        trigger = ReconciliationTrigger.STARTUP if first_wait else ReconciliationTrigger.SCHEDULED
+                        self._pending_request = (trigger, None)
+            first_wait = False
+
+            while True:
+                async with self._scheduler_lock:
+                    pending = self._pending_request
+                    self._pending_request = None
+                    if pending is None:
+                        self._wake.clear()
+                        break
+                await self._run_bounded(*pending)
+
+    async def _run_bounded(
+        self,
+        trigger: ReconciliationTrigger,
+        requested_model: str | None,
+    ) -> None:
+        try:
+            async with self._operation_lock:
+                self._active = True
+                self._current_trigger = trigger
+                self._current_requested_model = requested_model
+                try:
+                    result = await asyncio.wait_for(
+                        self.run(trigger, requested_model),
+                        timeout=self.timeout_sec,
+                    )
+                    if isinstance(result, ReconciliationResult):
+                        self.last_result = result
+                finally:
+                    self._active = False
+                    self._current_trigger = None
+                    self._current_requested_model = None
+        except asyncio.TimeoutError:
+            now = datetime.now(timezone.utc)
+            self.last_result = ReconciliationResult(
+                outcome="failed",
+                phase="timeout",
+                trigger=trigger,
+                requested_model=requested_model,
+                counts={
+                    "discovered": 0,
+                    "added": 0,
+                    "updated": 0,
+                    "enabled": 0,
+                    "disabled": 0,
+                    "unchanged": 0,
+                },
+                verification="not_run",
+                started_at=now,
+                completed_at=now,
+                errors=[
+                    {
+                        "code": "timeout",
+                        "message": f"reconciliation exceeded {self.timeout_sec:g} seconds",
+                        "phase": "timeout",
+                    }
+                ],
+            )
+            self._phase = "timeout"
+            self.last_attempt_at = self.last_attempt_at or now
+            record_model_reconciliation(self.last_result)
+
+    async def run_exclusive(
+        self,
+        operation: Callable[[], Any],
+        *,
+        trigger: ReconciliationTrigger = ReconciliationTrigger.MANUAL,
+    ) -> Any:
+        """Run an admin operation as an authoritative singleton reconciliation."""
+        async with self._operation_lock:
+            started_at = datetime.now(timezone.utc)
+            self._active = True
+            self._current_trigger = trigger
+            self._current_requested_model = None
+            self._phase = "manual"
+            self.last_attempt_at = started_at
+            try:
+                value = await asyncio.wait_for(_resolve(operation()), timeout=self.timeout_sec)
+                errors = list(getattr(value, "errors", []) or [])
+                models = list(getattr(value, "models", []) or [])
+                imported = int(getattr(value, "imported_count", 0) or 0)
+                result = ReconciliationResult(
+                    outcome="failed" if errors else "success",
+                    phase="complete",
+                    trigger=trigger,
+                    requested_model=None,
+                    counts={
+                        "discovered": len(models),
+                        "added": imported,
+                        "updated": 0,
+                        "enabled": sum(model.enabled for model in models),
+                        "disabled": sum(not model.enabled for model in models),
+                        "unchanged": max(0, len(models) - imported),
+                    },
+                    verification="not_required",
+                    started_at=started_at,
+                    completed_at=datetime.now(timezone.utc),
+                    errors=errors,
+                    models=models,
+                    diffs=list(getattr(value, "diffs", []) or []),
+                    persisted_count=imported,
+                )
+                self.last_result = result
+                self.last_success_at = result.completed_at if result.outcome == "success" else self.last_success_at
+                self._phase = result.phase
+                record_model_reconciliation(result)
+                return value
+            except asyncio.TimeoutError:
+                now = datetime.now(timezone.utc)
+                self.last_result = ReconciliationResult(
+                    outcome="failed",
+                    phase="timeout",
+                    trigger=trigger,
+                    requested_model=None,
+                    counts={
+                        "discovered": 0,
+                        "added": 0,
+                        "updated": 0,
+                        "enabled": 0,
+                        "disabled": 0,
+                        "unchanged": 0,
+                    },
+                    verification="not_run",
+                    started_at=started_at,
+                    completed_at=now,
+                    errors=[
+                        {
+                            "code": "timeout",
+                            "message": f"reconciliation exceeded {self.timeout_sec:g} seconds",
+                            "phase": "timeout",
+                        }
+                    ],
+                )
+                self._phase = "timeout"
+                record_model_reconciliation(self.last_result)
+                raise
+            except asyncio.CancelledError:
+                now = datetime.now(timezone.utc)
+                self.last_result = ReconciliationResult(
+                    outcome="failed",
+                    phase="cancelled",
+                    trigger=trigger,
+                    requested_model=None,
+                    counts={
+                        "discovered": 0,
+                        "added": 0,
+                        "updated": 0,
+                        "enabled": 0,
+                        "disabled": 0,
+                        "unchanged": 0,
+                    },
+                    verification="not_run",
+                    started_at=started_at,
+                    completed_at=now,
+                    errors=[
+                        {
+                            "code": "cancelled",
+                            "message": "manual reconciliation was cancelled",
+                            "phase": "cancelled",
+                        }
+                    ],
+                )
+                self._phase = "cancelled"
+                record_model_reconciliation(self.last_result)
+                raise
+            except Exception as exc:
+                now = datetime.now(timezone.utc)
+                self.last_result = ReconciliationResult(
+                    outcome="failed",
+                    phase="manual",
+                    trigger=trigger,
+                    requested_model=None,
+                    counts={
+                        "discovered": 0,
+                        "added": 0,
+                        "updated": 0,
+                        "enabled": 0,
+                        "disabled": 0,
+                        "unchanged": 0,
+                    },
+                    verification="not_run",
+                    started_at=started_at,
+                    completed_at=now,
+                    errors=[
+                        {
+                            "code": "manual_failed",
+                            "message": type(exc).__name__,
+                            "phase": "manual",
+                        }
+                    ],
+                )
+                self._phase = "manual"
+                record_model_reconciliation(self.last_result)
+                raise
+            finally:
+                self._active = False
+                self._current_trigger = None
+                self._current_requested_model = None
+
+    async def run(
+        self,
+        trigger: ReconciliationTrigger,
+        requested_model: str | None = None,
+        *,
+        dry_run: bool = False,
+    ) -> ReconciliationResult:
+        started_at = datetime.now(timezone.utc)
+        phase = "discover"
+        self.last_attempt_at = started_at
+        self._phase = phase
+        counts = {
+            "discovered": 0,
+            "added": 0,
+            "updated": 0,
+            "enabled": 0,
+            "disabled": 0,
+            "unchanged": 0,
+            "advertised": 0,
+            "retired": 0,
+            "absent": 0,
+        }
+        errors: list[dict[str, str]] = []
+        verification = "not_run"
+        rollback_token: Any = None
+        result_models: list[ModelRegistryRecord] = []
+        result_resources: Any = None
+        result_diffs: list[dict[str, Any]] = []
+        persisted_count = 0
+
+        def finish(outcome: str, final_phase: str | None = None) -> ReconciliationResult:
+            result = ReconciliationResult(
+                outcome=outcome,
+                phase=final_phase or phase,
+                trigger=trigger,
+                requested_model=requested_model,
+                counts=counts,
+                verification=verification,
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+                errors=errors,
+                models=result_models,
+                resources=result_resources,
+                diffs=result_diffs,
+                persisted_count=persisted_count,
+            )
+            self._phase = result.phase
+            self.last_result = result
+            if outcome == "success":
+                self.last_success_at = result.completed_at
+            record_model_reconciliation(result)
+            return result
+
+        def set_phase(value: str) -> None:
+            nonlocal phase
+            phase = value
+            self._phase = value
+
+        def record_error(code: str, exc: Exception | str) -> None:
+            if len(errors) >= _MAX_ERRORS:
+                return
+            message = str(exc).replace("\n", " ")[:_MAX_ERROR_MESSAGE]
+            errors.append({"code": code, "message": message, "phase": phase})
+
+        try:
+            raw_discovered = await _resolve(self._discover())
+            discovered: list[ModelRegistryRecord] = []
+            for item in raw_discovered:
+                if isinstance(item, ModelRegistryRecord):
+                    discovered.append(item)
+                elif isinstance(item, dict):
+                    record = record_from_cliproxy_model(item)
+                    if record is not None:
+                        discovered.append(record)
+                else:
+                    raise TypeError("discovery returned an unsupported model record")
+            counts["discovered"] = len(discovered)
+        except Exception as exc:
+            record_error("discovery_failed", exc)
+            return finish("failed")
+
+        try:
+            set_phase("merge")
+            current = await _resolve(self._list_models())
+            current_by_id = {model.model_id: model for model in current}
+            diffs = diff_discovered_models(discovered, current)
+            result_diffs = diffs
+            counts["added"] = sum(diff["kind"] == "add" for diff in diffs)
+            counts["updated"] = sum(diff["kind"] == "update" for diff in diffs)
+            changed_ids = {diff["model_id"] for diff in diffs}
+            counts["unchanged"] = len(discovered) - len(changed_ids)
+            merged_discovered = [
+                merge_discovered_model(model, current_by_id.get(model.model_id)) for model in discovered
+            ]
+            merged_by_id = dict(current_by_id)
+            merged_by_id.update({model.model_id: model for model in merged_discovered})
+            discovered_ids = {model.model_id for model in discovered}
+            now = datetime.now(timezone.utc)
+            lifecycle_changed_ids: set[str] = set()
+            rediscovered_unretired: set[str] = set()
+            for model_id, model in list(merged_by_id.items()):
+                if model_id in discovered_ids:
+                    updates: dict[str, Any] = {}
+                    if model.absent_since is not None:
+                        updates["absent_since"] = None
+                    if model.retired:
+                        updates["retired"] = False
+                        rediscovered_unretired.add(model_id)
+                    if updates:
+                        merged_by_id[model_id] = model.model_copy(update=updates)
+                        lifecycle_changed_ids.add(model_id)
+                    continue
+                if model.source != "cliproxy":
+                    continue
+                absent_since = model.absent_since or now
+                updates: dict[str, Any] = {"absent_since": absent_since}
+                if (
+                    trigger is not ReconciliationTrigger.DEMAND
+                    and not model.retired
+                    and (now - absent_since).days >= self.absence_retire_days
+                ):
+                    updates.update(
+                        {
+                            "retired": True,
+                            "advertised": False,
+                            "status": "RETIRED",
+                            "enabled": False,
+                        }
+                    )
+                updated = model.model_copy(update=updates)
+                merged_by_id[model_id] = updated
+                if updated != model:
+                    lifecycle_changed_ids.add(model_id)
+
+            set_phase("probe")
+            additions = {diff["model_id"] for diff in diffs if diff["kind"] == "add"}
+            retryable_unadvertised = {
+                model_id
+                for model_id, model in current_by_id.items()
+                if not model.advertised
+                and model.source == "cliproxy"
+                and (model.probe_status is None or str(model.probe_status).lower() in _RETRYABLE_PROBE_STATUSES)
+            }
+            for model_id in additions:
+                merged_by_id[model_id] = merged_by_id[model_id].model_copy(
+                    update={"enabled": False, "status": "PENDING"}
+                )
+            probed_ids: set[str] = set()
+            for model_id, model in list(merged_by_id.items()):
+                if model_id in additions or model_id in rediscovered_unretired or self._probe_is_stale(model):
+                    probed = await _resolve(self._probe_model(model))
+                    advertised = model.advertised
+                    if (
+                        model_id in additions
+                        or model_id in retryable_unadvertised
+                        or model_id in rediscovered_unretired
+                    ):
+                        advertised = should_advertise_after_probe(
+                            probed.probe_status,
+                            currently_advertised=model.advertised,
+                        )
+                    probed = probed.model_copy(update={"advertised": advertised})
+                    merged_by_id[model_id] = probed
+                    probed_ids.add(model_id)
+
+            models = list(merged_by_id.values())
+            effective_changed_ids = (
+                changed_ids
+                | lifecycle_changed_ids
+                | {
+                    model_id
+                    for model_id, model in merged_by_id.items()
+                    if model_id in current_by_id and model.enabled != current_by_id[model_id].enabled
+                }
+            )
+            discovered_ids_in_order = [model.model_id for model in discovered]
+            persisted_ids = [
+                *discovered_ids_in_order,
+                *sorted((probed_ids | lifecycle_changed_ids) - set(discovered_ids_in_order)),
+            ]
+            result_models = [merged_by_id[model_id] for model_id in persisted_ids]
+            counts["enabled"] = sum(model.enabled for model in models)
+            counts["disabled"] = len(models) - counts["enabled"]
+            counts["advertised"] = sum(1 for model in models if model.advertised)
+            counts["retired"] = sum(1 for model in models if model.retired)
+            counts["absent"] = sum(1 for model in models if model.absent_since is not None)
+
+            set_phase("render")
+            resources = await _resolve(self._render(models))
+            result_resources = resources
+            set_phase("validate")
+            validation_result = await _resolve(self._validate(resources))
+            if validation_result is False:
+                raise ValueError("rendered resources failed validation")
+
+            if dry_run:
+                verification = "dry_run"
+                return finish("success", "complete")
+
+            if not effective_changed_ids:
+                set_phase("persist")
+                persisted_count = int(await _resolve(self._upsert_models(result_models)) or 0)
+                record_model_lifecycle(models)
+                verification = "not_required"
+                return finish("success", "complete")
+
+            set_phase("apply")
+            rollback_token = await _invoke_apply(
+                self._apply,
+                resources,
+                result_models,
+                effective_changed_ids,
+            )
+            set_phase("reload")
+            if not await _resolve(self._reload()):
+                raise RuntimeError("LiteLLM reload failed")
+
+            set_phase("verify")
+            catalog = set(await _resolve(self._read_catalog()))
+            expected = {
+                model.model_id
+                for model in merged_by_id.values()
+                if model.enabled and model.model_id in effective_changed_ids
+            }
+            missing = sorted(expected - catalog)
+            if missing:
+                verification = "failed"
+                raise RuntimeError(f"reconciled models missing from catalog: {', '.join(missing)}")
+            verification = "verified"
+            set_phase("persist")
+            persisted_count = int(await _resolve(self._upsert_models(result_models)) or 0)
+            record_model_lifecycle(models)
+            return finish("success", "complete")
+        except asyncio.CancelledError:
+            # A scheduler timeout cancels this coroutine.  If cancellation lands
+            # after apply, restore the previous artifacts before propagating it;
+            # otherwise asyncio.wait_for() could report a timeout while leaving
+            # an unverified configuration active.
+            if rollback_token is not None:
+                try:
+                    async with asyncio.timeout(self.timeout_sec):
+                        await _resolve(self._rollback(rollback_token))
+                        await _resolve(self._reload())
+                except Exception:
+                    pass
+            raise
+        except Exception as exc:
+            failed_phase = phase
+            record_error(f"{phase}_failed", exc)
+            if rollback_token is not None:
+                try:
+                    await _resolve(self._rollback(rollback_token))
+                    await _resolve(self._reload())
+                    if verification != "failed":
+                        verification = "rollback"
+                except Exception as rollback_exc:
+                    set_phase("rollback")
+                    record_error("rollback_failed", rollback_exc)
+            return finish("degraded" if rollback_token is not None else "failed", failed_phase)

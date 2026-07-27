@@ -125,7 +125,6 @@ We propose splitting the execution of Epic #35 into the following sequenced chil
 ---
 
 ## 5. References
-- [Tenancy & Workspace Domain Model](./TENANCY.md)
 - [Unified Admin Console Design](./ADMIN_CONSOLE.md)
 - [Roadmap Status](./ROADMAP.md)
 - [Repo Improvement Workflow](process/REPO_IMPROVEMENT_WORKFLOW.md)

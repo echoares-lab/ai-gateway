@@ -7,7 +7,15 @@ an intentional migration). Alias lists are tried in order; first set wins.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from typing import Sequence
+
+
+@dataclass(frozen=True)
+class SecretStoreAvailability:
+    available: bool
+    code: str | None = None
+    missing_settings: tuple[str, ...] = ()
 
 
 def _env_str(names: Sequence[str], default: str) -> str:
@@ -94,6 +102,39 @@ class Config:
     )
     CREDENTIAL_SYNC_DRY_RUN = _env_bool(("GATEWAY_ENGINE_CREDENTIAL_SYNC_DRY_RUN",), False)
 
+    MODEL_RECONCILIATION_ENABLED = _env_bool(
+        ("GATEWAY_ENGINE_MODEL_RECONCILIATION_ENABLED",),
+        True,
+    )
+    MODEL_RECONCILIATION_STARTUP_DELAY_SEC = max(
+        0,
+        _env_int(("GATEWAY_ENGINE_MODEL_RECONCILIATION_STARTUP_DELAY_SEC",), 30),
+    )
+    MODEL_RECONCILIATION_INTERVAL_SEC = max(
+        1,
+        _env_int(("GATEWAY_ENGINE_MODEL_RECONCILIATION_INTERVAL_SEC",), 900),
+    )
+    MODEL_RECONCILIATION_EXPEDITED_MIN_INTERVAL_SEC = max(
+        0,
+        _env_int(("GATEWAY_ENGINE_MODEL_RECONCILIATION_EXPEDITED_MIN_INTERVAL_SEC",), 60),
+    )
+    MODEL_RECONCILIATION_TIMEOUT_SEC = max(
+        1,
+        _env_int(("GATEWAY_ENGINE_MODEL_RECONCILIATION_TIMEOUT_SEC",), 120),
+    )
+    MODEL_RECONCILIATION_PROBE_STALE_SEC = max(
+        1,
+        _env_int(("GATEWAY_ENGINE_MODEL_RECONCILIATION_PROBE_STALE_SEC",), 300),
+    )
+    MODEL_ABSENCE_RETIRE_DAYS = max(
+        0,
+        _env_int(("GATEWAY_ENGINE_MODEL_ABSENCE_RETIRE_DAYS",), 30),
+    )
+    MODEL_ABSENCE_ALERT_PENDING_DAYS = max(
+        0,
+        _env_int(("GATEWAY_ENGINE_MODEL_ABSENCE_ALERT_PENDING_DAYS",), 25),
+    )
+
     HTTPX_MAX_KEEPALIVE = _env_int(("HTTPX_MAX_KEEPALIVE", "GATEWAY_ENGINE_HTTPX_MAX_KEEPALIVE"), 20)
     HTTPX_MAX_CONNECTIONS = _env_int(("HTTPX_MAX_CONNECTIONS", "GATEWAY_ENGINE_HTTPX_MAX_CONNECTIONS"), 100)
     MAX_REQUEST_BYTES = _env_int(
@@ -107,6 +148,31 @@ class Config:
         ("TEAM_BUDGET_SNAPSHOT_JSON", "GATEWAY_ENGINE_TEAM_BUDGET_SNAPSHOT_JSON"),
         "",
     )
+
+    OPENBAO_ADDR = _env_str(("GATEWAY_ENGINE_OPENBAO_ADDR",), "")
+    OPENBAO_AUTH_MOUNT = _env_str(("GATEWAY_ENGINE_OPENBAO_AUTH_MOUNT",), "")
+    OPENBAO_ROLE = _env_str(("GATEWAY_ENGINE_OPENBAO_ROLE",), "")
+    OPENBAO_KV_MOUNT = _env_str(("GATEWAY_ENGINE_OPENBAO_KV_MOUNT",), "")
+    OPENBAO_KEY_PREFIX = _env_str(("GATEWAY_ENGINE_OPENBAO_KEY_PREFIX",), "")
+    OPENBAO_TIMEOUT = _env_float(("GATEWAY_ENGINE_OPENBAO_TIMEOUT",), 5.0)
+
+    @classmethod
+    def secret_store_availability(cls) -> SecretStoreAvailability:
+        required = {
+            "GATEWAY_ENGINE_OPENBAO_ADDR": cls.OPENBAO_ADDR,
+            "GATEWAY_ENGINE_OPENBAO_AUTH_MOUNT": cls.OPENBAO_AUTH_MOUNT,
+            "GATEWAY_ENGINE_OPENBAO_ROLE": cls.OPENBAO_ROLE,
+            "GATEWAY_ENGINE_OPENBAO_KV_MOUNT": cls.OPENBAO_KV_MOUNT,
+            "GATEWAY_ENGINE_OPENBAO_KEY_PREFIX": cls.OPENBAO_KEY_PREFIX,
+        }
+        missing = tuple(name for name, value in required.items() if not value)
+        if missing:
+            return SecretStoreAvailability(
+                available=False,
+                code="secret_store_unavailable",
+                missing_settings=missing,
+            )
+        return SecretStoreAvailability(available=True)
 
 
 config = Config()

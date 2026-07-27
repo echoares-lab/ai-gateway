@@ -63,19 +63,9 @@ Primary operator tasks:
    - Link or expose common actions from `docs/ops/RUNBOOK.md` / `cliproxy-setup.sh`:
      health, quota summary, model sync, model E2E tests, auth refresh commands.
 
-### 2.2 Future tenant/workspace operator
+### 2.2 Tenant/workspace panel
 
-Tenant/team views are valuable but depend on the tenant model tracked in
-[#30](https://github.com/echoares-lab/ai-gateway/issues/30) and
-[#56](https://github.com/echoares-lab/ai-gateway/issues/56). Until that model is
-merged, the admin console should only reserve space for tenant-aware panels:
-
-- tenant/workspace/team/repo hierarchy
-- per-tenant virtual keys and teams
-- per-tenant usage/quota attribution
-- per-tenant routing preferences
-
-These are **deferred** from the first implementation wave.
+Multi-tenant workspace panels (#30, #109) were closed and dropped. The admin console operates as a flat, single-tenant status and routing dashboard.
 
 ---
 
@@ -202,9 +192,8 @@ read-only.
      defined.
    - Depends on aggregator + #59/#60 (already complete).
 
-5. **feat(admin): tenant/team panel** *(deferred)*
-   - Implement tenant/workspace/team views after #30/#56 defines the model.
-   - Depends on #56 and follow-up tenancy implementation issues.
+5. **feat(admin): tenant/team panel** *(closed/dropped)*
+   - Dropped as multi-tenancy epic #30 was closed.
 
 ---
 

@@ -75,6 +75,8 @@ from api.proxy_routing import (  # noqa: F401
     _record_provider_signal,
     _record_token_usage,
     _tenancy_from_token,
+    is_unknown_model_response,
+    maybe_enqueue_unknown_model_refresh,
 )
 from core.metrics import (  # noqa: F401
     PROVIDER_LATENCY,
