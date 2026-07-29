@@ -4,12 +4,13 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def mock_env_vars(monkeypatch):
+    from core.onboarding.onboarding_service import onboarding_service
+    from core.admin_shared import resolve_gateway_admin_key
     monkeypatch.setenv("LITELLM_MASTER_KEY", "mock-master-key")
     monkeypatch.setenv("ADMIN_API_KEY", "mock-admin-key")
     monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "mock-admin-key")
     monkeypatch.setenv("LITELLM_ADMIN_URL", "http://mock-litellm")
 
-    from core.onboarding.onboarding_service import onboarding_service
 
 
 @pytest.fixture
