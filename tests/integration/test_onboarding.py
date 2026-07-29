@@ -8,6 +8,11 @@ def mock_env_vars(monkeypatch):
     monkeypatch.setenv("ADMIN_API_KEY", "mock-admin-key")
     monkeypatch.setenv("LITELLM_ADMIN_URL", "http://mock-litellm")
 
+    from core.onboarding.onboarding_service import onboarding_service
+    monkeypatch.setattr(onboarding_service, "litellm_master_key", "mock-master-key")
+    monkeypatch.setattr(onboarding_service, "gateway_admin_key", "mock-admin-key")
+    monkeypatch.setattr(onboarding_service, "litellm_admin_url", "http://mock-litellm")
+
 
 @pytest.fixture
 def mock_httpx_responses(respx_mock):
