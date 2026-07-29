@@ -11,8 +11,6 @@ def mock_env_vars(monkeypatch):
     monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "mock-admin-key")
     monkeypatch.setenv("LITELLM_ADMIN_URL", "http://mock-litellm")
 
-
-
 @pytest.fixture
 def mock_httpx_responses(respx_mock):
     # Mock LiteLLM team creation
