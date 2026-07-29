@@ -9,11 +9,17 @@ log = logging.getLogger("gateway-engine.onboarding_service")
 
 
 class OnboardingService:
-    def __init__(self):
-        # Configuration for LiteLLM admin API
-        self.litellm_admin_url = os.environ.get("LITELLM_ADMIN_URL", "http://litellm:4000").rstrip("/")
-        self.litellm_master_key = os.environ.get("LITELLM_MASTER_KEY", "").strip()
-        self.gateway_admin_key = resolve_gateway_admin_key()
+    @property
+    def litellm_admin_url(self) -> str:
+        return os.environ.get("LITELLM_ADMIN_URL", "http://litellm:4000").rstrip("/")
+
+    @property
+    def litellm_master_key(self) -> str:
+        return os.environ.get("LITELLM_MASTER_KEY", "").strip()
+
+    @property
+    def gateway_admin_key(self) -> str:
+        return resolve_gateway_admin_key()
 
     async def register_tenant(self, tenant_id: str, email: str, plan_id: str = "default") -> dict[str, Any]:
         """

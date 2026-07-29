@@ -44,7 +44,7 @@ async def test_register_tenant_unauthorized(asgi_client, mock_httpx_responses):
         json={"tenant_id": "test-tenant", "email": "test@example.com"},
     )
     assert response.status_code == 403
-    assert response.json()["error"]["code"] == "unauthorized"
+    assert response.json()["error"]["code"] == "admin_key_required"
 
 
 @pytest.mark.asyncio
