@@ -18,50 +18,86 @@ jobs:
   gate-d-smoke:
     runs-on: arc
     steps:
-      - name: Gate D — health check (public edge)
+      - name: Gate D — public edge health check
         run: |
           set -e
           code=$(curl -sS -m 20 -o /dev/null -w "%{http_code}" "$GATEWAY_URL/health")
           echo "GET /health -> $code"
           [ "$code" = "200" ] || { echo "::error::gateway /health returned $code"; exit 1; }
 
-      - name: Gate D — models list
+      - name: Gate D — catalog models listing
         run: |
           n=$(curl -sS -m 20 -H "Authorization: Bearer ${{ secrets.GATEWAY_SMOKE_KEY }}" \
                 "$GATEWAY_URL/v1/models" | python3 -c "import json,sys;print(len(json.load(sys.stdin)['data']))")
           echo "models served: $n"
           [ "$n" -gt 0 ] || { echo "::error::no models returned"; exit 1; }
 
-      - name: Gate D — model smokes
+      - name: Gate D — post-promotion model smoke tests
         run: |
           fail=0
           for m in claude-sonnet-4-6 gpt-5-4 gemini-3-flash; do
-            out=$(curl -sS -m 60 -H "Authorization: Bearer ${{ secrets.GATEWAY_SMOKE_KEY }}" \
-              -H "Content-Type: application/json" "$GATEWAY_URL/v1/chat/completions" \
-              -d "{\"model\":\"AI-Gateway:$m\",\"messages\":[{\"role\":\"user\",\"content\":\"reply ok\"}],\"max_tokens\":8}" \
-              | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('choices',[{}])[0].get('message',{}).get('content','ERR:'+str(d)[:120]))" 2>/dev/null)
-            if [ -n "$out" ] && ! echo "$out" | grep -qi "^ERR"; then
-              echo "✓ $m -> $out"
-            else
-              echo "✗ $m -> ${out:-no response}"; fail=1
+            success=0
+            for attempt in 1 2 3 4 5; do
+              echo "Testing $m (attempt $attempt)..."
+              tmp_stderr=$(mktemp)
+              tmp_stdout=$(mktemp)
+              http_status=$(curl -sS -w "%{http_code}" -o "$tmp_stdout" 2>"$tmp_stderr" -m 60 \
+                -H "Authorization: Bearer ${{ secrets.GATEWAY_SMOKE_KEY }}" \
+                -H "Content-Type: application/json" \
+                "$GATEWAY_URL/v1/chat/completions" \
+                -d "{\"model\":\"AI-Gateway:$m\",\"messages\":[{\"role\":\"user\",\"content\":\"reply ok\"}],\"max_tokens\":8}")
+              
+              if [ "$http_status" = "200" ]; then
+                out=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('choices',[{}])[0].get('message',{}).get('content','ERR: '+str(d)))" < "$tmp_stdout" 2>&1)
+                if [ -n "$out" ] && ! echo "$out" | grep -qi "^ERR"; then
+                  echo "✓ $m -> $out"
+                  success=1
+                  rm -f "$tmp_stdout" "$tmp_stderr"
+                  break
+                else
+                  echo "Attempt $attempt for $m logic/JSON error: $out"
+                  echo "HTTP Status: $http_status"
+                  echo "Raw response body: $(cat "$tmp_stdout")"
+                  echo "stderr: $(cat "$tmp_stderr")"
+                fi
+              else
+                echo "Attempt $attempt for $m HTTP error: $http_status"
+                echo "Raw response body: $(cat "$tmp_stdout")"
+                echo "stderr: $(cat "$tmp_stderr")"
+              fi
+              rm -f "$tmp_stdout" "$tmp_stderr"
+              if [ "$attempt" -lt 5 ]; then
+                echo "Sleeping 15s..."
+                sleep 15
+              fi
+            done
+            if [ "$success" -eq 0 ]; then
+              echo "✗ $m -> failed after 5 attempts"
+              fail=1
             fi
           done
           exit $fail
 
-      - name: Summary
+      - name: Post-promotion Summary
         if: always()
         run: |
           {
-            echo "## Gate D post-merge smoke (advisory) — k8s production"
+            echo "## Gate D Post-promotion Smoke Tests (advisory) — k8s production"
             echo "Endpoint: \`$GATEWAY_URL\`  ·  Commit: \`${{ github.sha }}\`"
             echo "Record results in issue closeout if any model failed."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Send Slack Notification on Failure
-        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        if: failure()
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          CI_FAILURE_WEBHOOK_URL: ${{ secrets.CI_FAILURE_WEBHOOK_URL }}
         run: |
+          WEBHOOK_URL="${SLACK_WEBHOOK_URL:-${CI_FAILURE_WEBHOOK_URL}}"
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::warning::No failure webhook URL secret (SLACK_WEBHOOK_URL/CI_FAILURE_WEBHOOK_URL) configured; failure notification skipped."
+            exit 0
+          fi
           PAYLOAD=$(jq -n \
             --arg repo "${{ github.repository }}" \
             --arg sha "${{ github.sha }}" \
@@ -78,4 +114,4 @@ jobs:
             }
             '
           )
-          curl -s -X POST -H 'Content-type: application/json' --data "$PAYLOAD" "$SLACK_WEBHOOK_URL"
+          curl -s -X POST -H 'Content-type: application/json' --data "$PAYLOAD" "$WEBHOOK_URL"

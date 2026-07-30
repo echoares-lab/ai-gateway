@@ -553,10 +553,15 @@ jobs:
     runs-on: arc
     steps:
       - name: Send Slack Notification on Failure
-        if: env.SLACK_WEBHOOK_URL != ''
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          CI_FAILURE_WEBHOOK_URL: ${{ secrets.CI_FAILURE_WEBHOOK_URL }}
         run: |
+          WEBHOOK_URL="${SLACK_WEBHOOK_URL:-${CI_FAILURE_WEBHOOK_URL}}"
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::warning::No failure webhook URL secret (SLACK_WEBHOOK_URL/CI_FAILURE_WEBHOOK_URL) configured; failure notification skipped."
+            exit 0
+          fi
           PAYLOAD=$(jq -n \
             --arg repo "${{ github.repository }}" \
             --arg sha "${{ github.sha }}" \
@@ -573,5 +578,5 @@ jobs:
             }
             '
           )
-          curl -s -X POST -H 'Content-type: application/json' --data "$PAYLOAD" "$SLACK_WEBHOOK_URL"
+          curl -s -X POST -H 'Content-type: application/json' --data "$PAYLOAD" "$WEBHOOK_URL"
 
