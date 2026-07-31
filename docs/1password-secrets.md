@@ -32,6 +32,43 @@ This repo uses `repo-ai-gateway` for repo-local credentials and shared platform 
 | `POLICY_ENGINE_ENABLED`, `POLICY_ENGINE_WS_EVALUATE`, `POLICY_ENGINE_TIMEOUT_MS`, `CACHE_ENABLED`, `CACHE_TTL_SECONDS`, `TEAM_BUDGET_SNAPSHOT_ENABLED`, `BUDGET_*`, `WEB_CONCURRENCY`, `HTTPX_*` | plain config | no | Keep in `.env.example` or deployment config |
 | `LITELLM_URL`, `LITELLM_ADMIN_URL`, `GATEWAY_ENGINE_URL`, `POLICY_ENGINE_URL` | sensitive config | runtime | `op://repo-ai-gateway/prod/<FIELD>` |
 
+## Production backing-service contract
+
+The production deployment receives these required values from OpenBao path
+`prod/workloads/ai-gateway/*` through External Secrets. The workload-facing
+environment names below are the contract; the OpenBao key is shown so drift
+can be traced without exposing a value:
+
+| Environment name | OpenBao key | Required in production |
+| --- | --- | --- |
+| `LANGFUSE_DB_URL` | `langfuse_db_url` | yes |
+| `REDIS_AUTH` | `redis_auth` | yes |
+| `CLICKHOUSE_PASSWORD` | `clickhouse_password` | yes |
+| `MINIO_ROOT_USER` | `minio_root_user` | yes |
+| `MINIO_ROOT_PASSWORD` | `minio_root_password` | yes |
+| `NEXTAUTH_SECRET` | `nextauth_secret` | yes |
+| `LANGFUSE_SALT` | `langfuse_salt` | yes |
+| `LANGFUSE_ENCRYPTION_KEY` | `langfuse_encryption_key` | yes |
+
+Run the repository contract tests with `make validate-production-secrets` (or
+`python3 -m pytest tests/test_production_secrets.py -v`). To validate a
+deployment-provided dotenv file locally, run:
+
+```bash
+python3 scripts/ops/validate_production_secrets.py /path/to/production.env
+```
+
+The validator reports only missing or placeholder *names*, never secret values.
+`.env.example` and local compose defaults are development fixtures and are not
+valid production inputs.
+
+If validation fails before rollout, do not substitute a compose default. Restore
+the missing value at its authoritative OpenBao path, let External Secrets
+reconcile, and rerun the validator. If a rollout is already unhealthy, pause
+promotion and roll back to the last known-good image/configuration while the
+secret is repaired; then rerun the production smoke/health checks before
+resuming promotion. No secret value belongs in an issue, PR, or CI log.
+
 ## Usage
 
 Local/dev:
