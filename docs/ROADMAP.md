@@ -15,37 +15,9 @@ Last reviewed: 2026-07-31.
 
 ## Now
 
-### Restore staging-promotion and nightly-integration signals
-
-Coordination epic [#504](https://github.com/echoares-lab/ai-gateway/issues/504)
-is the current approved reliability work. It is coordination-only and must not
-be claimed. Its children are active alongside the separate documentation track
-under #508 below.
-
-| Order | Atomic issue | Current state | Implementation evidence |
-|------:|--------------|---------------|-------------------------|
-| 1 | [#505 — update the deep-smoke SpendLogs selector](https://github.com/echoares-lab/ai-gateway/issues/505) | In review; do not duplicate the existing work | [PR #503](https://github.com/echoares-lab/ai-gateway/pull/503) is open |
-| 2 | [#506 — provision Docker Compose v2 for Nightly Integration](https://github.com/echoares-lab/ai-gateway/issues/506) | Claimed; do not duplicate the existing work | [PR #507](https://github.com/echoares-lab/ai-gateway/pull/507) is open |
-
-Acceptance invariants:
-
-- staging `deep-smoke --full` must reach SpendLogs after the k3s-01 CNPG cluster
-  rename and remain fail-closed when no primary pod resolves;
-- Nightly Integration must provide a verified Docker Compose v2 capability before
-  starting or cleaning up its isolated stack; and
-- neither workflow may mask real startup, smoke, or teardown failures.
-
-### Reconcile roadmap and candidate documentation
-
-Coordination epic [#508](https://github.com/echoares-lab/ai-gateway/issues/508)
-keeps roadmap and candidate records aligned with live GitHub state. It is
-coordination-only and must not be claimed.
-
-| Atomic issue | Current state | Scope |
-|--------------|---------------|-------|
-| [#509 — reconcile the roadmap and candidate inventory](https://github.com/echoares-lab/ai-gateway/issues/509) | Claimed; do not duplicate the existing work | Correct active/closed state and issue-versus-PR references, then validate links and documentation syntax |
-
-There are currently no approved, unassigned atomic issues available to claim.
+No approved, unassigned atomic issues are currently available to claim. The
+latest approved reliability and documentation waves are recorded under
+Completed below.
 
 ## Next
 
@@ -62,6 +34,25 @@ for the unapproved inventory.
 The following work is closed. Issue links are tracking/coordination records;
 pull-request links are implementation evidence. A pull request is never an
 atomic issue to claim.
+
+### Staging promotion and nightly integration reliability
+
+The reliability objective in coordination epic
+[#504](https://github.com/echoares-lab/ai-gateway/issues/504) is complete.
+The parent issue remains open only for final coordination closeout; its children
+are closed and must not be reclaimed.
+
+| Completed scope | Closed tracking issue | Implementation evidence |
+|-----------------|-----------------------|-------------------------|
+| Staging deep-smoke SpendLogs selector after CNPG rename | [#505](https://github.com/echoares-lab/ai-gateway/issues/505) | [PR #503](https://github.com/echoares-lab/ai-gateway/pull/503) |
+| Docker Compose v2 provisioning for Nightly Integration | [#506](https://github.com/echoares-lab/ai-gateway/issues/506) | [PR #507](https://github.com/echoares-lab/ai-gateway/pull/507) |
+| Nightly runner Python dependency and PATH provisioning | [#511](https://github.com/echoares-lab/ai-gateway/issues/511) | [PR #512](https://github.com/echoares-lab/ai-gateway/pull/512) |
+| Nightly pytest selector argument correction | [#513](https://github.com/echoares-lab/ai-gateway/issues/513) | [PR #514](https://github.com/echoares-lab/ai-gateway/pull/514) |
+
+Closeout evidence: [Nightly Integration run
+30640621745](https://github.com/echoares-lab/ai-gateway/actions/runs/30640621745)
+completed successfully, including Compose installation, Python environment
+setup, the Gate C smoke subset, and the full integration matrix.
 
 ### Release, routing, and deep-smoke foundations
 
