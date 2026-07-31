@@ -157,16 +157,7 @@ def transition_for_record(
 ) -> CredentialTransition | None:
     if not should_emit_transition(old_status, record.status):
         return None
-    status_message = record.metadata.get("status_message") if isinstance(record.metadata, dict) else None
-    reason = (
-        str(status_message)
-        if status_message
-        else (
-            f"Initial import status: {record.status}"
-            if old_status is None
-            else f"Status changed from {old_status} to {record.status}"
-        )
-    )
+    reason = f"credential_status_{record.status.lower()}"
     return CredentialTransition(
         credential_id=record.credential_id,
         provider=record.provider,
@@ -175,6 +166,31 @@ def transition_for_record(
         reason=reason,
         cool_down_until=record.cool_down_until if record.status in ROUTING_EXCLUDED else None,
     )
+
+
+def reconcile_credentials(
+    credentials: list[CredentialInventoryRecord],
+    old_statuses: dict[str, str],
+) -> tuple[list[CredentialInventoryRecord], list[CredentialTransition]]:
+    """Apply discovered state without resurrecting operator-disabled credentials.
+
+    The operation is deterministic and idempotent: an unchanged second sync emits
+    no transitions.  SUSPENDED and EXPIRED are operator-owned terminal states until
+    an explicit enable action changes the registry.
+    """
+    protected = {"SUSPENDED", "EXPIRED"}
+    reconciled: list[CredentialInventoryRecord] = []
+    transitions: list[CredentialTransition] = []
+    for credential in credentials:
+        old_status = old_statuses.get(credential.credential_id)
+        effective_status = old_status if old_status in protected else credential.status
+        if effective_status != credential.status:
+            credential = credential.model_copy(update={"status": effective_status, "cool_down_until": None})
+        reconciled.append(credential)
+        transition = transition_for_record(credential, old_status)
+        if transition is not None:
+            transitions.append(transition)
+    return reconciled, transitions
 
 
 def _error(code: str, message: str, source: str) -> dict[str, Any]:
