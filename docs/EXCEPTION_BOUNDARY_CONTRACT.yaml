@@ -1,0 +1,32 @@
+# Every broad Exception/BaseException catch in services/gateway-engine must
+# match one rule. Run `make validate-exception-inventory`; it emits the
+# exhaustive source/line inventory without exception payloads or credentials.
+rules:
+  - prefix: services/gateway-engine/admin_api.py
+    classification: admin-boundary
+    caller_contract: typed admin error response with redaction
+    risk: high
+  - prefix: services/gateway-engine/api/
+    classification: request-boundary
+    caller_contract: stable protocol response or bounded fail-open panel
+    risk: high
+  - prefix: services/gateway-engine/providers/
+    classification: provider-boundary
+    caller_contract: provider failure mapped without credential payloads
+    risk: high
+  - prefix: services/gateway-engine/core/policy/
+    classification: policy-boundary
+    caller_contract: fail-open baseline or typed audit degradation
+    risk: medium
+  - prefix: services/gateway-engine/core/
+    classification: storage-boundary
+    caller_contract: bounded store failure with no secret disclosure
+    risk: medium
+  - prefix: services/gateway-engine/orchestrator/
+    classification: lifecycle-boundary
+    caller_contract: startup/reconciliation failure retains prior state
+    risk: medium
+  - prefix: services/gateway-engine/main.py
+    classification: lifecycle-boundary
+    caller_contract: process/request lifecycle remains observable and safe
+    risk: high

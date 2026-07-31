@@ -1,4 +1,4 @@
-.PHONY: lint test-unit test-mock test-fast test-e2e test-scripts validate-policy-profiles validate-production-secrets validate-admin-exposure validate-litellm-config-drift validate-dev-env-slots test-sync-models-probe test-compose-config test-dev-env drift-cheap clean-db
+.PHONY: lint test-unit test-mock test-fast test-e2e test-scripts validate-policy-profiles validate-production-secrets validate-admin-exposure validate-litellm-config-drift validate-dev-env-slots validate-exception-inventory test-sync-models-probe test-compose-config test-dev-env drift-cheap clean-db
 
 CONTAINER_PREFIX ?= PROD-
 
@@ -70,6 +70,11 @@ validate-dev-env-slots:
 	python3 scripts/ops/validate_dev_env_slots.py tests/fixtures/dev_env_slots/clean.json
 	python3 -m pytest tests/test_dev_env_slot_preflight.py -v
 
+# Emit the exhaustive broad-exception source/line inventory and enforce rules.
+validate-exception-inventory:
+	python3 scripts/ops/validate_exception_inventory.py
+	python3 -m pytest tests/test_exception_inventory.py -v
+
 # Cheap drift detector: set-membership only, no completion probes.
 drift-cheap:
 	python3 scripts/policy/cheap_drift_check.py --litellm-config tests/fixtures/cheap_drift/litellm-config.yaml --model-registry tests/fixtures/cheap_drift/model-registry.yaml --catalog-file tests/fixtures/cheap_drift/catalog-no-drift.json
@@ -77,7 +82,7 @@ drift-cheap:
 # Fast tier = Gate A + B locally (no OAuth, no real LLM).
 # Note: multi-repo-isolation is CI path-filtered only — run manually when touching dev-env.sh / cliproxy-setup.sh:
 #   bash tests/test-multi-repo-isolation.sh
-test-fast: lint test-unit validate-policy-profiles validate-production-secrets validate-admin-exposure validate-litellm-config-drift validate-dev-env-slots drift-cheap test-sync-models-probe test-compose-config test-mock
+test-fast: lint test-unit validate-policy-profiles validate-production-secrets validate-admin-exposure validate-litellm-config-drift validate-dev-env-slots validate-exception-inventory drift-cheap test-sync-models-probe test-compose-config test-mock
 
 # Full real-provider E2E. Needs real OAuth in ~/.cli-proxy-api (slot 1 -> :4010).
 # Runs only the slim `smoke` subset.
