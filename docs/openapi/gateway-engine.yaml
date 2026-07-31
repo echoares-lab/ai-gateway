@@ -826,6 +826,56 @@ paths:
       responses:
         '501':
           description: Targeted credential probe is not supported by current CLIProxy management API
+  /admin/credentials/{credential_id}/remediate:
+    post:
+      summary: Apply an audited credential remediation action
+      description: Applies a state-machine-validated disable, enable, cooldown reset, or probe action. Responses contain bounded audit fields and never return credential secrets.
+      parameters:
+        - name: credential_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, actor, reason]
+              properties:
+                action:
+                  type: string
+                  enum: [disable, enable, reset_cooldown, probe]
+                actor: {type: string, maxLength: 120}
+                reason: {type: string, maxLength: 500}
+            example:
+              action: disable
+              actor: operator@example.com
+              reason: rotate credential
+      responses:
+        '200':
+          description: Remediation decision and secret-free audit record
+          content:
+            application/json:
+              example:
+                accepted: true
+                credential_id: claude-mock.json
+                previous_status: CRITICAL
+                new_status: SUSPENDED
+                changed: true
+                audit:
+                  action: disable
+                  actor: operator@example.com
+                  reason: rotate credential
+                errors: []
+        '403':
+          description: Invalid admin key
+        '503':
+          description: Registry unavailable
   /model/new:
     post:
       summary: Hot-add a model to registry and LiteLLM runtime router
