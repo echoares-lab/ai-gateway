@@ -15,26 +15,28 @@ Last reviewed: 2026-07-31.
 
 ## Now
 
-### Production safety and configuration drift controls
+### Dev-environment compose collision prevention
 
-Coordination epic [#517](https://github.com/echoares-lab/ai-gateway/issues/517)
-promotes the highest-ranked operational-safety candidates in dependency order.
-The epic is coordination-only; claim only its ready atomic children.
+Coordination epic [#525](https://github.com/echoares-lab/ai-gateway/issues/525)
+promotes C-AUD-4 after the production-safety controls were completed. The epic
+is coordination-only; claim only its ready atomic children.
 
 | Order | Atomic issue | Candidate | Current state | Scope |
 |------:|--------------|-----------|---------------|-------|
-| 1 | [#518 — require explicit production Langfuse/Redis secrets](https://github.com/echoares-lab/ai-gateway/issues/518) | C-AUD-1 | Ready; start here | Inventory required secrets, validate synthetic complete/missing/placeholder fixtures, and document remediation. |
-| 2 | [#519 — define and validate admin endpoint exposure](https://github.com/echoares-lab/ai-gateway/issues/519) | C-AUD-2 | Ready; depends on #518 | Inventory routes, assign exposure/auth classes, and add a check for unclassified admin/diagnostic routes. |
-| 3 | [#520 — detect LiteLLM/Postgres/YAML drift](https://github.com/echoares-lab/ai-gateway/issues/520) | C-AUD-3 | Ready; depends on #518/#519 | Define precedence and make clean/drift fixtures produce deterministic pass/fail output. |
+| 1 | [#526 — validate slot ownership and Compose project identity](https://github.com/echoares-lab/ai-gateway/issues/526) | C-AUD-4 | Ready; start here | Side-effect-free preflight over sanitized slot/worktree/project metadata; reject collisions before Docker actions. |
+| 2 | [#527 — gate startup on collision preflight and document recovery](https://github.com/echoares-lab/ai-gateway/issues/527) | C-AUD-4 | Ready; depends on #526 | Integrate preflight into dev-env startup/list flows and add safe stale-owner recovery guidance. |
 
 Epic acceptance: each child must have a focused implementation PR, Gate A+B
-evidence, sanitized fixtures or checks, and a documented rollback/remediation
-path before the next child is promoted.
+evidence, sanitized fixtures, and a documented rollback/recovery path before
+the next epic is promoted.
 
 ## Next
 
-No work is approved for Next. Promote a candidate only after an explicit roadmap
-decision and creation of ready, atomic GitHub issues.
+The next ranked candidates remain unapproved until #525 closes and their atomic
+children are created: C-AUD-5 (narrow broad exception handlers), C-AUD-10
+(catch-all proxy edge-case coverage), C-AUD-6 (WebSocket policy parity), and
+C-MDL-2 (staging/config release channels). This order prioritizes low-blast-
+radius safety and evidence before larger runtime changes.
 
 ## Parked
 
@@ -64,6 +66,20 @@ Closeout evidence: [Nightly Integration run
 30640621745](https://github.com/echoares-lab/ai-gateway/actions/runs/30640621745)
 completed successfully, including Compose installation, Python environment
 setup, the Gate C smoke subset, and the full integration matrix.
+
+### Production safety and configuration drift controls
+
+Coordination epic [#517](https://github.com/echoares-lab/ai-gateway/issues/517)
+and all children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Explicit Langfuse/Redis production secret contract | [#518](https://github.com/echoares-lab/ai-gateway/issues/518) | [PR #522](https://github.com/echoares-lab/ai-gateway/pull/522); heartbeat [30650538102](https://github.com/echoares-lab/ai-gateway/actions/runs/30650538102) |
+| Admin endpoint exposure inventory and validator | [#519](https://github.com/echoares-lab/ai-gateway/issues/519) | [PR #523](https://github.com/echoares-lab/ai-gateway/pull/523); heartbeat [30651011729](https://github.com/echoares-lab/ai-gateway/actions/runs/30651011729) |
+| LiteLLM YAML/Postgres precedence and drift fixtures | [#520](https://github.com/echoares-lab/ai-gateway/issues/520) | [PR #524](https://github.com/echoares-lab/ai-gateway/pull/524); heartbeat [30651439607](https://github.com/echoares-lab/ai-gateway/actions/runs/30651439607) |
+
+Closeout evidence: required CI and Gate D passed for each child; the parent
+epic was closed after the complete dependency chain was verified.
 
 ### Release, routing, and deep-smoke foundations
 
