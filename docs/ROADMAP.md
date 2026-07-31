@@ -15,25 +15,24 @@ Last reviewed: 2026-07-31.
 
 ## Now
 
-### Model discovery orchestration
+### Adaptive routing runtime
 
-Coordination epic [#573](https://github.com/echoares-lab/ai-gateway/issues/573)
-promotes C-MDL-1 after credential remediation completed. The epic is
-coordination-only; claim only its ready atomic children.
+Coordination epic [#579](https://github.com/echoares-lab/ai-gateway/issues/579)
+promotes C-RT-1 after model discovery is production-verified. The epic is
+coordination-only; claim only its ready atomic children in order.
 
 | Order | Atomic issue | Candidate | Current state | Scope |
 |------:|--------------|-----------|---------------|-------|
-| 1 | [#574 — define discovery reconciliation contract](https://github.com/echoares-lab/ai-gateway/issues/574) | C-MDL-1 | Ready; start here | Define probe classification, stale handling, registry diffs, and transient safety. |
-| 2 | [#575 — implement discovery probe/registry/reconcile loop](https://github.com/echoares-lab/ai-gateway/issues/575) | C-MDL-1 | Blocked by #574 | Orchestrate discovery through registry and LiteLLM with rollback-safe failures. |
+| 1 | [#580 — define adaptive routing signal and fallback contract](https://github.com/echoares-lab/ai-gateway/issues/580) | C-RT-1 | Ready; start here | Define bounded scoring, cooldown, capability hard filters, and safe missing-signal behavior. |
+| 2 | [#581 — implement adaptive signal capture and fallback integration](https://github.com/echoares-lab/ai-gateway/issues/581) | C-RT-1 | Blocked by #580 | Add passive provider/model signals and integrate adaptive ordering with LiteLLM-native controls. |
 
 Epic acceptance: each child must have a focused implementation PR, Gate A+B
-evidence, and no new real-provider dependency before the next epic is promoted.
+evidence, and high-risk routing changes must include Gate C evidence before
+promotion.
 
 ## Next
 
-After C-MDL-1, promote C-RT-1 (adaptive routing runtime). This order keeps
-operator safety, credential state, and model discovery evidence ahead of
-runtime routing changes.
+After C-RT-1, promote only after both routing children are production-verified.
 
 ## Parked
 
@@ -41,6 +40,16 @@ No approved parked work. See [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 for the unapproved inventory.
 
 ## Completed
+
+### Model discovery orchestration
+
+Coordination epic [#573](https://github.com/echoares-lab/ai-gateway/issues/573)
+and both children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Discovery reconciliation contract | [#574](https://github.com/echoares-lab/ai-gateway/issues/574) | [PR #577](https://github.com/echoares-lab/ai-gateway/pull/577); heartbeat [30665533191](https://github.com/echoares-lab/ai-gateway/actions/runs/30665533191) |
+| Discovery probe safety in reconcile loop | [#575](https://github.com/echoares-lab/ai-gateway/issues/575) | [PR #578](https://github.com/echoares-lab/ai-gateway/pull/578); heartbeat [30665951010](https://github.com/echoares-lab/ai-gateway/actions/runs/30665951010) |
 
 ### Credential remediation orchestration
 
