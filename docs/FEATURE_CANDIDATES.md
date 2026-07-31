@@ -88,7 +88,6 @@ Cheap-drift check and `/model/new` / `/model/delete` hot-add shipped on `main`
 | ID | Summary | Effort | Risk | Need/fit | Deps / links | Status |
 |----|---------|--------|------|----------|--------------|--------|
 | C-MDL-1 | Full discovery orchestration (probe → registry → LiteLLM reconcile loops) | L | M | med | Prior epic [#230](https://github.com/echoares-lab/ai-gateway/issues/230); [MODEL_MANAGEMENT_RESEARCH.md](./MODEL_MANAGEMENT_RESEARCH.md) | candidate |
-| C-MDL-2 | Staging / config release channels for model and tool changes | L | H | med | Closed epic [#35](https://github.com/echoares-lab/ai-gateway/issues/35); [CONFIG_PROMOTION.md](./CONFIG_PROMOTION.md); [CICD_PHASE2_STAGING.md](./CICD_PHASE2_STAGING.md) | candidate |
 
 ---
 
