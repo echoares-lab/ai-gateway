@@ -73,7 +73,7 @@ validate-dev-env-slots:
 # Emit the exhaustive broad-exception source/line inventory and enforce rules.
 validate-exception-inventory:
 	python3 scripts/ops/validate_exception_inventory.py
-	python3 -m pytest tests/test_exception_inventory.py -v
+	python3 -m pytest tests/test_exception_inventory.py tests/test_exception_narrowing.py -v
 
 # Cheap drift detector: set-membership only, no completion probes.
 drift-cheap:

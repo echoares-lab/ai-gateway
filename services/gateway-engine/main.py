@@ -536,7 +536,7 @@ async def _log_requests(request: Request, call_next):
         try:
             body_bytes = await request.body()
             model = json.loads(body_bytes).get("model", "-")
-        except Exception:
+        except (json.JSONDecodeError, TypeError, AttributeError):
             pass
 
     log.info("[%s] → %s %s model=%s", req_id, request.method, request.url.path, model)
