@@ -20,6 +20,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from core.adaptive_routing import DeploymentSignal, RoutingNeeds, order_adaptive
 from core.policy.quality import apply_quality_reorder, extract_eval_config, resolve_task_category
 from core.policy.schemas import (
     BudgetSnapshot,
@@ -204,6 +205,7 @@ def evaluate_fallback_layers(
     deprioritized_credentials: list[str] | None = None,
     agent_affinity: dict[str, Any] | None = None,
     health_scores: dict[str, float] | None = None,
+    adaptive_signals: dict[str, DeploymentSignal] | None = None,
     deployment_credentials: dict[str, list[str]] | None = None,
     policy_profiles: list[PolicyProfile] | None = None,
     baseline_path: str | None = None,
@@ -215,6 +217,7 @@ def evaluate_fallback_layers(
     rate_limits = rate_limits or []
     deprioritized = deprioritized_credentials or []
     health_scores = health_scores or {}
+    adaptive_signals = adaptive_signals or {}
     deployment_credentials = deployment_credentials or {}
     rules: list[str] = []
     debug: dict[str, Any] = {}
@@ -266,6 +269,25 @@ def evaluate_fallback_layers(
         if len(candidates) < before:
             rules.append("fallback:rate_limit:cooldown_skip")
         debug["unavailable_credentials"] = sorted(unavailable)
+
+    if adaptive_signals and len(candidates) > 1:
+        adaptive = order_adaptive(
+            candidates,
+            adaptive_signals,
+            needs=RoutingNeeds(
+                tools=capabilities.has_tools,
+                vision=capabilities.has_vision,
+                estimated_tokens=capabilities.estimated_tokens,
+            ),
+            preserve_first=True,
+        )
+        candidates = adaptive.ordered_models
+        if adaptive.used_adaptive_signals:
+            rules.append("fallback:adaptive:signal_order")
+            debug["adaptive_signals_used"] = sorted(adaptive_signals)
+        if adaptive.skipped_models:
+            rules.append("fallback:adaptive:capability_skip")
+            debug["adaptive_skipped_models"] = adaptive.skipped_models
 
     # Layer 5 — health-weighted order (eligible tail only; keep requested first when present)
     if health_scores and len(candidates) > 1:

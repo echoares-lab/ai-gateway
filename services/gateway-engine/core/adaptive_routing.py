@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from math import isfinite
+from threading import Lock
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,74 @@ class AdaptiveRoutingResult:
     used_adaptive_signals: bool = False
 
 
+class AdaptiveSignalStore:
+    """Small in-process passive signal registry."""
+
+    def __init__(self) -> None:
+        self._signals: dict[str, DeploymentSignal] = {}
+        self._lock = Lock()
+
+    def observe(
+        self,
+        model: str,
+        *,
+        status_code: int,
+        latency_ms: float,
+        now: datetime | None = None,
+        cooldown: timedelta = timedelta(minutes=1),
+        supports_tools: bool = True,
+        supports_vision: bool = False,
+        context_window_tokens: int | None = None,
+    ) -> DeploymentSignal:
+        """Record one passive outcome and return the updated signal."""
+        now = now or datetime.now(timezone.utc)
+        with self._lock:
+            previous = self._signals.get(model)
+            failures = status_code >= 500 or status_code == 429
+            prior_errors = previous.error_rate if previous else 0.0
+            prior_health = previous.health_factor if previous else 1.0
+            error_rate = min(1.0, prior_errors * 0.8 + (1.0 if failures else 0.0) * 0.2)
+            health = min(1.0, max(0.0, prior_health * 0.8 + (0.0 if failures else 1.0) * 0.2))
+            count_429 = (previous.rolling_429_count if previous else 0) + (1 if status_code == 429 else 0)
+            self._signals[model] = DeploymentSignal(
+                model=model,
+                health_factor=health,
+                p95_latency_ms=max(0.0, latency_ms),
+                error_rate=error_rate,
+                rolling_429_count=count_429,
+                cooldown_until=now + cooldown
+                if status_code == 429
+                else (previous.cooldown_until if previous else None),
+                observed_at=now,
+                supports_tools=supports_tools,
+                supports_vision=supports_vision,
+                context_window_tokens=context_window_tokens,
+            )
+            return self._signals[model]
+
+    def snapshot(self) -> dict[str, DeploymentSignal]:
+        with self._lock:
+            return dict(self._signals)
+
+
+def coerce_signals(value: object) -> dict[str, DeploymentSignal]:
+    """Convert metadata snapshots into validated signal objects, fail-open."""
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, DeploymentSignal] = {}
+    for model, raw in value.items():
+        if isinstance(raw, DeploymentSignal):
+            result[str(model)] = raw
+            continue
+        if not isinstance(raw, dict):
+            continue
+        try:
+            result[str(model)] = DeploymentSignal(model=str(model), **raw)
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
 def _utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
@@ -109,6 +178,7 @@ def order_adaptive(
     needs: RoutingNeeds | None = None,
     now: datetime | None = None,
     max_signal_age: timedelta = timedelta(minutes=15),
+    preserve_first: bool = False,
 ) -> AdaptiveRoutingResult:
     """Filter by capability, then order by fresh passive signal quality.
 
@@ -128,8 +198,10 @@ def order_adaptive(
     if not fresh:
         return AdaptiveRoutingResult(eligible, eligible, skipped, False)
     position = {model: index for index, model in enumerate(eligible)}
-    ordered = sorted(
-        eligible,
+    head = eligible[:1] if preserve_first else []
+    tail = eligible[len(head) :]
+    ordered = head + sorted(
+        tail,
         key=lambda model: (
             model not in fresh,
             fresh[model].in_cooldown(now=now) if model in fresh else False,

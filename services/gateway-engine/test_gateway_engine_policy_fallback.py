@@ -1,5 +1,6 @@
 """Unit tests for layered fallback evaluator (issue 38-8)."""
 
+from core.adaptive_routing import DeploymentSignal
 from core.policy.evaluate import evaluate
 from core.policy.fallback import evaluate_fallback_layers, load_yaml_baseline
 from core.policy.profile_store import ProfileStore
@@ -219,3 +220,39 @@ def test_evaluate_integration_emits_fallback_layer_tags():
     assert any(r.startswith("fallback:") for r in decision.rules_applied)
     assert decision.ordered_deployments[0] == "claude-sonnet-4-6"
     assert "gemini-3-flash" in decision.ordered_deployments
+
+
+def test_adaptive_signals_reorder_only_capability_eligible_candidates():
+    result = evaluate_fallback_layers(
+        "claude-sonnet-4-6",
+        allowed_models=["claude-sonnet-4-6", "gemini-3-flash", "gpt-5-4"],
+        policy_fallback=["gemini-3-flash", "gpt-5-4"],
+        capabilities=RequestCapabilities(has_tools=True),
+        adaptive_signals={
+            "gemini-3-flash": DeploymentSignal(model="gemini-3-flash", health_factor=0.1, observed_at=None),
+            "gpt-5-4": DeploymentSignal(model="gpt-5-4", health_factor=1.0, observed_at=None),
+        },
+        baseline_path="",
+    )
+    # Missing timestamps fail open to the static order.
+    assert result.ordered_deployments[:3] == ["claude-sonnet-4-6", "gemini-3-flash", "gpt-5-4"]
+
+
+def test_adaptive_signals_reorder_when_fresh():
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    result = evaluate_fallback_layers(
+        "claude-sonnet-4-6",
+        allowed_models=["claude-sonnet-4-6", "gemini-3-flash", "gpt-5-4"],
+        policy_fallback=["gemini-3-flash", "gpt-5-4"],
+        capabilities=RequestCapabilities(has_tools=True),
+        adaptive_signals={
+            "gemini-3-flash": DeploymentSignal(model="gemini-3-flash", health_factor=0.1, observed_at=now),
+            "gpt-5-4": DeploymentSignal(model="gpt-5-4", health_factor=1.0, observed_at=now),
+        },
+        baseline_path="",
+    )
+    assert result.ordered_deployments[0] == "claude-sonnet-4-6"
+    assert result.ordered_deployments[1:] == ["gpt-5-4", "gemini-3-flash"]
+    assert "fallback:adaptive:signal_order" in result.rules_applied

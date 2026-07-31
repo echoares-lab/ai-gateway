@@ -6,6 +6,7 @@ import asyncio
 import os
 from functools import lru_cache
 
+from core.adaptive_routing import coerce_signals
 from core.policy.agent_affinity import apply_agent_affinity
 from core.policy.budget import apply_budget_gates
 from core.policy.credential_events import handle_credential_event
@@ -151,6 +152,7 @@ def evaluate(
     health_scores = merged_context.metadata.get("health_scores")
     if not isinstance(health_scores, dict):
         health_scores = {}
+    adaptive_signals = coerce_signals(merged_context.metadata.get("adaptive_signals"))
 
     deployment_credentials = merged_context.metadata.get("deployment_credentials")
     if not isinstance(deployment_credentials, dict):
@@ -168,6 +170,7 @@ def evaluate(
         deprioritized_credentials=deprioritized,
         agent_affinity=agent_affinity,
         health_scores=health_scores,
+        adaptive_signals=adaptive_signals,
         deployment_credentials=deployment_credentials,
         policy_profiles=profiles,
         baseline_path=DEFAULT_FALLBACK_BASELINE,

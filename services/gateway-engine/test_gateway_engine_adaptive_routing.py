@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from core.adaptive_routing import (
+    AdaptiveSignalStore,
     DeploymentSignal,
     RoutingNeeds,
     capability_eligible,
@@ -75,3 +76,19 @@ def test_capability_filter_happens_before_scoring():
 def test_score_is_bounded_for_untrusted_values():
     score = routing_score(signal("x", health_factor=4, error_rate=-2, p95_latency_ms=10**9))
     assert 0 <= score <= 1
+
+
+def test_signal_store_captures_passive_429_and_cooldown():
+    store = AdaptiveSignalStore()
+    observed = store.observe("provider-a", status_code=429, latency_ms=250, now=NOW)
+    assert observed.rolling_429_count == 1
+    assert observed.in_cooldown(now=NOW)
+    assert store.snapshot()["provider-a"] == observed
+
+
+def test_signal_store_recovers_health_on_success():
+    store = AdaptiveSignalStore()
+    store.observe("provider-a", status_code=503, latency_ms=100, now=NOW)
+    recovered = store.observe("provider-a", status_code=200, latency_ms=100, now=NOW + timedelta(minutes=2))
+    assert recovered.health_factor > 0.0
+    assert recovered.error_rate < 0.2
