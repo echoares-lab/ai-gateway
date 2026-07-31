@@ -57,3 +57,34 @@ async def test_upstream_connection_refused_returns_502(asgi_client):
         data = resp.json()
         assert "connection failed" in data.get("error", {}).get("message", "").lower()
         assert data.get("error", {}).get("type") == "connection_error"
+
+
+async def test_upstream_non_json_error_body_is_preserved(asgi_client):
+    """A provider's text error remains observable without a gateway JSON decode failure."""
+    with respx.mock(base_url="http://litellm:4000", assert_all_called=False) as respx_mock:
+        respx_mock.post(re.compile(r".*/v1/chat/completions")).mock(
+            return_value=httpx.Response(503, content=b"upstream unavailable", headers={"content-type": "text/plain"})
+        )
+
+        resp = await asgi_client.post(
+            "/v1/chat/completions", json={"model": "gpt-4", "messages": [{"role": "user", "content": "Say hi."}]}
+        )
+
+        assert resp.status_code == 503
+        assert resp.content == b"upstream unavailable"
+        assert resp.headers["content-type"].startswith("text/plain")
+
+
+async def test_upstream_gateway_timeout_status_is_surfaced(asgi_client):
+    """An upstream HTTP 504 remains a 504 instead of becoming a generic connection error."""
+    with respx.mock(base_url="http://litellm:4000", assert_all_called=False) as respx_mock:
+        respx_mock.post(re.compile(r".*/v1/chat/completions")).mock(
+            return_value=httpx.Response(504, json={"error": {"message": "upstream gateway timeout"}})
+        )
+
+        resp = await asgi_client.post(
+            "/v1/chat/completions", json={"model": "gpt-4", "messages": [{"role": "user", "content": "Say hi."}]}
+        )
+
+        assert resp.status_code == 504
+        assert resp.json()["error"]["message"] == "upstream gateway timeout"
