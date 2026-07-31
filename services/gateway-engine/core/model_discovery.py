@@ -22,6 +22,7 @@ _PRESERVE = frozenset(
         "error",
         "malformed_response",
         "preserve",
+        "unhealthy",
     }
 )
 _MISSING = frozenset({"missing", "missing_model", "not_found"})
