@@ -81,7 +81,7 @@
 #                               label-selector lookup below entirely
 #   DEEP_SMOKE_PG_POD_SELECTOR  label selector used to find the Postgres pod
 #                               when DEEP_SMOKE_PG_POD is unset (default:
-#                               "cnpg.io/cluster=platform-postgres,role=primary")
+#                               "cnpg.io/cluster=postgres,role=primary")
 #   DEEP_SMOKE_PG_CONTAINER     container name within the Postgres pod to
 #                               exec into (default: "postgres")
 #   DEEP_SMOKE_PG_USER          psql -U user for the SpendLogs query
@@ -125,7 +125,10 @@ DEFAULT_RESPONSES_MODEL="gpt-5-4"
 DEFAULT_MESSAGES_MODEL="claude-sonnet-4-6"
 DEFAULT_PROVIDER_MODELS="claude=claude-sonnet-4-6,gpt=gpt-5-4,gemini=gemini-3-flash"
 DEFAULT_PG_NAMESPACE="database"
-DEFAULT_PG_POD_SELECTOR="cnpg.io/cluster=platform-postgres,role=primary"
+# The authoritative k3s-01 CNPG Cluster is named "postgres" (not the
+# pre-2026-07-21 "platform-postgres" name); keep role=primary so DB checks
+# never run against a replica when the cluster gains replicas.
+DEFAULT_PG_POD_SELECTOR="cnpg.io/cluster=postgres,role=primary"
 DEFAULT_PG_CONTAINER="postgres"
 DEFAULT_PG_USER="postgres"
 DEFAULT_SPENDLOGS_WINDOW_MINUTES="15"
