@@ -15,26 +15,25 @@ Last reviewed: 2026-07-31.
 
 ## Now
 
-### Credential remediation orchestration
+### Model discovery orchestration
 
-Coordination epic [#567](https://github.com/echoares-lab/ai-gateway/issues/567)
-promotes C-CRED-3 after credential balancing completed. The epic is
+Coordination epic [#573](https://github.com/echoares-lab/ai-gateway/issues/573)
+promotes C-MDL-1 after credential remediation completed. The epic is
 coordination-only; claim only its ready atomic children.
 
 | Order | Atomic issue | Candidate | Current state | Scope |
 |------:|--------------|-----------|---------------|-------|
-| 1 | [#568 — define remediation API safety contract](https://github.com/echoares-lab/ai-gateway/issues/568) | C-CRED-3 | Ready; start here | Define authorized, idempotent actions, audit fields, and redaction. |
-| 2 | [#569 — add operator remediation workflow](https://github.com/echoares-lab/ai-gateway/issues/569) | C-CRED-3 | Blocked by #568 | Implement state-machine-enforced admin remediation for expired, rate-limited, and degraded credentials. |
+| 1 | [#574 — define discovery reconciliation contract](https://github.com/echoares-lab/ai-gateway/issues/574) | C-MDL-1 | Ready; start here | Define probe classification, stale handling, registry diffs, and transient safety. |
+| 2 | [#575 — implement discovery probe/registry/reconcile loop](https://github.com/echoares-lab/ai-gateway/issues/575) | C-MDL-1 | Blocked by #574 | Orchestrate discovery through registry and LiteLLM with rollback-safe failures. |
 
 Epic acceptance: each child must have a focused implementation PR, Gate A+B
 evidence, and no new real-provider dependency before the next epic is promoted.
 
 ## Next
 
-After C-CRED-3, promote C-MDL-1 (full discovery orchestration), then
-C-RT-1 (adaptive routing
-runtime). This order keeps operator safety and deterministic credential
-selection ahead of larger runtime changes.
+After C-MDL-1, promote C-RT-1 (adaptive routing runtime). This order keeps
+operator safety, credential state, and model discovery evidence ahead of
+runtime routing changes.
 
 ## Parked
 
@@ -42,6 +41,16 @@ No approved parked work. See [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 for the unapproved inventory.
 
 ## Completed
+
+### Credential remediation orchestration
+
+Coordination epic [#567](https://github.com/echoares-lab/ai-gateway/issues/567)
+and both children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Remediation API safety contract | [#568](https://github.com/echoares-lab/ai-gateway/issues/568) | [PR #571](https://github.com/echoares-lab/ai-gateway/pull/571); heartbeat [30664479910](https://github.com/echoares-lab/ai-gateway/actions/runs/30664479910) |
+| Operator remediation workflow | [#569](https://github.com/echoares-lab/ai-gateway/issues/569) | [PR #572](https://github.com/echoares-lab/ai-gateway/pull/572); heartbeat [30665126234](https://github.com/echoares-lab/ai-gateway/actions/runs/30665126234) |
 
 ### Multi-account credential balancing
 
