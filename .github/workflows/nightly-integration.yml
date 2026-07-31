@@ -85,11 +85,11 @@ jobs:
           exit 1
       - name: Run smoke subset (Gate C)
         run: |
-          ./dev-env.sh test 1 -- -m "integration and smoke"
+          ./dev-env.sh test 1 -m "integration and smoke"
       - name: Run full integration matrix
         continue-on-error: true
         run: |
-          ./dev-env.sh test 1 -- -m integration
+          ./dev-env.sh test 1 -m integration
       - name: Stop services
         if: always()
         run: |
