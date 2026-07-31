@@ -1,0 +1,14 @@
+{
+  "artifact": {
+    "name": "litellm-config",
+    "version": "2026.07.31.1",
+    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source_revision": "0123456789abcdef0123456789abcdef01234567",
+    "environment": "staging"
+  },
+  "promotion": {
+    "target": "production",
+    "verified": true,
+    "verified_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+}
