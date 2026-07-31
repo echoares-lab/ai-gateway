@@ -33,6 +33,7 @@ tracked through its ready atomic children rather than claimed from this file.
 | C-AUD-1 | Require explicit Langfuse/Redis secrets in production | Epic [#517](https://github.com/echoares-lab/ai-gateway/issues/517); child [#518](https://github.com/echoares-lab/ai-gateway/issues/518) |
 | C-AUD-2 | Document admin endpoint exposure model (tunnel/WAF) | Epic [#517](https://github.com/echoares-lab/ai-gateway/issues/517); child [#519](https://github.com/echoares-lab/ai-gateway/issues/519) |
 | C-AUD-3 | LiteLLM Postgres vs YAML override / drift docs or detector | Epic [#517](https://github.com/echoares-lab/ai-gateway/issues/517); child [#520](https://github.com/echoares-lab/ai-gateway/issues/520) |
+| C-AUD-4 | Dev-env compose project collision preflight and safe recovery | Epic [#525](https://github.com/echoares-lab/ai-gateway/issues/525); children [#526](https://github.com/echoares-lab/ai-gateway/issues/526), [#527](https://github.com/echoares-lab/ai-gateway/issues/527) |
 
 ## Delivered / historical (not candidates)
 
@@ -125,7 +126,6 @@ Historical backlog:
 
 | ID | Summary | Effort | Risk | Need/fit | Audit ref | Status |
 |----|---------|--------|------|----------|-----------|--------|
-| C-AUD-4 | Dev-env compose project collision preflight | S | L | med | D-12 | candidate |
 | C-AUD-5 | Narrow broad `except Exception` handlers in gateway-engine | M | M | med | D-6 | candidate |
 | C-AUD-6 | Optional WebSocket policy evaluation parity | M | M | med | D-4 | candidate |
 | C-AUD-8 | Extract remaining policy hooks from request path / routers | M | M | med | D-7 | candidate |
