@@ -15,16 +15,16 @@ Last reviewed: 2026-07-31.
 
 ## Now
 
-### Dev-environment compose collision prevention
+### Gateway exception-boundary reliability
 
-Coordination epic [#525](https://github.com/echoares-lab/ai-gateway/issues/525)
-promotes C-AUD-4 after the production-safety controls were completed. The epic
+Coordination epic [#531](https://github.com/echoares-lab/ai-gateway/issues/531)
+promotes C-AUD-5 after the dev-environment controls were completed. The epic
 is coordination-only; claim only its ready atomic children.
 
 | Order | Atomic issue | Candidate | Current state | Scope |
 |------:|--------------|-----------|---------------|-------|
-| 1 | [#526 — validate slot ownership and Compose project identity](https://github.com/echoares-lab/ai-gateway/issues/526) | C-AUD-4 | Ready; start here | Side-effect-free preflight over sanitized slot/worktree/project metadata; reject collisions before Docker actions. |
-| 2 | [#527 — gate startup on collision preflight and document recovery](https://github.com/echoares-lab/ai-gateway/issues/527) | C-AUD-4 | Ready; depends on #526 | Integrate preflight into dev-env startup/list flows and add safe stale-owner recovery guidance. |
+| 1 | [#532 — inventory broad exception handlers and caller contracts](https://github.com/echoares-lab/ai-gateway/issues/532) | C-AUD-5 | Ready; start here | Classify high-risk catches and enforce a deterministic source/contract inventory. |
+| 2 | [#533 — narrow high-risk gateway exception handlers](https://github.com/echoares-lab/ai-gateway/issues/533) | C-AUD-5 | Ready; depends on #532 | Replace selected broad catches with typed boundaries and regression tests. |
 
 Epic acceptance: each child must have a focused implementation PR, Gate A+B
 evidence, sanitized fixtures, and a documented rollback/recovery path before
@@ -32,11 +32,11 @@ the next epic is promoted.
 
 ## Next
 
-The next ranked candidates remain unapproved until #525 closes and their atomic
-children are created: C-AUD-5 (narrow broad exception handlers), C-AUD-10
-(catch-all proxy edge-case coverage), C-AUD-6 (WebSocket policy parity), and
-C-MDL-2 (staging/config release channels). This order prioritizes low-blast-
-radius safety and evidence before larger runtime changes.
+The next ranked candidates remain unapproved until #531 closes and their atomic
+children are created: C-AUD-10 (catch-all proxy edge-case coverage), C-AUD-6
+(WebSocket policy parity), C-MDL-2 (staging/config release channels), and
+C-CRED-1 (credential pool orchestration). This order prioritizes low-blast-radius
+safety and evidence before larger runtime changes.
 
 ## Parked
 
@@ -80,6 +80,16 @@ and all children are closed and production-verified.
 
 Closeout evidence: required CI and Gate D passed for each child; the parent
 epic was closed after the complete dependency chain was verified.
+
+### Dev-environment compose collision prevention
+
+Coordination epic [#525](https://github.com/echoares-lab/ai-gateway/issues/525)
+and both children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Slot/project ownership preflight | [#526](https://github.com/echoares-lab/ai-gateway/issues/526) | [PR #529](https://github.com/echoares-lab/ai-gateway/pull/529); heartbeat [30652129692](https://github.com/echoares-lab/ai-gateway/actions/runs/30652129692) |
+| Startup/list integration and recovery docs | [#527](https://github.com/echoares-lab/ai-gateway/issues/527) | [PR #530](https://github.com/echoares-lab/ai-gateway/pull/530); heartbeat [30652584788](https://github.com/echoares-lab/ai-gateway/actions/runs/30652584788) |
 
 ### Release, routing, and deep-smoke foundations
 
