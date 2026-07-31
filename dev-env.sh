@@ -98,6 +98,24 @@ seed_auth_volume() {
         alpine sh -c "cp -r /src/. /dst/ && echo 'seeded $(ls /dst | wc -l) entries'"
 }
 
+preflight_slot() {
+    local slot="$1"
+    local project="aidev${slot}"
+    local metadata_file
+    metadata_file="$(mktemp)"
+    printf '[{"slot":%s,"worktree":"%s","project":"%s","state":"active"}]\n' \
+        "$slot" "$SCRIPT_DIR" "$project" >"$metadata_file"
+    python3 "$SCRIPT_DIR/scripts/ops/validate_dev_env_slots.py" "$metadata_file" >/dev/null \
+        || die "slot ${slot} failed ownership preflight"
+    local existing
+    existing="$(docker ps -aq --filter "label=com.docker.compose.project=${project}")"
+    if [[ -n "$existing" ]]; then
+        rm -f "$metadata_file"
+        die "slot ${slot} is already owned by Compose project ${project}; stop its stack before reuse"
+    fi
+    rm -f "$metadata_file"
+}
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -105,6 +123,7 @@ seed_auth_volume() {
 cmd_start() {
     local slot
     slot="$(require_slot "${1:-1}")"
+    preflight_slot "$slot"
     slot_ports "$slot"
     local wait_timeout="${DEV_ENV_WAIT_TIMEOUT:-300}"
     echo "starting dev slot ${slot}: gateway-engine=:${GATEWAY_ENGINE_PORT}  litellm=:${LITELLM_PORT}  cliproxy=:${CLIPROXY_PORT}"
@@ -226,6 +245,10 @@ cmd_stop_mock() {
 }
 
 cmd_list() {
+    local projects
+    projects="$(docker ps --filter "label=com.docker.compose.project" --format '{{.Label "com.docker.compose.project"}}')"
+    python3 "$SCRIPT_DIR/scripts/ops/validate_dev_env_slots.py" --projects "$projects" >/dev/null \
+        || die "dev-environment project labels failed preflight"
     docker ps \
         --filter "label=com.docker.compose.project" \
         --format 'table {{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Status}}\t{{.Ports}}' \
