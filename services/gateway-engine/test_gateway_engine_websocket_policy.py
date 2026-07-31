@@ -87,6 +87,14 @@ class TestCodexWsPolicyBypass(unittest.TestCase):
         os.environ["POLICY_ENGINE_WS_EVALUATE"] = "true"
         assert t.codex_ws_policy_bypass() is False
 
+    def test_flag_matrix_is_explicit_and_stable(self):
+        cases = ((False, False, True), (True, False, True), (False, True, True), (True, True, False))
+        for policy_enabled, ws_enabled, expected_bypass in cases:
+            with self.subTest(policy_enabled=policy_enabled, ws_enabled=ws_enabled):
+                os.environ["POLICY_ENGINE_ENABLED"] = str(policy_enabled).lower()
+                os.environ["POLICY_ENGINE_WS_EVALUATE"] = str(ws_enabled).lower()
+                assert t.codex_ws_policy_bypass() is expected_bypass
+
 
 class TestCodexWsUpstreamHeaders(unittest.TestCase):
     def test_strips_handshake_headers_and_sets_cliproxy_auth(self):
