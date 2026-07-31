@@ -130,7 +130,6 @@ Historical backlog:
 | C-AUD-6 | Optional WebSocket policy evaluation parity | M | M | med | D-4 | candidate |
 | C-AUD-8 | Extract remaining policy hooks from request path / routers | M | M | med | D-7 | candidate |
 | C-AUD-9 | Faster local mock iteration (optional skip of heavy clean-db) | S | L | low | D-9 | candidate |
-| C-AUD-10 | Integration coverage for catch-all proxy edge cases | M | M | med | D-10 | candidate |
 
 ---
 

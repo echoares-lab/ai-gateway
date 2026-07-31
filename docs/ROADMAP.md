@@ -15,28 +15,27 @@ Last reviewed: 2026-07-31.
 
 ## Now
 
-### Gateway exception-boundary reliability
+### Catch-all proxy edge-case reliability
 
-Coordination epic [#531](https://github.com/echoares-lab/ai-gateway/issues/531)
-promotes C-AUD-5 after the dev-environment controls were completed. The epic
-is coordination-only; claim only its ready atomic children.
+Coordination epic [#537](https://github.com/echoares-lab/ai-gateway/issues/537)
+promotes C-AUD-10 after the exception-boundary controls were completed. The
+epic is coordination-only; claim only its ready atomic children.
 
 | Order | Atomic issue | Candidate | Current state | Scope |
 |------:|--------------|-----------|---------------|-------|
-| 1 | [#532 — inventory broad exception handlers and caller contracts](https://github.com/echoares-lab/ai-gateway/issues/532) | C-AUD-5 | Ready; start here | Classify high-risk catches and enforce a deterministic source/contract inventory. |
-| 2 | [#533 — narrow high-risk gateway exception handlers](https://github.com/echoares-lab/ai-gateway/issues/533) | C-AUD-5 | Ready; depends on #532 | Replace selected broad catches with typed boundaries and regression tests. |
+| 1 | [#538 — add catch-all upstream failure matrix](https://github.com/echoares-lab/ai-gateway/issues/538) | C-AUD-10 | Ready; start here | Cover timeout, connection, gateway, and non-JSON upstream failures. |
+| 2 | [#539 — lock protocol edge-case response contracts](https://github.com/echoares-lab/ai-gateway/issues/539) | C-AUD-10 | Ready; follows #538 | Assert malformed-client and empty/error response status, shape, and headers. |
 
 Epic acceptance: each child must have a focused implementation PR, Gate A+B
-evidence, sanitized fixtures, and a documented rollback/recovery path before
-the next epic is promoted.
+evidence, and no new real-provider dependency before the next epic is promoted.
 
 ## Next
 
-The next ranked candidates remain unapproved until #531 closes and their atomic
-children are created: C-AUD-10 (catch-all proxy edge-case coverage), C-AUD-6
-(WebSocket policy parity), C-MDL-2 (staging/config release channels), and
-C-CRED-1 (credential pool orchestration). This order prioritizes low-blast-radius
-safety and evidence before larger runtime changes.
+The next ranked candidates remain unapproved until #537 closes and their atomic
+children are created: C-AUD-6 (WebSocket policy parity), C-MDL-2
+(staging/config release channels), and C-CRED-1 (credential pool orchestration).
+This order prioritizes low-blast-radius safety and evidence before larger
+runtime changes.
 
 ## Parked
 
@@ -48,6 +47,16 @@ for the unapproved inventory.
 The following work is closed. Issue links are tracking/coordination records;
 pull-request links are implementation evidence. A pull request is never an
 atomic issue to claim.
+
+### Gateway exception-boundary reliability
+
+Coordination epic [#531](https://github.com/echoares-lab/ai-gateway/issues/531)
+and both children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Broad-exception inventory and caller contracts | [#532](https://github.com/echoares-lab/ai-gateway/issues/532) | [PR #535](https://github.com/echoares-lab/ai-gateway/pull/535); heartbeat [30653165974](https://github.com/echoares-lab/ai-gateway/actions/runs/30653165974) |
+| Typed request-boundary exception handling | [#533](https://github.com/echoares-lab/ai-gateway/issues/533) | [PR #536](https://github.com/echoares-lab/ai-gateway/pull/536); heartbeat [30653519978](https://github.com/echoares-lab/ai-gateway/actions/runs/30653519978) |
 
 ### Staging promotion and nightly integration reliability
 
