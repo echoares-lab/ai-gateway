@@ -1,4 +1,4 @@
-"""Static contracts for release metadata propagation into images and CI."""
+"""Static contracts for release metadata propagation and CI workflow behavior."""
 
 from __future__ import annotations
 
@@ -92,3 +92,60 @@ def test_k3s_promotion_preserves_emergency_skip_deep_smoke() -> None:
     assert 'INPUT_SKIP}" == "true"' in workflow
     assert "needs.resolve-sha.outputs.skip_deep_smoke != 'true'" in workflow
     assert "Staging deep-smoke **skipped** via workflow_dispatch skip_deep_smoke=true" in workflow
+
+
+def test_nightly_integration_installs_verified_compose_before_starting_stack() -> None:
+    with (ROOT / ".github/workflows/nightly-integration.yml").open(encoding="utf-8") as handle:
+        workflow = yaml.safe_load(handle)
+
+    steps = workflow["jobs"]["real-provider-smoke"]["steps"]
+    setup_index = next(
+        index for index, step in enumerate(steps) if step.get("name") == "Install pinned Docker Compose v2"
+    )
+    setup_run = steps[setup_index]["run"]
+    cleanup_index = next(index for index, step in enumerate(steps) if step.get("name") == "Stop services")
+    cleanup = steps[cleanup_index]
+    cleanup_run = cleanup["run"]
+
+    assert "COMPOSE_VERSION=v2.27.0" in setup_run
+    assert (
+        "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${COMPOSE_ARCH}"
+        in setup_run
+    )
+    assert "f3ba3bf1e4ab18e96c2d36526a075a02a78fb5f8e80d3e3ca9c5bf256d81d0a0" in setup_run
+    assert "37a1c197fef5fda2a3df2d5ae0d7762ad2a00e30946ad06d4ad9fa8cef16d9e7" in setup_run
+    assert 'COMPOSE_DIR="${HOME}/.docker/cli-plugins"' in setup_run
+    assert 'COMPOSE_BIN="${COMPOSE_DIR}/docker-compose"' in setup_run
+    assert 'COMPOSE_TMP="$(mktemp "${COMPOSE_DIR}/docker-compose.XXXXXX")"' in setup_run
+    assert "trap 'rm -f \"$COMPOSE_TMP\"' EXIT" in setup_run
+    assert '--output "$COMPOSE_TMP"' in setup_run
+    assert 'printf \'%s  %s\\n\' "$COMPOSE_SHA256" "$COMPOSE_TMP" | sha256sum --check --strict' in setup_run
+    assert 'chmod +x "$COMPOSE_TMP"' in setup_run
+    assert 'mv -f "$COMPOSE_TMP" "$COMPOSE_BIN"' in setup_run
+    assert 'docker compose version --short | grep -Fx "${COMPOSE_VERSION#v}"' in setup_run
+    assert 'echo "NIGHTLY_COMPOSE_READY=true" >> "$GITHUB_ENV"' in setup_run
+
+    download_index = setup_run.index('--output "$COMPOSE_TMP"')
+    verify_index = setup_run.index("sha256sum --check --strict")
+    chmod_index = setup_run.index('chmod +x "$COMPOSE_TMP"')
+    move_index = setup_run.index('mv -f "$COMPOSE_TMP" "$COMPOSE_BIN"')
+    version_index = setup_run.index("docker compose version --short")
+    ready_index = setup_run.index("NIGHTLY_COMPOSE_READY=true")
+    assert download_index < verify_index < chmod_index < move_index < version_index < ready_index
+
+    for index, step in enumerate(steps):
+        run = step.get("run", "")
+        if index != setup_index and ("docker compose" in run or "./dev-env.sh" in run):
+            assert setup_index < index
+
+    assert cleanup["if"] == "always()"
+    assert 'if [[ "${NIGHTLY_COMPOSE_READY:-}" == "true" ]]; then' in cleanup_run
+    assert "docker compose -f docker-compose.dev.yml -p aidev1 logs || true" in cleanup_run
+    assert "Docker Compose setup did not complete; skipping logs and teardown." in cleanup_run
+    ready_guard_index = cleanup_run.index("NIGHTLY_COMPOSE_READY:-")
+    logs_index = cleanup_run.index("docker compose -f")
+    stop_index = cleanup_run.index("./dev-env.sh stop 1")
+    skip_index = cleanup_run.index("else\n")
+    assert ready_guard_index < logs_index < stop_index < skip_index
+    assert "./dev-env.sh stop 1" in cleanup_run
+    assert "./dev-env.sh stop 1 || true" not in cleanup_run
