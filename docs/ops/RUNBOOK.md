@@ -43,7 +43,28 @@ X-Edge-Auth: <shared edge-gate key>
   ExternalSecrets-sourced pod config — nothing in this repo's code consumes the WAF
   edge-auth key (it's checked entirely on Cloudflare's side, never reaching gateway-engine),
   so there's no reason for a k3s pod to need it, and it correctly lives at its own path
-  instead.
+instead.
+
+### Gateway endpoint exposure contract
+
+The exhaustive administrative and operational route inventory is maintained in
+[`docs/ADMIN_ENDPOINT_EXPOSURE.yaml`](../ADMIN_ENDPOINT_EXPOSURE.yaml). It is
+machine-checked against FastAPI route declarations:
+
+```bash
+make validate-admin-exposure
+```
+
+The production boundary is intentional: `/admin/*` and `/metrics` are reachable
+only through the internal Traefik ingress and require the gateway admin key
+(including read-only routes, which require `GATEWAY_ENGINE_ADMIN_READ_AUTH=true`);
+`/model/*` and `/v1/events/credential` are cluster-internal. Only the public
+health/version surface and normal client routes may traverse the Cloudflare
+tunnel, which still requires the `X-Edge-Auth` WAF header described above.
+`/debug/policy/*` is an operator-local, mock-only surface and must not be enabled
+in production. The k3s-01 GitOps ingress/Deployment manifests are authoritative
+for enforcement; a change there must preserve the classes in the inventory before
+promotion.
 
 **Reading it:** requires an OpenBao token with the `ai-gateway-secrets` policy. The
 `ai-gateway` AppRole (role_id/secret_id in 1Password item **"ai-gateway - OpenBao AppRole
