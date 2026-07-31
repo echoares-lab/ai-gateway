@@ -30,6 +30,35 @@ Database and cache states represent runtime allocations, permissions, and audit 
 | **Credential Inventory** | PostgreSQL | Provider account status, fail counters, cooldown timestamps. | `cred-{org}-{provider}-{id}` |
 | **Trace Metrics** | PostgreSQL (Langfuse) | LLM request traces, prompt/completion tokens, and performance metrics. | Run-time generated UUIDs |
 
+### 1.3 LiteLLM YAML/Postgres precedence contract
+
+The checked-in `litellm-config.yaml` is authoritative for routing topology,
+fallbacks, MCP registrations, and the baseline model definitions. LiteLLM's
+Postgres `model_list` rows are the only supported exception: a row written by
+an authenticated runtime model mutation may override the matching model's
+`litellm_params`, and an explicitly recorded override wins over YAML for that
+path. Unlisted Postgres additions, missing rows, or changes to YAML-authoritative
+settings are drift; credentials and secret values are never compared or emitted.
+
+The deterministic contract is checked with sanitized metadata fixtures:
+
+```bash
+make validate-litellm-config-drift
+```
+
+The command runs the clean, intentional-override, and mismatch fixtures. An
+operator can run the same checker against a sanitized JSON snapshot of the
+LiteLLM model table:
+
+```bash
+python3 scripts/ops/validate_litellm_config_drift.py \
+  litellm-config.yaml /path/to/sanitized-litellm-models.json
+```
+
+The report contains only model names and setting paths. A nonzero result means
+promotion must stop: either restore the last known-good YAML/DB state or record
+the runtime mutation as an intentional, reviewed override before retrying.
+
 ---
 
 ## 2. Config Promotion Pipeline

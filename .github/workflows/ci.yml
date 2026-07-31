@@ -117,6 +117,8 @@ jobs:
         run: .venv-ci/bin/python -m pytest tests/test_production_secrets.py -v
       - name: admin endpoint exposure contract tests
         run: .venv-ci/bin/python -m pytest tests/test_admin_exposure.py -v
+      - name: LiteLLM YAML/Postgres drift contract tests
+        run: .venv-ci/bin/python -m pytest tests/test_litellm_config_drift.py -v
       - name: promote-k3s-images script tests
         run: |
           PYTHONPATH=. .venv-ci/bin/python -m pytest tests/test_promote_k3s_images.py tests/test_resolve_image_digest.py -v

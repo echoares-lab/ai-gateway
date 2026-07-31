@@ -1,0 +1,22 @@
+{
+  "models": [
+    {
+      "model_name": "gpt-test",
+      "litellm_params": {
+        "model": "openai/gpt-test",
+        "api_base": "http://runtime-override:8317/v1",
+        "api_key": "os.environ/CLIPROXY_API_KEY"
+      }
+    },
+    {
+      "model_name": "claude-test",
+      "litellm_params": {
+        "model": "anthropic/claude-test",
+        "api_base": "http://cliproxy:8317/v1"
+      }
+    }
+  ],
+  "intentional_overrides": [
+    {"model_name": "gpt-test", "path": "litellm_params.api_base"}
+  ]
+}
