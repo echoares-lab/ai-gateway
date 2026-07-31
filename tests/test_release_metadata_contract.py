@@ -167,5 +167,13 @@ def test_nightly_integration_provisions_runner_requirements_before_smoke() -> No
     path_index = next(index for index, step in enumerate(steps) if step.get("name") == "Add CI venv to PATH")
     path_run = steps[path_index]["run"]
     smoke_index = next(index for index, step in enumerate(steps) if "./dev-env.sh test 1" in step.get("run", ""))
+    smoke_run = steps[smoke_index]["run"]
+    full_run = steps[
+        next(index for index, step in enumerate(steps) if step.get("name") == "Run full integration matrix")
+    ]["run"]
     assert "$GITHUB_WORKSPACE/.venv-ci/bin" in path_run
     assert setup_index < path_index < smoke_index
+    assert './dev-env.sh test 1 -m "integration and smoke"' in smoke_run
+    assert "./dev-env.sh test 1 --" not in smoke_run
+    assert "./dev-env.sh test 1 -m integration" in full_run
+    assert "./dev-env.sh test 1 --" not in full_run
