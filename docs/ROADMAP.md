@@ -19,7 +19,8 @@ Last reviewed: 2026-07-31.
 
 Coordination epic [#504](https://github.com/echoares-lab/ai-gateway/issues/504)
 is the current approved reliability work. It is coordination-only and must not
-be claimed. Its children are the only active approved items in this roadmap.
+be claimed. Its children are active alongside the separate documentation track
+under #508 below.
 
 | Order | Atomic issue | Current state | Implementation evidence |
 |------:|--------------|---------------|-------------------------|
