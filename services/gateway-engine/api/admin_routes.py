@@ -71,6 +71,11 @@ from core.credential_inventory import (
     CredentialInventorySyncResponse,
     CredentialProbeResponse,
 )
+from core.credential_remediation import (
+    CredentialRemediationRequest,
+    CredentialRemediationResponse,
+    validate_remediation,
+)
 from core.model_reconciliation import ModelReconciliationService, ReconciliationTrigger
 from core.model_registry import (
     ModelProbeResponse,
@@ -444,6 +449,102 @@ async def admin_credential_probe(credential_id: str, request: Request):
             ],
         ).model_dump(mode="json"),
         status_code=501,
+    )
+
+
+@router.post(
+    "/admin/credentials/{credential_id}/remediate",
+    response_model=CredentialRemediationResponse,
+)
+async def admin_credential_remediate(credential_id: str, request: Request, body: CredentialRemediationRequest):
+    """Apply one audited, state-machine-validated operator remediation action."""
+    auth_error = _require_admin_key(request)
+    if auth_error is not None:
+        return auth_error
+    store = _credential_inventory_store()
+    if not store.enabled:
+        return CredentialRemediationResponse(
+            accepted=False,
+            credential_id=credential_id,
+            previous_status="UNKNOWN",
+            new_status="UNKNOWN",
+            changed=False,
+            audit={},
+            errors=[
+                _admin_error(
+                    "registry_unavailable",
+                    "credential registry is unavailable",
+                    "postgres:credential_inventory",
+                )
+            ],
+        )
+    loaded = store.list_credentials()
+    record = next((item for item in loaded.credentials if item.credential_id == credential_id), None)
+    if record is None:
+        return CredentialRemediationResponse(
+            accepted=False,
+            credential_id=credential_id,
+            previous_status="UNKNOWN",
+            new_status="UNKNOWN",
+            changed=False,
+            audit={},
+            errors=[
+                _admin_error(
+                    "credential_not_found",
+                    "credential was not found",
+                    "postgres:credential_inventory",
+                )
+            ],
+        )
+    try:
+        decision = validate_remediation(
+            action=body.action,
+            current_status=record.status,
+            actor=body.actor,
+            reason=body.reason,
+        )
+    except ValueError as exc:
+        return CredentialRemediationResponse(
+            accepted=False,
+            credential_id=credential_id,
+            previous_status=record.status,
+            new_status=record.status,
+            changed=False,
+            audit={},
+            errors=[
+                _admin_error(
+                    "invalid_remediation",
+                    str(exc),
+                    "gateway-engine:credential-remediation",
+                )
+            ],
+        )
+    if decision.changed:
+        try:
+            store.remediate_status(credential_id, decision.target_status)
+        except Exception as exc:
+            return CredentialRemediationResponse(
+                accepted=False,
+                credential_id=credential_id,
+                previous_status=record.status,
+                new_status=record.status,
+                changed=False,
+                audit=decision.audit,
+                errors=[
+                    _admin_error(
+                        "registry_write_error",
+                        f"{type(exc).__name__}: {exc}",
+                        "postgres:credential_inventory",
+                    )
+                ],
+            )
+    return CredentialRemediationResponse(
+        accepted=True,
+        credential_id=credential_id,
+        previous_status=record.status,
+        new_status=decision.target_status,
+        changed=decision.changed,
+        audit=decision.audit,
     )
 
 
