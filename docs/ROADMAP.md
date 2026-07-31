@@ -15,25 +15,25 @@ Last reviewed: 2026-07-31.
 
 ## Now
 
-### Catch-all proxy edge-case reliability
+### WebSocket policy parity
 
-Coordination epic [#537](https://github.com/echoares-lab/ai-gateway/issues/537)
-promotes C-AUD-10 after the exception-boundary controls were completed. The
-epic is coordination-only; claim only its ready atomic children.
+Coordination epic [#543](https://github.com/echoares-lab/ai-gateway/issues/543)
+promotes C-AUD-6 after catch-all proxy edge coverage was completed. The epic is
+coordination-only; claim only its ready atomic children.
 
 | Order | Atomic issue | Candidate | Current state | Scope |
 |------:|--------------|-----------|---------------|-------|
-| 1 | [#538 — add catch-all upstream failure matrix](https://github.com/echoares-lab/ai-gateway/issues/538) | C-AUD-10 | Ready; start here | Cover timeout, connection, gateway, and non-JSON upstream failures. |
-| 2 | [#539 — lock protocol edge-case response contracts](https://github.com/echoares-lab/ai-gateway/issues/539) | C-AUD-10 | Ready; follows #538 | Assert malformed-client and empty/error response status, shape, and headers. |
+| 1 | [#544 — define WebSocket parity contract matrix](https://github.com/echoares-lab/ai-gateway/issues/544) | C-AUD-6 | Ready; start here | Define flag combinations, allow/deny behavior, and stable denial contracts. |
+| 2 | [#545 — enforce WebSocket policy parity behind flags](https://github.com/echoares-lab/ai-gateway/issues/545) | C-AUD-6 | Ready; follows #544 | Wire policy evaluation while preserving the default bypass behavior. |
 
 Epic acceptance: each child must have a focused implementation PR, Gate A+B
 evidence, and no new real-provider dependency before the next epic is promoted.
 
 ## Next
 
-The next ranked candidates remain unapproved until #537 closes and their atomic
-children are created: C-AUD-6 (WebSocket policy parity), C-MDL-2
-(staging/config release channels), and C-CRED-1 (credential pool orchestration).
+The next ranked candidates remain unapproved until #543 closes and their atomic
+children are created: C-MDL-2 (staging/config release channels) and C-CRED-1
+(credential pool orchestration).
 This order prioritizes low-blast-radius safety and evidence before larger
 runtime changes.
 
@@ -57,6 +57,16 @@ and both children are closed and production-verified.
 |-----------------|--------------|-------------------------|
 | Broad-exception inventory and caller contracts | [#532](https://github.com/echoares-lab/ai-gateway/issues/532) | [PR #535](https://github.com/echoares-lab/ai-gateway/pull/535); heartbeat [30653165974](https://github.com/echoares-lab/ai-gateway/actions/runs/30653165974) |
 | Typed request-boundary exception handling | [#533](https://github.com/echoares-lab/ai-gateway/issues/533) | [PR #536](https://github.com/echoares-lab/ai-gateway/pull/536); heartbeat [30653519978](https://github.com/echoares-lab/ai-gateway/actions/runs/30653519978) |
+
+### Catch-all proxy edge-case reliability
+
+Coordination epic [#537](https://github.com/echoares-lab/ai-gateway/issues/537)
+and both children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Upstream failure matrix | [#538](https://github.com/echoares-lab/ai-gateway/issues/538) | [PR #541](https://github.com/echoares-lab/ai-gateway/pull/541); heartbeat [30654046452](https://github.com/echoares-lab/ai-gateway/actions/runs/30654046452) |
+| Protocol edge-case response contracts | [#539](https://github.com/echoares-lab/ai-gateway/issues/539) | [PR #542](https://github.com/echoares-lab/ai-gateway/pull/542); heartbeat [30654315255](https://github.com/echoares-lab/ai-gateway/actions/runs/30654315255) |
 
 ### Staging promotion and nightly integration reliability
 
