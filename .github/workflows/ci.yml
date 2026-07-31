@@ -127,6 +127,8 @@ jobs:
         run: .venv-ci/bin/python -m pytest tests/test_exception_narrowing.py -v
       - name: config promotion contract tests
         run: .venv-ci/bin/python -m pytest tests/test_config_promotion_contract.py -v
+      - name: config promotion gate tests
+        run: .venv-ci/bin/python -m pytest tests/test_config_promotion_gate.py -v
       - name: promote-k3s-images script tests
         run: |
           PYTHONPATH=. .venv-ci/bin/python -m pytest tests/test_promote_k3s_images.py tests/test_resolve_image_digest.py -v
