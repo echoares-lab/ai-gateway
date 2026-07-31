@@ -60,7 +60,6 @@ Everything below stays candidate until promoted.
 
 | ID | Summary | Effort | Risk | Need/fit | Deps / links | Status |
 |----|---------|--------|------|----------|--------------|--------|
-| C-CRED-3 | Operator remediation workflows (API/UI) for expired, rate-limited, or degraded credentials | M | M | med | Admin console + C-CRED-1 | candidate |
 | C-CRED-4 | Chargeback / budget attribution hooks from credential and tenant usage | L | H | unclear | [CHARGEBACK_ATTRIBUTION.md](./CHARGEBACK_ATTRIBUTION.md); tenancy decision | candidate |
 
 ---
