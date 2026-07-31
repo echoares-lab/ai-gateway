@@ -15,6 +15,39 @@ jobs:
     runs-on: arc-dind
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install pinned Docker Compose v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMPOSE_VERSION=v2.27.0
+          case "$(uname -m)" in
+            x86_64)
+              COMPOSE_ARCH=x86_64
+              COMPOSE_SHA256=f3ba3bf1e4ab18e96c2d36526a075a02a78fb5f8e80d3e3ca9c5bf256d81d0a0
+              ;;
+            aarch64|arm64)
+              COMPOSE_ARCH=aarch64
+              COMPOSE_SHA256=37a1c197fef5fda2a3df2d5ae0d7762ad2a00e30946ad06d4ad9fa8cef16d9e7
+              ;;
+            *)
+              echo "Unsupported Docker Compose architecture: $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+
+          COMPOSE_DIR="${HOME}/.docker/cli-plugins"
+          COMPOSE_BIN="${COMPOSE_DIR}/docker-compose"
+          mkdir -p "$COMPOSE_DIR"
+          COMPOSE_TMP="$(mktemp "${COMPOSE_DIR}/docker-compose.XXXXXX")"
+          trap 'rm -f "$COMPOSE_TMP"' EXIT
+          curl --fail --location --retry 3 --show-error \
+            "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${COMPOSE_ARCH}" \
+            --output "$COMPOSE_TMP"
+          printf '%s  %s\n' "$COMPOSE_SHA256" "$COMPOSE_TMP" | sha256sum --check --strict
+          chmod +x "$COMPOSE_TMP"
+          mv -f "$COMPOSE_TMP" "$COMPOSE_BIN"
+          docker compose version --short | grep -Fx "${COMPOSE_VERSION#v}"
+          echo "NIGHTLY_COMPOSE_READY=true" >> "$GITHUB_ENV"
       - name: Mask injected CI secrets
         run: |
           [ -n "${CLIPROXY_AUTH_TAR_B64:-}" ] && echo "::add-mask::$CLIPROXY_AUTH_TAR_B64" || true
@@ -56,5 +89,9 @@ jobs:
       - name: Stop services
         if: always()
         run: |
-          docker compose -f docker-compose.dev.yml -p aidev1 logs || true
-          ./dev-env.sh stop 1
+          if [[ "${NIGHTLY_COMPOSE_READY:-}" == "true" ]]; then
+            docker compose -f docker-compose.dev.yml -p aidev1 logs || true
+            ./dev-env.sh stop 1
+          else
+            echo "Docker Compose setup did not complete; skipping logs and teardown." >&2
+          fi
