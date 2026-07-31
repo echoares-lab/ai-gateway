@@ -15,13 +15,23 @@ Last reviewed: 2026-07-31.
 
 ## Now
 
-No active approved epics. The next candidates remain unapproved until a new
-coordination epic and atomic children are reviewed and promoted.
+### Policy hook extraction
+
+Coordination epic [#586](https://github.com/echoares-lab/ai-gateway/issues/586)
+(C-AUD-8) is approved and sequenced before deeper policy/routing work. Claim
+only the ready contract child; the implementation child must be opened after the
+contract is accepted and must serialize changes to the shared request-path
+hotspots.
+
+| Atomic scope | Issue | Status | Dependency |
+|--------------|-------|--------|------------|
+| Define policy hook extraction contract and regression matrix | [#587](https://github.com/echoares-lab/ai-gateway/issues/587) | Ready to claim | None |
 
 ## Next
 
-After C-RT-1, review C-RT-2 or C-RT-3 as the next candidate; do not claim either
-until promoted here with ready atomic issues.
+After C-AUD-8, review C-RT-3 (deeper policy engine) as the next candidate; do not
+claim it until promoted here with ready atomic issues and after the C-AUD-8
+request-path seam is merged. C-RT-4 remains the following candidate.
 
 ## Parked
 
