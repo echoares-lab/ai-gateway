@@ -619,7 +619,7 @@ async def test_rediscovery_unretires_model_and_can_advertise_after_healthy_probe
 
 
 @pytest.mark.asyncio
-async def test_rediscovery_unretires_model_and_can_advertise_after_transient_probe():
+async def test_rediscovery_unretires_model_but_preserves_transient_probe_safety():
     stable_absence = datetime.now(timezone.utc) - timedelta(days=31)
     existing = _model(
         model_id="gpt-5-6-sol",
@@ -644,8 +644,8 @@ async def test_rediscovery_unretires_model_and_can_advertise_after_transient_pro
     row = next(model for model in fakes.models if model.model_id == "gpt-5-6-sol")
     assert row.retired is False
     assert row.absent_since is None
-    assert row.advertised is True
-    assert row.enabled is True
+    assert row.advertised is False
+    assert row.enabled is False
 
 
 @pytest.mark.asyncio
@@ -745,7 +745,7 @@ async def test_discovered_add_is_probed_applied_reloaded_and_verified():
 
 
 @pytest.mark.asyncio
-async def test_rate_limited_new_discovery_is_advertised_and_applied():
+async def test_rate_limited_new_discovery_stays_unadvertised_and_unapplied():
     fakes = Fakes(discovered=[{"id": "AI-Gateway:gpt-5.6-sol"}])
 
     async def rate_limited_probe(model):
@@ -756,9 +756,9 @@ async def test_rate_limited_new_discovery_is_advertised_and_applied():
     fakes.probe = rate_limited_probe
     result = await fakes.service().run(ReconciliationTrigger.STARTUP)
     assert result.outcome == "success"
-    assert result.models[0].advertised is True
-    assert result.models[0].enabled is True
-    assert "model_name: gpt-5-6-sol" in fakes.applied[-1][0].content
+    assert result.models[0].advertised is False
+    assert result.models[0].enabled is False
+    assert "model_list: []" in fakes.applied[-1][0].content
 
 
 @pytest.mark.asyncio
@@ -876,7 +876,7 @@ async def test_pending_legacy_or_auth_failed_additions_remain_retryable(probe_st
 
 
 @pytest.mark.asyncio
-async def test_two_run_transient_addition_advertises_immediately_then_probes_healthy():
+async def test_two_run_transient_addition_waits_for_healthy_probe():
     fakes = Fakes(discovered=[{"id": "gpt-5.6-sol"}])
     fakes.catalog = {"gpt-5-6-sol"}
     healthy = False
@@ -891,18 +891,19 @@ async def test_two_run_transient_addition_advertises_immediately_then_probes_hea
 
     first = await service.run(ReconciliationTrigger.SCHEDULED)
     assert first.outcome == "success"
-    assert fakes.models[0].enabled is True
-    assert fakes.models[0].advertised is True
+    assert fakes.models[0].enabled is False
+    assert fakes.models[0].advertised is False
     rendered = next(resource for resource in fakes.applied[-1] if resource.name == "litellm-config.yaml")
-    assert "model_name: gpt-5-6-sol" in rendered.content
+    assert "model_list: []" in rendered.content
 
     healthy = True
     second = await service.run(ReconciliationTrigger.SCHEDULED)
 
     assert second.outcome == "success"
-    assert second.verification == "not_required"
+    assert second.verification == "verified"
     assert fakes.models[0].enabled is True
-    assert fakes.reloads == 1
+    assert fakes.models[0].advertised is True
+    assert fakes.reloads == 2
 
 
 @pytest.mark.asyncio
