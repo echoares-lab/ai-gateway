@@ -77,6 +77,7 @@ from api.ws_router import (
     _validate_ws_auth_token,  # noqa: F401 - re-exported for existing tests
     _validate_ws_auth_token_async,  # noqa: F401 - re-exported for existing tests
     _ws_log_safe_mapping,  # noqa: F401 - re-exported for existing tests
+    _ws_policy_denial_reason,  # noqa: F401 - re-exported for existing tests
     codex_ws_policy_bypass,
     create_ws_router,
 )

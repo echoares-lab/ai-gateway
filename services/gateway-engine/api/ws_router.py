@@ -42,6 +42,14 @@ def codex_ws_policy_bypass() -> bool:
     return True
 
 
+def _ws_policy_denial_reason(decision: dict[str, Any] | None) -> str:
+    """Return a bounded, client-safe close reason for a denied WS policy decision."""
+    if not decision or decision.get("gate") != "deny":
+        return ""
+    reason = str(decision.get("deny_reason") or "Policy denied")
+    return reason[:123]
+
+
 def _codex_ws_upstream_headers(
     ws_headers: dict[str, str],
     routing_decision: dict | None = None,
@@ -177,6 +185,14 @@ def create_ws_router(deps: WsRouterDeps) -> APIRouter:
                 "Codex WebSocket in-process policy evaluate completed (gate=%s)",
                 routing_decision.get("gate") if routing_decision else "none",
             )
+            denial_reason = _ws_policy_denial_reason(routing_decision)
+            if denial_reason:
+                log.warning("Codex WebSocket policy denied: %s", denial_reason)
+                try:
+                    await ws.close(code=1008, reason=denial_reason)
+                except Exception:
+                    pass
+                return
 
         headers = _codex_ws_upstream_headers(dict(ws.headers), routing_decision)
 
