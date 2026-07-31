@@ -15,24 +15,13 @@ Last reviewed: 2026-07-31.
 
 ## Now
 
-### Adaptive routing runtime
-
-Coordination epic [#579](https://github.com/echoares-lab/ai-gateway/issues/579)
-promotes C-RT-1 after model discovery is production-verified. The epic is
-coordination-only; claim only its ready atomic children in order.
-
-| Order | Atomic issue | Candidate | Current state | Scope |
-|------:|--------------|-----------|---------------|-------|
-| 1 | [#580 — define adaptive routing signal and fallback contract](https://github.com/echoares-lab/ai-gateway/issues/580) | C-RT-1 | Ready; start here | Define bounded scoring, cooldown, capability hard filters, and safe missing-signal behavior. |
-| 2 | [#581 — implement adaptive signal capture and fallback integration](https://github.com/echoares-lab/ai-gateway/issues/581) | C-RT-1 | Blocked by #580 | Add passive provider/model signals and integrate adaptive ordering with LiteLLM-native controls. |
-
-Epic acceptance: each child must have a focused implementation PR, Gate A+B
-evidence, and high-risk routing changes must include Gate C evidence before
-promotion.
+No active approved epics. The next candidates remain unapproved until a new
+coordination epic and atomic children are reviewed and promoted.
 
 ## Next
 
-After C-RT-1, promote only after both routing children are production-verified.
+After C-RT-1, review C-RT-2 or C-RT-3 as the next candidate; do not claim either
+until promoted here with ready atomic issues.
 
 ## Parked
 
@@ -40,6 +29,16 @@ No approved parked work. See [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 for the unapproved inventory.
 
 ## Completed
+
+### Adaptive routing runtime
+
+Coordination epic [#579](https://github.com/echoares-lab/ai-gateway/issues/579)
+and both children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Adaptive routing signal and fallback contract | [#580](https://github.com/echoares-lab/ai-gateway/issues/580) | [PR #583](https://github.com/echoares-lab/ai-gateway/pull/583); heartbeat [30666469221](https://github.com/echoares-lab/ai-gateway/actions/runs/30666469221) |
+| Passive signal capture and adaptive fallback integration | [#581](https://github.com/echoares-lab/ai-gateway/issues/581) | [PR #584](https://github.com/echoares-lab/ai-gateway/pull/584); heartbeat [30666813132](https://github.com/echoares-lab/ai-gateway/actions/runs/30666813132) |
 
 ### Model discovery orchestration
 
