@@ -55,7 +55,7 @@ async def claude_proxy(request: Request):
     raw = await request.body()
     try:
         body = json.loads(raw)
-    except Exception:
+    except (json.JSONDecodeError, TypeError, ValueError):
         return Response(
             content=json.dumps({"error": {"type": "invalid_request_error", "message": "Invalid JSON"}}),
             status_code=400,

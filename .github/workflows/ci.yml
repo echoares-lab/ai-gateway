@@ -123,6 +123,8 @@ jobs:
         run: .venv-ci/bin/python -m pytest tests/test_dev_env_slot_preflight.py -v
       - name: exception boundary inventory contract tests
         run: .venv-ci/bin/python -m pytest tests/test_exception_inventory.py -v
+      - name: exception narrowing regression tests
+        run: .venv-ci/bin/python -m pytest tests/test_exception_narrowing.py -v
       - name: promote-k3s-images script tests
         run: |
           PYTHONPATH=. .venv-ci/bin/python -m pytest tests/test_promote_k3s_images.py tests/test_resolve_image_digest.py -v
