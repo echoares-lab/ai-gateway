@@ -95,6 +95,50 @@ class TestCodexWsPolicyBypass(unittest.TestCase):
                 os.environ["POLICY_ENGINE_WS_EVALUATE"] = str(ws_enabled).lower()
                 assert t.codex_ws_policy_bypass() is expected_bypass
 
+    def test_denial_reason_is_bounded_and_defaults_safely(self):
+        assert t._ws_policy_denial_reason({"gate": "allow"}) == ""
+        assert t._ws_policy_denial_reason({"gate": "deny"}) == "Policy denied"
+        assert len(t._ws_policy_denial_reason({"gate": "deny", "deny_reason": "x" * 200})) == 123
+
+
+class TestCodexWsPolicyEnforcement(unittest.IsolatedAsyncioTestCase):
+    async def test_denied_policy_closes_before_upstream_connect(self):
+        class FakeWebSocket:
+            headers = {"authorization": "Bearer master-secret"}
+            query_params = {}
+
+            def __init__(self):
+                self.accept = AsyncMock()
+                self.close = AsyncMock()
+
+        ws = FakeWebSocket()
+        evaluate = AsyncMock(return_value={"gate": "deny", "deny_reason": "workspace blocked"})
+        deps = t.WsRouterDeps(
+            admin_redact=lambda value: ("[redacted]", True),
+            build_routing_context=lambda _ws, token: {"requested_model": "codex", "token": token},
+            evaluate_policy_engine=evaluate,
+            upstream_timeout=3.0,
+        )
+        router = t.create_ws_router(deps)
+        endpoint = router.routes[0].endpoint
+
+        with patch.dict(
+            os.environ,
+            {
+                "LITELLM_MASTER_KEY": "master-secret",
+                "POLICY_ENGINE_ENABLED": "true",
+                "POLICY_ENGINE_WS_EVALUATE": "true",
+            },
+            clear=False,
+        ):
+            with patch("api.ws_router.websockets.connect") as connect:
+                await endpoint(ws)
+
+        ws.accept.assert_awaited_once()
+        evaluate.assert_awaited_once()
+        ws.close.assert_awaited_once_with(code=1008, reason="workspace blocked")
+        connect.assert_not_called()
+
 
 class TestCodexWsUpstreamHeaders(unittest.TestCase):
     def test_strips_handshake_headers_and_sets_cliproxy_auth(self):
