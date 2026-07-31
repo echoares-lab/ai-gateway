@@ -862,6 +862,16 @@ Run `./cliproxy-setup.sh models` for the live list. Typical roster:
 
 ## Troubleshooting
 
+### Exception-boundary inventory or regression
+
+Run `make validate-exception-inventory` before changing a broad exception
+handler. It reports source paths and line numbers only. If a new handler is
+unclassified, add its caller contract and risk to
+`docs/EXCEPTION_BOUNDARY_CONTRACT.yaml` in the same PR. If a narrowed handler
+breaks a response contract, roll back that PR/image to the last green commit,
+restore the prior typed boundary, and rerun Gate A+B before promotion; do not
+restore broad catches merely to suppress an alert.
+
 ### CLIProxyAPI not reachable
 ```bash
 docker compose ps cliproxy
