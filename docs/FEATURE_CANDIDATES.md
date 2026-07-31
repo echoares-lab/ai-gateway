@@ -108,8 +108,8 @@ Historical backlog:
 
 **Done / superseded (do not reopen):** D-5 (policy lives in
 `services/gateway-engine/core/policy/`), D-8 (Gate C opt-in documented), D-13
-(test naming sweep), security-hardening epics #305–#323, Stability Foundation
-[#377](https://github.com/echoares-lab/ai-gateway/issues/377).
+(test naming sweep), security-hardening epics #305–#323, and
+[Stability Foundation PR #377](https://github.com/echoares-lab/ai-gateway/pull/377).
 
 | ID | Summary | Effort | Risk | Need/fit | Audit ref | Status |
 |----|---------|--------|------|----------|-----------|--------|

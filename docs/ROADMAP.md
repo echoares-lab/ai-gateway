@@ -34,6 +34,16 @@ Acceptance invariants:
   starting or cleaning up its isolated stack; and
 - neither workflow may mask real startup, smoke, or teardown failures.
 
+### Reconcile roadmap and candidate documentation
+
+Coordination epic [#508](https://github.com/echoares-lab/ai-gateway/issues/508)
+keeps roadmap and candidate records aligned with live GitHub state. It is
+coordination-only and must not be claimed.
+
+| Atomic issue | Current state | Scope |
+|--------------|---------------|-------|
+| [#509 — reconcile the roadmap and candidate inventory](https://github.com/echoares-lab/ai-gateway/issues/509) | Claimed; do not duplicate the existing work | Correct active/closed state and issue-versus-PR references, then validate links and documentation syntax |
+
 There are currently no approved, unassigned atomic issues available to claim.
 
 ## Next
@@ -57,6 +67,7 @@ atomic issue to claim.
 | Completed scope | Closed tracking issues | Implementation evidence |
 |-----------------|------------------------|-------------------------|
 | Release identity and versioning | [#379](https://github.com/echoares-lab/ai-gateway/issues/379), [#380](https://github.com/echoares-lab/ai-gateway/issues/380) | [PR #383](https://github.com/echoares-lab/ai-gateway/pull/383) |
+| OAuth quota status reporting | [epic #345](https://github.com/echoares-lab/ai-gateway/issues/345), [#347](https://github.com/echoares-lab/ai-gateway/issues/347), [#348](https://github.com/echoares-lab/ai-gateway/issues/348) | [PR #349](https://github.com/echoares-lab/ai-gateway/pull/349), [PR #373](https://github.com/echoares-lab/ai-gateway/pull/373) |
 | Gemini CLI retirement and quota reliability | [epic #386](https://github.com/echoares-lab/ai-gateway/issues/386), [#387](https://github.com/echoares-lab/ai-gateway/issues/387), [#388](https://github.com/echoares-lab/ai-gateway/issues/388) | [PR #391](https://github.com/echoares-lab/ai-gateway/pull/391), [PR #394](https://github.com/echoares-lab/ai-gateway/pull/394) |
 | Staging deep-smoke promote gate | [epic #396](https://github.com/echoares-lab/ai-gateway/issues/396), [#397–#403](https://github.com/echoares-lab/ai-gateway/issues/397), [#410](https://github.com/echoares-lab/ai-gateway/issues/410) | [PR #404](https://github.com/echoares-lab/ai-gateway/pull/404), [PR #405](https://github.com/echoares-lab/ai-gateway/pull/405), [PR #407](https://github.com/echoares-lab/ai-gateway/pull/407), [PR #409](https://github.com/echoares-lab/ai-gateway/pull/409), [PR #411](https://github.com/echoares-lab/ai-gateway/pull/411), [PR #412](https://github.com/echoares-lab/ai-gateway/pull/412) |
 
@@ -84,7 +95,7 @@ not replace the advisory production-health heartbeat.
 
 ### Earlier completed themes
 
-- [Stability Foundation #377](https://github.com/echoares-lab/ai-gateway/issues/377)
+- [Stability Foundation PR #377](https://github.com/echoares-lab/ai-gateway/pull/377)
   completed the documented CI/config/request-path hardening wave.
 - Production cutover and durability work (observability, k3s cutover, Gate D,
   storage, backup, and image-promotion tracks) is closed; development stacks
