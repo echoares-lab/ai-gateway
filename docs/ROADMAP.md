@@ -15,28 +15,26 @@ Last reviewed: 2026-07-31.
 
 ## Now
 
-### Credential pool orchestration
+### Credential balancing orchestration
 
-Coordination epic [#555](https://github.com/echoares-lab/ai-gateway/issues/555)
-promotes C-CRED-1 after staging/config release controls were completed. The
-epic is coordination-only; claim only its ready atomic children.
+Coordination epic [#563](https://github.com/echoares-lab/ai-gateway/issues/563)
+promotes C-CRED-2 after credential health orchestration completed. The epic is
+coordination-only; claim only its ready atomic children.
 
 | Order | Atomic issue | Candidate | Current state | Scope |
 |------:|--------------|-----------|---------------|-------|
-| 1 | [#556 — define pool health state machine contract](https://github.com/echoares-lab/ai-gateway/issues/556) | C-CRED-1 | Ready; start here | Define legal credential transitions, cooldowns, and redacted alerts. |
-| 2 | [#557 — reconcile pool health and emit alerts](https://github.com/echoares-lab/ai-gateway/issues/557) | C-CRED-1 | Ready; follows #556 | Apply idempotent quarantine/recovery transitions without resurrecting disabled credentials. |
+| 1 | [#561 — define deterministic multi-account balancing contract](https://github.com/echoares-lab/ai-gateway/issues/561) | C-CRED-2 | Ready; start here | Define health-aware selection, stable tie-breaking, and no-secret audit fields. |
+| 2 | [#562 — integrate safe credential remapping with CLIProxy](https://github.com/echoares-lab/ai-gateway/issues/562) | C-CRED-2 | Blocked by #561 | Apply balancing to routing with disabled-state preservation and fail-open management behavior. |
 
 Epic acceptance: each child must have a focused implementation PR, Gate A+B
 evidence, and no new real-provider dependency before the next epic is promoted.
 
 ## Next
 
-The next ranked candidate remains unapproved until #555 closes and its atomic
-children are created: C-CRED-2 (multi-account credential balancing), followed
-by C-CRED-3 (operator remediation workflows), C-MDL-1 (full discovery
-orchestration), and C-RT-1 (adaptive routing runtime).
-This order prioritizes low-blast-radius safety and evidence before larger
-runtime changes.
+After C-CRED-2, promote C-CRED-3 (operator remediation workflows), then
+C-MDL-1 (full discovery orchestration), and finally C-RT-1 (adaptive routing
+runtime). This order keeps operator safety and deterministic credential
+selection ahead of larger runtime changes.
 
 ## Parked
 
@@ -44,6 +42,16 @@ No approved parked work. See [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 for the unapproved inventory.
 
 ## Completed
+
+### Credential pool health orchestration
+
+Coordination epic [#555](https://github.com/echoares-lab/ai-gateway/issues/555)
+and both children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Pool health state machine contract | [#556](https://github.com/echoares-lab/ai-gateway/issues/556) | [PR #559](https://github.com/echoares-lab/ai-gateway/pull/559); heartbeat [30662836816](https://github.com/echoares-lab/ai-gateway/actions/runs/30662836816) |
+| Idempotent reconciliation and alerts | [#557](https://github.com/echoares-lab/ai-gateway/issues/557) | [PR #560](https://github.com/echoares-lab/ai-gateway/pull/560); heartbeat [30663131569](https://github.com/echoares-lab/ai-gateway/actions/runs/30663131569) |
 
 The following work is closed. Issue links are tracking/coordination records;
 pull-request links are implementation evidence. A pull request is never an
