@@ -1,8 +1,12 @@
 # Plan — Cross-Model Tool-Use & Protocol Benchmark
 
-> **Epic ID:** #420 (Cross-Model Tool-Use & Protocol Benchmark)
-> **Status:** Active
-> **Target Release:** 2026-07 Wave
+> **Status:** Delivered historical plan (archived 2026-07-31)
+> **Implementation evidence:** [PR #440](https://github.com/echoares-lab/ai-gateway/pull/440)
+> (model forcing and benchmark harness) and
+> [PR #484](https://github.com/echoares-lab/ai-gateway/pull/484)
+> (protocol-contract and benchmark integration coverage).
+> **Reference correction:** #420 is an unrelated merged CLIProxy pull request,
+> not a benchmark epic or atomic issue.
 
 ---
 
@@ -47,9 +51,13 @@
 
 ---
 
-## 3. Atomic Child Issues
+## 3. Delivered implementation areas
 
-### Issue #421 — Model-Forcing Escape Hatch
+The former #421–#423 labels were pull-request numbers for unrelated CLIProxy
+work, not benchmark issues. The completed work is recorded by the following
+implementation evidence instead.
+
+### Model-forcing escape hatch
 - Implement `_maybe_force_model(request, body)` in `services/gateway-engine/api/proxy_routing.py`.
 - Call this helper in all 4 main proxy endpoints:
   - `proxy` (catch-all) in `api/proxy_catchall.py`
@@ -57,25 +65,27 @@
   - `responses_proxy` in `api/proxy_responses.py`
   - `gemini_proxy` in `api/proxy_gemini.py`
 - Add unit test `test_x_force_model_header` in `services/gateway-engine/test_gateway_engine_client_compatibility.py`.
-- **Status**: Completed.
+- **Delivered in:** [PR #440](https://github.com/echoares-lab/ai-gateway/pull/440).
 
-### Issue #422 — Protocol-Level Contract Tests
+### Protocol-level contract tests
 - Add a new integration test file `tests/integration/test_protocol_fidelity.py` covering:
   - Cursor User-Agent and `x-gateway-client` header injection.
   - Cursor cache-key isolation by API key hash.
   - Claude system prompt format conversions (string vs content blocks).
   - Claude streaming tool-use response mappings (delta format conversions).
-- **Status**: Pending.
+- **Delivered in:** [PR #440](https://github.com/echoares-lab/ai-gateway/pull/440)
+  and [PR #484](https://github.com/echoares-lab/ai-gateway/pull/484).
 
-### Issue #423 — Cross-Model Tool-Use Eval Harness
+### Cross-model tool-use evaluation harness
 - Build mock upstream provider in `scripts/eval/mock_upstream.py` returning realistic tool-use events for Anthropic, OpenAI, and Gemini.
 - Build benchmark harness in `scripts/eval/tool_use_bench.py` defining tasks (`single-edit`, `multi-edit-sequence`, etc.) and task verification checkers.
 - Wire mock upstream and harness together so a single script runs the full matrix.
-- **Status**: Pending.
+- **Delivered in:** [PR #440](https://github.com/echoares-lab/ai-gateway/pull/440)
+  and [PR #484](https://github.com/echoares-lab/ai-gateway/pull/484).
 
 ---
 
-## 4. Test Plan
+## 4. Historical test plan
 
 ### Gate A (Unit & Lint)
 * Run Python linting: `make lint`
