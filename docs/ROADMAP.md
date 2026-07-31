@@ -15,24 +15,24 @@ Last reviewed: 2026-07-31.
 
 ## Now
 
-### Credential balancing orchestration
+### Credential remediation orchestration
 
-Coordination epic [#563](https://github.com/echoares-lab/ai-gateway/issues/563)
-promotes C-CRED-2 after credential health orchestration completed. The epic is
+Coordination epic [#567](https://github.com/echoares-lab/ai-gateway/issues/567)
+promotes C-CRED-3 after credential balancing completed. The epic is
 coordination-only; claim only its ready atomic children.
 
 | Order | Atomic issue | Candidate | Current state | Scope |
 |------:|--------------|-----------|---------------|-------|
-| 1 | [#561 — define deterministic multi-account balancing contract](https://github.com/echoares-lab/ai-gateway/issues/561) | C-CRED-2 | Ready; start here | Define health-aware selection, stable tie-breaking, and no-secret audit fields. |
-| 2 | [#562 — integrate safe credential remapping with CLIProxy](https://github.com/echoares-lab/ai-gateway/issues/562) | C-CRED-2 | Blocked by #561 | Apply balancing to routing with disabled-state preservation and fail-open management behavior. |
+| 1 | [#568 — define remediation API safety contract](https://github.com/echoares-lab/ai-gateway/issues/568) | C-CRED-3 | Ready; start here | Define authorized, idempotent actions, audit fields, and redaction. |
+| 2 | [#569 — add operator remediation workflow](https://github.com/echoares-lab/ai-gateway/issues/569) | C-CRED-3 | Blocked by #568 | Implement state-machine-enforced admin remediation for expired, rate-limited, and degraded credentials. |
 
 Epic acceptance: each child must have a focused implementation PR, Gate A+B
 evidence, and no new real-provider dependency before the next epic is promoted.
 
 ## Next
 
-After C-CRED-2, promote C-CRED-3 (operator remediation workflows), then
-C-MDL-1 (full discovery orchestration), and finally C-RT-1 (adaptive routing
+After C-CRED-3, promote C-MDL-1 (full discovery orchestration), then
+C-RT-1 (adaptive routing
 runtime). This order keeps operator safety and deterministic credential
 selection ahead of larger runtime changes.
 
@@ -42,6 +42,16 @@ No approved parked work. See [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 for the unapproved inventory.
 
 ## Completed
+
+### Multi-account credential balancing
+
+Coordination epic [#563](https://github.com/echoares-lab/ai-gateway/issues/563)
+and both children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Deterministic balancing contract | [#561](https://github.com/echoares-lab/ai-gateway/issues/561) | [PR #565](https://github.com/echoares-lab/ai-gateway/pull/565); heartbeat [30663637706](https://github.com/echoares-lab/ai-gateway/actions/runs/30663637706) |
+| Safe credential remapping | [#562](https://github.com/echoares-lab/ai-gateway/issues/562) | [PR #566](https://github.com/echoares-lab/ai-gateway/pull/566); heartbeat [30663947138](https://github.com/echoares-lab/ai-gateway/actions/runs/30663947138) |
 
 ### Credential pool health orchestration
 
