@@ -1,0 +1,14 @@
+model_list:
+  - model_name: gpt-test
+    litellm_params:
+      model: openai/gpt-test
+      api_base: http://cliproxy:8317/v1
+      api_key: os.environ/CLIPROXY_API_KEY
+  - model_name: claude-test
+    litellm_params:
+      model: anthropic/claude-test
+      api_base: http://cliproxy:8317/v1
+general_settings:
+  store_model_in_db: true
+router_settings:
+  routing_strategy: latency-based-routing
