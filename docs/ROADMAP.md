@@ -15,9 +15,21 @@ Last reviewed: 2026-07-31.
 
 ## Now
 
-No approved, unassigned atomic issues are currently available to claim. The
-latest approved reliability and documentation waves are recorded under
-Completed below.
+### Production safety and configuration drift controls
+
+Coordination epic [#517](https://github.com/echoares-lab/ai-gateway/issues/517)
+promotes the highest-ranked operational-safety candidates in dependency order.
+The epic is coordination-only; claim only its ready atomic children.
+
+| Order | Atomic issue | Candidate | Current state | Scope |
+|------:|--------------|-----------|---------------|-------|
+| 1 | [#518 — require explicit production Langfuse/Redis secrets](https://github.com/echoares-lab/ai-gateway/issues/518) | C-AUD-1 | Ready; start here | Inventory required secrets, validate synthetic complete/missing/placeholder fixtures, and document remediation. |
+| 2 | [#519 — define and validate admin endpoint exposure](https://github.com/echoares-lab/ai-gateway/issues/519) | C-AUD-2 | Ready; depends on #518 | Inventory routes, assign exposure/auth classes, and add a check for unclassified admin/diagnostic routes. |
+| 3 | [#520 — detect LiteLLM/Postgres/YAML drift](https://github.com/echoares-lab/ai-gateway/issues/520) | C-AUD-3 | Ready; depends on #518/#519 | Define precedence and make clean/drift fixtures produce deterministic pass/fail output. |
+
+Epic acceptance: each child must have a focused implementation PR, Gate A+B
+evidence, sanitized fixtures or checks, and a documented rollback/remediation
+path before the next child is promoted.
 
 ## Next
 
@@ -38,9 +50,8 @@ atomic issue to claim.
 ### Staging promotion and nightly integration reliability
 
 The reliability objective in coordination epic
-[#504](https://github.com/echoares-lab/ai-gateway/issues/504) is complete.
-The parent issue remains open only for final coordination closeout; its children
-are closed and must not be reclaimed.
+[#504](https://github.com/echoares-lab/ai-gateway/issues/504) is complete and
+closed. Its children are closed and must not be reclaimed.
 
 | Completed scope | Closed tracking issue | Implementation evidence |
 |-----------------|-----------------------|-------------------------|
