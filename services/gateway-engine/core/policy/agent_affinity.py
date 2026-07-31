@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from core.credential_balancing import CredentialPoolMember, select_credential
 from core.policy.schemas import RoutingContext
 
 if TYPE_CHECKING:
@@ -36,6 +37,29 @@ def _bound_credential_in_cooldown(credential_id: str, context: RoutingContext) -
 
 def _pick_credential(context: RoutingContext, deprioritized: list[str]) -> str | None:
     meta = context.metadata
+    raw_pool = meta.get("credential_pool")
+    if isinstance(raw_pool, list):
+        pool: list[CredentialPoolMember] = []
+        for item in raw_pool:
+            if not isinstance(item, dict) or not item.get("credential_id"):
+                continue
+            try:
+                pool.append(
+                    CredentialPoolMember(
+                        credential_id=str(item["credential_id"]),
+                        status=str(item.get("status", "HEALTHY")).upper(),
+                        weight=int(item.get("weight", 1)),
+                    )
+                )
+            except (TypeError, ValueError):
+                continue
+        if pool:
+            request_key = str(
+                meta.get("conversation_fingerprint") or context.session_id or context.agent_id or "default"
+            )
+            selected = select_credential(pool, request_key=request_key, deprioritized=set(deprioritized))
+            if selected:
+                return selected
     candidates: list[str] = []
     if cid := meta.get("credential_id"):
         candidates.append(str(cid))
