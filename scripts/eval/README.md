@@ -5,8 +5,9 @@ file-editing tools (and, protocol-level, other client wire formats) hold up
 when the AI Gateway routes a session to a non-native backend model.
 
 Design background: [`docs/tool-use-eval.md`](../../docs/tool-use-eval.md).
-Findings feed back into [`docs/FEATURE_CANDIDATES.md`](../../docs/FEATURE_CANDIDATES.md)
-(`C-RT-5`, `C-RT-6`, `C-RT-7`).
+Any follow-on work belongs in the current unapproved
+[`docs/FEATURE_CANDIDATES.md`](../../docs/FEATURE_CANDIDATES.md) inventory
+before it can be promoted and claimed.
 
 ---
 
@@ -98,9 +99,9 @@ it up automatically.
 
 ## 2. Protocol-level checks (`protocol_checks.py`)
 
-**What it tests:** gateway-level translation correctness for the two gaps
-identified in `docs/FEATURE_CANDIDATES.md` `C-RT-6` — independent of any
-client CLI, by hitting the gateway's HTTP endpoints directly:
+**What it tests:** gateway-level translation correctness for two specific
+protocol behaviors, independently of any client CLI, by hitting the gateway's
+HTTP endpoints directly:
 
 1. **Reasoning-token accounting** — confirms whether `output_tokens_details.reasoning_tokens`
    (Responses API) / equivalent usage fields are ever nonzero for a model
@@ -167,10 +168,11 @@ handles that part, same as the automated harness).
   rigor — treat results as "worth investigating further" or "no signal
   found," not confidence intervals.
 - The harness only covers the `Edit`/`MultiEdit`/`Write` tool-use path and
-  the two protocol gaps above. It does not cover MCP tool visibility,
-  context-window truncation (`C-RT-7`), or Codex WebSocket translation
-  (`C-RT-5`) — those need separate harnesses if/when those candidates are
-  promoted.
+  the two protocol behaviors above. It does not provide a dedicated test for
+  the context-window implementation delivered in
+  [PR #487](https://github.com/echoares-lab/ai-gateway/pull/487), MCP tool
+  visibility, or the still-unapproved Codex WebSocket translation candidate
+  (`C-RT-5`).
 - Every run costs real CLIProxy OAuth quota against whichever provider is
   targeted. Don't run large `--repeats`/`--tasks`/`--models` combinations
   without checking quota headroom first (`./cliproxy-setup.sh quota-summary`).

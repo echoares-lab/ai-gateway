@@ -1,9 +1,11 @@
 # Claude Code Tool-Use Fidelity Benchmark
 
-> **Promoted Document.** Part of approved Epic #420.
-> Provides runtime model-forcing headers in dev/test stacks and the evaluation harness.
-> Feeds the model-capability gap identified while reviewing
-> [FEATURE_CANDIDATES.md `C-RT-6`](./FEATURE_CANDIDATES.md) — this benchmark measures edit-tool apply success rate per model.
+> **Delivered benchmark reference.** The model-forcing and initial harness work
+> merged in [PR #440](https://github.com/echoares-lab/ai-gateway/pull/440), with
+> protocol/benchmark integration completed in
+> [PR #484](https://github.com/echoares-lab/ai-gateway/pull/484). There is no
+> benchmark epic: unrelated [PR #420](https://github.com/echoares-lab/ai-gateway/pull/420)
+> belongs to the completed CLIProxy work.
 
 ---
 
@@ -22,8 +24,8 @@ task at an acceptable rate**.
 
 Today this is a guess. Nobody has measured Edit-tool apply success, `old_string`
 exact-match failure modes, or multi-edit sequencing accuracy per backend model.
-Any policy decision about which models are safe fallback targets for Claude
-Code sessions (see `C-RT-6`/`C-RT-7` sequencing note) is currently unfounded.
+Any future policy decision about safe fallback targets for Claude Code sessions
+needs benchmark evidence and a newly promoted candidate with atomic issues.
 
 ---
 
@@ -36,10 +38,9 @@ routed through the gateway, so that:
 - Cross-provider fallback policy for Claude Code sessions can be based on
   measured apply-success rates, not assumption.
 - `agent_compatibility_analysis.md`'s "Claude Code XML edit tags" claim is
-  either confirmed, corrected, or retired from the feature-candidates record.
-- Findings feed back into `C-RT-6`/`C-RT-7` scope (e.g., if only same-family
-  fallback is viable, C-RT-7's context-truncation gate should also gate on
-  tool-use family, not just context window).
+  either confirmed, corrected, or retired from future planning.
+- Findings can shape a future fallback-policy candidate (for example, a
+  same-family tool-use requirement in addition to context-window limits).
 
 Non-goals:
 
@@ -166,16 +167,14 @@ specific models diverge, not to produce one number.
 
 ---
 
-## 7. Implementation steps
+## 7. Re-run and extension steps
 
-1. Resolve the model-forcing mechanism (§4) against the current state of
-   `proxy_routing.py` — spend no more than an hour confirming which option
-   applies before building anything else.
-2. Build the harness script (`scripts/eval/tool_use_bench.py` or similar):
-   seeds a scratch repo per task, invokes Claude Code non-interactively
-   (`claude -p "<task prompt>"` or equivalent headless mode) against the dev
-   slot with the model pinned, captures the transcript/tool calls, runs the
-   task's checker, records the metrics from §6.
+1. Confirm the model-forcing behavior (§4) against the current
+   `proxy_routing.py` before relying on a new benchmark result.
+2. Reuse or extend `scripts/eval/tool_use_bench.py`: seed a scratch repo per
+   task, invoke Claude Code non-interactively against a dev slot with the
+   model pinned, capture the transcript/tool calls, run the task checker, and
+   record the metrics from §6.
 3. Wire it to `./dev-env.sh start 1` / `stop 1` for setup/teardown so a full
    run is a single invocable script, not a manual multi-step process.
 4. Run the full (model × task × N repeats) matrix once end-to-end on the
@@ -183,10 +182,8 @@ specific models diverge, not to produce one number.
    isn't the source of failures, before drawing conclusions about other
    families.
 5. Run the cross-family models, produce the scorecard.
-6. Feed results back into `FEATURE_CANDIDATES.md`: correct or confirm the
-   `C-RT-6` caveat language, and inform whether `C-RT-7`'s fallback gating
-   needs a tool-use-family check in addition to context-window/reasoning
-   capability checks.
+6. Record any new scope as a candidate first; do not reopen delivered
+   benchmark, reasoning, or context-window work in place.
 
 ---
 
@@ -207,8 +204,8 @@ specific models diverge, not to produce one number.
 
 ## Related docs
 
-- [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) — `C-RT-6`/`C-RT-7` this
-  benchmark's findings feed back into.
+- [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) — current unapproved
+  inventory for any follow-on work.
 - [CLIENT_COMPATIBILITY.md](./CLIENT_COMPATIBILITY.md) — supported client
   matrix and profile definitions.
 - `CLAUDE.md` — dev-stack workflow (`dev-env.sh`) this design builds on.
