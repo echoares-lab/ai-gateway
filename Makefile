@@ -1,4 +1,4 @@
-.PHONY: lint test-unit test-mock test-fast test-e2e test-scripts validate-policy-profiles validate-production-secrets validate-admin-exposure validate-litellm-config-drift validate-dev-env-slots validate-exception-inventory validate-config-promotion test-sync-models-probe test-compose-config test-dev-env drift-cheap clean-db
+.PHONY: lint test-unit test-mock test-fast test-e2e test-scripts validate-policy-profiles validate-production-secrets validate-admin-exposure validate-litellm-config-drift validate-dev-env-slots validate-exception-inventory validate-config-promotion promote-config-artifact test-sync-models-probe test-compose-config test-dev-env drift-cheap clean-db
 
 CONTAINER_PREFIX ?= PROD-
 
@@ -79,6 +79,10 @@ validate-exception-inventory:
 validate-config-promotion:
 	python3 scripts/ops/validate_config_promotion.py tests/fixtures/config_promotion/clean.json --target production
 	python3 -m pytest tests/test_config_promotion_contract.py -v
+
+# Enforce the promotion contract and emit a sanitized audit record.
+promote-config-artifact:
+	python3 -m pytest tests/test_config_promotion_gate.py -v
 
 # Cheap drift detector: set-membership only, no completion probes.
 drift-cheap:

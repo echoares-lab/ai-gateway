@@ -63,6 +63,26 @@ the runtime mutation as an intentional, reviewed override before retrying.
 
 ## 2. Config Promotion Pipeline
 
+The promotion metadata contract is enforced offline before any staging or
+production change is opened. Validate a sanitized artifact descriptor with:
+
+```bash
+make validate-config-promotion
+```
+
+The production gate rejects mutable digests, stale verification, and missing
+rollback metadata. A successful gate emits an audit record containing only the
+artifact name/version/digest, source revision, verifier, and rollback identity:
+
+```bash
+python3 scripts/ops/promote_config_artifact.py metadata.json \
+  --verified-by staging-deep-smoke/<run-id> \
+  --record promotion-record.json
+```
+
+The record is the promotion evidence attached to the release PR; no secrets or
+runtime credentials are included.
+
 Configuration changes must move through a structured promotion pipeline to guarantee that syntax errors, schema drift, or broken upstreams are caught before hitting production traffic.
 
 ```text
