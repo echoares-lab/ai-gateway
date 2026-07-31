@@ -60,7 +60,6 @@ Everything below stays candidate until promoted.
 
 | ID | Summary | Effort | Risk | Need/fit | Deps / links | Status |
 |----|---------|--------|------|----------|--------------|--------|
-| C-CRED-1 | Credential pool orchestration: inventory, health state machine, quarantine/cooldown, alerts | L | H | med | Closed epic [#33](https://github.com/echoares-lab/ai-gateway/issues/33); [CREDENTIAL_HEALTH.md](./CREDENTIAL_HEALTH.md) | candidate |
 | C-CRED-2 | Multi-account load balancing / remapping across OAuth credentials | L | H | med | Builds on C-CRED-1; CLIProxy management APIs | candidate |
 | C-CRED-3 | Operator remediation workflows (API/UI) for expired, rate-limited, or degraded credentials | M | M | med | Admin console + C-CRED-1 | candidate |
 | C-CRED-4 | Chargeback / budget attribution hooks from credential and tenant usage | L | H | unclear | [CHARGEBACK_ATTRIBUTION.md](./CHARGEBACK_ATTRIBUTION.md); tenancy decision | candidate |
