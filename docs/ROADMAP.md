@@ -15,24 +15,26 @@ Last reviewed: 2026-07-31.
 
 ## Now
 
-### Staging/config release channels
+### Credential pool orchestration
 
-Coordination epic [#549](https://github.com/echoares-lab/ai-gateway/issues/549)
-promotes C-MDL-2 after WebSocket policy parity was completed. The epic is
-coordination-only; claim only its ready atomic children.
+Coordination epic [#555](https://github.com/echoares-lab/ai-gateway/issues/555)
+promotes C-CRED-1 after staging/config release controls were completed. The
+epic is coordination-only; claim only its ready atomic children.
 
 | Order | Atomic issue | Candidate | Current state | Scope |
 |------:|--------------|-----------|---------------|-------|
-| 1 | [#550 — define config artifact promotion contract](https://github.com/echoares-lab/ai-gateway/issues/550) | C-MDL-2 | Ready; start here | Version artifacts and validate promotion/rollback metadata with sanitized fixtures. |
-| 2 | [#551 — enforce staging-to-production config promotion gates](https://github.com/echoares-lab/ai-gateway/issues/551) | C-MDL-2 | Ready; follows #550 | Reject drifted or unverified artifacts and record promotion evidence. |
+| 1 | [#556 — define pool health state machine contract](https://github.com/echoares-lab/ai-gateway/issues/556) | C-CRED-1 | Ready; start here | Define legal credential transitions, cooldowns, and redacted alerts. |
+| 2 | [#557 — reconcile pool health and emit alerts](https://github.com/echoares-lab/ai-gateway/issues/557) | C-CRED-1 | Ready; follows #556 | Apply idempotent quarantine/recovery transitions without resurrecting disabled credentials. |
 
 Epic acceptance: each child must have a focused implementation PR, Gate A+B
 evidence, and no new real-provider dependency before the next epic is promoted.
 
 ## Next
 
-The next ranked candidate remains unapproved until #549 closes and its atomic
-children are created: C-CRED-1 (credential pool orchestration).
+The next ranked candidate remains unapproved until #555 closes and its atomic
+children are created: C-CRED-2 (multi-account credential balancing), followed
+by C-CRED-3 (operator remediation workflows), C-MDL-1 (full discovery
+orchestration), and C-RT-1 (adaptive routing runtime).
 This order prioritizes low-blast-radius safety and evidence before larger
 runtime changes.
 
@@ -76,6 +78,16 @@ and both children are closed and production-verified.
 |-----------------|--------------|-------------------------|
 | WebSocket parity contract matrix | [#544](https://github.com/echoares-lab/ai-gateway/issues/544) | [PR #547](https://github.com/echoares-lab/ai-gateway/pull/547); heartbeat [30654805922](https://github.com/echoares-lab/ai-gateway/actions/runs/30654805922) |
 | Flagged WebSocket policy denial enforcement | [#545](https://github.com/echoares-lab/ai-gateway/issues/545) | [PR #548](https://github.com/echoares-lab/ai-gateway/pull/548); heartbeat [30655210051](https://github.com/echoares-lab/ai-gateway/actions/runs/30655210051) |
+
+### Staging/config release channels
+
+Coordination epic [#549](https://github.com/echoares-lab/ai-gateway/issues/549)
+and both children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Config artifact promotion contract | [#550](https://github.com/echoares-lab/ai-gateway/issues/550) | [PR #553](https://github.com/echoares-lab/ai-gateway/pull/553); heartbeat [30662055776](https://github.com/echoares-lab/ai-gateway/actions/runs/30662055776) |
+| Staging-to-production promotion gate | [#551](https://github.com/echoares-lab/ai-gateway/issues/551) | [PR #554](https://github.com/echoares-lab/ai-gateway/pull/554); heartbeat [30662324829](https://github.com/echoares-lab/ai-gateway/actions/runs/30662324829) |
 
 ### Staging promotion and nightly integration reliability
 
