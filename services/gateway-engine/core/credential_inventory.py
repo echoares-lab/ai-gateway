@@ -260,6 +260,23 @@ class CredentialInventoryStore:
             cur.execute("SELECT credential_id, status FROM credential_inventory")
             return {str(row[0]): str(row[1]) for row in cur.fetchall()}
 
+    def remediate_status(self, credential_id: str, status: str) -> bool:
+        """Set one credential status and clear cooldown metadata atomically."""
+        if not self.enabled:
+            raise RuntimeError("credential inventory database is not configured")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE credential_inventory
+                SET status = %s, cool_down_until = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE credential_id = %s
+                """,
+                (status, credential_id),
+            )
+            changed = cur.rowcount > 0
+            conn.commit()
+        return changed
+
     def upsert_credentials(self, credentials: list[CredentialInventoryRecord]) -> int:
         if not self.enabled:
             raise RuntimeError("credential inventory database is not configured")

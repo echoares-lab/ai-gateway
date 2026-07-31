@@ -5,6 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class RemediationAction(StrEnum):
@@ -20,6 +23,22 @@ class RemediationDecision:
     changed: bool
     target_status: str
     audit: dict[str, str]
+
+
+class CredentialRemediationRequest(BaseModel):
+    action: RemediationAction
+    actor: str = Field(min_length=1, max_length=120)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class CredentialRemediationResponse(BaseModel):
+    accepted: bool
+    credential_id: str
+    previous_status: str
+    new_status: str
+    changed: bool
+    audit: dict[str, str]
+    errors: list[dict[str, Any]] = Field(default_factory=list)
 
 
 _REDACT = re.compile(r"(?i)(token|secret|key|password)=\S+")
