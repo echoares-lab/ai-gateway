@@ -113,6 +113,8 @@ jobs:
         run: |
           .venv-ci/bin/python -m pytest tests/test_sync_models_probe_classify.py -v
           bash tests/test-sync-models-probe.sh
+      - name: production secret contract tests
+        run: .venv-ci/bin/python -m pytest tests/test_production_secrets.py -v
       - name: promote-k3s-images script tests
         run: |
           PYTHONPATH=. .venv-ci/bin/python -m pytest tests/test_promote_k3s_images.py tests/test_resolve_image_digest.py -v
