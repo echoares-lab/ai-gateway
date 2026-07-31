@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from core.metrics import record_model_lifecycle, record_model_reconciliation
+from core.model_discovery import DiscoveryDisposition, classify_discovery_result
 from core.model_registry import (
     ModelRegistryRecord,
     diff_discovered_models,
@@ -53,12 +54,10 @@ _MISSING_PROBE = frozenset({"missing", "missing_model"})
 
 def should_advertise_after_probe(probe_status: str, *, currently_advertised: bool) -> bool:
     """Return whether a model should be advertised after its latest probe."""
-    status = str(probe_status or "").lower()
-    if currently_advertised and status not in _MISSING_PROBE:
-        return True
-    if status == "healthy" or status in _TRANSIENT_PROBE:
-        return True
-    return False
+    disposition = classify_discovery_result(probe_status, currently_advertised=currently_advertised)
+    return disposition is DiscoveryDisposition.APPLY or (
+        disposition is DiscoveryDisposition.PRESERVE and currently_advertised
+    )
 
 
 def model_probe_is_stale(
