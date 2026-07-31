@@ -21,6 +21,8 @@ make_sandbox() {
     tmp="$(mktemp -d)"
     mkdir -p "$tmp/bin" "$tmp/home/.cli-proxy-api"
     cp "$REPO_ROOT/dev-env.sh" "$tmp/dev-env.sh"
+    mkdir -p "$tmp/scripts/ops"
+    cp "$REPO_ROOT/scripts/ops/validate_dev_env_slots.py" "$tmp/scripts/ops/validate_dev_env_slots.py"
     chmod +x "$tmp/dev-env.sh"
     printf '%s\n' "$tmp"
 }
@@ -33,8 +35,22 @@ set -euo pipefail
 
 printf '%s\n' "$*" >>"${DOCKER_STUB_LOG:?}"
 
-case "${1:-}" in
+    case "${1:-}" in
     ps)
+        if [[ "$*" == *"Label"* && "$*" != *"table"* && "$*" != *".ID"* ]]; then
+            if [[ "${PREFLIGHT_COLLISION:-0}" == "1" ]]; then
+                printf 'aidev1\n'
+            else
+                printf '\n'
+            fi
+            exit 0
+        fi
+        if [[ "$*" == *"-aq"* && "$*" == *"label=com.docker.compose.project=aidev1"* ]]; then
+            if [[ "${PREFLIGHT_COLLISION:-0}" == "1" ]]; then
+                printf 'abc123\n'
+            fi
+            exit 0
+        fi
         if [[ "$*" == *"label=com.docker.compose.project"* ]]; then
             if [[ "$*" == *"--format"* && "$*" != *"table"* ]]; then
                 printf 'abc123\taidev1\n'
@@ -102,6 +118,21 @@ test_start_retries_with_wait_after_initial_compose_failure() {
         || fail "start did not use a wait-enabled compose up"
 }
 
+test_start_aborts_before_compose_on_slot_collision() {
+    local tmp output
+    tmp="$(make_sandbox)"
+    export DOCKER_STUB_LOG="$tmp/docker.log"
+    export PREFLIGHT_COLLISION=1
+    write_docker_stub "$tmp"
+
+    if output="$(PATH="$tmp/bin:$PATH" HOME="$tmp/home" "$tmp/dev-env.sh" start 1 2>&1)"; then
+        fail "start unexpectedly continued with an occupied slot"
+    fi
+    assert_contains "$output" "already owned by Compose project aidev1"
+    ! grep -q 'compose -f .* build' "$DOCKER_STUB_LOG" || fail "start built before collision preflight"
+    unset PREFLIGHT_COLLISION
+}
+
 test_cleanup_removes_aidev_project_labeled_containers() {
     local tmp
     tmp="$(make_sandbox)"
@@ -116,6 +147,7 @@ test_cleanup_removes_aidev_project_labeled_containers() {
 
 test_list_uses_compose_project_labels
 test_start_retries_with_wait_after_initial_compose_failure
+test_start_aborts_before_compose_on_slot_collision
 test_cleanup_removes_aidev_project_labeled_containers
 
 echo "dev-env shell tests passed"

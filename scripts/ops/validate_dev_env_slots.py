@@ -49,14 +49,34 @@ def validate_slots(records: list[dict[str, Any]]) -> list[str]:
     return errors
 
 
+def records_from_projects(projects: list[str]) -> list[dict[str, Any]]:
+    """Build ownership metadata from Compose project labels reported by Docker."""
+
+    records: list[dict[str, Any]] = []
+    for index, project in enumerate(projects, start=1):
+        slot_text = project.removeprefix("aidev") if project.startswith("aidev") else "invalid"
+        try:
+            slot: int | str = int(slot_text)
+        except ValueError:
+            slot = slot_text
+        records.append({"slot": slot, "worktree": f"reported-{index}", "project": project, "state": "active"})
+    return records
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("metadata", type=Path, help="JSON list of sanitized slot metadata")
+    parser.add_argument("metadata", type=Path, nargs="?", help="JSON list of sanitized slot metadata")
+    parser.add_argument("--projects", help="newline-separated Compose project labels reported by Docker")
     args = parser.parse_args()
     try:
-        records = json.loads(args.metadata.read_text(encoding="utf-8"))
-        if not isinstance(records, list):
-            raise ValueError("metadata must be a JSON list")
+        if (args.metadata is None) == (args.projects is None):
+            raise ValueError("provide exactly one metadata file or --projects")
+        if args.projects is not None:
+            records = records_from_projects([line for line in args.projects.splitlines() if line])
+        else:
+            records = json.loads(args.metadata.read_text(encoding="utf-8"))
+            if not isinstance(records, list):
+                raise ValueError("metadata must be a JSON list")
         errors = validate_slots(records)
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         print(json.dumps({"status": "invalid-input", "error": str(exc)}, sort_keys=True))

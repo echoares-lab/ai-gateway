@@ -120,6 +120,14 @@ One active claim = one worktree + one branch + one slot.
 Before starting a stack: `./dev-env.sh list`. Declare your slot in the issue claim comment.
 Do not share slots between concurrent claims without an explicit handoff.
 
+`./dev-env.sh start <slot>` now runs a side-effect-free ownership preflight before
+seeding auth or invoking Compose. It verifies the positive slot/project mapping
+(`N` → `aidevN`) and aborts if that project already has containers. A collision is
+recovered by identifying the owning issue/worktree, then running
+`./dev-env.sh stop <slot>` from that owner; never run the broad `cleanup` command
+to reclaim another agent's slot. The underlying sanitized check is reproducible
+with `make validate-dev-env-slots` and does not read credentials.
+
 ---
 
 ## Testing quick reference
