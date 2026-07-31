@@ -20,8 +20,8 @@ from core.credential_inventory import (
     CredentialInventorySyncRequest,
     CredentialInventorySyncResponse,
     CredentialTransition,
+    reconcile_credentials,
     record_from_auth_file,
-    transition_for_record,
 )
 from core.policy.schemas import CredentialEvent
 
@@ -89,10 +89,7 @@ async def _sync_credentials_from_cliproxy(
                 )
             )
 
-        for credential in credentials:
-            transition = transition_for_record(credential, old_statuses.get(credential.credential_id))
-            if transition is not None:
-                transitions.append(transition)
+        credentials, transitions = reconcile_credentials(credentials, old_statuses)
 
         if not body.dry_run and store.enabled and not errors:
             try:
