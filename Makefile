@@ -1,4 +1,4 @@
-.PHONY: lint test-unit test-mock test-fast test-e2e test-scripts validate-policy-profiles validate-production-secrets validate-admin-exposure validate-litellm-config-drift validate-dev-env-slots validate-exception-inventory test-sync-models-probe test-compose-config test-dev-env drift-cheap clean-db
+.PHONY: lint test-unit test-mock test-fast test-e2e test-scripts validate-policy-profiles validate-production-secrets validate-admin-exposure validate-litellm-config-drift validate-dev-env-slots validate-exception-inventory validate-config-promotion test-sync-models-probe test-compose-config test-dev-env drift-cheap clean-db
 
 CONTAINER_PREFIX ?= PROD-
 
@@ -75,6 +75,11 @@ validate-exception-inventory:
 	python3 scripts/ops/validate_exception_inventory.py
 	python3 -m pytest tests/test_exception_inventory.py tests/test_exception_narrowing.py -v
 
+# Validate sanitized staging-to-production config artifact metadata.
+validate-config-promotion:
+	python3 scripts/ops/validate_config_promotion.py tests/fixtures/config_promotion/clean.json --target production
+	python3 -m pytest tests/test_config_promotion_contract.py -v
+
 # Cheap drift detector: set-membership only, no completion probes.
 drift-cheap:
 	python3 scripts/policy/cheap_drift_check.py --litellm-config tests/fixtures/cheap_drift/litellm-config.yaml --model-registry tests/fixtures/cheap_drift/model-registry.yaml --catalog-file tests/fixtures/cheap_drift/catalog-no-drift.json
@@ -82,7 +87,7 @@ drift-cheap:
 # Fast tier = Gate A + B locally (no OAuth, no real LLM).
 # Note: multi-repo-isolation is CI path-filtered only — run manually when touching dev-env.sh / cliproxy-setup.sh:
 #   bash tests/test-multi-repo-isolation.sh
-test-fast: lint test-unit validate-policy-profiles validate-production-secrets validate-admin-exposure validate-litellm-config-drift validate-dev-env-slots validate-exception-inventory drift-cheap test-sync-models-probe test-compose-config test-mock
+test-fast: lint test-unit validate-policy-profiles validate-production-secrets validate-admin-exposure validate-litellm-config-drift validate-dev-env-slots validate-exception-inventory validate-config-promotion drift-cheap test-sync-models-probe test-compose-config test-mock
 
 # Full real-provider E2E. Needs real OAuth in ~/.cli-proxy-api (slot 1 -> :4010).
 # Runs only the slim `smoke` subset.
