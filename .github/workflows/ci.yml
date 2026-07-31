@@ -119,6 +119,8 @@ jobs:
         run: .venv-ci/bin/python -m pytest tests/test_admin_exposure.py -v
       - name: LiteLLM YAML/Postgres drift contract tests
         run: .venv-ci/bin/python -m pytest tests/test_litellm_config_drift.py -v
+      - name: dev-environment slot preflight contract tests
+        run: .venv-ci/bin/python -m pytest tests/test_dev_env_slot_preflight.py -v
       - name: promote-k3s-images script tests
         run: |
           PYTHONPATH=. .venv-ci/bin/python -m pytest tests/test_promote_k3s_images.py tests/test_resolve_image_digest.py -v

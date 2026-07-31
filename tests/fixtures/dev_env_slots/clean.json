@@ -1,0 +1,4 @@
+[
+  {"slot": 1, "worktree": "/home/dev/worktrees/ai-gateway-one", "project": "aidev1", "state": "active"},
+  {"slot": 2, "worktree": "/home/dev/worktrees/ai-gateway-two", "project": "aidev2", "state": "active"}
+]
