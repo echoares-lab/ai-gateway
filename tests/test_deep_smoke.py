@@ -1589,6 +1589,19 @@ def test_full_mode_spendlogs_pg_pod_override_skips_lookup(tmp_path) -> None:
     assert not lookup_lines
 
 
+def test_full_mode_spendlogs_uses_current_cnpg_primary_selector_by_default(tmp_path) -> None:
+    """The shared CNPG Cluster is named ``postgres`` in the database namespace."""
+    log_path = tmp_path / "kubectl.log"
+    proc = _run_deep_smoke(
+        ["--env", "staging", "--full"],
+        env_overrides={"FAKE_KUBECTL_LOG": str(log_path)},
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    lookup_lines = [line for line in log_path.read_text().splitlines() if "jsonpath=" in line]
+    assert lookup_lines
+    assert all("cnpg.io/cluster=postgres,role=primary" in line for line in lookup_lines)
+
+
 def test_full_mode_spendlogs_uses_configured_pg_namespace_and_db(tmp_path) -> None:
     log_path = tmp_path / "kubectl.log"
     proc = _run_deep_smoke(
