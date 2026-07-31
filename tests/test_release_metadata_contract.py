@@ -149,3 +149,23 @@ def test_nightly_integration_installs_verified_compose_before_starting_stack() -
     assert ready_guard_index < logs_index < stop_index < skip_index
     assert "./dev-env.sh stop 1" in cleanup_run
     assert "./dev-env.sh stop 1 || true" not in cleanup_run
+
+
+def test_nightly_integration_provisions_runner_requirements_before_smoke() -> None:
+    with (ROOT / ".github/workflows/nightly-integration.yml").open(encoding="utf-8") as handle:
+        workflow = yaml.safe_load(handle)
+
+    steps = workflow["jobs"]["real-provider-smoke"]["steps"]
+    setup_index = next(
+        index for index, step in enumerate(steps) if step.get("uses") == "./.github/actions/setup-python-venv"
+    )
+    setup_inputs = steps[setup_index]["with"]
+    requirements = setup_inputs["requirements-files"]
+
+    assert "requirements/ci-runner-venv.txt" in requirements
+    assert "tests/integration/requirements.txt" in requirements
+    path_index = next(index for index, step in enumerate(steps) if step.get("name") == "Add CI venv to PATH")
+    path_run = steps[path_index]["run"]
+    smoke_index = next(index for index, step in enumerate(steps) if "./dev-env.sh test 1" in step.get("run", ""))
+    assert "$GITHUB_WORKSPACE/.venv-ci/bin" in path_run
+    assert setup_index < path_index < smoke_index
