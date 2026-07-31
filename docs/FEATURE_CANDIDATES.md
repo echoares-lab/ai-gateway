@@ -91,7 +91,6 @@ Cheap-drift check and `/model/new` / `/model/delete` hot-add shipped on `main`
 
 | ID | Summary | Effort | Risk | Need/fit | Deps / links | Status |
 |----|---------|--------|------|----------|--------------|--------|
-| C-RT-1 | Adaptive routing runtime (health/latency/429-driven fallback) | L | H | med | Closed design [#31](https://github.com/echoares-lab/ai-gateway/issues/31); [ADAPTIVE_ROUTING.md](./ADAPTIVE_ROUTING.md) | candidate |
 | C-RT-2 | Evaluation-driven quality routing at request time | L | H | low | Closed [#37](https://github.com/echoares-lab/ai-gateway/issues/37); [EVAL_DRIVEN_ROUTING.md](./EVAL_DRIVEN_ROUTING.md) | candidate |
 | C-RT-3 | Deeper policy engine (WS parity, stricter enforcement, separate service?) | L | H | med | Closed [#38](https://github.com/echoares-lab/ai-gateway/issues/38); [POLICY_ENGINE_AND_ROUTING_REFACTOR.md](./POLICY_ENGINE_AND_ROUTING_REFACTOR.md) | candidate |
 | C-RT-4 | MCP visibility and deeper local tool hosting | M | M | med | Closed [#29](https://github.com/echoares-lab/ai-gateway/issues/29); [MCP_TOOL_VISIBILITY.md](./MCP_TOOL_VISIBILITY.md); [ARCHITECTURE.md](./ARCHITECTURE.md) | candidate |
