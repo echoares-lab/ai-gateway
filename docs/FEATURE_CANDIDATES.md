@@ -22,6 +22,10 @@ Scoring keys:
 
 Last reviewed: 2026-08-01.
 
+Decision note: C-TEN-4, C-SVC-3, and C-CRED-4 were explicitly reviewed and
+retired. Keep the simpler single-tenant operator architecture unless the
+roadmap changes.
+
 ## Promoted to roadmap (active; not candidates)
 
 These candidates were promoted into approved coordination epics and must be
@@ -70,7 +74,7 @@ Everything below stays candidate until promoted.
 
 | ID | Summary | Effort | Risk | Need/fit | Deps / links | Status |
 |----|---------|--------|------|----------|--------------|--------|
-| C-CRED-4 | Chargeback / budget attribution hooks from credential and tenant usage | L | H | unclear | [CHARGEBACK_ATTRIBUTION.md](./CHARGEBACK_ATTRIBUTION.md); tenancy decision | candidate |
+| C-CRED-4 | Chargeback / budget attribution hooks from credential and tenant usage | L | H | unclear | [CHARGEBACK_ATTRIBUTION.md](./CHARGEBACK_ATTRIBUTION.md); tenancy decision | dropped |
 
 ---
 
@@ -83,7 +87,7 @@ Tenancy epics (#30, #34, #109) were closed and dropped as out of scope for the s
 | C-TEN-1 | Full multi-tenant workspace lifecycle (org/workspace/team/repo) | L | H | low | Closed #30 | dropped |
 | C-TEN-2 | Self-service onboarding for repos, apps, and AI clients | L | M | low | Closed #34 | dropped |
 | C-TEN-3 | Admin tenant/team panel (usage, quota, credential health per tenant) | M | M | low | Closed #109 | dropped |
-| C-TEN-4 | RBAC and identity integration | L | H | low | Control-plane contracts | candidate |
+| C-TEN-4 | RBAC and identity integration | L | H | low | Control-plane contracts | dropped |
 
 ---
 
@@ -108,7 +112,7 @@ Cheap-drift check and `/model/new` / `/model/delete` hot-add shipped on `main`
 
 | ID | Summary | Effort | Risk | Need/fit | Deps / links | Status |
 |----|---------|--------|------|----------|--------------|--------|
-| C-SVC-3 | Team/key manager API from `setup_litellm_teams.py` | M | M | unclear | SCRIPT_TO_SERVICE_ROADMAP; tenancy | candidate |
+| C-SVC-3 | Team/key manager API from `setup_litellm_teams.py` | M | M | unclear | SCRIPT_TO_SERVICE_ROADMAP; tenancy | dropped |
 
 ---
 
