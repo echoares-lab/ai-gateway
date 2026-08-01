@@ -7,6 +7,8 @@ import hmac
 import json
 import logging
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Awaitable, Callable, Mapping
@@ -24,10 +26,53 @@ _MAX_SOURCE_BYTES = 1024 * 1024
 _MAX_RESPONSE_BYTES = 64 * 1024
 _TOTAL_TIMEOUT_SECONDS = 5.0
 _SOURCE_TIMEOUT_SECONDS = 2.0
+_SYNC_SOURCE_MAX_WORKERS = 4
 _FLAG_NAMES = ("UNIFIED_CONFIG_ADMIN_API_ENABLED", "GATEWAY_ENGINE_UNIFIED_CONFIG_ADMIN_API_ENABLED")
 _deps: UnifiedConfigAdminDeps | None = None
 
 log = logging.getLogger("gateway-engine.config-snapshot")
+
+
+class _BoundedSyncRunner:
+    """Run blocking source reads without an unbounded executor work queue."""
+
+    def __init__(self, *, max_workers: int, thread_name_prefix: str):
+        self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix=thread_name_prefix)
+        self._capacity = threading.BoundedSemaphore(max_workers)
+        self._lock = threading.Lock()
+        self._in_flight = 0
+
+    @property
+    def in_flight(self) -> int:
+        with self._lock:
+            return self._in_flight
+
+    def _release(self, _future) -> None:
+        with self._lock:
+            self._in_flight -= 1
+        self._capacity.release()
+
+    async def run(self, operation: Callable[[], object]) -> object:
+        if not self._capacity.acquire(blocking=False):
+            raise TimeoutError("synchronous source capacity unavailable")
+        with self._lock:
+            self._in_flight += 1
+        try:
+            future = self._executor.submit(operation)
+        except BaseException:
+            self._release(None)
+            raise
+        future.add_done_callback(self._release)
+        return await asyncio.wrap_future(future)
+
+    def shutdown(self, *, wait: bool) -> None:
+        self._executor.shutdown(wait=wait, cancel_futures=True)
+
+
+_sync_source_runner = _BoundedSyncRunner(
+    max_workers=_SYNC_SOURCE_MAX_WORKERS,
+    thread_name_prefix="config-snapshot-source",
+)
 
 
 @dataclass(frozen=True)
@@ -86,7 +131,7 @@ def _ascii_key(value: str) -> bytes | None:
 async def _load_litellm_source(deps: UnifiedConfigAdminDeps) -> tuple[str | None, str, str | None]:
     try:
         litellm_yaml = await asyncio.wait_for(
-            asyncio.to_thread(deps.load_litellm_text),
+            _sync_source_runner.run(deps.load_litellm_text),
             timeout=_SOURCE_TIMEOUT_SECONDS,
         )
         if not isinstance(litellm_yaml, str) or len(litellm_yaml.encode("utf-8")) > _MAX_SOURCE_BYTES:
@@ -107,7 +152,7 @@ async def _load_registry_source(
 ) -> tuple[tuple[str, ...] | None, str, str | None]:
     try:
         model_ids = await asyncio.wait_for(
-            asyncio.to_thread(deps.load_registry_model_ids),
+            _sync_source_runner.run(deps.load_registry_model_ids),
             timeout=_SOURCE_TIMEOUT_SECONDS,
         )
         return tuple(model_ids), "ok", None
@@ -130,6 +175,26 @@ async def _load_runtime_source(
         return None, "unavailable", "source_timeout"
     except Exception:
         return None, "unavailable", "source_unavailable"
+
+
+async def _acquire_sources(deps: UnifiedConfigAdminDeps):
+    tasks = (
+        asyncio.create_task(_load_litellm_source(deps), name="config-snapshot:litellm"),
+        asyncio.create_task(_load_registry_source(deps), name="config-snapshot:registry"),
+        asyncio.create_task(_load_runtime_source(deps), name="config-snapshot:runtime"),
+    )
+    try:
+        done, pending = await asyncio.wait(tasks, timeout=_TOTAL_TIMEOUT_SECONDS)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        return tuple(task.result() if task in done else (None, "unavailable", "source_timeout") for task in tasks)
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @router.get("/admin/config")
@@ -162,25 +227,11 @@ async def get_unified_config(request: Request) -> Response:
 
     source_errors: list[tuple[str, str]] = []
     try:
-        litellm_task = asyncio.create_task(_load_litellm_source(deps))
-        registry_task = asyncio.create_task(_load_registry_source(deps))
-        runtime_task = asyncio.create_task(_load_runtime_source(deps))
-        tasks = (litellm_task, registry_task, runtime_task)
-        done, pending = await asyncio.wait(tasks, timeout=_TOTAL_TIMEOUT_SECONDS)
-        for task in pending:
-            task.cancel()
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
-
-        litellm_yaml, litellm_status, litellm_error = (
-            litellm_task.result() if litellm_task in done else (None, "unavailable", "source_timeout")
-        )
-        registry_model_ids, registry_status, registry_error = (
-            registry_task.result() if registry_task in done else (None, "unavailable", "source_timeout")
-        )
-        runtime_model_ids, runtime_status, runtime_error = (
-            runtime_task.result() if runtime_task in done else (None, "unavailable", "source_timeout")
-        )
+        (
+            (litellm_yaml, litellm_status, litellm_error),
+            (registry_model_ids, registry_status, registry_error),
+            (runtime_model_ids, runtime_status, runtime_error),
+        ) = await _acquire_sources(deps)
         for source, code in (
             ("litellm-config", litellm_error),
             ("model-registry", registry_error),
@@ -204,7 +255,12 @@ async def get_unified_config(request: Request) -> Response:
                 source_errors=tuple(source_errors),
             )
         )
-        serialized = json.dumps(snapshot, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        serialized = json.dumps(
+            snapshot,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
     except Exception:
         _safe_log(request, "unavailable", tuple(source_errors))
         return _error("config_snapshot_unavailable", "Configuration snapshot is unavailable", 503)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -361,6 +362,117 @@ async def test_live_runtime_helper_receives_two_second_http_budget(monkeypatch):
     assert not hasattr(unified, "_CONNECT_TIMEOUT_SECONDS")
 
 
+@pytest.mark.asyncio
+async def test_real_runtime_http_timeout_has_typed_timeout_error(monkeypatch):
+    class TimeoutClient:
+        async def get(self, url, *, headers, timeout):
+            assert headers == {}
+            assert timeout == 2.0
+            raise httpx.ReadTimeout("private upstream timeout", request=httpx.Request("GET", url))
+
+    monkeypatch.delenv("LITELLM_MASTER_KEY", raising=False)
+    monkeypatch.setattr(
+        admin_panels,
+        "_deps",
+        lambda: SimpleNamespace(get_http_client=TimeoutClient, litellm_url="http://litellm:4000"),
+    )
+
+    models, errors = await admin_panels._admin_fetch_visible_models()
+
+    assert models is None
+    assert [error["code"] for error in errors] == ["models_fetch_timeout"]
+    assert "private upstream timeout" not in str(errors)
+
+
+@pytest.mark.asyncio
+async def test_request_cancellation_cleans_up_all_source_tasks(monkeypatch, source_spies):
+    monkeypatch.setenv("UNIFIED_CONFIG_ADMIN_API_ENABLED", "true")
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "admin-secret")
+    runtime_started = asyncio.Event()
+    runtime_cancelled = asyncio.Event()
+
+    async def stalled_runtime():
+        runtime_started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            runtime_cancelled.set()
+
+    configure_unified_config_admin(
+        UnifiedConfigAdminDeps(
+            load_litellm_text=source_spies.litellm,
+            load_registry_model_ids=source_spies.registry,
+            fetch_runtime_model_ids=stalled_runtime,
+            environment=source_spies.environment,
+            now=source_spies.now,
+        )
+    )
+    app = FastAPI()
+    app.include_router(unified.router)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        request = asyncio.create_task(client.get("/admin/config", headers=_headers()))
+        await asyncio.wait_for(runtime_started.wait(), timeout=0.5)
+        request.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await request
+
+    await asyncio.wait_for(runtime_cancelled.wait(), timeout=0.5)
+    await asyncio.sleep(0)
+    assert not [
+        task
+        for task in asyncio.all_tasks()
+        if task is not asyncio.current_task() and task.get_name().startswith("config-snapshot:")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_repeated_stalled_registry_reads_have_bounded_work_and_no_orphan_tasks(monkeypatch, source_spies):
+    runner = unified._BoundedSyncRunner(max_workers=1, thread_name_prefix="config-snapshot-test")
+    monkeypatch.setattr(unified, "_sync_source_runner", runner)
+    monkeypatch.setattr(unified, "_SOURCE_TIMEOUT_SECONDS", 0.01)
+    release = threading.Event()
+    started = threading.Event()
+    calls = 0
+    calls_lock = threading.Lock()
+
+    def stalled_registry():
+        nonlocal calls
+        with calls_lock:
+            calls += 1
+        started.set()
+        release.wait(timeout=1.0)
+        return ("gpt-safe",)
+
+    deps = UnifiedConfigAdminDeps(
+        load_litellm_text=source_spies.litellm,
+        load_registry_model_ids=stalled_registry,
+        fetch_runtime_model_ids=source_spies.runtime,
+        environment=source_spies.environment,
+        now=source_spies.now,
+    )
+    try:
+        first = asyncio.create_task(unified._load_registry_source(deps), name="registry-stall-first")
+        for _ in range(50):
+            if started.is_set():
+                break
+            await asyncio.sleep(0.001)
+        assert started.is_set()
+        repeated = [
+            asyncio.create_task(unified._load_registry_source(deps), name=f"registry-stall-{index}")
+            for index in range(24)
+        ]
+        results = await asyncio.gather(first, *repeated)
+
+        assert calls == 1
+        assert runner.in_flight == 1
+        assert all(result == (None, "unavailable", "source_timeout") for result in results)
+        assert not [task for task in asyncio.all_tasks() if task.get_name().startswith("registry-stall-")]
+    finally:
+        release.set()
+        runner.shutdown(wait=True)
+
+
 def test_safe_logging_omits_raw_source_failures(monkeypatch, source_spies, caplog):
     monkeypatch.setenv("UNIFIED_CONFIG_ADMIN_API_ENABLED", "true")
     monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "admin-secret")
@@ -455,7 +567,7 @@ def test_success_is_compact_json(monkeypatch, configured_client):
     _assert_no_store(response)
 
 
-def test_openapi_routing_properties_use_bounded_scalar_union():
+def _openapi_document():
     openapi_path = next(
         (
             parent / "docs" / "openapi" / "gateway-engine.yaml"
@@ -466,7 +578,11 @@ def test_openapi_routing_properties_use_bounded_scalar_union():
     )
     if openapi_path is None:
         pytest.skip("repository docs are not mounted in the service test image")
-    schemas = yaml.safe_load(openapi_path.read_text(encoding="utf-8"))["components"]["schemas"]
+    return yaml.safe_load(openapi_path.read_text(encoding="utf-8"))
+
+
+def test_openapi_routing_properties_use_bounded_scalar_union():
+    schemas = _openapi_document()["components"]["schemas"]
     scalar_schema = schemas["UnifiedConfigRouterScalar"]
     assert scalar_schema == {
         "anyOf": [
@@ -484,3 +600,41 @@ def test_openapi_routing_properties_use_bounded_scalar_union():
         "num_retries": expected_reference,
     }
     assert all(option.get("type") not in {"array", "object"} for option in scalar_schema["anyOf"])
+
+
+def test_openapi_source_digest_is_optional_for_non_ok_sources():
+    source_schema = _openapi_document()["components"]["schemas"]["UnifiedConfigSnapshot"]["properties"]["sources"][
+        "items"
+    ]
+
+    assert "digest" in source_schema["properties"]
+    assert "digest" not in source_schema["required"]
+
+
+def test_openapi_mcp_transport_matches_exact_runtime_allowlist():
+    transport = _openapi_document()["components"]["schemas"]["UnifiedConfigSnapshot"]["properties"]["mcp"]["items"][
+        "properties"
+    ]["transport"]
+
+    assert transport == {
+        "type": "string",
+        "enum": ["http", "sse", "stdio", "streamable-http", "streamable_http", "websocket"],
+    }
+
+
+def test_http_serialization_rejects_non_finite_snapshot_values(monkeypatch, source_spies):
+    monkeypatch.setenv("UNIFIED_CONFIG_ADMIN_API_ENABLED", "true")
+    monkeypatch.setenv("GATEWAY_ENGINE_ADMIN_KEY", "admin-secret")
+    monkeypatch.setattr(
+        unified,
+        "build_config_snapshot",
+        lambda _inputs: {"schema": "config-snapshot.v1", "unsafe": float("nan")},
+    )
+
+    response = _client(source_spies).get("/admin/config", headers=_headers())
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "config_snapshot_unavailable"
+    assert "NaN" not in response.text
+    assert "Infinity" not in response.text
+    _assert_no_store(response)

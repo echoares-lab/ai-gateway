@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
 import yaml
+from core.model_registry import is_canonical_model_id, provider_of
 
 SCHEMA = "config-snapshot.v1"
 MAX_ENTRIES = 256
@@ -45,12 +47,12 @@ _SENSITIVE_KEY = re.compile(
     r"(?:api[_-]?key|authorization|credential|password|secret|token|url|uri|host|path|command|args)", re.I
 )
 _SENSITIVE_VALUE = re.compile(r"(?:https?://|(?:sk|pk)-|secret|/home/|/root/)", re.I)
-_SAFE_PUBLIC_ALIAS = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._:+@=-]{0,511})\Z")
 _CREDENTIAL_LIKE_ALIAS = re.compile(
-    r"^(?:gh[opsur]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,}|(?:sk|pk|rk|api)[_-][A-Za-z0-9_-]{12,}|xox[baprs]-[A-Za-z0-9-]{12,}|AKIA[A-Z0-9]{12,})",
+    r"^(?:gh[opsur]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{40,255}|"
+    r"xox[baprs]-[A-Za-z0-9-]{32,255}|AKIA[A-Z0-9]{16}|"
+    r"sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,255})$",
     re.I,
 )
-_JWT_LIKE_ALIAS = re.compile(r"^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$")
 
 
 @dataclass(frozen=True)
@@ -76,8 +78,11 @@ def _bounded_text(value: object) -> str:
 
 def _safe_provider_family(model_name: str, params: Mapping[str, Any]) -> str:
     """Project only a known provider family, never an upstream endpoint or config key."""
+    public_family = provider_of(model_name)
+    if public_family in _SAFE_PROVIDER_FAMILIES:
+        return public_family
     candidate = params.get("model") if isinstance(params, Mapping) else None
-    for value in (candidate, model_name):
+    for value in (candidate,):
         if not isinstance(value, str):
             continue
         family = value.split("/", 1)[0].lower().replace("-", "_")
@@ -125,7 +130,13 @@ def _sanitize_for_digest(value: object, depth: int = 0, key: str = "") -> object
 
 def _sanitized_projection_digest(projection: Mapping[str, Any]) -> str:
     """Hash only canonical, redacted structural data."""
-    canonical = json.dumps(_sanitize_for_digest(projection), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    canonical = json.dumps(
+        _sanitize_for_digest(projection),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -135,70 +146,112 @@ def _source_status(value: object) -> str:
 
 def _safe_alias(value: object) -> str | None:
     """Return a public model/server token, rejecting instead of redacting unsafe input."""
-    if (
-        not isinstance(value, str)
-        or not _SAFE_PUBLIC_ALIAS.fullmatch(value)
-        or _CREDENTIAL_LIKE_ALIAS.match(value)
-        or _JWT_LIKE_ALIAS.fullmatch(value)
-    ):
+    if not isinstance(value, str) or len(value) > MAX_STRING or not is_canonical_model_id(value):
+        return None
+    if _CREDENTIAL_LIKE_ALIAS.fullmatch(value):
         return None
     return value
 
 
-def _normalised_aliases(values: tuple[str, ...] | None, *, strip_public_prefix: bool = False) -> list[str]:
+def _normalised_aliases(
+    values: tuple[str, ...] | None,
+    *,
+    strip_public_prefix: bool = False,
+) -> tuple[list[str], bool]:
     aliases: set[str] = set()
+    invalid = False
     for value in values or ():
         if not isinstance(value, str):
+            invalid = True
             continue
         if strip_public_prefix and value.startswith("AI-Gateway:"):
             value = value[len("AI-Gateway:") :]
         alias = _safe_alias(value)
         if alias:
             aliases.add(alias)
-    return sorted(aliases)[:MAX_ENTRIES]
+        else:
+            invalid = True
+    return sorted(aliases)[:MAX_ENTRIES], invalid
 
 
-def _safe_router_value(value: object) -> bool | int | float | str | None:
-    if value is None or isinstance(value, (bool, int, float)):
-        return value
+def _safe_router_value(value: object) -> tuple[bool | int | float | str | None, bool]:
+    if value is None or isinstance(value, (bool, int)):
+        return value, True
+    if isinstance(value, float):
+        return (value, True) if math.isfinite(value) else (None, False)
     if isinstance(value, str):
-        return _safe_alias(value)
-    return None
+        safe = _safe_alias(value)
+        return safe, safe is not None
+    return None, False
 
 
-def _project_mcp(document: Mapping[str, Any]) -> list[dict[str, str]]:
-    servers = document.get("mcp_servers")
+def _litellm_setting(document: Mapping[str, Any], name: str) -> object:
+    settings = document.get("litellm_settings")
+    if isinstance(settings, Mapping) and name in settings:
+        return settings.get(name)
+    return document.get(name)
+
+
+def _project_mcp(document: Mapping[str, Any]) -> tuple[list[dict[str, str]], bool]:
+    servers = _litellm_setting(document, "mcp_servers")
+    if servers is None:
+        return [], False
     if not isinstance(servers, Mapping):
-        return []
+        return [], True
     projected: dict[str, str] = {}
+    invalid = False
     for alias, server in servers.items():
         safe_alias = _safe_alias(alias)
         if not safe_alias or not isinstance(server, Mapping):
+            invalid = True
             continue
         transport = server.get("transport")
-        if isinstance(transport, str) and transport.lower() in _SAFE_MCP_TRANSPORTS:
-            projected[safe_alias] = min(projected.get(safe_alias, transport.lower()), transport.lower())
-    return [{"alias": alias, "transport": transport} for alias, transport in sorted(projected.items())[:MAX_ENTRIES]]
+        if transport is None and isinstance(server.get("command"), str):
+            transport = "stdio"
+        if not isinstance(transport, str) or transport.lower() not in _SAFE_MCP_TRANSPORTS:
+            invalid = True
+            continue
+        normalized = transport.lower()
+        projected[safe_alias] = min(projected.get(safe_alias, normalized), normalized)
+    return (
+        [{"alias": alias, "transport": transport} for alias, transport in sorted(projected.items())[:MAX_ENTRIES]],
+        invalid,
+    )
 
 
-def _project_fallbacks(document: Mapping[str, Any]) -> list[dict[str, Any]]:
-    raw_fallbacks = document.get("fallbacks")
+def _project_fallbacks(document: Mapping[str, Any]) -> tuple[list[dict[str, Any]], bool]:
+    raw_fallbacks = _litellm_setting(document, "fallbacks")
     pairs: dict[str, set[str]] = {}
+    if raw_fallbacks is None:
+        return [], False
     if not isinstance(raw_fallbacks, list):
-        return []
+        return [], True
+    invalid = False
     for entry in raw_fallbacks:
         if not isinstance(entry, Mapping):
+            invalid = True
             continue
         for source, targets in entry.items():
             safe_source = _safe_alias(source)
             if not safe_source or not isinstance(targets, (list, tuple)):
+                invalid = True
                 continue
-            safe_targets = {alias for target in targets if (alias := _safe_alias(target))}
+            safe_targets = set()
+            for target in targets:
+                alias = _safe_alias(target)
+                if alias:
+                    safe_targets.add(alias)
+                else:
+                    invalid = True
             if safe_targets:
                 pairs.setdefault(safe_source, set()).update(safe_targets)
-    return [
-        {"from": source, "to": sorted(targets)[:MAX_ENTRIES]} for source, targets in sorted(pairs.items())[:MAX_ENTRIES]
-    ]
+    return (
+        [
+            {"from": source, "to": sorted(targets)[:MAX_ENTRIES]}
+            for source, targets in sorted(pairs.items())[:MAX_ENTRIES]
+        ],
+        invalid,
+    )
 
 
 def _parse_document(raw_yaml: str | None) -> tuple[Mapping[str, Any], bool]:
@@ -245,11 +298,14 @@ def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
 
     configured: set[str] = set()
     provider_by_alias: dict[str, str] = {}
+    configured_aliases_invalid = False
     for entry in model_list:
         if not isinstance(entry, Mapping):
+            configured_aliases_invalid = True
             continue
         alias = _safe_alias(entry.get("model_name"))
         if not alias:
+            configured_aliases_invalid = True
             continue
         configured.add(alias)
         params = entry.get("litellm_params")
@@ -257,20 +313,33 @@ def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
         provider_by_alias[alias] = min(provider_by_alias.get(alias, family), family)
 
     configured_aliases = sorted(configured)[:MAX_ENTRIES]
-    registry_aliases = _normalised_aliases(inputs.registry_model_ids)
-    runtime_aliases = _normalised_aliases(inputs.runtime_model_ids, strip_public_prefix=True)
+    registry_aliases, registry_aliases_invalid = _normalised_aliases(inputs.registry_model_ids)
+    runtime_aliases, runtime_aliases_invalid = _normalised_aliases(
+        inputs.runtime_model_ids,
+        strip_public_prefix=True,
+    )
     providers = [
         {"alias": alias, "family": provider_by_alias[alias]}
         for alias in configured_aliases
         if alias in provider_by_alias
     ]
-    routing = {
-        setting: safe_value
-        for setting in SAFE_ROUTER_SETTINGS
-        if isinstance(document.get("router_settings"), Mapping)
-        and (safe_value := _safe_router_value(document["router_settings"].get(setting))) is not None
-    }
-    mcp = _project_mcp(document)
+    routing: dict[str, bool | int | float | str] = {}
+    router_invalid = False
+    router_settings = document.get("router_settings")
+    if router_settings is not None and not isinstance(router_settings, Mapping):
+        router_invalid = True
+    if isinstance(router_settings, Mapping):
+        for setting in SAFE_ROUTER_SETTINGS:
+            if setting not in router_settings:
+                continue
+            safe_value, valid = _safe_router_value(router_settings.get(setting))
+            if not valid:
+                router_invalid = True
+            elif safe_value is not None:
+                routing[setting] = safe_value
+    mcp, mcp_invalid = _project_mcp(document)
+    fallbacks, fallbacks_invalid = _project_fallbacks(document)
+    litellm_aliases_invalid = configured_aliases_invalid or mcp_invalid or fallbacks_invalid
     environment_references = _extract_environment_references(document)
     environment = [{"name": name, "present": name in inputs.environment} for name in environment_references]
     validation = [
@@ -279,6 +348,13 @@ def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
             "id": "environment-references",
             "status": "pass" if all(item["present"] for item in environment) else "warn",
         },
+        {
+            "id": "source-aliases",
+            "status": "fail"
+            if litellm_aliases_invalid or registry_aliases_invalid or runtime_aliases_invalid
+            else "pass",
+        },
+        {"id": "router-settings", "status": "fail" if router_invalid else "pass"},
     ]
 
     statuses = {
@@ -292,6 +368,18 @@ def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
             source_errors[source] = min(source_errors.get(source, code), code)
     for source, code in source_errors.items():
         statuses[source] = _status_for_error_code(code)
+    invalid_sources = {
+        source
+        for source, invalid in (
+            ("litellm-config", litellm_aliases_invalid or router_invalid),
+            ("model-registry", registry_aliases_invalid),
+            ("runtime-visible-models", runtime_aliases_invalid),
+        )
+        if invalid
+    }
+    for source in invalid_sources:
+        statuses[source] = "invalid"
+        source_errors[source] = min(source_errors.get(source, "source_invalid"), "source_invalid")
     for source, status in statuses.items():
         if status != "ok" and source not in source_errors:
             source_errors[source] = _error_code_for_status(status)
@@ -302,7 +390,7 @@ def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
     drift_fields = {
         "configured_only": sorted(configured_set - registry_set)[:MAX_ENTRIES],
         "registry_only": sorted(registry_set - configured_set)[:MAX_ENTRIES],
-        "runtime_only": sorted(runtime_set - configured_set)[:MAX_ENTRIES],
+        "runtime_only": sorted(runtime_set - (configured_set | registry_set))[:MAX_ENTRIES],
         "missing_at_runtime": sorted((configured_set | registry_set) - runtime_set)[:MAX_ENTRIES],
         "registry_override": configured_set != registry_set,
     }
@@ -322,7 +410,7 @@ def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
             "models": {
                 "configured": configured_aliases,
                 "providers": providers,
-                "fallbacks": _project_fallbacks(document),
+                "fallbacks": fallbacks,
             },
             "routing": routing,
             "mcp": mcp,
@@ -332,16 +420,17 @@ def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
         "runtime-visible-models": {"model_ids": runtime_aliases},
     }
     observed_at = _iso_utc(inputs.generated_at)
-    sources = [
-        {
+    sources = []
+    for identifier, kind in _SOURCE_DETAILS:
+        source = {
             "id": identifier,
             "kind": kind,
             "status": statuses[identifier],
-            "digest": _sanitized_projection_digest(source_projections[identifier]),
             "observed_at": observed_at,
         }
-        for identifier, kind in _SOURCE_DETAILS
-    ]
+        if statuses[identifier] == "ok":
+            source["digest"] = _sanitized_projection_digest(source_projections[identifier])
+        sources.append(source)
     errors = [{"source": source, "code": code} for source, code in sorted(source_errors.items())[:MAX_ENTRIES]]
     status = "ok"
     if (
@@ -360,7 +449,7 @@ def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
             "registry": registry_aliases,
             "runtime": runtime_aliases,
             "providers": providers,
-            "fallbacks": _project_fallbacks(document),
+            "fallbacks": fallbacks,
         },
         "routing": routing,
         "mcp": mcp,

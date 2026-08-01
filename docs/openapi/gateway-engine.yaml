@@ -1502,7 +1502,7 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [id, kind, status, digest, observed_at]
+            required: [id, kind, status, observed_at]
             properties:
               id: {type: string, enum: [litellm-config, model-registry, runtime-visible-models]}
               kind: {type: string, enum: [deployed-file, registry, live-api]}
@@ -1554,7 +1554,9 @@ components:
             required: [alias, transport]
             properties:
               alias: {type: string, maxLength: 512}
-              transport: {type: string, maxLength: 512}
+              transport:
+                type: string
+                enum: [http, sse, stdio, streamable-http, streamable_http, websocket]
         environment:
           type: array
           maxItems: 256

@@ -1,12 +1,15 @@
 import json
 from datetime import datetime, timezone
 
+import pytest
 from api.config_snapshot import MAX_DEPTH, MAX_ENTRIES, MAX_STRING, SnapshotInputs, build_config_snapshot
 from test_gateway_engine_unified_config_contract import (
     DEGRADED_INPUT,
     HEALTHY_INPUT,
     INVALID_CONFIG_INPUT,
     MISSING_ENV_INPUT,
+    MODEL_DRIFT_INPUT,
+    PRODUCTION_SHAPED_INPUT,
     SECRET_LOOKING_INPUT,
 )
 
@@ -208,6 +211,70 @@ def test_provider_family_is_allowlisted_from_model_identifier_only():
     assert snapshot["models"]["providers"] == [{"alias": "safe", "family": "other"}]
 
 
+def test_production_shaped_nested_settings_and_proxied_providers_are_projected():
+    snapshot = build_config_snapshot(_inputs(PRODUCTION_SHAPED_INPUT))
+
+    assert snapshot["status"] == "ok"
+    assert snapshot["models"]["providers"] == [
+        {"alias": "claude-sonnet-4-6", "family": "anthropic"},
+        {"alias": "gemini-3-flash", "family": "gemini"},
+    ]
+    assert snapshot["models"]["fallbacks"] == [{"from": "claude-sonnet-4-6", "to": ["gemini-3-flash"]}]
+    assert snapshot["mcp"] == [{"alias": "mcp-git", "transport": "stdio"}]
+    assert "/private/repository" not in json.dumps(snapshot)
+
+    without_mcp = build_config_snapshot(
+        _inputs(
+            {
+                **PRODUCTION_SHAPED_INPUT,
+                "litellm_yaml": PRODUCTION_SHAPED_INPUT["litellm_yaml"].replace(
+                    "  mcp_servers:\n    mcp-git:\n      command: uvx\n"
+                    "      args: [mcp-server-git, --repository, /private/repository]\n",
+                    "",
+                ),
+            }
+        )
+    )
+    assert snapshot["sources"][0]["digest"] != without_mcp["sources"][0]["digest"]
+
+
+def test_nested_litellm_settings_project_fallbacks_and_command_mcp_into_digest():
+    snapshot = build_config_snapshot(_inputs(PRODUCTION_SHAPED_INPUT))
+
+    assert snapshot["models"]["fallbacks"] == [{"from": "claude-sonnet-4-6", "to": ["gemini-3-flash"]}]
+    assert snapshot["mcp"] == [{"alias": "mcp-git", "transport": "stdio"}]
+    without_settings = build_config_snapshot(
+        _inputs(
+            {
+                **PRODUCTION_SHAPED_INPUT,
+                "litellm_yaml": PRODUCTION_SHAPED_INPUT["litellm_yaml"].split("litellm_settings:", 1)[0],
+            }
+        )
+    )
+    assert snapshot["sources"][0]["digest"] != without_settings["sources"][0]["digest"]
+
+
+@pytest.mark.parametrize(
+    ("alias", "wire_model", "family"),
+    [
+        ("claude-sonnet-4-6", "openai/claude-sonnet-4.6", "anthropic"),
+        ("gemini-3-flash", "openai/gemini-3.flash", "gemini"),
+        ("gpt-5-5", "anthropic/gpt-5.5", "openai"),
+        ("grok-4", "openai/grok-4", "xai"),
+        ("kimi-k2", "openai/kimi-k2", "moonshot"),
+    ],
+)
+def test_provider_family_prefers_canonical_public_alias(alias, wire_model, family):
+    fixture = {
+        **HEALTHY_INPUT,
+        "litellm_yaml": (f"model_list:\n  - model_name: {alias}\n    litellm_params: {{model: {wire_model}}}\n"),
+        "registry_model_ids": [alias],
+        "runtime_model_ids": [alias],
+    }
+
+    assert build_config_snapshot(_inputs(fixture))["models"]["providers"] == [{"alias": alias, "family": family}]
+
+
 def test_router_projection_is_allowlisted():
     fixture = {
         **HEALTHY_INPUT,
@@ -243,6 +310,29 @@ router_settings:
     }
 
     assert build_config_snapshot(_inputs(fixture))["routing"] == {"num_retries": 3}
+
+
+def test_non_finite_router_numbers_degrade_without_nonstandard_json():
+    fixture = {
+        **HEALTHY_INPUT,
+        "litellm_yaml": """model_list: []
+router_settings:
+  cooldown_time: .nan
+  allowed_fails: .inf
+  num_retries: -.inf
+""",
+        "registry_model_ids": [],
+        "runtime_model_ids": [],
+    }
+
+    snapshot = build_config_snapshot(_inputs(fixture))
+    serialized = json.dumps(snapshot, allow_nan=False)
+
+    assert snapshot["status"] == "degraded"
+    assert snapshot["routing"] == {}
+    assert {item["id"]: item["status"] for item in snapshot["validation"]}["router-settings"] == "fail"
+    assert "NaN" not in serialized
+    assert "Infinity" not in serialized
 
 
 def test_mcp_projection_contains_only_alias_and_transport_kind():
@@ -302,11 +392,105 @@ def test_sanitized_source_digest_is_stable_when_only_secrets_change():
     assert first["sources"][0]["digest"] == second["sources"][0]["digest"]
 
 
-def test_public_aliases_reject_credentials_paths_jwts_and_commands_from_every_projection():
-    good_alias = "gpt-4o.mini_2026:preview+canary"
+@pytest.mark.parametrize(
+    ("fixture", "overrides", "source_id"),
+    [
+        ({**HEALTHY_INPUT, "litellm_yaml": None}, {"litellm_status": "missing"}, "litellm-config"),
+        (INVALID_CONFIG_INPUT, {}, "litellm-config"),
+        (HEALTHY_INPUT, {"registry_status": "unavailable"}, "model-registry"),
+        (DEGRADED_INPUT, {}, "runtime-visible-models"),
+    ],
+)
+def test_non_ok_sources_omit_digest(fixture, overrides, source_id):
+    snapshot = build_config_snapshot(_inputs(fixture, **overrides))
+    source = next(item for item in snapshot["sources"] if item["id"] == source_id)
+
+    assert source["status"] != "ok"
+    assert "digest" not in source
+
+
+def test_task_one_model_drift_fixture_asserts_every_field():
+    assert build_config_snapshot(_inputs(MODEL_DRIFT_INPUT))["drift"] == {
+        "status": "drifted",
+        "configured_only": [],
+        "registry_only": ["claude-safe"],
+        "runtime_only": [],
+        "missing_at_runtime": ["claude-safe"],
+        "registry_override": True,
+    }
+
+
+def test_runtime_only_excludes_aliases_already_known_to_registry():
+    fixture = {
+        **HEALTHY_INPUT,
+        "registry_model_ids": ["gpt-safe", "registry-visible"],
+        "runtime_model_ids": ["gpt-safe", "registry-visible", "runtime-new"],
+    }
+
+    drift = build_config_snapshot(_inputs(fixture))["drift"]
+
+    assert drift["registry_only"] == ["registry-visible"]
+    assert drift["runtime_only"] == ["runtime-new"]
+    assert not set(drift["registry_only"]) & set(drift["runtime_only"])
+
+
+def test_canonical_preview_and_dotted_identifiers_are_valid_aliases():
+    aliases = [
+        "api-preview-model-2026",
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJtb2RlbCJ9.signature1234",
+    ]
+    fixture = {
+        **HEALTHY_INPUT,
+        "litellm_yaml": "model_list:\n"
+        + "".join(f"  - model_name: {alias}\n    litellm_params: {{model: openai/{alias}}}\n" for alias in aliases),
+        "registry_model_ids": aliases,
+        "runtime_model_ids": aliases,
+    }
+
+    snapshot = build_config_snapshot(_inputs(fixture))
+
+    assert snapshot["status"] == "ok"
+    assert snapshot["models"]["configured"] == sorted(aliases)
+    assert snapshot["models"]["registry"] == sorted(aliases)
+    assert snapshot["models"]["runtime"] == sorted(aliases)
+    assert snapshot["drift"]["status"] == "clean"
+
+
+@pytest.mark.parametrize(
+    "credential",
+    [
+        "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
+        "github_pat_" + ("A" * 40),
+        "xoxb-" + ("A" * 32),
+        "AKIA" + ("A" * 16),
+        "sk-proj-" + ("A" * 32),
+    ],
+)
+def test_actual_credential_aliases_fail_validation_without_leaking_or_false_clean_drift(credential):
+    fixture = {
+        **HEALTHY_INPUT,
+        "litellm_yaml": (
+            f"model_list:\n  - model_name: {credential}\n    litellm_params: {{model: openai/safe-wire-model}}\n"
+        ),
+        "registry_model_ids": [credential],
+        "runtime_model_ids": [credential],
+    }
+
+    snapshot = build_config_snapshot(_inputs(fixture))
+    serialized = json.dumps(snapshot, allow_nan=False)
+
+    assert snapshot["status"] == "degraded"
+    assert snapshot["drift"]["status"] == "unknown"
+    assert {item["id"]: item["status"] for item in snapshot["validation"]}["source-aliases"] == "fail"
+    assert all(source["status"] == "invalid" for source in snapshot["sources"])
+    assert all("digest" not in source for source in snapshot["sources"])
+    assert credential not in serialized
+
+
+def test_public_aliases_reject_credentials_paths_and_commands_from_every_projection():
+    good_alias = "gpt-4o.mini_2026-preview"
     rejected_aliases = (
         "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890",
-        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature1234",
         "etc/keys",
         "rm -rf /",
     )

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import main as gateway_engine_main
 import pytest
+import yaml
 from api.unified_config_admin import _MAX_SOURCE_BYTES
+from test_gateway_engine_unified_config_contract import PRODUCTION_SHAPED_INPUT
 
 pytestmark = pytest.mark.mock
 
@@ -23,6 +27,9 @@ def _registry_store(*model_ids: str):
     class Store:
         def list_models(self):
             return SimpleNamespace(registry_available=True, models=models, errors=[])
+
+        def list_models_for_snapshot(self):
+            return self.list_models()
 
     return Store()
 
@@ -42,6 +49,29 @@ router_settings:
         encoding="utf-8",
     )
     return path
+
+
+def _write_production_shaped_config(tmp_path):
+    path = tmp_path / "production-shaped-litellm.yaml"
+    path.write_text(PRODUCTION_SHAPED_INPUT["litellm_yaml"], encoding="utf-8")
+    return path
+
+
+def _assert_openapi_snapshot_shape(payload):
+    document = yaml.safe_load(
+        (Path(__file__).parents[2] / "docs" / "openapi" / "gateway-engine.yaml").read_text(encoding="utf-8")
+    )
+    schema = document["components"]["schemas"]["UnifiedConfigSnapshot"]
+    assert set(payload) == set(schema["required"])
+    assert payload["schema"] in schema["properties"]["schema"]["enum"]
+    assert payload["status"] in schema["properties"]["status"]["enum"]
+    source_schema = schema["properties"]["sources"]["items"]
+    for source in payload["sources"]:
+        assert set(source_schema["required"]) <= set(source) <= set(source_schema["properties"])
+        assert source["status"] in source_schema["properties"]["status"]["enum"]
+        assert ("digest" in source) is (source["status"] == "ok")
+    transport_enum = schema["properties"]["mcp"]["items"]["properties"]["transport"]["enum"]
+    assert all(server["transport"] in transport_enum for server in payload["mcp"])
 
 
 @pytest.fixture(autouse=True)
@@ -126,6 +156,49 @@ async def test_healthy_fixed_sources_return_safe_snapshot(
 
 
 @pytest.mark.asyncio
+async def test_production_shaped_fixture_matches_openapi_when_healthy_and_degraded(
+    monkeypatch,
+    asgi_client,
+    mock_litellm_router,
+    tmp_path,
+):
+    aliases = ("claude-sonnet-4-6", "gemini-3-flash")
+    monkeypatch.setenv("UNIFIED_CONFIG_ADMIN_API_ENABLED", "true")
+    monkeypatch.setenv("CLIPROXY_API_KEY", _SECRET)
+    monkeypatch.setattr(gateway_engine_main, "LITELLM_CONFIG_PATH", str(_write_production_shaped_config(tmp_path)))
+    monkeypatch.setattr(gateway_engine_main, "_model_registry_store", lambda: _registry_store(*aliases))
+
+    async def healthy_runtime():
+        return list(aliases), []
+
+    monkeypatch.setattr(gateway_engine_main, "_admin_fetch_visible_models", healthy_runtime)
+    healthy = await asgi_client.get("/admin/config", headers=_headers())
+
+    assert healthy.status_code == 200
+    assert healthy.json()["status"] == "ok"
+    assert healthy.json()["models"]["providers"] == [
+        {"alias": "claude-sonnet-4-6", "family": "anthropic"},
+        {"alias": "gemini-3-flash", "family": "gemini"},
+    ]
+    assert healthy.json()["models"]["fallbacks"] == [{"from": "claude-sonnet-4-6", "to": ["gemini-3-flash"]}]
+    assert healthy.json()["mcp"] == [{"alias": "mcp-git", "transport": "stdio"}]
+    _assert_openapi_snapshot_shape(healthy.json())
+
+    async def unavailable_runtime():
+        return None, [{"code": "models_fetch_error", "message": "private failure"}]
+
+    monkeypatch.setattr(gateway_engine_main, "_admin_fetch_visible_models", unavailable_runtime)
+    degraded = await asgi_client.get("/admin/config", headers=_headers())
+
+    assert degraded.status_code == 200
+    assert degraded.json()["status"] == "degraded"
+    assert degraded.json()["drift"]["status"] == "unknown"
+    _assert_openapi_snapshot_shape(degraded.json())
+    assert "private" not in degraded.text
+    assert len(mock_litellm_router.calls) == 0
+
+
+@pytest.mark.asyncio
 async def test_runtime_failure_returns_degraded_without_provider_oauth(
     monkeypatch,
     asgi_client,
@@ -147,6 +220,34 @@ async def test_runtime_failure_returns_degraded_without_provider_oauth(
     assert {"source": "runtime-visible-models", "code": "source_unavailable"} in response.json()["errors"]
     assert _SECRET not in response.text
     assert len(mock_litellm_router.calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_real_runtime_http_timeout_remains_typed_source_timeout(
+    monkeypatch,
+    asgi_client,
+    tmp_path,
+):
+    class TimeoutClient:
+        async def get(self, url, *, headers, timeout):
+            assert timeout == 2.0
+            raise httpx.ReadTimeout("private runtime URL timed out", request=httpx.Request("GET", url))
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setenv("UNIFIED_CONFIG_ADMIN_API_ENABLED", "true")
+    monkeypatch.setattr(gateway_engine_main, "LITELLM_CONFIG_PATH", str(_write_config(tmp_path)))
+    monkeypatch.setattr(gateway_engine_main, "_model_registry_store", lambda: _registry_store("gpt-safe"))
+    monkeypatch.setattr(gateway_engine_main, "_client", TimeoutClient())
+
+    response = await asgi_client.get("/admin/config", headers=_headers())
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
+    assert response.json()["drift"]["status"] == "unknown"
+    assert {"source": "runtime-visible-models", "code": "source_timeout"} in response.json()["errors"]
+    assert "private runtime URL" not in response.text
 
 
 @pytest.mark.asyncio

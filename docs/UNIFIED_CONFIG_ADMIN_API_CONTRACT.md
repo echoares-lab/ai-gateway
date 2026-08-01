@@ -2,13 +2,13 @@
 
 ## Purpose and source of truth
 
-This is the executable contract for C-SVC-4's future read-only configuration
-snapshot API. It consumes the approved [Unified Config Admin API
+This is the executable contract for C-SVC-4's currently implemented read-only
+configuration snapshot API. It consumes the approved [Unified Config Admin API
 Design](superpowers/specs/2026-08-01-unified-config-admin-api-design.md). Git is
 authoritative for structural configuration; the documented runtime model registry
-exception is authoritative for explicit model overrides. This child creates no
-runtime route or builder. The future pure builder is the only component allowed
-to create `config-snapshot.v1`.
+exception is authoritative for explicit model overrides. The pure builder remains
+the only component allowed to create `config-snapshot.v1`; the guarded adapter
+owns fixed-source acquisition, authentication, and HTTP bounds.
 
 ### Global constraints (verbatim)
 
@@ -30,7 +30,7 @@ to create `config-snapshot.v1`.
 
 ## Route, authentication, and flag matrix
 
-The future route is `GET /admin/config`. It is available only with
+The route is `GET /admin/config`. It is available only with
 `UNIFIED_CONFIG_ADMIN_API_ENABLED=true`; its disabled default is
 `UNIFIED_CONFIG_ADMIN_API_ENABLED=false`. Disabled requests return before
 source inspection. All responses, including errors, use `Cache-Control: no-store`.
@@ -41,6 +41,7 @@ source inspection. All responses, including errors, use `Cache-Control: no-store
 | Admin authentication is not configured | 503 | `config_snapshot_unavailable` | Never accept client or model API keys. |
 | `x-admin-key` missing or incorrect | 401 | `config_snapshot_auth_required` | Reject before source inspection. |
 | `x-management-scope` is not exactly `config:read` | 403 | `config_snapshot_scope_forbidden` | Reject before source inspection. |
+| Any query parameter is supplied | 400 | `config_snapshot_invalid_request` | Fixed server-side sources only; reject before source inspection. |
 | Enabled valid `x-admin-key` and `x-management-scope: config:read` | 200 | — | Return bounded snapshot, including degraded data. |
 | Serialized response is too large | 502 | `config_snapshot_too_large` | Return no partial raw content. |
 | Unexpected safe orchestration failure | 503 | `config_snapshot_unavailable` | Return only typed HTTP error. |
@@ -91,7 +92,7 @@ and `errors`.
 
 Sources have stable identifiers such as `litellm-config`, `model-registry`,
 and `runtime-visible-models`, and kinds `deployed-file`, `registry`, and
-`live-api`. Future adapters use fixed server-side sources only.
+`live-api`. The adapters use fixed server-side sources only.
 
 The builder compares normalized, deduplicated, sorted aliases from deployed
 LiteLLM configuration, the gateway registry, and runtime-visible models after
@@ -111,6 +112,7 @@ two-second connect limits.
 | HTTP | auth unavailable or safe orchestration failure | `config_snapshot_unavailable` |
 | HTTP | missing or incorrect admin key | `config_snapshot_auth_required` |
 | HTTP | incorrect management scope | `config_snapshot_scope_forbidden` |
+| HTTP | query parameter supplied | `config_snapshot_invalid_request` |
 | HTTP | response bound exceeded | `config_snapshot_too_large` |
 | Source in HTTP 200 | missing, invalid, timeout, unavailable | `source_missing`, `source_invalid`, `source_timeout`, `source_unavailable` |
 
@@ -163,12 +165,10 @@ registry, and GitOps flow remain unchanged.
 
 ## Serialized dependencies
 
-1. Task 1 / #635: this contract and deterministic fixtures.
-2. Task 2 / #636: pure snapshot builder consuming this contract and fixtures.
-3. Task 3 / #637: guarded adapters and `GET /admin/config`, including OpenAPI
-   and exposure registration.
+1. Task 1 / #635 delivered this contract and deterministic fixtures.
+2. Task 2 / #636 delivered the pure snapshot builder consuming them.
+3. Task 3 / #637 implements the guarded adapters and `GET /admin/config`,
+   including OpenAPI and exposure registration.
 
-Each child must pass required CI, merge through a PR, and record Gate D before
-its dependent child begins. Before runtime merge, the endpoint must be
-registered in `docs/openapi/gateway-engine.yaml`,
+The endpoint is registered in `docs/openapi/gateway-engine.yaml`,
 `docs/ADMIN_ENDPOINT_EXPOSURE.yaml`, and `docs/API_DOCUMENTATION.md`.

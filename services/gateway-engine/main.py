@@ -705,7 +705,7 @@ def _load_unified_config_litellm_text() -> str:
 
 
 def _load_unified_config_registry_model_ids() -> tuple[str, ...]:
-    loaded = _model_registry_store().list_models()
+    loaded = _model_registry_store().list_models_for_snapshot()
     if not loaded.registry_available:
         raise RuntimeError("model registry unavailable")
     return tuple(model.model_id for model in loaded.models)
@@ -713,6 +713,8 @@ def _load_unified_config_registry_model_ids() -> tuple[str, ...]:
 
 async def _fetch_unified_config_runtime_model_ids() -> tuple[str, ...]:
     model_ids, errors = await _admin_fetch_visible_models()
+    if any(error.get("code") == "models_fetch_timeout" for error in errors if isinstance(error, dict)):
+        raise TimeoutError("runtime model catalog timed out")
     if errors or model_ids is None:
         raise RuntimeError("runtime model catalog unavailable")
     return tuple(model_ids)
