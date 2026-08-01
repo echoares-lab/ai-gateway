@@ -331,7 +331,9 @@ class CodexWsTranslator:
                     outgoing = self._provider_frame(raw)
                     if outgoing is not None:
                         await self._send_client(outgoing)
-                data = await receive_client()
+                active_requests = any(not state.terminal for state in self.states.values())
+                receive_timeout = REQUEST_TIMEOUT_SECONDS if active_requests else IDLE_TIMEOUT_SECONDS
+                data = await asyncio.wait_for(receive_client(), timeout=receive_timeout)
                 try:
                     frame, digest = decode_frame(data)
                     await self._client_frame(frame, digest)
