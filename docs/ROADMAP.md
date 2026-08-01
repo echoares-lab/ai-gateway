@@ -15,22 +15,8 @@ Last reviewed: 2026-08-01.
 
 ## Now
 
-### Faster local mock iteration
-
-Coordination epic [#643](https://github.com/echoares-lab/ai-gateway/issues/643)
-(C-AUD-9) is approved to preserve the in-memory Gate B path, add focused
-local pytest selection, and prevent clean-db or mock-stack overhead from
-returning.
-
-| Delivery order | Tracking issue | Status / dependency |
-|----------------|----------------|---------------------|
-| 1. Guard focused in-memory mock iteration | [#644](https://github.com/echoares-lab/ai-gateway/issues/644) | `status:blocked`; becomes ready after this promotion merges and Gate D passes |
-
-Scope is limited to an optional `MOCK_TEST_ARGS` selector, an offline Make
-dry-run contract, and Obsidian usage/closeout notes. The default
-`make test-mock` remains the complete Gate B suite. No Docker, Compose,
-database, dev-slot, runtime, API, marker, membership, or CI-filter changes
-are permitted.
+No approved active epic. Promote a candidate into this roadmap and create a
+ready atomic child before claiming new work.
 
 ## Next
 
@@ -43,6 +29,19 @@ No approved parked work. See [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 for the unapproved inventory.
 
 ## Completed
+
+### Faster local mock iteration
+
+Coordination epic [#643](https://github.com/echoares-lab/ai-gateway/issues/643)
+(C-AUD-9) and atomic child
+[#644](https://github.com/echoares-lab/ai-gateway/issues/644) are complete and
+production-verified. The canonical `make test-mock` target remains the full
+in-memory Gate B suite and now accepts optional local pytest selectors without
+adding Docker, Compose, database, or dev-slot prerequisites.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Guard focused in-memory mock iteration | [#644](https://github.com/echoares-lab/ai-gateway/issues/644) | [PR #647](https://github.com/echoares-lab/ai-gateway/pull/647); heartbeat [30699268100](https://github.com/echoares-lab/ai-gateway/actions/runs/30699268100) |
 
 ### Unified configuration snapshot API
 
