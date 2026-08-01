@@ -1,8 +1,12 @@
 import logging
+import os
+import re
+import sys
+import uuid
 from pathlib import Path
 
 import httpx
-from core.admin_shared import _get_config, _require_admin_key
+from core.admin_shared import _get_config, _require_admin_key, resolve_gateway_admin_key
 from core.config import config as runtime_config
 from core.launcher_key_escrow import OpenBaoEscrowClient
 from core.launcher_key_service import LauncherKeyResult, LauncherKeyService, LauncherKeyServiceError
@@ -31,6 +35,169 @@ _SERVICE_ERROR_MESSAGES = {
     "key_creation_incomplete": "Key creation is incomplete",
 }
 _service_instance: LauncherKeyService | None = None
+
+
+# Read-only adapter limits are deliberately small.  They protect this process
+# from accidentally proxying the full CLIProxy management API.
+_CLIPROXY_READ_TIMEOUT = 5.0
+_CLIPROXY_RESPONSE_LIMIT = 64 * 1024
+_CLIPROXY_SCOPES = {
+    "health": "cliproxy:health:read",
+    "auth-files": "cliproxy:sessions:read",
+    "config": "cliproxy:config:read",
+}
+_CLIPROXY_UPSTREAM_PATHS = {
+    "health": "/health",
+    "auth-files": "/v0/management/auth-files",
+    "config": "/v0/management/config",
+}
+_SENSITIVE_FIELD_NAMES = {
+    "api_key",
+    "api-key",
+    "api-keys",
+    "apikey",
+    "authorization",
+    "cookie",
+    "credential",
+    "credentials",
+    "env",
+    "file",
+    "filename",
+    "filepath",
+    "management_key",
+    "management-key",
+    "password",
+    "path",
+    "raw",
+    "secret",
+    "secrets",
+    "token",
+    "tokens",
+}
+_SENSITIVE_STRING = re.compile(r"(?i)(?:bearer\s+|sk-|oauth|refresh[_-]?token|api[_-]?key|secret|password)")
+
+
+def _cliproxy_management_enabled() -> bool:
+    """Read the flag dynamically so an emergency rollback takes effect immediately."""
+    raw = os.environ.get("CLIPROXY_MANAGEMENT_API_ENABLED")
+    if raw is None:
+        raw = os.environ.get("GATEWAY_ENGINE_CLIPROXY_MANAGEMENT_API_ENABLED")
+    if raw is not None:
+        return raw.strip().lower() not in {"", "0", "false", "no", "off"}
+    return bool(getattr(runtime_config, "CLIPROXY_MANAGEMENT_API_ENABLED", False))
+
+
+def _cliproxy_management_error(code: str, message: str, status_code: int) -> JSONResponse:
+    return JSONResponse(
+        {"error": {"code": code, "message": message}},
+        status_code=status_code,
+        headers=_NO_STORE,
+    )
+
+
+def _cliproxy_management_auth(request: Request, scope: str) -> JSONResponse | None:
+    """Authenticate operator requests without accepting client/model credentials."""
+    configured = resolve_gateway_admin_key()
+    if not configured:
+        return _cliproxy_management_error("management_unavailable", "Management authentication is not configured", 503)
+    if request.headers.get("x-admin-key", "") != configured:
+        return _cliproxy_management_error("management_auth_required", "Management authentication required", 401)
+    if request.headers.get("x-management-scope", "") != scope:
+        return _cliproxy_management_error("management_scope_forbidden", "Management scope is not permitted", 403)
+    return None
+
+
+def _redact_cliproxy_payload(value, *, _depth: int = 0):
+    """Return a bounded, JSON-safe payload with secrets and paths removed."""
+    if _depth > 8:
+        return "[redacted]"
+    if isinstance(value, dict):
+        output = {}
+        for key, item in list(value.items())[:256]:
+            key_text = str(key)
+            key_lower = key_text.lower().replace("_", "-")
+            normalized_sensitive = {name.replace("_", "-") for name in _SENSITIVE_FIELD_NAMES}
+            is_sensitive = key_lower in normalized_sensitive or any(
+                key_lower.startswith(f"{prefix}-")
+                for prefix in ("api-key", "token", "secret", "credential", "password", "cookie")
+            )
+            if is_sensitive:
+                output[key_text] = "[redacted]"
+            else:
+                output[key_text] = _redact_cliproxy_payload(item, _depth=_depth + 1)
+        return output
+    if isinstance(value, list):
+        return [_redact_cliproxy_payload(item, _depth=_depth + 1) for item in value[:256]]
+    if isinstance(value, str):
+        text = value[:512]
+        if text.startswith(("/", "~/", "file:")) or ".cli-proxy" in text or _SENSITIVE_STRING.search(text):
+            return "[redacted]"
+        return text
+    if isinstance(value, (bool, int, float)) or value is None:
+        return value
+    return str(value)[:256]
+
+
+async def _cliproxy_management_request(operation: str, request: Request) -> JSONResponse:
+    if not _cliproxy_management_enabled():
+        return _cliproxy_management_error("management_disabled", "CLIProxy management is disabled", 404)
+
+    scope = _CLIPROXY_SCOPES[operation]
+    if error := _cliproxy_management_auth(request, scope):
+        return error
+
+    main_module = sys.modules.get("main")
+    management_key = os.environ.get("CLIPROXY_MANAGEMENT_KEY", "").strip()
+    if not management_key and main_module is not None:
+        management_key = str(getattr(main_module, "CLIPROXY_MANAGEMENT_KEY", "")).strip()
+    if not management_key:
+        return _cliproxy_management_error("management_unavailable", "CLIProxy management is unavailable", 503)
+    base_url = os.environ.get("CLIPROXY_URL", "").strip()
+    if not base_url and main_module is not None:
+        base_url = str(getattr(main_module, "CLIPROXY_URL", "")).strip()
+    base_url = (base_url or runtime_config.CLIPROXY_URL).rstrip("/")
+    upstream_url = f"{base_url}{_CLIPROXY_UPSTREAM_PATHS[operation]}"
+    request_id = request.headers.get("x-request-id", "")[:96] or uuid.uuid4().hex
+    try:
+        timeout = httpx.Timeout(_CLIPROXY_READ_TIMEOUT, connect=2.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(upstream_url, headers={"x-management-key": management_key})
+        if len(response.content) > _CLIPROXY_RESPONSE_LIMIT:
+            return _cliproxy_management_error(
+                "management_response_too_large", "CLIProxy response exceeded the limit", 502
+            )
+        if response.status_code in (401, 403):
+            return _cliproxy_management_error("upstream_auth_failure", "CLIProxy management authorization failed", 502)
+        if not 200 <= response.status_code < 300:
+            return _cliproxy_management_error("management_upstream_error", "CLIProxy management request failed", 502)
+        try:
+            payload = response.json()
+        except (ValueError, TypeError):
+            return _cliproxy_management_error("management_malformed_response", "CLIProxy response was invalid", 502)
+        safe_payload = _redact_cliproxy_payload(payload)
+        log.info("CLIProxy management read operation=%s outcome=ok request_id=%s", operation, request_id)
+        return JSONResponse(safe_payload, headers=_NO_STORE)
+    except httpx.TimeoutException:
+        log.info("CLIProxy management read operation=%s outcome=timeout request_id=%s", operation, request_id)
+        return _cliproxy_management_error("management_timeout", "CLIProxy management request timed out", 504)
+    except (httpx.HTTPError, OSError):
+        log.info("CLIProxy management read operation=%s outcome=unavailable request_id=%s", operation, request_id)
+        return _cliproxy_management_error("management_unavailable", "CLIProxy management is unavailable", 503)
+
+
+@router.get("/admin/cliproxy/health")
+async def cliproxy_management_health(request: Request):
+    return await _cliproxy_management_request("health", request)
+
+
+@router.get("/admin/cliproxy/auth-files")
+async def cliproxy_management_auth_files(request: Request):
+    return await _cliproxy_management_request("auth-files", request)
+
+
+@router.get("/admin/cliproxy/config")
+async def cliproxy_management_config(request: Request):
+    return await _cliproxy_management_request("config", request)
 
 
 class CreateKeyRequest(BaseModel):
