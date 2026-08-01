@@ -60,7 +60,15 @@ def collect_sensitive_routes(service_root: Path) -> set[tuple[str, str]]:
                     continue
                 if not (
                     route.startswith(("/admin", "/debug", "/model"))
-                    or route in {"/metrics", "/health", "/health/ready", "/version", "/v1/events/credential"}
+                    or route
+                    in {
+                        "/metrics",
+                        "/health",
+                        "/health/ready",
+                        "/version",
+                        "/v1/events/credential",
+                        "/v1/config/generate",
+                    }
                 ):
                     continue
                 for method in _methods(decorator_node, decorator):
