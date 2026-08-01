@@ -97,7 +97,7 @@ def _safe_provider_family(model_name: str, params: Mapping[str, Any]) -> str:
 def _extract_environment_references(document: Mapping[str, Any]) -> tuple[list[str], bool]:
     """Find bounded environment references and report unsafe traversal exhaustion."""
     references: set[str] = set()
-    visited: set[int] = set()
+    minimum_visited_depth: dict[int, int] = {}
     nodes_visited = 0
     budget_exceeded = False
 
@@ -107,9 +107,10 @@ def _extract_environment_references(document: Mapping[str, Any]) -> tuple[list[s
             return
         if isinstance(value, (Mapping, list, tuple)):
             identity = id(value)
-            if identity in visited:
+            previous_depth = minimum_visited_depth.get(identity)
+            if previous_depth is not None and previous_depth <= depth:
                 return
-            visited.add(identity)
+            minimum_visited_depth[identity] = depth
         nodes_visited += 1
         if nodes_visited > MAX_ENV_TRAVERSAL_NODES:
             budget_exceeded = True

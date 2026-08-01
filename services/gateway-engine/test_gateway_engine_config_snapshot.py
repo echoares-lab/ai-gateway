@@ -523,6 +523,46 @@ amplified:
     assert "LATE_PRIVATE_REFERENCE" not in serialized
 
 
+def test_environment_traversal_is_independent_of_shared_anchor_encounter_depth():
+    deep_first_yaml = """model_list:
+  - model_name: gpt-safe
+    litellm_params: {model: openai/gpt-safe}
+deep:
+  level-1:
+    level-2:
+      level-3:
+        level-4:
+          level-5:
+            level-6:
+              shared: &shared
+                reference: os.environ/LATE_PRIVATE_REFERENCE
+shallow: *shared
+"""
+    shallow_first_yaml = """model_list:
+  - model_name: gpt-safe
+    litellm_params: {model: openai/gpt-safe}
+shallow: &shared
+  reference: os.environ/LATE_PRIVATE_REFERENCE
+deep:
+  level-1:
+    level-2:
+      level-3:
+        level-4:
+          level-5:
+            level-6:
+              shared: *shared
+"""
+
+    deep_first = build_config_snapshot(_inputs({**HEALTHY_INPUT, "litellm_yaml": deep_first_yaml}))
+    shallow_first = build_config_snapshot(_inputs({**HEALTHY_INPUT, "litellm_yaml": shallow_first_yaml}))
+    expected_environment = [{"name": "LATE_PRIVATE_REFERENCE", "present": False}]
+
+    assert deep_first["environment"] == expected_environment
+    assert shallow_first["environment"] == expected_environment
+    assert deep_first["validation"] == shallow_first["validation"]
+    assert deep_first == shallow_first
+
+
 @pytest.mark.parametrize(
     "credential",
     [
