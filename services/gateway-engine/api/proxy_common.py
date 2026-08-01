@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 import httpx
+from api.policy_hooks import PolicyHookBoundary
 from fastapi import APIRouter
 
 log = logging.getLogger("gateway-engine.proxy_router")
@@ -40,6 +41,7 @@ class ProxyRouterDeps:
     team_budget_cache_ttl_sec: int
     request_model_reconciliation: Callable[..., Any] | None = None
     validate_client_auth: Callable[[str], Any] | None = None
+    policy_hooks: PolicyHookBoundary | None = None
 
 
 _default_deps: ProxyRouterDeps | None = None
@@ -61,6 +63,16 @@ def _http_client() -> httpx.AsyncClient:
     if client is None:
         raise RuntimeError("http client not initialized")
     return client
+
+
+def _policy_hooks() -> PolicyHookBoundary:
+    """Return the injected boundary, retaining a compatibility fallback."""
+    hooks = _deps().policy_hooks
+    if hooks is not None:
+        return hooks
+    from api.proxy_routing import create_policy_hooks
+
+    return create_policy_hooks()
 
 
 def _main_override(name: str, current: Any) -> Any | None:

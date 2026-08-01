@@ -68,6 +68,7 @@ from api.admin_routes import (
     router as extracted_admin_router,
 )
 from api.model_runtime_routes import router as model_runtime_router
+from api.policy_hooks import PolicyHookBoundary
 from api.ws_router import (
     WsRouterDeps,
     _codex_ws_upstream_headers,  # noqa: F401 - re-exported for existing tests
@@ -707,6 +708,7 @@ configure_proxy_routes(
         team_budget_cache_ttl_sec=TEAM_BUDGET_CACHE_TTL_SEC,
         request_model_reconciliation=_request_model_reconciliation,
         validate_client_auth=lambda token: _validate_ws_auth_token_async(token),
+        policy_hooks=proxy_routes.create_policy_hooks(),
     )
 )
 app.include_router(proxy_router)
@@ -721,6 +723,16 @@ def _build_ws_routing_context(ws: WebSocket, token: str) -> dict:
     }
 
 
+_ws_policy_hooks = PolicyHookBoundary(
+    enabled=_policy_engine_enabled,
+    build_context=_build_ws_routing_context,
+    evaluate=_evaluate_policy_engine,
+    apply=_apply_policy_engine,
+    record_trace=_record_policy_trace,
+    redact_decision=_redact_policy_decision_for_admin,
+)
+
+
 app.include_router(
     create_ws_router(
         WsRouterDeps(
@@ -728,6 +740,7 @@ app.include_router(
             build_routing_context=_build_ws_routing_context,
             evaluate_policy_engine=_evaluate_policy_engine,
             upstream_timeout=UPSTREAM_TIMEOUT,
+            policy_hooks=_ws_policy_hooks,
         )
     )
 )

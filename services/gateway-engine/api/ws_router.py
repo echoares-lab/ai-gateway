@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 import websockets
+from api.policy_hooks import PolicyHookBoundary
 from api.proxy_common import _log_safe_headers
 from fastapi import APIRouter, WebSocket
 
@@ -21,6 +22,7 @@ class WsRouterDeps:
     build_routing_context: Callable[[WebSocket, str | None], dict[str, Any]]
     evaluate_policy_engine: Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
     upstream_timeout: float
+    policy_hooks: PolicyHookBoundary | None = None
 
 
 def _policy_engine_enabled() -> bool:
@@ -179,8 +181,11 @@ def create_ws_router(deps: WsRouterDeps) -> APIRouter:
             )
         else:
             policy_token = auth_token if client_auth else None
-            ctx = deps.build_routing_context(ws, policy_token)
-            routing_decision = await deps.evaluate_policy_engine(ctx)
+            hooks = deps.policy_hooks
+            build_context = hooks.build_context if hooks is not None else deps.build_routing_context
+            evaluate = hooks.evaluate if hooks is not None else deps.evaluate_policy_engine
+            ctx = build_context(ws, policy_token)
+            routing_decision = await evaluate(ctx)
             log.info(
                 "Codex WebSocket in-process policy evaluate completed (gate=%s)",
                 routing_decision.get("gate") if routing_decision else "none",
