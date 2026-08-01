@@ -15,24 +15,24 @@ Last reviewed: 2026-08-01.
 
 ## Now
 
-No active approved implementation is currently in progress. C-RT-5 is the next
+No active approved implementation is currently in progress. C-RT-2 is the next
 approved epic; claim only its ready contract child after confirming issue status
 and dependency evidence.
 
 ## Next
 
-### Codex WebSocket frame translation
+### Evaluation-driven quality routing
 
-Coordination epic [#621](https://github.com/echoares-lab/ai-gateway/issues/621)
-(C-RT-5) is approved as the next compatibility/routing epic. It covers an
-opt-in Option B translation boundary for Codex WebSocket frames, preserving the
-current direct CLIProxy proxy as rollback. Claim only the ready contract child
-first. Serialize all changes to `services/gateway-engine/api/ws_router.py` and
-require Gate C for real WebSocket/provider behavior.
+Coordination epic [#627](https://github.com/echoares-lab/ai-gateway/issues/627)
+(C-RT-2) is approved as the next routing epic. It defines an opt-in,
+fail-open quality-score reorder layer within the existing eligible model set;
+health, capability, safety, and cost safeguards remain authoritative. Claim the
+contract child first. Serialize changes to the policy evaluator/routing
+hotspots; require Gate C for runtime routing behavior.
 
 | Atomic scope | Issue | Status | Dependency |
 |--------------|-------|--------|------------|
-| Define Codex WebSocket translation contract and fixtures | [#622](https://github.com/echoares-lab/ai-gateway/issues/622) | Ready to claim | C-RT-3 #591 closed; C-RT-5 #621 approved |
+| Define evaluation-driven quality routing contract and fixtures | [#628](https://github.com/echoares-lab/ai-gateway/issues/628) | Ready to claim | C-RT-3 #591 and adaptive routing #579 completed; C-RT-2 #627 approved |
 
 ## Parked
 
@@ -40,6 +40,16 @@ No approved parked work. See [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 for the unapproved inventory.
 
 ## Completed
+
+### Codex WebSocket frame translation
+
+Coordination epic [#621](https://github.com/echoares-lab/ai-gateway/issues/621)
+(C-RT-5) and its serialized children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Codex WebSocket translation contract and fixtures | [#622](https://github.com/echoares-lab/ai-gateway/issues/622) | [PR #624](https://github.com/echoares-lab/ai-gateway/pull/624); heartbeat [30679340037](https://github.com/echoares-lab/ai-gateway/actions/runs/30679340037) |
+| Opt-in Codex WebSocket frame translator | [#625](https://github.com/echoares-lab/ai-gateway/issues/625) | [PR #626](https://github.com/echoares-lab/ai-gateway/pull/626); heartbeat [30679854952](https://github.com/echoares-lab/ai-gateway/actions/runs/30679854952) |
 
 ### MCP visibility and local tool hosting
 
