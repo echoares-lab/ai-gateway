@@ -86,6 +86,12 @@ class Config:
         ("LOCAL_MCP_TOOL_HOST_ENABLED", "GATEWAY_ENGINE_LOCAL_MCP_TOOL_HOST_ENABLED"),
         False,
     )
+    # The CLIProxy management adapter is an operator-only, read-only surface.
+    # Keep it opt-in so the existing shell workflow remains the rollback path.
+    CLIPROXY_MANAGEMENT_API_ENABLED = _env_bool(
+        ("CLIPROXY_MANAGEMENT_API_ENABLED", "GATEWAY_ENGINE_CLIPROXY_MANAGEMENT_API_ENABLED"),
+        False,
+    )
     POLICY_ENGINE_TIMEOUT_MS = max(
         1,
         _env_int(("POLICY_ENGINE_TIMEOUT_MS", "GATEWAY_ENGINE_POLICY_ENGINE_TIMEOUT_MS"), 100),

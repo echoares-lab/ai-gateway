@@ -529,6 +529,95 @@ paths:
                 error:
                   message: "GATEWAY_ENGINE_ADMIN_KEY not configured"
                   code: "admin_key_required"
+  /admin/cliproxy/health:
+    get:
+      operationId: adminCliproxyHealth
+      summary: Read bounded CLIProxy health
+      description: >-
+        Operator-only, read-only CLIProxy health adapter. The feature is
+        disabled by default. Responses are bounded and redact credentials,
+        token values, cookies, paths, and raw upstream errors.
+      tags: [Admin]
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+        - name: x-management-scope
+          in: header
+          required: true
+          schema: {type: string, enum: [cliproxy:health:read]}
+      responses:
+        '200':
+          description: Redacted CLIProxy health payload
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        '401': {description: Management authentication is missing or invalid}
+        '403': {description: Management scope is not permitted}
+        '404': {description: Management adapter is disabled}
+        '502': {description: Upstream response was invalid or unauthorized}
+        '503': {description: CLIProxy is unavailable or not configured}
+        '504': {description: CLIProxy timed out}
+  /admin/cliproxy/auth-files:
+    get:
+      operationId: adminCliproxyAuthFiles
+      summary: Read safe CLIProxy account inventory
+      description: >-
+        Returns provider/account status metadata only. Authentication files,
+        token values, cookies, credentials, and filesystem paths are redacted.
+      tags: [Admin]
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+        - name: x-management-scope
+          in: header
+          required: true
+          schema: {type: string, enum: [cliproxy:sessions:read]}
+      responses:
+        '200':
+          description: Redacted account inventory
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        '401': {description: Management authentication is missing or invalid}
+        '403': {description: Management scope is not permitted}
+        '404': {description: Management adapter is disabled}
+        '502': {description: Upstream response was invalid or unauthorized}
+        '503': {description: CLIProxy is unavailable or not configured}
+        '504': {description: CLIProxy timed out}
+  /admin/cliproxy/config:
+    get:
+      operationId: adminCliproxyConfig
+      summary: Read safe CLIProxy configuration summary
+      description: >-
+        Returns only a bounded redacted configuration summary. Management and
+        provider keys, environment references, credentials, and paths are not
+        returned.
+      tags: [Admin]
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+        - name: x-management-scope
+          in: header
+          required: true
+          schema: {type: string, enum: [cliproxy:config:read]}
+      responses:
+        '200':
+          description: Redacted configuration summary
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        '401': {description: Management authentication is missing or invalid}
+        '403': {description: Management scope is not permitted}
+        '404': {description: Management adapter is disabled}
+        '502': {description: Upstream response was invalid or unauthorized}
+        '503': {description: CLIProxy is unavailable or not configured}
+        '504': {description: CLIProxy timed out}
   /admin/status:
     get:
       summary: Read-only operator status aggregator
