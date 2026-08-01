@@ -16,28 +16,27 @@ Last reviewed: 2026-08-01.
 ## Now
 
 No active approved implementation is currently in progress. The next approved
-work is the C-RT-3 contract child listed below; do not claim it until its
-dependencies and issue status are confirmed.
+work is the C-RT-4 contract child listed below; do not claim it until its
+issue status and dependency evidence are confirmed.
 
 ## Next
 
-### Deeper policy enforcement and WebSocket parity
+### MCP visibility and local tool hosting
 
-Coordination epic [#591](https://github.com/echoares-lab/ai-gateway/issues/591)
-(C-RT-3) is approved as the next routing/policy epic after C-AUD-8. The
-completed policy-engine #38 remains the in-process foundation; this epic covers
-only the remaining strict-enforcement and optional WebSocket-parity gaps. Claim
-only the contract child after C-AUD-8's request-path seam is merged. The
-implementation children are serialized in the order shown and remain blocked
-until their predecessors have Gate D evidence.
+Coordination epic [#601](https://github.com/echoares-lab/ai-gateway/issues/601)
+(C-RT-4) is approved as the next routing/policy epic after C-RT-3. It covers
+MCP server visibility semantics and a later isolated local tool-host boundary;
+it does not introduce tenancy/RBAC or generic WebSocket frame translation. Claim
+only the ready contract child first. Implementation children must be serialized
+on the policy/router hotspots and remain blocked until predecessors have Gate D
+evidence.
 
 | Atomic scope | Issue | Status | Dependency |
 |--------------|-------|--------|------------|
-| Define strict policy and WebSocket parity contract | [#592](https://github.com/echoares-lab/ai-gateway/issues/592) | Ready to claim (unblocked; do not claim yet) | C-AUD-8 #586 closed; seam implementation PR #596 merged |
-| Enforce policy decisions on HTTP protocol paths | [#593](https://github.com/echoares-lab/ai-gateway/issues/593) | Blocked | #592; C-AUD-8 seam implementation |
-| Add opt-in Codex WebSocket policy parity | [#594](https://github.com/echoares-lab/ai-gateway/issues/594) | Blocked | #593; #592 |
+| Define MCP visibility and local tool hosting contract | [#602](https://github.com/echoares-lab/ai-gateway/issues/602) | Ready to claim | C-RT-3 #591 closed; PR #600 merged; heartbeat [30676124241](https://github.com/echoares-lab/ai-gateway/actions/runs/30676124241) |
 
-C-RT-4 (MCP visibility and local tool hosting) remains the following candidate.
+Implementation children for HTTP MCP visibility and isolated local hosting will
+be opened only after #602 is merged and Gate D is recorded.
 
 ## Parked
 
@@ -45,6 +44,17 @@ No approved parked work. See [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 for the unapproved inventory.
 
 ## Completed
+
+### Deeper policy enforcement and WebSocket parity
+
+Coordination epic [#591](https://github.com/echoares-lab/ai-gateway/issues/591)
+(C-RT-3) and its three serialized children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Strict policy and WebSocket parity contract | [#592](https://github.com/echoares-lab/ai-gateway/issues/592) | [PR #598](https://github.com/echoares-lab/ai-gateway/pull/598); heartbeat [30675178289](https://github.com/echoares-lab/ai-gateway/actions/runs/30675178289) |
+| Strict policy enforcement on HTTP protocol paths | [#593](https://github.com/echoares-lab/ai-gateway/issues/593) | [PR #599](https://github.com/echoares-lab/ai-gateway/pull/599); heartbeat [30675754637](https://github.com/echoares-lab/ai-gateway/actions/runs/30675754637) |
+| Opt-in Codex WebSocket policy parity | [#594](https://github.com/echoares-lab/ai-gateway/issues/594) | [PR #600](https://github.com/echoares-lab/ai-gateway/pull/600); heartbeat [30676124241](https://github.com/echoares-lab/ai-gateway/actions/runs/30676124241) |
 
 ### Policy hook extraction
 
