@@ -15,35 +15,8 @@ Last reviewed: 2026-08-01.
 
 ## Now
 
-### Unified configuration snapshot API
-
-Coordination epic [#634](https://github.com/echoares-lab/ai-gateway/issues/634)
-(C-SVC-4) is approved for a disabled-by-default, read-only configuration
-snapshot and drift API. It must not reintroduce the stale generic LiteLLM
-team/key proxy or configuration mutation.
-
-The delivery order is serialized. Only the contract child is ready to claim;
-the builder and guarded API children remain blocked until the preceding child
-has merged and its Gate D result is recorded.
-
-| Delivery order | Tracking issue | Status / dependency |
-|----------------|----------------|---------------------|
-| 1. Define the unified config admin contract and deterministic fixtures | [#635](https://github.com/echoares-lab/ai-gateway/issues/635) | `status:ready` — the only claimable C-SVC-4 child |
-| 2. Build safe unified config snapshots | [#636](https://github.com/echoares-lab/ai-gateway/issues/636) | `status:blocked`; depends on #635 merge and Gate D |
-| 3. Add the guarded unified config snapshot API | [#637](https://github.com/echoares-lab/ai-gateway/issues/637) | `status:blocked`; depends on #636 merge and Gate D |
-
-Scope is exactly future `GET /admin/config` with schema
-`config-snapshot.v1`, gated by `UNIFIED_CONFIG_ADMIN_API_ENABLED=false` by
-default. It is read-only and exposes only bounded, allowlisted structural
-projections, environment-reference presence, and alias-only drift; it never
-returns or logs raw configuration, secrets, paths, URLs, commands, or raw
-exceptions. Every child must follow Gate A/B as applicable; the guarded
-auth/config child requires recommended Gate C evidence, and each merged child
-records the automated Gate D heartbeat before its dependent child proceeds.
-
-After merge plus Gate D, each child must stop its dev slot, remove its
-worktree, delete its local branch, and verify `git worktree list` and
-`./dev-env.sh list` contain no orphaned resources.
+No approved current epic. Promote a candidate into this roadmap and create a
+ready atomic child before claiming new work.
 
 ## Next
 
@@ -56,6 +29,19 @@ No approved parked work. See [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 for the unapproved inventory.
 
 ## Completed
+
+### Unified configuration snapshot API
+
+Coordination epic [#634](https://github.com/echoares-lab/ai-gateway/issues/634)
+(C-SVC-4) and its three serialized children are closed and
+production-verified. The delivered `GET /admin/config` endpoint remains
+read-only and disabled by default.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Unified config snapshot contract and deterministic fixtures | [#635](https://github.com/echoares-lab/ai-gateway/issues/635) | [PR #639](https://github.com/echoares-lab/ai-gateway/pull/639); heartbeat [30682651614](https://github.com/echoares-lab/ai-gateway/actions/runs/30682651614) |
+| Bounded, redacted unified config snapshot builder | [#636](https://github.com/echoares-lab/ai-gateway/issues/636) | [PR #640](https://github.com/echoares-lab/ai-gateway/pull/640); heartbeat [30683294105](https://github.com/echoares-lab/ai-gateway/actions/runs/30683294105) |
+| Guarded unified config snapshot API | [#637](https://github.com/echoares-lab/ai-gateway/issues/637) | [PR #641](https://github.com/echoares-lab/ai-gateway/pull/641); heartbeat [30685917747](https://github.com/echoares-lab/ai-gateway/actions/runs/30685917747) |
 
 ### Evaluation-driven quality routing
 

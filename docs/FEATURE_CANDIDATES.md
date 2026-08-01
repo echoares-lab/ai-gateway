@@ -40,7 +40,6 @@ file. The C-AUD-1 through C-AUD-3 entries are coordinated by
 | C-SVC-2 | `/v1/config/generate` from `gen-client-config.sh` | Closed epic [#615](https://github.com/echoares-lab/ai-gateway/issues/615); children [#616](https://github.com/echoares-lab/ai-gateway/issues/616), [#619](https://github.com/echoares-lab/ai-gateway/issues/619); PRs [#618](https://github.com/echoares-lab/ai-gateway/pull/618), [#620](https://github.com/echoares-lab/ai-gateway/pull/620) |
 | C-RT-5 | Codex WebSocket frame translation (Option B) | Closed epic [#621](https://github.com/echoares-lab/ai-gateway/issues/621); children [#622](https://github.com/echoares-lab/ai-gateway/issues/622), [#625](https://github.com/echoares-lab/ai-gateway/issues/625); PRs [#624](https://github.com/echoares-lab/ai-gateway/pull/624), [#626](https://github.com/echoares-lab/ai-gateway/pull/626) |
 | C-RT-2 | Evaluation-driven quality routing at request time | Closed epic [#627](https://github.com/echoares-lab/ai-gateway/issues/627); children [#628](https://github.com/echoares-lab/ai-gateway/issues/628), [#631](https://github.com/echoares-lab/ai-gateway/issues/631); PRs [#630](https://github.com/echoares-lab/ai-gateway/pull/630), [#632](https://github.com/echoares-lab/ai-gateway/pull/632) |
-| C-SVC-4 | Read-only, default-off unified configuration snapshot API | Epic [#634](https://github.com/echoares-lab/ai-gateway/issues/634); ready contract child [#635](https://github.com/echoares-lab/ai-gateway/issues/635); blocked builder [#636](https://github.com/echoares-lab/ai-gateway/issues/636) and guarded API [#637](https://github.com/echoares-lab/ai-gateway/issues/637) |
 
 ## Delivered / historical (not candidates)
 
@@ -56,6 +55,7 @@ issues from implementation pull requests.
 | C-RT-6 | Cross-provider reasoning/thinking token normalization | [PR #486](https://github.com/echoares-lab/ai-gateway/pull/486) |
 | C-RT-7 | Context-window-aware request normalization and message pruning | [PR #487](https://github.com/echoares-lab/ai-gateway/pull/487) |
 | C-AUD-7 | Extend Ruff coverage to credential-prober and scripts | [PR #487](https://github.com/echoares-lab/ai-gateway/pull/487) |
+| C-SVC-4 | Read-only, default-off unified configuration snapshot API | Closed epic [#634](https://github.com/echoares-lab/ai-gateway/issues/634) and children [#635](https://github.com/echoares-lab/ai-gateway/issues/635)–[#637](https://github.com/echoares-lab/ai-gateway/issues/637); implementation PRs [#639](https://github.com/echoares-lab/ai-gateway/pull/639)–[#641](https://github.com/echoares-lab/ai-gateway/pull/641) |
 
 ---
 
