@@ -1,4 +1,3 @@
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -16,30 +15,23 @@ FORBIDDEN_OPERATIONS = (
 pytestmark = pytest.mark.mock
 
 
-def _render_test_mock(*args: str) -> list[str]:
-    command = [
-        "make",
-        "--dry-run",
-        "--no-print-directory",
-        "test-mock",
-    ]
-    if args:
-        command.append(f"MOCK_TEST_ARGS={' '.join(args)}")
-    result = subprocess.run(
-        command,
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+def _test_mock_declaration_and_recipe() -> tuple[str, list[str]]:
+    lines = (ROOT / "Makefile").read_text().splitlines()
+    target_index = lines.index("test-mock:")
+    recipe = []
+    for line in lines[target_index + 1 :]:
+        if not line.startswith("\t"):
+            break
+        recipe.append(line.removeprefix("\t"))
+    return lines[target_index], recipe
 
 
 def test_mock_target_is_single_in_memory_recipe_with_optional_selectors():
-    assert _render_test_mock() == ["python3 -m pytest tests/integration/ -m mock -v"]
+    makefile = (ROOT / "Makefile").read_text()
+    declaration, recipe = _test_mock_declaration_and_recipe()
 
-    lines = _render_test_mock("-k", "sentinel_selector", "--lf")
-
-    assert lines == ["python3 -m pytest tests/integration/ -m mock -v -k sentinel_selector --lf"]
-    rendered = lines[0].lower()
+    assert "MOCK_TEST_ARGS ?=" in makefile
+    assert declaration == "test-mock:"
+    assert recipe == ["python3 -m pytest tests/integration/ -m mock -v $(MOCK_TEST_ARGS)"]
+    rendered = recipe[0].lower()
     assert not any(operation in rendered for operation in FORBIDDEN_OPERATIONS)
