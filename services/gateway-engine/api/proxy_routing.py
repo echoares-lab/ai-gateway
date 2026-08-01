@@ -35,6 +35,7 @@ from core.metrics import (
 )
 from core.model_reconciliation import ReconciliationTrigger
 from core.model_registry import ModelRegistryRecord, normalize_discovered_model
+from core.policy.mcp_filter import McpVisibilityDenied, apply_mcp_visibility, has_denied_invocation, metadata_decision
 from orchestrator import litellm_admin_get
 from providers.virtual import virtual_provider
 
@@ -588,6 +589,13 @@ def _policy_engine_strict_enabled() -> bool:
     return False
 
 
+def _mcp_visibility_enabled() -> bool:
+    override = _main_override("MCP_VISIBILITY_ENABLED", None)
+    if override is not None:
+        return bool(override)
+    return os.environ.get("MCP_VISIBILITY_ENABLED", "").lower() in ("1", "true", "yes")
+
+
 def _valid_policy_decision(decision: object) -> bool:
     return isinstance(decision, dict) and decision.get("gate") in {"allow", "deny"}
 
@@ -603,12 +611,18 @@ async def _apply_policy_engine(token: str | None, body: dict) -> dict:
             return body
         if decision.get("gate") == "deny" and _policy_engine_strict_enabled():
             raise PolicyDeniedError(decision)
+        if _mcp_visibility_enabled() and decision.get("gate") == "allow":
+            if has_denied_invocation(body, decision):
+                raise McpVisibilityDenied
+            body = apply_mcp_visibility(body, decision)
         if "metadata" not in body or not isinstance(body["metadata"], dict):
             body["metadata"] = {}
-        body["metadata"]["routing_decision"] = decision
+        body["metadata"]["routing_decision"] = metadata_decision(decision, enabled=_mcp_visibility_enabled())
         return body
     except PolicyDeniedError:
         raise
+    except McpVisibilityDenied as exc:
+        raise PolicyDeniedError({"gate": "deny", "rules_applied": ["mcp:visibility_denied"]}) from exc
     except Exception as exc:
         log.warning("policy apply failed (%s) — fail-open", exc)
         return body
