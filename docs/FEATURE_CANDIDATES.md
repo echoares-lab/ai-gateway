@@ -40,6 +40,7 @@ file. The C-AUD-1 through C-AUD-3 entries are coordinated by
 | C-SVC-2 | `/v1/config/generate` from `gen-client-config.sh` | Closed epic [#615](https://github.com/echoares-lab/ai-gateway/issues/615); children [#616](https://github.com/echoares-lab/ai-gateway/issues/616), [#619](https://github.com/echoares-lab/ai-gateway/issues/619); PRs [#618](https://github.com/echoares-lab/ai-gateway/pull/618), [#620](https://github.com/echoares-lab/ai-gateway/pull/620) |
 | C-RT-5 | Codex WebSocket frame translation (Option B) | Closed epic [#621](https://github.com/echoares-lab/ai-gateway/issues/621); children [#622](https://github.com/echoares-lab/ai-gateway/issues/622), [#625](https://github.com/echoares-lab/ai-gateway/issues/625); PRs [#624](https://github.com/echoares-lab/ai-gateway/pull/624), [#626](https://github.com/echoares-lab/ai-gateway/pull/626) |
 | C-RT-2 | Evaluation-driven quality routing at request time | Closed epic [#627](https://github.com/echoares-lab/ai-gateway/issues/627); children [#628](https://github.com/echoares-lab/ai-gateway/issues/628), [#631](https://github.com/echoares-lab/ai-gateway/issues/631); PRs [#630](https://github.com/echoares-lab/ai-gateway/pull/630), [#632](https://github.com/echoares-lab/ai-gateway/pull/632) |
+| C-AUD-9 | Faster local mock iteration | Epic [#643](https://github.com/echoares-lab/ai-gateway/issues/643); blocked atomic child [#644](https://github.com/echoares-lab/ai-gateway/issues/644) |
 
 ## Delivered / historical (not candidates)
 
@@ -56,6 +57,9 @@ issues from implementation pull requests.
 | C-RT-7 | Context-window-aware request normalization and message pruning | [PR #487](https://github.com/echoares-lab/ai-gateway/pull/487) |
 | C-AUD-7 | Extend Ruff coverage to credential-prober and scripts | [PR #487](https://github.com/echoares-lab/ai-gateway/pull/487) |
 | C-SVC-4 | Read-only, default-off unified configuration snapshot API | Closed epic [#634](https://github.com/echoares-lab/ai-gateway/issues/634) and children [#635](https://github.com/echoares-lab/ai-gateway/issues/635)–[#637](https://github.com/echoares-lab/ai-gateway/issues/637); implementation PRs [#639](https://github.com/echoares-lab/ai-gateway/pull/639)–[#641](https://github.com/echoares-lab/ai-gateway/pull/641) |
+| C-RT-3 | Deeper policy enforcement and WebSocket parity | Closed epic [#591](https://github.com/echoares-lab/ai-gateway/issues/591) and children [#592](https://github.com/echoares-lab/ai-gateway/issues/592)–[#594](https://github.com/echoares-lab/ai-gateway/issues/594); implementation PRs [#598](https://github.com/echoares-lab/ai-gateway/pull/598)–[#600](https://github.com/echoares-lab/ai-gateway/pull/600) |
+| C-RT-4 | MCP visibility and local tool hosting | Closed epic [#601](https://github.com/echoares-lab/ai-gateway/issues/601) and children [#602](https://github.com/echoares-lab/ai-gateway/issues/602), [#605](https://github.com/echoares-lab/ai-gateway/issues/605), and [#607](https://github.com/echoares-lab/ai-gateway/issues/607); implementation PRs [#604](https://github.com/echoares-lab/ai-gateway/pull/604), [#606](https://github.com/echoares-lab/ai-gateway/pull/606), and [#608](https://github.com/echoares-lab/ai-gateway/pull/608) |
+| C-AUD-8 | Policy hook extraction | Closed epic [#586](https://github.com/echoares-lab/ai-gateway/issues/586) and children [#587](https://github.com/echoares-lab/ai-gateway/issues/587) and [#590](https://github.com/echoares-lab/ai-gateway/issues/590); implementation PRs [#589](https://github.com/echoares-lab/ai-gateway/pull/589) and [#596](https://github.com/echoares-lab/ai-gateway/pull/596) |
 
 ---
 
@@ -97,8 +101,7 @@ Cheap-drift check and `/model/new` / `/model/delete` hot-add shipped on `main`
 
 | ID | Summary | Effort | Risk | Need/fit | Deps / links | Status |
 |----|---------|--------|------|----------|--------------|--------|
-| C-RT-3 | Deeper policy engine (WS parity, stricter enforcement, separate service?) | L | H | med | Closed [#38](https://github.com/echoares-lab/ai-gateway/issues/38); [POLICY_ENGINE_AND_ROUTING_REFACTOR.md](./POLICY_ENGINE_AND_ROUTING_REFACTOR.md) | candidate |
-| C-RT-4 | MCP visibility and deeper local tool hosting | M | M | med | Closed [#29](https://github.com/echoares-lab/ai-gateway/issues/29); [MCP_TOOL_VISIBILITY.md](./MCP_TOOL_VISIBILITY.md); [ARCHITECTURE.md](./ARCHITECTURE.md) | candidate |
+
 ---
 
 ## Script-to-service and DX
@@ -122,8 +125,6 @@ Historical backlog:
 
 | ID | Summary | Effort | Risk | Need/fit | Audit ref | Status |
 |----|---------|--------|------|----------|-----------|--------|
-| C-AUD-8 | Extract remaining policy hooks from request path / routers | M | M | med | D-7 | candidate |
-| C-AUD-9 | Faster local mock iteration (optional skip of heavy clean-db) | S | L | low | D-9 | candidate |
 
 ---
 
