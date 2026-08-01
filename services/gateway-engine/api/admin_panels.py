@@ -518,6 +518,7 @@ def _build_admin_policy_engine_data(
         return None
     data: dict = {
         "enabled": _deps().policy_engine_enabled(),
+        "strict_enforcement_enabled": _deps().policy_engine_strict(),
         "trace_enabled": True,
         "policy_version": policy_version or _policy_version_hint,
         "redis_connected": redis_connected,
@@ -587,6 +588,7 @@ def _admin_routing_panel(
         "websocket_policy_bypass": _deps().codex_ws_policy_bypass(),
         "websocket_policy_evaluate_enabled": _deps().policy_engine_ws_evaluate_enabled(),
         "policy_engine_enabled": _deps().policy_engine_enabled(),
+        "policy_engine_strict": _deps().policy_engine_strict(),
     }
     if policy_engine is not None:
         data["policy_engine"] = policy_engine

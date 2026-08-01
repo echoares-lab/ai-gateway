@@ -6,6 +6,7 @@ import json
 import time
 
 import httpx
+from api.policy_hooks import PolicyDeniedError, policy_denial_response
 from api.proxy_common import (
     _deps,
     _enable_virtual_providers,
@@ -96,6 +97,8 @@ async def proxy(path: str, request: Request):
             bd = _maybe_force_model(request, bd)
             body = json.dumps(bd).encode()
             changed = True
+        except PolicyDeniedError:
+            return policy_denial_response("openai")
         except Exception as exc:
             log.warning("tenancy/policy apply failed — fail-open: %s", exc)
 

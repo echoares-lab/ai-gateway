@@ -43,6 +43,8 @@ Defined in `services/gateway-engine/core/policy/schemas.py` (issue 38-01):
 | Env var | Default | Purpose |
 |---------|---------|---------|
 | `POLICY_ENGINE_ENABLED` | `false` | When true, HTTP paths POST `/v1/evaluate` before LiteLLM forward |
+| `POLICY_ENGINE_STRICT` | `false` | When true, HTTP `gate=deny` decisions return typed 403 responses; failures remain fail-open |
+| `POLICY_ENGINE_TIMEOUT_MS` | `100` | Bounded in-process evaluation budget; timeout forwards without policy metadata |
 | `POLICY_ENGINE_URL` | `http://policy-engine:8080` | Evaluate endpoint base |
 | `POLICY_ENGINE_TIMEOUT_MS` | `100` | Fail-open timeout |
 

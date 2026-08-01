@@ -933,6 +933,9 @@ HTTP routing evaluate is **fail-open**: if the in-process evaluator is unavailab
 the gateway-engine forwards without `routing_decision` and static YAML fallbacks apply.
 WebSocket `/v1/responses` bypasses evaluate unless you also set
 `POLICY_ENGINE_WS_EVALUATE=true` (Stage 3 — not recommended until Gate C WS smoke).
+Strict HTTP denials are a separate opt-in (`POLICY_ENGINE_STRICT=true`) and are
+disabled by default; evaluator errors, malformed decisions, and timeouts always
+remain fail-open.
 
 **Prerequisites**
 
@@ -949,6 +952,7 @@ WebSocket `/v1/responses` bypasses evaluate unless you also set
 
    ```bash
    POLICY_ENGINE_ENABLED=true
+   POLICY_ENGINE_STRICT=false
    ```
 
 2. Recreate gateway-engine so it picks up the flag:
@@ -981,6 +985,7 @@ WebSocket `/v1/responses` bypasses evaluate unless you also set
 
 ```bash
 # In stable .env
+POLICY_ENGINE_STRICT=false
 POLICY_ENGINE_ENABLED=false
 docker compose up -d gateway-engine
 ```
