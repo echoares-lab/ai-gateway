@@ -15,24 +15,24 @@ Last reviewed: 2026-08-01.
 
 ## Now
 
-No active approved implementation is currently in progress. C-SVC-2 is the next
+No active approved implementation is currently in progress. C-RT-5 is the next
 approved epic; claim only its ready contract child after confirming issue status
 and dependency evidence.
 
 ## Next
 
-### Client configuration generation service
+### Codex WebSocket frame translation
 
-Coordination epic [#615](https://github.com/echoares-lab/ai-gateway/issues/615)
-(C-SVC-2) is approved as the next script-to-service epic. It covers a bounded,
-placeholder-only `/v1/config/generate` API derived from
-`scripts/ops/gen-client-config.sh`; the shell script remains the rollback path.
-Claim only the ready contract child first. Keep inputs allowlisted and prevent
-secret lookup, arbitrary template/path access, or shell execution.
+Coordination epic [#621](https://github.com/echoares-lab/ai-gateway/issues/621)
+(C-RT-5) is approved as the next compatibility/routing epic. It covers an
+opt-in Option B translation boundary for Codex WebSocket frames, preserving the
+current direct CLIProxy proxy as rollback. Claim only the ready contract child
+first. Serialize all changes to `services/gateway-engine/api/ws_router.py` and
+require Gate C for real WebSocket/provider behavior.
 
 | Atomic scope | Issue | Status | Dependency |
 |--------------|-------|--------|------------|
-| Define `/v1/config/generate` contract and fixtures | [#616](https://github.com/echoares-lab/ai-gateway/issues/616) | Ready to claim | C-SVC-2 #615 approved; C-SVC-1 #609 closed |
+| Define Codex WebSocket translation contract and fixtures | [#622](https://github.com/echoares-lab/ai-gateway/issues/622) | Ready to claim | C-RT-3 #591 closed; C-RT-5 #621 approved |
 
 ## Parked
 
@@ -61,6 +61,16 @@ Coordination epic [#609](https://github.com/echoares-lab/ai-gateway/issues/609)
 |-----------------|--------------|-------------------------|
 | CLIProxy management API contract and fixtures | [#610](https://github.com/echoares-lab/ai-gateway/issues/610) | [PR #612](https://github.com/echoares-lab/ai-gateway/pull/612); heartbeat [30677758671](https://github.com/echoares-lab/ai-gateway/actions/runs/30677758671) |
 | Read-only CLIProxy status adapter | [#613](https://github.com/echoares-lab/ai-gateway/issues/613) | [PR #614](https://github.com/echoares-lab/ai-gateway/pull/614); heartbeat [30678251118](https://github.com/echoares-lab/ai-gateway/actions/runs/30678251118) |
+
+### Client configuration generation service
+
+Coordination epic [#615](https://github.com/echoares-lab/ai-gateway/issues/615)
+(C-SVC-2) and both serialized children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Client config generation contract and fixtures | [#616](https://github.com/echoares-lab/ai-gateway/issues/616) | [PR #618](https://github.com/echoares-lab/ai-gateway/pull/618); heartbeat [30678655091](https://github.com/echoares-lab/ai-gateway/actions/runs/30678655091) |
+| Bounded client config generation API | [#619](https://github.com/echoares-lab/ai-gateway/issues/619) | [PR #620](https://github.com/echoares-lab/ai-gateway/pull/620); heartbeat [30678932061](https://github.com/echoares-lab/ai-gateway/actions/runs/30678932061) |
 
 ### Deeper policy enforcement and WebSocket parity
 
