@@ -198,6 +198,7 @@ The implementation must be registered in:
 - Maximum 256 entries per collection.
 - Maximum string length 512 characters after normalization.
 - Maximum nesting depth 8.
+- Maximum deployed configuration source size 1 MiB before parsing.
 - Maximum serialized response size 64 KiB. A larger result returns a typed
   `502 config_snapshot_too_large` without partial raw content.
 - Maximum live-source timeout five seconds, with a two-second connect budget.
