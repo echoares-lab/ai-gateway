@@ -19,6 +19,17 @@ from core.policy.schemas import (
 )
 
 
+def _record(score: float, *, observed_at: str = "2026-08-01T00:00:00Z", samples: int = 50):
+    return {
+        "version": "eval-quality.v1",
+        "score": score,
+        "sample_count": samples,
+        "confidence": 0.9,
+        "observed_at": observed_at,
+        "window_days": 7,
+    }
+
+
 def _profile_with_eval(
     *,
     allowed_models: list[str] | None = None,
@@ -199,3 +210,49 @@ def test_evaluate_integration_emits_eval_quality_tag():
     )
     assert RULE_TAG in decision.rules_applied
     assert decision.ordered_deployments[1:][0] == "gemini-3-flash"
+
+
+def test_versioned_scores_require_fresh_samples_and_preserve_unscored_order():
+    config = extract_eval_config(
+        [
+            _profile_with_eval(
+                enabled=True,
+                weight_blend=1.0,
+                model_scores={
+                    "chat": {
+                        "gpt-5-4": _record(0.1),
+                        "gemini-3-flash": _record(0.95),
+                        "claude-sonnet-4-6": _record(0.8, observed_at="2020-01-01T00:00:00Z"),
+                    }
+                },
+            )
+        ]
+    )
+    result = apply_quality_reorder(
+        ["gpt-5-4", "claude-sonnet-4-6", "gemini-3-flash", "gpt-5-4-mini"],
+        requested_model="gpt-5-4",
+        eval_config=config,
+        task_category="chat",
+    )
+    assert result.candidates == ["gpt-5-4", "gemini-3-flash", "claude-sonnet-4-6", "gpt-5-4-mini"]
+    assert result.applied is True
+
+
+def test_versioned_equal_scores_do_not_emit_reorder_rule():
+    config = extract_eval_config(
+        [
+            _profile_with_eval(
+                enabled=True,
+                weight_blend=1.0,
+                model_scores={"chat": {"gpt-5-4": _record(0.8), "gemini-3-flash": _record(0.8)}},
+            )
+        ]
+    )
+    result = apply_quality_reorder(
+        ["claude-sonnet-4-6", "gpt-5-4", "gemini-3-flash"],
+        requested_model="claude-sonnet-4-6",
+        eval_config=config,
+        task_category="chat",
+    )
+    assert result.candidates == ["claude-sonnet-4-6", "gpt-5-4", "gemini-3-flash"]
+    assert result.applied is False

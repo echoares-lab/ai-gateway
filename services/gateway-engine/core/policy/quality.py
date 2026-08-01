@@ -6,7 +6,9 @@ weights populated by an offline job. Fail-open when disabled or scores absent.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from core.policy.schemas import PolicyProfile
@@ -23,6 +25,7 @@ class EvalConfig:
     task_category: str = "auto"
     weight_blend: float = 0.3
     model_scores: dict[str, dict[str, float]] = field(default_factory=dict)
+    score_records: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -38,22 +41,29 @@ def _eval_section(policy_json: dict[str, Any]) -> dict[str, Any]:
     return section if isinstance(section, dict) else {}
 
 
-def _parse_model_scores(raw: Any) -> dict[str, dict[str, float]]:
+def _parse_model_scores(raw: Any) -> tuple[dict[str, dict[str, float]], dict[str, dict[str, dict[str, Any]]]]:
     if not isinstance(raw, dict):
-        return {}
+        return {}, {}
     scores: dict[str, dict[str, float]] = {}
+    records: dict[str, dict[str, dict[str, Any]]] = {}
     for category, models in raw.items():
         if not isinstance(models, dict):
             continue
         parsed: dict[str, float] = {}
         for model, value in models.items():
+            if isinstance(value, dict):
+                record = dict(value)
+                value = record.get("score")
+                records.setdefault(str(category), {})[str(model)] = record
             try:
-                parsed[str(model)] = float(value)
+                score = float(value)
+                if math.isfinite(score) and 0 <= score <= 1:
+                    parsed[str(model)] = score
             except (TypeError, ValueError):
                 continue
         if parsed:
             scores[str(category)] = parsed
-    return scores
+    return scores, records
 
 
 def extract_eval_config(profiles: list[PolicyProfile]) -> EvalConfig:
@@ -64,6 +74,7 @@ def extract_eval_config(profiles: list[PolicyProfile]) -> EvalConfig:
     task_category = "auto"
     weight_blend = 0.3
     model_scores: dict[str, dict[str, float]] = {}
+    score_records: dict[str, dict[str, dict[str, Any]]] = {}
 
     for profile in profiles:
         section = _eval_section(profile.policy_json)
@@ -86,9 +97,11 @@ def extract_eval_config(profiles: list[PolicyProfile]) -> EvalConfig:
                 weight_blend = min(max(float(section["weight_blend"]), 0.0), 1.0)
             except (TypeError, ValueError):
                 pass
-        parsed = _parse_model_scores(section.get("model_scores"))
+        parsed, records = _parse_model_scores(section.get("model_scores"))
         if parsed:
             model_scores = parsed
+        if records:
+            score_records = records
 
     return EvalConfig(
         enabled=enabled,
@@ -97,6 +110,7 @@ def extract_eval_config(profiles: list[PolicyProfile]) -> EvalConfig:
         task_category=task_category,
         weight_blend=weight_blend,
         model_scores=model_scores,
+        score_records=score_records,
     )
 
 
@@ -153,11 +167,12 @@ def apply_quality_reorder(
     if not tail:
         return QualityReorderResult(candidates=list(candidates))
 
-    scored_tail = [m for m in tail if m in category_scores]
+    scored_tail = [m for m in tail if m in category_scores and _record_usable(eval_config, task_category, m)]
     if not scored_tail:
         return QualityReorderResult(candidates=list(candidates))
 
-    tail.sort(
+    unscored_tail = [m for m in tail if m not in scored_tail]
+    scored_tail.sort(
         key=lambda m: (
             -_combined_score(
                 m,
@@ -165,10 +180,11 @@ def apply_quality_reorder(
                 health_scores=health_scores,
                 weight_blend=eval_config.weight_blend,
             ),
-            m,
         )
     )
-    reordered = head + tail
+    reordered = head + scored_tail + unscored_tail
+    if reordered == candidates:
+        return QualityReorderResult(candidates=list(candidates))
     return QualityReorderResult(
         candidates=reordered,
         applied=True,
@@ -176,6 +192,28 @@ def apply_quality_reorder(
         debug={
             "eval_task_category": task_category,
             "eval_weight_blend": eval_config.weight_blend,
-            "eval_scores_used": {m: category_scores[m] for m in tail if m in category_scores},
+            "eval_scores_used": {m: category_scores[m] for m in scored_tail},
         },
     )
+
+
+def _record_usable(config: EvalConfig, category: str, model: str) -> bool:
+    """Validate a versioned score record while preserving legacy scalar fixtures."""
+    record = config.score_records.get(category, {}).get(model)
+    if not record:
+        return True
+    if record.get("version") != "eval-quality.v1":
+        return False
+    try:
+        sample_count = int(record.get("sample_count"))
+        confidence = float(record.get("confidence"))
+        observed_at = datetime.fromisoformat(str(record.get("observed_at")).replace("Z", "+00:00"))
+        record_window = int(record.get("window_days"))
+    except (TypeError, ValueError):
+        return False
+    if sample_count < config.min_samples or not math.isfinite(confidence) or not 0 <= confidence <= 1:
+        return False
+    if record_window < 1 or observed_at.tzinfo is None:
+        return False
+    age = datetime.now(timezone.utc) - observed_at.astimezone(timezone.utc)
+    return timedelta(0) <= age <= timedelta(days=min(config.window_days, record_window))
