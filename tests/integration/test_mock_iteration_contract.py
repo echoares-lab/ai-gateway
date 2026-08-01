@@ -1,7 +1,9 @@
 import subprocess
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
 FORBIDDEN_OPERATIONS = (
     "clean-db",
     "docker",
@@ -11,6 +13,7 @@ FORBIDDEN_OPERATIONS = (
     "start-mock",
     "stop-mock",
 )
+pytestmark = pytest.mark.mock
 
 
 def _render_test_mock(*args: str) -> list[str]:
