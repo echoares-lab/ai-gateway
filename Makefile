@@ -1,6 +1,7 @@
 .PHONY: lint test-unit test-mock test-fast test-e2e test-scripts validate-policy-profiles validate-production-secrets validate-admin-exposure validate-litellm-config-drift validate-dev-env-slots validate-exception-inventory validate-config-promotion promote-config-artifact test-sync-models-probe test-compose-config test-dev-env drift-cheap clean-db
 
 CONTAINER_PREFIX ?= PROD-
+MOCK_TEST_ARGS ?=
 
 # Cleans up Docker volumes for a fresh database state.
 clean-db:
@@ -44,7 +45,7 @@ test-unit:
 
 # Mock tier: in-memory ASGI integration tests (no OAuth, canned upstream).
 test-mock:
-	python3 -m pytest tests/integration/ -m mock -v
+	python3 -m pytest tests/integration/ -m mock -v $(MOCK_TEST_ARGS)
 
 # Offline schema check for git-tracked policy profile promotion (P0-7).
 validate-policy-profiles:
