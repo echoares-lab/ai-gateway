@@ -609,6 +609,16 @@ def test_openapi_source_digest_is_optional_for_non_ok_sources():
 
     assert "digest" in source_schema["properties"]
     assert "digest" not in source_schema["required"]
+    invariant = " ".join(
+        (
+            _openapi_document()["components"]["schemas"]["UnifiedConfigSnapshot"]["properties"]["sources"].get(
+                "description", ""
+            ),
+            source_schema["properties"]["digest"].get("description", ""),
+        )
+    ).lower()
+    assert "if and only if" in invariant
+    assert "status is `ok`" in invariant
 
 
 def test_openapi_mcp_transport_matches_exact_runtime_allowlist():

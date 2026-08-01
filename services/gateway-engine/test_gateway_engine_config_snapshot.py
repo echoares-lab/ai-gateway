@@ -437,7 +437,7 @@ def test_runtime_only_excludes_aliases_already_known_to_registry():
 def test_canonical_preview_and_dotted_identifiers_are_valid_aliases():
     aliases = [
         "api-preview-model-2026",
-        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJtb2RlbCJ9.signature1234",
+        "model.preview.2026",
     ]
     fixture = {
         **HEALTHY_INPUT,
@@ -454,6 +454,73 @@ def test_canonical_preview_and_dotted_identifiers_are_valid_aliases():
     assert snapshot["models"]["registry"] == sorted(aliases)
     assert snapshot["models"]["runtime"] == sorted(aliases)
     assert snapshot["drift"]["status"] == "clean"
+
+
+def test_high_confidence_jwt_alias_degrades_every_owning_source_without_leaking_or_hashing():
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJtb2RlbCJ9.signature1234"
+    fixture = {
+        **HEALTHY_INPUT,
+        "litellm_yaml": f"""model_list:
+  - model_name: gpt-safe
+    litellm_params: {{model: openai/gpt-safe}}
+  - model_name: {jwt}
+    litellm_params: {{model: openai/safe-wire-model}}
+litellm_settings:
+  fallbacks:
+    - gpt-safe: [{jwt}]
+  mcp_servers:
+    {jwt}: {{transport: stdio}}
+""",
+        "registry_model_ids": ["gpt-safe", jwt],
+        "runtime_model_ids": ["gpt-safe", jwt],
+    }
+
+    snapshot = build_config_snapshot(_inputs(fixture))
+    serialized = json.dumps(snapshot, allow_nan=False)
+
+    assert snapshot["status"] == "degraded"
+    assert snapshot["models"]["configured"] == ["gpt-safe"]
+    assert snapshot["models"]["registry"] == ["gpt-safe"]
+    assert snapshot["models"]["runtime"] == ["gpt-safe"]
+    assert snapshot["models"]["fallbacks"] == []
+    assert snapshot["mcp"] == []
+    assert snapshot["drift"]["status"] == "unknown"
+    assert {item["id"]: item["status"] for item in snapshot["validation"]}["source-aliases"] == "fail"
+    assert all(source["status"] == "invalid" for source in snapshot["sources"])
+    assert all("digest" not in source for source in snapshot["sources"])
+    assert snapshot["errors"] == [
+        {"source": "litellm-config", "code": "source_invalid"},
+        {"source": "model-registry", "code": "source_invalid"},
+        {"source": "runtime-visible-models", "code": "source_invalid"},
+    ]
+    assert jwt not in serialized
+
+
+def test_environment_traversal_budget_bounds_yaml_anchor_amplification_and_degrades_safely():
+    shared_entries = "".join("    - {shared: *leaf}\n" for _ in range(256))
+    amplified_groups = "".join(f"  group-{group:02d}:\n{shared_entries}" for group in range(18))
+    pathological_yaml = f"""model_list:
+  - model_name: gpt-safe
+    litellm_params: {{model: openai/gpt-safe}}
+shared-anchor: &leaf [private-anchor-marker]
+amplified:
+{amplified_groups}late-reference: os.environ/LATE_PRIVATE_REFERENCE
+"""
+    fixture = {**HEALTHY_INPUT, "litellm_yaml": pathological_yaml}
+
+    first = build_config_snapshot(_inputs(fixture))
+    second = build_config_snapshot(_inputs(fixture))
+    serialized = json.dumps(first, allow_nan=False)
+
+    assert first == second
+    assert first["status"] == "degraded"
+    assert first["environment"] == []
+    assert {item["id"]: item["status"] for item in first["validation"]}["environment-traversal"] == "fail"
+    assert first["sources"][0]["status"] == "invalid"
+    assert "digest" not in first["sources"][0]
+    assert first["drift"]["status"] == "unknown"
+    assert "private-anchor-marker" not in serialized
+    assert "LATE_PRIVATE_REFERENCE" not in serialized
 
 
 @pytest.mark.parametrize(

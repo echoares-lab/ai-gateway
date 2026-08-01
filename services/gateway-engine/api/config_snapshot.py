@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import math
@@ -17,6 +19,7 @@ SCHEMA = "config-snapshot.v1"
 MAX_ENTRIES = 256
 MAX_STRING = 512
 MAX_DEPTH = 8
+MAX_ENV_TRAVERSAL_NODES = 4096
 MAX_DEPLOYED_CONFIG_BYTES = 1024 * 1024
 SAFE_ROUTER_SETTINGS = ("allowed_fails", "cooldown_time", "num_retries", "routing_strategy")
 ENV_REFERENCE = re.compile(r"(?:os\.environ/|\$\{)([A-Z_][A-Z0-9_]*)\}?")
@@ -91,24 +94,45 @@ def _safe_provider_family(model_name: str, params: Mapping[str, Any]) -> str:
     return "other"
 
 
-def _extract_environment_references(document: Mapping[str, Any]) -> list[str]:
-    """Find referenced environment variable names without retaining their values."""
+def _extract_environment_references(document: Mapping[str, Any]) -> tuple[list[str], bool]:
+    """Find bounded environment references and report unsafe traversal exhaustion."""
     references: set[str] = set()
+    visited: set[int] = set()
+    nodes_visited = 0
+    budget_exceeded = False
 
     def visit(value: object, depth: int) -> None:
+        nonlocal budget_exceeded, nodes_visited
+        if budget_exceeded:
+            return
+        if isinstance(value, (Mapping, list, tuple)):
+            identity = id(value)
+            if identity in visited:
+                return
+            visited.add(identity)
+        nodes_visited += 1
+        if nodes_visited > MAX_ENV_TRAVERSAL_NODES:
+            budget_exceeded = True
+            return
         if depth >= MAX_DEPTH:
             return
         if isinstance(value, Mapping):
-            for nested in value.values():
+            for index, nested in enumerate(value.values()):
+                if index >= MAX_ENTRIES:
+                    budget_exceeded = True
+                    return
                 visit(nested, depth + 1)
         elif isinstance(value, (list, tuple)):
-            for nested in value:
+            for index, nested in enumerate(value):
+                if index >= MAX_ENTRIES:
+                    budget_exceeded = True
+                    return
                 visit(nested, depth + 1)
         elif isinstance(value, str):
             references.update(reference for reference in ENV_REFERENCE.findall(value) if len(reference) <= MAX_STRING)
 
     visit(document, 0)
-    return sorted(references)[:MAX_ENTRIES]
+    return ([], True) if budget_exceeded else (sorted(references)[:MAX_ENTRIES], False)
 
 
 def _sanitize_for_digest(value: object, depth: int = 0, key: str = "") -> object:
@@ -148,9 +172,29 @@ def _safe_alias(value: object) -> str | None:
     """Return a public model/server token, rejecting instead of redacting unsafe input."""
     if not isinstance(value, str) or len(value) > MAX_STRING or not is_canonical_model_id(value):
         return None
-    if _CREDENTIAL_LIKE_ALIAS.fullmatch(value):
+    if _CREDENTIAL_LIKE_ALIAS.fullmatch(value) or _is_high_confidence_jwt(value):
         return None
     return value
+
+
+def _is_high_confidence_jwt(value: str) -> bool:
+    """Recognize JWT credentials without rejecting ordinary dotted model aliases."""
+    parts = value.split(".")
+    if len(parts) != 3 or not parts[2] or not re.fullmatch(r"[A-Za-z0-9_-]+", parts[2]):
+        return False
+
+    def is_json_object(segment: str) -> bool:
+        if not segment or len(segment) > MAX_STRING or not re.fullmatch(r"[A-Za-z0-9_-]+", segment):
+            return False
+        try:
+            decoded = base64.urlsafe_b64decode(segment + ("=" * (-len(segment) % 4)))
+            if len(decoded) > MAX_STRING:
+                return False
+            return isinstance(json.loads(decoded), Mapping)
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            return False
+
+    return is_json_object(parts[0]) and is_json_object(parts[1])
 
 
 def _normalised_aliases(
@@ -340,7 +384,7 @@ def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
     mcp, mcp_invalid = _project_mcp(document)
     fallbacks, fallbacks_invalid = _project_fallbacks(document)
     litellm_aliases_invalid = configured_aliases_invalid or mcp_invalid or fallbacks_invalid
-    environment_references = _extract_environment_references(document)
+    environment_references, environment_traversal_invalid = _extract_environment_references(document)
     environment = [{"name": name, "present": name in inputs.environment} for name in environment_references]
     validation = [
         {"id": "deployed-config", "status": "pass" if document_valid else "fail"},
@@ -355,6 +399,10 @@ def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
             else "pass",
         },
         {"id": "router-settings", "status": "fail" if router_invalid else "pass"},
+        {
+            "id": "environment-traversal",
+            "status": "fail" if environment_traversal_invalid else "pass",
+        },
     ]
 
     statuses = {
@@ -371,7 +419,10 @@ def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
     invalid_sources = {
         source
         for source, invalid in (
-            ("litellm-config", litellm_aliases_invalid or router_invalid),
+            (
+                "litellm-config",
+                litellm_aliases_invalid or router_invalid or environment_traversal_invalid,
+            ),
             ("model-registry", registry_aliases_invalid),
             ("runtime-visible-models", runtime_aliases_invalid),
         )

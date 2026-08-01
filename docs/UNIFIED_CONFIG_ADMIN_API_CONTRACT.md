@@ -86,7 +86,8 @@ and `errors`.
   `validation` exposes identifiers and `pass`, `warn`, or `fail` only.
 - Source digests are SHA-256 hashes of canonical sanitized structural
   projections, never raw source bytes. Secret-like keys and values become
-  `[redacted]` before inclusion or hashing.
+  `[redacted]` before inclusion or hashing. `digest` is present if and only if source `status` is `ok`;
+  it is omitted for `missing`, `invalid`, and `unavailable` sources.
 
 ## Source and drift semantics
 

@@ -1499,6 +1499,7 @@ components:
         sources:
           type: array
           maxItems: 3
+          description: A source has `digest` if and only if its status is `ok`; non-ok sources omit it.
           items:
             type: object
             additionalProperties: false
@@ -1507,7 +1508,10 @@ components:
               id: {type: string, enum: [litellm-config, model-registry, runtime-visible-models]}
               kind: {type: string, enum: [deployed-file, registry, live-api]}
               status: {type: string, enum: [ok, missing, invalid, unavailable]}
-              digest: {type: string, pattern: '^[a-f0-9]{64}$'}
+              digest:
+                type: string
+                pattern: '^[a-f0-9]{64}$'
+                description: Present if and only if source status is `ok`; omitted otherwise.
               observed_at: {type: string, format: date-time}
         models:
           type: object

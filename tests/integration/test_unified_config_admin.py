@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import copy
+import math
+import re
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -57,21 +61,87 @@ def _write_production_shaped_config(tmp_path):
     return path
 
 
+def _resolve_openapi_schema(schema, document):
+    reference = schema.get("$ref") if isinstance(schema, dict) else None
+    if not reference:
+        return schema
+    assert reference.startswith("#/")
+    resolved = document
+    for segment in reference[2:].split("/"):
+        resolved = resolved[segment]
+    return resolved
+
+
+def _assert_openapi_value(value, schema, document, path="$"):
+    schema = _resolve_openapi_schema(schema, document)
+    if "anyOf" in schema:
+        errors = []
+        for option in schema["anyOf"]:
+            try:
+                _assert_openapi_value(value, option, document, path)
+                return
+            except AssertionError as exc:
+                errors.append(str(exc))
+        raise AssertionError(f"{path}: did not match anyOf: {errors}")
+
+    if "enum" in schema:
+        assert value in schema["enum"], f"{path}: {value!r} is not in enum"
+
+    expected_type = schema.get("type")
+    if expected_type == "object":
+        assert isinstance(value, dict), f"{path}: expected object"
+        properties = schema.get("properties", {})
+        required = set(schema.get("required", ()))
+        assert required <= set(value), f"{path}: missing required properties {required - set(value)}"
+        if schema.get("additionalProperties") is False:
+            assert set(value) <= set(properties), f"{path}: unexpected properties {set(value) - set(properties)}"
+        for name, nested in value.items():
+            if name in properties:
+                _assert_openapi_value(nested, properties[name], document, f"{path}.{name}")
+        return
+
+    if expected_type == "array":
+        assert isinstance(value, list), f"{path}: expected array"
+        if "maxItems" in schema:
+            assert len(value) <= schema["maxItems"], f"{path}: exceeds maxItems"
+        item_schema = schema.get("items")
+        if item_schema:
+            for index, nested in enumerate(value):
+                _assert_openapi_value(nested, item_schema, document, f"{path}[{index}]")
+        return
+
+    if expected_type == "string":
+        assert isinstance(value, str), f"{path}: expected string"
+        if "maxLength" in schema:
+            assert len(value) <= schema["maxLength"], f"{path}: exceeds maxLength"
+        if "pattern" in schema:
+            assert re.fullmatch(schema["pattern"], value), f"{path}: does not match pattern"
+        if schema.get("format") == "date-time":
+            datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return
+
+    if expected_type == "boolean":
+        assert isinstance(value, bool), f"{path}: expected boolean"
+        return
+
+    if expected_type == "number":
+        assert isinstance(value, (int, float)) and not isinstance(value, bool), f"{path}: expected number"
+        assert math.isfinite(value), f"{path}: expected finite number"
+        return
+
+    if expected_type == "integer":
+        assert isinstance(value, int) and not isinstance(value, bool), f"{path}: expected integer"
+        return
+
+
 def _assert_openapi_snapshot_shape(payload):
     document = yaml.safe_load(
         (Path(__file__).parents[2] / "docs" / "openapi" / "gateway-engine.yaml").read_text(encoding="utf-8")
     )
-    schema = document["components"]["schemas"]["UnifiedConfigSnapshot"]
-    assert set(payload) == set(schema["required"])
-    assert payload["schema"] in schema["properties"]["schema"]["enum"]
-    assert payload["status"] in schema["properties"]["status"]["enum"]
-    source_schema = schema["properties"]["sources"]["items"]
+    schema = {"$ref": "#/components/schemas/UnifiedConfigSnapshot"}
+    _assert_openapi_value(payload, schema, document)
     for source in payload["sources"]:
-        assert set(source_schema["required"]) <= set(source) <= set(source_schema["properties"])
-        assert source["status"] in source_schema["properties"]["status"]["enum"]
         assert ("digest" in source) is (source["status"] == "ok")
-    transport_enum = schema["properties"]["mcp"]["items"]["properties"]["transport"]["enum"]
-    assert all(server["transport"] in transport_enum for server in payload["mcp"])
 
 
 @pytest.fixture(autouse=True)
@@ -196,6 +266,24 @@ async def test_production_shaped_fixture_matches_openapi_when_healthy_and_degrad
     _assert_openapi_snapshot_shape(degraded.json())
     assert "private" not in degraded.text
     assert len(mock_litellm_router.calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_openapi_validator_rejects_malformed_nested_payload(monkeypatch, asgi_client, tmp_path):
+    monkeypatch.setenv("UNIFIED_CONFIG_ADMIN_API_ENABLED", "true")
+    monkeypatch.setattr(gateway_engine_main, "LITELLM_CONFIG_PATH", str(_write_config(tmp_path)))
+    monkeypatch.setattr(gateway_engine_main, "_model_registry_store", lambda: _registry_store("gpt-safe"))
+
+    async def runtime():
+        return ["gpt-safe"], []
+
+    monkeypatch.setattr(gateway_engine_main, "_admin_fetch_visible_models", runtime)
+    response = await asgi_client.get("/admin/config", headers=_headers())
+    malformed = copy.deepcopy(response.json())
+    malformed["models"]["providers"][0]["raw_secret"] = "must-be-rejected"
+
+    with pytest.raises(AssertionError):
+        _assert_openapi_snapshot_shape(malformed)
 
 
 @pytest.mark.asyncio

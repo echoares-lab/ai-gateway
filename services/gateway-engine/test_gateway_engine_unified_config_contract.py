@@ -91,3 +91,11 @@ def test_contract_describes_the_current_route_and_invalid_request_error():
     assert "currently implemented" in text
     assert "config_snapshot_invalid_request" in text
     assert "future read-only" not in text
+
+
+def test_contract_defines_digest_presence_invariant():
+    if CONTRACT is None or not CONTRACT.exists():
+        pytest.skip("repository docs are not mounted in the service test image")
+    text = CONTRACT.read_text(encoding="utf-8")
+
+    assert "`digest` is present if and only if source `status` is `ok`" in text
