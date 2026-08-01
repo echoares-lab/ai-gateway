@@ -16,27 +16,27 @@ Last reviewed: 2026-08-01.
 ## Now
 
 No active approved implementation is currently in progress. The next approved
-work is the C-RT-4 contract child listed below; do not claim it until its
+work is the C-SVC-1 contract child listed below; do not claim it until its
 issue status and dependency evidence are confirmed.
 
 ## Next
 
-### MCP visibility and local tool hosting
+### CLIProxy management API
 
-Coordination epic [#601](https://github.com/echoares-lab/ai-gateway/issues/601)
-(C-RT-4) is approved as the next routing/policy epic after C-RT-3. It covers
-MCP server visibility semantics and a later isolated local tool-host boundary;
-it does not introduce tenancy/RBAC or generic WebSocket frame translation. Claim
-only the ready contract child first. Implementation children must be serialized
-on the policy/router hotspots and remain blocked until predecessors have Gate D
-evidence.
+Coordination epic [#609](https://github.com/echoares-lab/ai-gateway/issues/609)
+(C-SVC-1) is approved as the next operations/service epic after C-RT-4. It
+covers a bounded CLIProxy management API, beginning with a contract and then
+read-only health/session inventory before any authorized mutation. Claim only
+the ready contract child first. Children must be serialized around
+`cliproxy-setup.sh`, compose mounts, and management routes, with Gate D evidence
+between implementations.
 
 | Atomic scope | Issue | Status | Dependency |
 |--------------|-------|--------|------------|
-| Define MCP visibility and local tool hosting contract | [#602](https://github.com/echoares-lab/ai-gateway/issues/602) | Ready to claim | C-RT-3 #591 closed; PR #600 merged; heartbeat [30676124241](https://github.com/echoares-lab/ai-gateway/actions/runs/30676124241) |
+| Define CLIProxy management API contract and fixtures | [#610](https://github.com/echoares-lab/ai-gateway/issues/610) | Ready to claim | C-RT-4 #601 closed; PR #608 merged; heartbeat [30677455796](https://github.com/echoares-lab/ai-gateway/actions/runs/30677455796) |
 
-Implementation children for HTTP MCP visibility and isolated local hosting will
-be opened only after #602 is merged and Gate D is recorded.
+Read-only health/session inventory and authorized mutation children will be
+opened only after #610 is merged and Gate D is recorded.
 
 ## Parked
 
@@ -44,6 +44,17 @@ No approved parked work. See [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 for the unapproved inventory.
 
 ## Completed
+
+### MCP visibility and local tool hosting
+
+Coordination epic [#601](https://github.com/echoares-lab/ai-gateway/issues/601)
+(C-RT-4) and its three serialized children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| MCP visibility and local tool-hosting contract | [#602](https://github.com/echoares-lab/ai-gateway/issues/602) | [PR #604](https://github.com/echoares-lab/ai-gateway/pull/604); heartbeat [30676607560](https://github.com/echoares-lab/ai-gateway/actions/runs/30676607560) |
+| Opt-in HTTP MCP visibility enforcement | [#605](https://github.com/echoares-lab/ai-gateway/issues/605) | [PR #606](https://github.com/echoares-lab/ai-gateway/pull/606); heartbeat [30676958148](https://github.com/echoares-lab/ai-gateway/actions/runs/30676958148) |
+| Isolated local MCP tool-host boundary | [#607](https://github.com/echoares-lab/ai-gateway/issues/607) | [PR #608](https://github.com/echoares-lab/ai-gateway/pull/608); heartbeat [30677455796](https://github.com/echoares-lab/ai-gateway/actions/runs/30677455796) |
 
 ### Deeper policy enforcement and WebSocket parity
 
