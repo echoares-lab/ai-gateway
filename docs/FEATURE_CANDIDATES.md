@@ -35,7 +35,8 @@ tracked through its ready atomic children rather than claimed from this file.
 | C-AUD-3 | LiteLLM Postgres vs YAML override / drift docs or detector | Epic [#517](https://github.com/echoares-lab/ai-gateway/issues/517); child [#520](https://github.com/echoares-lab/ai-gateway/issues/520) |
 | C-AUD-4 | Dev-env compose project collision preflight and safe recovery | Epic [#525](https://github.com/echoares-lab/ai-gateway/issues/525); children [#526](https://github.com/echoares-lab/ai-gateway/issues/526), [#527](https://github.com/echoares-lab/ai-gateway/issues/527) |
 | C-AUD-5 | Narrow broad gateway exception handlers with typed boundaries | Epic [#531](https://github.com/echoares-lab/ai-gateway/issues/531); children [#532](https://github.com/echoares-lab/ai-gateway/issues/532), [#533](https://github.com/echoares-lab/ai-gateway/issues/533) |
-| C-SVC-1 | Evolve `cliproxy-setup.sh` into management API service | Epic [#609](https://github.com/echoares-lab/ai-gateway/issues/609); ready contract child [#610](https://github.com/echoares-lab/ai-gateway/issues/610) |
+| C-SVC-1 | Evolve `cliproxy-setup.sh` into management API service | Closed epic [#609](https://github.com/echoares-lab/ai-gateway/issues/609); children [#610](https://github.com/echoares-lab/ai-gateway/issues/610), [#613](https://github.com/echoares-lab/ai-gateway/issues/613); PRs [#612](https://github.com/echoares-lab/ai-gateway/pull/612), [#614](https://github.com/echoares-lab/ai-gateway/pull/614) |
+| C-SVC-2 | `/v1/config/generate` from `gen-client-config.sh` | Approved epic [#615](https://github.com/echoares-lab/ai-gateway/issues/615); ready contract child [#616](https://github.com/echoares-lab/ai-gateway/issues/616) |
 
 ## Delivered / historical (not candidates)
 
@@ -102,7 +103,6 @@ Cheap-drift check and `/model/new` / `/model/delete` hot-add shipped on `main`
 
 | ID | Summary | Effort | Risk | Need/fit | Deps / links | Status |
 |----|---------|--------|------|----------|--------------|--------|
-| C-SVC-2 | `/v1/config/generate` from `gen-client-config.sh` | M | L | med | SCRIPT_TO_SERVICE_ROADMAP | candidate |
 | C-SVC-3 | Team/key manager API from `setup_litellm_teams.py` | M | M | unclear | SCRIPT_TO_SERVICE_ROADMAP; tenancy | candidate |
 | C-SVC-4 | Unified config admin API (re-implement vs stale `feat/unified-config`) | L | M | med | [UNMERGED_FEATURES.md](./UNMERGED_FEATURES.md) | candidate |
 
