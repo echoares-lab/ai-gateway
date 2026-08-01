@@ -90,6 +90,10 @@ class Config:
         ("CONFIG_GENERATION_API_ENABLED", "GATEWAY_ENGINE_CONFIG_GENERATION_API_ENABLED"),
         False,
     )
+    UNIFIED_CONFIG_ADMIN_API_ENABLED = _env_bool(
+        ("UNIFIED_CONFIG_ADMIN_API_ENABLED", "GATEWAY_ENGINE_UNIFIED_CONFIG_ADMIN_API_ENABLED"),
+        False,
+    )
     # The CLIProxy management adapter is an operator-only, read-only surface.
     # Keep it opt-in so the existing shell workflow remains the rollback path.
     CLIPROXY_MANAGEMENT_API_ENABLED = _env_bool(

@@ -28,6 +28,9 @@ except Exception:  # pragma: no cover - local unit env may not have psycopg2
     RealDictCursor = None
 
 
+_CANONICAL_MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
+
+
 class ModelRegistryRecord(BaseModel):
     model_id: str
     provider: str = "unknown"
@@ -255,6 +258,11 @@ def provider_of(model: str) -> str:
     return "unknown"
 
 
+def is_canonical_model_id(model_id: object) -> bool:
+    """Return whether a value follows the repository's public model-id grammar."""
+    return isinstance(model_id, str) and _CANONICAL_MODEL_ID.fullmatch(model_id) is not None
+
+
 def family_of(model: str) -> str:
     provider = provider_of(model)
     return provider if provider != "unknown" else "unknown"
@@ -271,7 +279,7 @@ def cost_tier_of(model: str) -> int | None:
 
 def normalize_discovered_model(model_id: str) -> tuple[str, str]:
     upstream_id = model_id.removeprefix("AI-Gateway:")
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", upstream_id):
+    if not is_canonical_model_id(upstream_id):
         raise ValueError("invalid model identifier")
     registry_id = upstream_id.replace(".", "-") if provider_of(upstream_id) == "openai" else upstream_id
     return registry_id, upstream_id
@@ -589,12 +597,27 @@ class ModelRegistryStore:
     def enabled(self) -> bool:
         return bool(self.database_url and psycopg2 is not None)
 
-    def _connect(self):
+    def _connect(
+        self,
+        *,
+        connect_timeout_seconds: int | None = None,
+        statement_timeout_ms: int | None = None,
+    ):
         if not self.enabled:
             raise RuntimeError("model registry database is not configured")
-        return psycopg2.connect(self.database_url)
+        options: dict[str, Any] = {}
+        if connect_timeout_seconds is not None:
+            options["connect_timeout"] = max(1, int(connect_timeout_seconds))
+        if statement_timeout_ms is not None:
+            options["options"] = f"-c statement_timeout={max(1, int(statement_timeout_ms))}"
+        return psycopg2.connect(self.database_url, **options)
 
-    def list_models(self) -> RegistryLoadResult:
+    def _list_models(
+        self,
+        *,
+        connect_timeout_seconds: int | None = None,
+        statement_timeout_ms: int | None = None,
+    ) -> RegistryLoadResult:
         if not self.enabled:
             return RegistryLoadResult(
                 source="postgres:model_registry",
@@ -608,8 +631,13 @@ class ModelRegistryStore:
                 ],
             )
         try:
+            connect_options = {}
+            if connect_timeout_seconds is not None:
+                connect_options["connect_timeout_seconds"] = connect_timeout_seconds
+            if statement_timeout_ms is not None:
+                connect_options["statement_timeout_ms"] = statement_timeout_ms
             with (
-                self._connect() as conn,
+                self._connect(**connect_options) as conn,
                 conn.cursor(cursor_factory=RealDictCursor) as cur,
             ):
                 cur.execute(
@@ -650,6 +678,13 @@ class ModelRegistryStore:
             registry_available=True,
             models=[ModelRegistryRecord.model_validate(dict(row)) for row in rows],
         )
+
+    def list_models(self) -> RegistryLoadResult:
+        return self._list_models()
+
+    def list_models_for_snapshot(self) -> RegistryLoadResult:
+        """Read the snapshot registry source with finite PostgreSQL budgets."""
+        return self._list_models(connect_timeout_seconds=2, statement_timeout_ms=2000)
 
     def get_model(self, model_id: str) -> ModelRegistryRecord | None:
         result = self.list_models()

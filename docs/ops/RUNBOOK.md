@@ -204,6 +204,38 @@ gateway-engine, `litellm-config.yaml`, `/metrics`, and (best-effort) `cliproxy-s
 Read-only and operator-local: it never mutates state and redacts secrets. Degraded sources
 report `warning`/`unknown` rather than failing the response.
 
+### Unified configuration snapshot (disabled by default)
+
+`GET /admin/config` is an operator-only, read-only `config-snapshot.v1` view of
+the deployed LiteLLM structure, live model registry, and runtime-visible model
+aliases. It is disabled by default and always requires both the gateway admin
+key and the exact management scope. When enabled in a non-production operator
+environment, read it through the trusted internal ingress:
+
+```bash
+curl -fsS http://localhost:4000/admin/config \
+  -H "x-admin-key: $GATEWAY_ENGINE_ADMIN_KEY" \
+  -H "x-management-scope: config:read" | jq .
+```
+
+The response contains only bounded aliases, safe provider families, allowlisted
+routing values, MCP alias/transport metadata, environment reference names and
+presence booleans, sanitized projection digests, validation results, and
+alias-only drift. It does not contain raw YAML, environment values, secrets,
+credentials, URLs, paths, commands, or raw exceptions. A source failure returns
+a safe degraded `200` with typed errors and unknown drift. Every response uses
+`Cache-Control: no-store`.
+
+Rollback is the default state and does not touch any source:
+
+```bash
+UNIFIED_CONFIG_ADMIN_API_ENABLED=false
+```
+
+Restart or roll out the gateway-engine workload through the environment's normal
+deployment process after changing the flag. Do not use this read endpoint for
+writes, reloads, policy changes, key/team lifecycle, or GitOps promotion.
+
 ### Automatic model reconciliation
 
 Gateway-engine owns the model reconciliation scheduler. It discovers only the trusted

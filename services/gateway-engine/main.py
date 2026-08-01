@@ -70,6 +70,12 @@ from api.admin_routes import (
 from api.config_generation import router as config_generation_router
 from api.model_runtime_routes import router as model_runtime_router
 from api.policy_hooks import PolicyHookBoundary
+from api.unified_config_admin import (
+    _MAX_SOURCE_BYTES,
+    UnifiedConfigAdminDeps,
+    configure_unified_config_admin,
+)
+from api.unified_config_admin import router as unified_config_admin_router
 from api.ws_router import (
     WsRouterDeps,
     _codex_ws_upstream_headers,  # noqa: F401 - re-exported for existing tests
@@ -688,6 +694,42 @@ configure_admin_routes(
 )
 app.include_router(extracted_admin_router)
 app.include_router(model_runtime_router)
+
+
+def _load_unified_config_litellm_text() -> str:
+    with open(LITELLM_CONFIG_PATH, "rb") as handle:
+        raw = handle.read(_MAX_SOURCE_BYTES + 1)
+    if len(raw) > _MAX_SOURCE_BYTES:
+        raise ValueError("deployed config exceeds byte limit")
+    return raw.decode("utf-8", errors="strict")
+
+
+def _load_unified_config_registry_model_ids() -> tuple[str, ...]:
+    loaded = _model_registry_store().list_models_for_snapshot()
+    if not loaded.registry_available:
+        raise RuntimeError("model registry unavailable")
+    return tuple(model.model_id for model in loaded.models)
+
+
+async def _fetch_unified_config_runtime_model_ids() -> tuple[str, ...]:
+    model_ids, errors = await _admin_fetch_visible_models()
+    if any(error.get("code") == "models_fetch_timeout" for error in errors if isinstance(error, dict)):
+        raise TimeoutError("runtime model catalog timed out")
+    if errors or model_ids is None:
+        raise RuntimeError("runtime model catalog unavailable")
+    return tuple(model_ids)
+
+
+configure_unified_config_admin(
+    UnifiedConfigAdminDeps(
+        load_litellm_text=_load_unified_config_litellm_text,
+        load_registry_model_ids=_load_unified_config_registry_model_ids,
+        fetch_runtime_model_ids=_fetch_unified_config_runtime_model_ids,
+        environment=lambda: dict(os.environ),
+        now=lambda: datetime.now(timezone.utc),
+    )
+)
+app.include_router(unified_config_admin_router)
 
 
 # Credential events must be registered before the catch-all proxy so they are

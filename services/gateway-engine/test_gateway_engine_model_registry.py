@@ -21,6 +21,7 @@ from core.model_registry import (
     ModelRegistryStore,
     RegistryLoadResult,
     build_reconcile_resources,
+    is_canonical_model_id,
     load_models_from_litellm_config,
     merge_discovered_model,
     normalize_discovered_model,
@@ -177,6 +178,14 @@ class _FakeProbeClient:
         if self.exc is not None:
             raise self.exc
         return self.response
+
+
+def test_canonical_model_id_predicate_matches_registry_grammar():
+    assert is_canonical_model_id("api-preview-model-2026")
+    assert is_canonical_model_id("headersegment.payloadsegment.signaturesegment")
+    assert not is_canonical_model_id("AI-Gateway:gpt-safe")
+    assert not is_canonical_model_id("etc/keys")
+    assert not is_canonical_model_id("rm -rf /")
 
 
 class _FakeModelsClient:
@@ -430,6 +439,34 @@ def test_model_registry_store_upsert_round_trips_advertised_retired_absent_since
     assert loaded.models[0].probe_status == "temporarily_unavailable"
     assert loaded.models[0].probe_http_status == 503
     assert loaded.models[0].probe_checked_at == checked_at
+
+
+def test_snapshot_registry_read_sets_finite_postgres_connect_and_query_timeouts(monkeypatch):
+    class ReadCursor(_RecordingCursor):
+        def fetchall(self):
+            return []
+
+    connection = _RecordingConnection(ReadCursor())
+    connect_calls = []
+
+    class Psycopg:
+        @staticmethod
+        def connect(database_url, **kwargs):
+            connect_calls.append((database_url, kwargs))
+            return connection
+
+    monkeypatch.setattr("core.model_registry.psycopg2", Psycopg)
+    store = ModelRegistryStore("postgresql://registry")
+
+    loaded = store.list_models_for_snapshot()
+
+    assert loaded.registry_available is True
+    assert connect_calls == [
+        (
+            "postgresql://registry",
+            {"connect_timeout": 2, "options": "-c statement_timeout=2000"},
+        )
+    ]
 
 
 def test_registry_record_enabled_shim_matches_advertised_and_not_retired():

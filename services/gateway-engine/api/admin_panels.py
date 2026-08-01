@@ -1009,6 +1009,14 @@ async def _admin_fetch_visible_models() -> tuple[list[str] | None, list[dict]]:
         ids = [m.get("id") for m in data if isinstance(m, dict) and m.get("id")]
         # The aggregator reads LiteLLM directly (no prefix); compare on bare aliases.
         return ids, []
+    except httpx.TimeoutException:
+        return None, [
+            _admin_error(
+                "models_fetch_timeout",
+                "runtime model catalog request timed out",
+                "litellm:/v1/models",
+            )
+        ]
     except Exception as exc:
         return None, [
             _admin_error(

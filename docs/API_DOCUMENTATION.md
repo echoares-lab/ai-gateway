@@ -20,13 +20,18 @@ manual scheduler run with `dry_run: false`.
 
 ### Unified configuration admin API contract (C-SVC-4)
 
-The disabled-by-default, read-only future `GET /admin/config` endpoint is
-defined by the [Unified Config Admin API Contract](UNIFIED_CONFIG_ADMIN_API_CONTRACT.md).
-The contract establishes `config-snapshot.v1`, strict management credentials,
-safe configuration projections, redaction, and rollback semantics before any
-runtime implementation is introduced. Before the runtime endpoint merges, it
-must be registered in `docs/openapi/gateway-engine.yaml` (and its required
-exposure documentation).
+The disabled-by-default, read-only `GET /admin/config` endpoint returns the
+`config-snapshot.v1` projection defined by the [Unified Config Admin API
+Contract](UNIFIED_CONFIG_ADMIN_API_CONTRACT.md). It requires the gateway admin
+key and exact `x-management-scope: config:read`, reads only fixed server-side
+sources, and returns `Cache-Control: no-store` on successes and errors. The
+snapshot contains bounded aliases, safe provider families, allowlisted routing
+settings, MCP alias/transport metadata, environment variable names with presence
+booleans, validation results, digests of sanitized projections, and alias-only
+drift. It never returns raw configuration, environment values, credentials,
+URLs, paths, commands, or raw source errors. Partial source failures are a typed
+degraded `200`; the response is rejected if its compact serialization exceeds
+64 KiB.
 
 ### Stable launcher key administration
 

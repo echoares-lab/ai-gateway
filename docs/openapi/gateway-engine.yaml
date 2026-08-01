@@ -155,6 +155,81 @@ paths:
         '409': {description: Idempotency key conflicts with another request}
         '413': {description: Request or generated response exceeds its bound}
         '500': {description: Bounded renderer failure}
+  /admin/config:
+    get:
+      operationId: getUnifiedConfigSnapshot
+      summary: Read a bounded unified configuration snapshot
+      description: >-
+        Returns the config-snapshot.v1 safe projection from fixed server-side
+        sources. This operator-only route is disabled by default. Partial source
+        failures return a degraded 200 response; raw configuration, environment
+        values, secrets, credentials, URLs, paths, commands, and raw exceptions
+        are never returned. Compact serialized responses are limited to 64 KiB.
+        Every response includes Cache-Control: no-store.
+      tags: [Admin]
+      security:
+        - AdminKey: []
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+        - name: x-management-scope
+          in: header
+          required: true
+          schema: {type: string, enum: [config:read]}
+      responses:
+        '200':
+          description: Healthy or safely degraded config-snapshot.v1 projection
+          headers:
+            Cache-Control:
+              description: Prevent storage of operational configuration metadata.
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UnifiedConfigSnapshot'}
+        '400':
+          description: Query parameters are not accepted (`config_snapshot_invalid_request`)
+          headers:
+            Cache-Control: {schema: {type: string, enum: [no-store]}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UnifiedConfigSnapshotError'}
+        '401':
+          description: Admin key is missing or incorrect (`config_snapshot_auth_required`)
+          headers:
+            Cache-Control: {schema: {type: string, enum: [no-store]}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UnifiedConfigSnapshotError'}
+        '403':
+          description: Management scope is not exactly config:read (`config_snapshot_scope_forbidden`)
+          headers:
+            Cache-Control: {schema: {type: string, enum: [no-store]}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UnifiedConfigSnapshotError'}
+        '404':
+          description: Endpoint is disabled (`config_snapshot_disabled`)
+          headers:
+            Cache-Control: {schema: {type: string, enum: [no-store]}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UnifiedConfigSnapshotError'}
+        '502':
+          description: Compact response exceeds 64 KiB (`config_snapshot_too_large`)
+          headers:
+            Cache-Control: {schema: {type: string, enum: [no-store]}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UnifiedConfigSnapshotError'}
+        '503':
+          description: Admin authentication is not configured or orchestration is unavailable (`config_snapshot_unavailable`)
+          headers:
+            Cache-Control: {schema: {type: string, enum: [no-store]}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UnifiedConfigSnapshotError'}
   /metrics:
     get:
       summary: Prometheus metrics endpoint
@@ -1413,6 +1488,143 @@ components:
         maxLength: 200
         example: repo/customer-a
   schemas:
+    UnifiedConfigSnapshot:
+      type: object
+      additionalProperties: false
+      required: [schema, status, generated_at, sources, models, routing, mcp, environment, validation, drift, errors]
+      properties:
+        schema: {type: string, enum: [config-snapshot.v1]}
+        status: {type: string, enum: [ok, degraded]}
+        generated_at: {type: string, format: date-time}
+        sources:
+          type: array
+          maxItems: 3
+          description: A source has `digest` if and only if its status is `ok`; non-ok sources omit it.
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, kind, status, observed_at]
+            properties:
+              id: {type: string, enum: [litellm-config, model-registry, runtime-visible-models]}
+              kind: {type: string, enum: [deployed-file, registry, live-api]}
+              status: {type: string, enum: [ok, missing, invalid, unavailable]}
+              digest:
+                type: string
+                pattern: '^[a-f0-9]{64}$'
+                description: Present if and only if source status is `ok`; omitted otherwise.
+              observed_at: {type: string, format: date-time}
+        models:
+          type: object
+          additionalProperties: false
+          required: [configured, registry, runtime, providers, fallbacks]
+          properties:
+            configured: {$ref: '#/components/schemas/BoundedStringList'}
+            registry: {$ref: '#/components/schemas/BoundedStringList'}
+            runtime: {$ref: '#/components/schemas/BoundedStringList'}
+            providers:
+              type: array
+              maxItems: 256
+              items:
+                type: object
+                additionalProperties: false
+                required: [alias, family]
+                properties:
+                  alias: {type: string, maxLength: 512}
+                  family: {type: string, maxLength: 512}
+            fallbacks:
+              type: array
+              maxItems: 256
+              items:
+                type: object
+                additionalProperties: false
+                required: [from, to]
+                properties:
+                  from: {type: string, maxLength: 512}
+                  to: {$ref: '#/components/schemas/BoundedStringList'}
+        routing:
+          type: object
+          additionalProperties: false
+          properties:
+            routing_strategy: {$ref: '#/components/schemas/UnifiedConfigRouterScalar'}
+            cooldown_time: {$ref: '#/components/schemas/UnifiedConfigRouterScalar'}
+            allowed_fails: {$ref: '#/components/schemas/UnifiedConfigRouterScalar'}
+            num_retries: {$ref: '#/components/schemas/UnifiedConfigRouterScalar'}
+        mcp:
+          type: array
+          maxItems: 256
+          items:
+            type: object
+            additionalProperties: false
+            required: [alias, transport]
+            properties:
+              alias: {type: string, maxLength: 512}
+              transport:
+                type: string
+                enum: [http, sse, stdio, streamable-http, streamable_http, websocket]
+        environment:
+          type: array
+          maxItems: 256
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, present]
+            properties:
+              name: {type: string, maxLength: 512}
+              present: {type: boolean}
+        validation:
+          type: array
+          maxItems: 256
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, status]
+            properties:
+              id: {type: string, maxLength: 512}
+              status: {type: string, enum: [pass, warn, fail]}
+        drift:
+          type: object
+          additionalProperties: false
+          required: [status, configured_only, registry_only, runtime_only, missing_at_runtime, registry_override]
+          properties:
+            status: {type: string, enum: [clean, drifted, unknown]}
+            configured_only: {$ref: '#/components/schemas/BoundedStringList'}
+            registry_only: {$ref: '#/components/schemas/BoundedStringList'}
+            runtime_only: {$ref: '#/components/schemas/BoundedStringList'}
+            missing_at_runtime: {$ref: '#/components/schemas/BoundedStringList'}
+            registry_override: {type: boolean}
+        errors:
+          type: array
+          maxItems: 256
+          items:
+            type: object
+            additionalProperties: false
+            required: [source, code]
+            properties:
+              source: {type: string, enum: [litellm-config, model-registry, runtime-visible-models]}
+              code: {type: string, enum: [source_missing, source_invalid, source_timeout, source_unavailable]}
+    UnifiedConfigRouterScalar:
+      anyOf:
+        - {type: string, maxLength: 512}
+        - {type: number}
+        - {type: boolean}
+    BoundedStringList:
+      type: array
+      maxItems: 256
+      items: {type: string, maxLength: 512}
+    UnifiedConfigSnapshotError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [config_snapshot_disabled, config_snapshot_auth_required, config_snapshot_scope_forbidden, config_snapshot_invalid_request, config_snapshot_too_large, config_snapshot_unavailable]
+            message: {type: string}
     StableKeyCreateRequest:
       type: object
       required: [key_alias, team_id]
