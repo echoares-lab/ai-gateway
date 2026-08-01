@@ -58,6 +58,54 @@ def test_missing_runtime_source_is_unknown_not_false_drift():
     assert {error["code"] for error in snapshot["errors"]} == {"source_timeout"}
 
 
+def test_accepted_source_errors_force_non_ok_source_statuses_and_unknown_drift():
+    expected_statuses = {
+        "source_missing": "missing",
+        "source_invalid": "invalid",
+        "source_timeout": "unavailable",
+        "source_unavailable": "unavailable",
+    }
+
+    for error_code, expected_status in expected_statuses.items():
+        snapshot = build_config_snapshot(
+            _inputs(HEALTHY_INPUT, source_errors=(("runtime-visible-models", error_code),))
+        )
+
+        assert snapshot["status"] == "degraded"
+        assert snapshot["drift"]["status"] == "unknown"
+        assert (
+            next(source for source in snapshot["sources"] if source["id"] == "runtime-visible-models")["status"]
+            == expected_status
+        )
+
+
+def test_duplicate_source_errors_use_the_canonical_error_to_derive_status():
+    first = build_config_snapshot(
+        _inputs(
+            HEALTHY_INPUT,
+            source_errors=(
+                ("runtime-visible-models", "source_timeout"),
+                ("runtime-visible-models", "source_invalid"),
+            ),
+        )
+    )
+    second = build_config_snapshot(
+        _inputs(
+            HEALTHY_INPUT,
+            source_errors=(
+                ("runtime-visible-models", "source_invalid"),
+                ("runtime-visible-models", "source_timeout"),
+            ),
+        )
+    )
+
+    assert first == second
+    assert first["errors"] == [{"source": "runtime-visible-models", "code": "source_invalid"}]
+    assert (
+        next(source for source in first["sources"] if source["id"] == "runtime-visible-models")["status"] == "invalid"
+    )
+
+
 def test_invalid_yaml_marks_the_deployed_source_invalid():
     snapshot = build_config_snapshot(_inputs(INVALID_CONFIG_INPUT))
 
@@ -79,6 +127,35 @@ def test_missing_environment_reference_is_reported_without_its_value():
     assert snapshot["environment"] == [{"name": "OPENAI_API_KEY", "present": False}]
     assert any(item["status"] == "warn" for item in snapshot["validation"])
     assert snapshot["status"] == "degraded"
+
+
+def test_overlong_environment_reference_is_omitted_before_output_and_digest():
+    first_name = "A" * (MAX_STRING + 1)
+    second_name = "B" * (MAX_STRING + 1)
+    first = build_config_snapshot(
+        _inputs(
+            {
+                **HEALTHY_INPUT,
+                "litellm_yaml": f"model_list: []\nmetadata: os.environ/{first_name}\n",
+                "registry_model_ids": [],
+                "runtime_model_ids": [],
+            }
+        )
+    )
+    second = build_config_snapshot(
+        _inputs(
+            {
+                **HEALTHY_INPUT,
+                "litellm_yaml": f"model_list: []\nmetadata: os.environ/{second_name}\n",
+                "registry_model_ids": [],
+                "runtime_model_ids": [],
+            }
+        )
+    )
+
+    assert first["environment"] == []
+    assert first == second
+    assert first_name not in json.dumps(first)
 
 
 def test_aliases_are_stable_sorted_deduplicated_and_tied_providers_are_sorted():

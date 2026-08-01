@@ -100,7 +100,7 @@ def _extract_environment_references(document: Mapping[str, Any]) -> list[str]:
             for nested in value:
                 visit(nested, depth + 1)
         elif isinstance(value, str):
-            references.update(ENV_REFERENCE.findall(value))
+            references.update(reference for reference in ENV_REFERENCE.findall(value) if len(reference) <= MAX_STRING)
 
     visit(document, 0)
     return sorted(references)[:MAX_ENTRIES]
@@ -221,6 +221,10 @@ def _error_code_for_status(status: str) -> str:
     return {"missing": "source_missing", "invalid": "source_invalid"}.get(status, "source_unavailable")
 
 
+def _status_for_error_code(code: str) -> str:
+    return {"source_missing": "missing", "source_invalid": "invalid"}.get(code, "unavailable")
+
+
 def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
     """Build a deterministic snapshot from already-acquired, trusted source inputs."""
     document, document_valid = _parse_document(inputs.litellm_yaml)
@@ -286,6 +290,8 @@ def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
     for source, code in inputs.source_errors[:MAX_ENTRIES]:
         if source in statuses and code in _SOURCE_ERROR_CODES:
             source_errors[source] = min(source_errors.get(source, code), code)
+    for source, code in source_errors.items():
+        statuses[source] = _status_for_error_code(code)
     for source, status in statuses.items():
         if status != "ok" and source not in source_errors:
             source_errors[source] = _error_code_for_status(status)
