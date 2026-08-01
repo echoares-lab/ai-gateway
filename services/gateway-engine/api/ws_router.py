@@ -223,7 +223,10 @@ def create_ws_router(deps: WsRouterDeps) -> APIRouter:
     async def responses_websocket(ws: WebSocket):
         # Accept client WebSocket connection
         translation_requested = codex_ws_translation.active(ws)
-        await ws.accept(subprotocol=codex_ws_translation.SUBPROTOCOL if translation_requested else None)
+        if translation_requested:
+            await ws.accept(subprotocol=codex_ws_translation.SUBPROTOCOL)
+        else:
+            await ws.accept()
 
         log.info("WebSocket headers: %s", _ws_log_safe_mapping(dict(ws.headers)))
         log.info("WebSocket query params: %s", _ws_log_safe_mapping(dict(ws.query_params)))

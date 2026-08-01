@@ -143,4 +143,4 @@ async def test_router_keeps_direct_proxy_when_flag_off():
     ):
         await endpoint(ws)
     assert upstream.sent == ["hello"]
-    ws.accept.assert_awaited_once_with(subprotocol=None)
+    ws.accept.assert_awaited_once_with()
