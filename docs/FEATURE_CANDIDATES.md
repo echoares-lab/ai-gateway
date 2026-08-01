@@ -24,9 +24,10 @@ Last reviewed: 2026-08-01.
 
 ## Promoted to roadmap (active; not candidates)
 
-These candidates were promoted into approved coordination epic
-[#517](https://github.com/echoares-lab/ai-gateway/issues/517) and must be
-tracked through its ready atomic children rather than claimed from this file.
+These candidates were promoted into approved coordination epics and must be
+tracked through their linked atomic children rather than claimed from this
+file. The C-AUD-1 through C-AUD-3 entries are coordinated by
+[#517](https://github.com/echoares-lab/ai-gateway/issues/517).
 
 | ID | Summary | Approved tracking issues |
 |----|---------|--------------------------|
