@@ -3,6 +3,7 @@ import inspect
 import json
 import logging
 import os
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -14,6 +15,9 @@ from api.proxy_common import _log_safe_headers
 from fastapi import APIRouter, WebSocket
 
 log = logging.getLogger("gateway-engine")
+
+WS_FIRST_FRAME_MAX_BYTES = 64 * 1024
+WS_POLICY_TIMEOUT_MS = 100
 
 
 @dataclass(frozen=True)
@@ -48,8 +52,78 @@ def _ws_policy_denial_reason(decision: dict[str, Any] | None) -> str:
     """Return a bounded, client-safe close reason for a denied WS policy decision."""
     if not decision or decision.get("gate") != "deny":
         return ""
-    reason = str(decision.get("deny_reason") or "Policy denied")
+    reason = str(decision.get("deny_reason") or "Policy denied").strip()
+    # Close reasons are observable by clients and must never carry credentials,
+    # prompts, or evaluator internals. Preserve a bounded safe reason for
+    # backwards-compatible operator messages.
+    if re.search(r"(?i)(bearer|authorization|api[_ -]?key|secret|prompt|sk-|ak-)", reason):
+        return "Policy denied"
     return reason[:123]
+
+
+def _ws_model_from_frame(frame: dict[str, Any] | None) -> str | None:
+    """Extract a bounded model hint from one consumed client frame."""
+    if not isinstance(frame, dict):
+        return None
+    value = frame.get("text")
+    if value is None:
+        value = frame.get("bytes")
+    if isinstance(value, bytes):
+        if len(value) > WS_FIRST_FRAME_MAX_BYTES:
+            return None
+        value = value.decode("utf-8", errors="replace")
+    elif isinstance(value, str):
+        if len(value.encode("utf-8")) > WS_FIRST_FRAME_MAX_BYTES:
+            return None
+    else:
+        return None
+    try:
+        payload = json.loads(value)
+    except (TypeError, ValueError):
+        return None
+    model = payload.get("model") if isinstance(payload, dict) else None
+    return model.strip() if isinstance(model, str) and model.strip() else None
+
+
+def _ws_policy_timeout_seconds() -> float:
+    raw = os.environ.get("POLICY_ENGINE_TIMEOUT_MS")
+    if raw:
+        try:
+            return max(0.001, float(raw) / 1000)
+        except ValueError:
+            pass
+    return WS_POLICY_TIMEOUT_MS / 1000
+
+
+async def _evaluate_ws_policy(evaluate, context: dict[str, Any]) -> dict[str, Any] | None:
+    """Bound optional WS evaluation; every failure rolls back to direct proxy."""
+    try:
+        decision = await asyncio.wait_for(evaluate(context), timeout=_ws_policy_timeout_seconds())
+    except asyncio.TimeoutError:
+        log.warning("Codex WebSocket policy evaluate timed out; rolling back to direct proxy")
+        return None
+    except Exception as exc:
+        log.warning("Codex WebSocket policy evaluate failed (%s); rolling back to direct proxy", type(exc).__name__)
+        return None
+    if not isinstance(decision, dict) or decision.get("gate") not in {"allow", "deny"}:
+        log.warning("Codex WebSocket policy decision malformed; rolling back to direct proxy")
+        return None
+    return decision
+
+
+async def _forward_ws_message(upstream, data: dict[str, Any]) -> bool:
+    """Forward a Starlette receive payload without changing frame bytes."""
+    if data.get("type") == "websocket.disconnect":
+        return False
+    text = data.get("text")
+    if text is not None:
+        await upstream.send(text)
+        return True
+    bytes_data = data.get("bytes")
+    if bytes_data is not None:
+        await upstream.send(bytes_data)
+        return True
+    return True
 
 
 def _codex_ws_upstream_headers(
@@ -76,12 +150,12 @@ def _codex_ws_upstream_headers(
     if routing_decision:
         session_key = routing_decision.get("session_key")
         if session_key:
-            headers["x-session-id"] = session_key
+            headers["x-session-id"] = str(session_key)[:128]
         if routing_decision.get("quota_aware_mode"):
             headers["x-quota-aware-mode"] = "true"
         deprioritized = routing_decision.get("deprioritized_credentials") or []
         if deprioritized:
-            headers["x-deprioritized-credentials"] = ",".join(str(c) for c in deprioritized)
+            headers["x-deprioritized-credentials"] = ",".join(str(c)[:64] for c in deprioritized[:20])
 
     return headers
 
@@ -174,6 +248,7 @@ def create_ws_router(deps: WsRouterDeps) -> APIRouter:
 
         ws_bypass = codex_ws_policy_bypass()
         routing_decision = None
+        first_frame: dict[str, Any] | None = None
         if ws_bypass:
             log.info(
                 "Codex WebSocket policy bypass active (direct CLIProxy proxy); "
@@ -184,8 +259,28 @@ def create_ws_router(deps: WsRouterDeps) -> APIRouter:
             hooks = deps.policy_hooks
             build_context = hooks.build_context if hooks is not None else deps.build_routing_context
             evaluate = hooks.evaluate if hooks is not None else deps.evaluate_policy_engine
-            ctx = build_context(ws, policy_token)
-            routing_decision = await evaluate(ctx)
+            query_model = str(ws.query_params.get("model") or "").strip()
+            if query_model or not hasattr(ws, "receive"):
+                ctx = build_context(ws, policy_token)
+                if query_model:
+                    ctx["requested_model"] = query_model
+                routing_decision = await _evaluate_ws_policy(evaluate, ctx)
+            else:
+                # The Codex model normally arrives in the first frame. Consume
+                # at most one bounded frame, evaluate once when a model is
+                # present, then replay the exact payload after connecting.
+                try:
+                    first_frame = await asyncio.wait_for(ws.receive(), timeout=_ws_policy_timeout_seconds())
+                except asyncio.TimeoutError:
+                    first_frame = None
+                    log.info("Codex WebSocket first-frame policy budget elapsed; rolling back to direct proxy")
+                if first_frame is not None and first_frame.get("type") == "websocket.disconnect":
+                    return
+                frame_model = _ws_model_from_frame(first_frame)
+                if frame_model:
+                    ctx = build_context(ws, policy_token)
+                    ctx["requested_model"] = frame_model
+                    routing_decision = await _evaluate_ws_policy(evaluate, ctx)
             log.info(
                 "Codex WebSocket in-process policy evaluate completed (gate=%s)",
                 routing_decision.get("gate") if routing_decision else "none",
@@ -218,20 +313,12 @@ def create_ws_router(deps: WsRouterDeps) -> APIRouter:
 
                 async def client_to_upstream():
                     try:
+                        if first_frame is not None and not await _forward_ws_message(upstream, first_frame):
+                            return
                         while True:
                             data = await ws.receive()
-                            if data.get("type") == "websocket.disconnect":
+                            if not await _forward_ws_message(upstream, data):
                                 break
-
-                            text = data.get("text")
-                            if text is not None:
-                                await upstream.send(text)
-                                continue
-
-                            bytes_data = data.get("bytes")
-                            if bytes_data is not None:
-                                await upstream.send(bytes_data)
-                                continue
                     except Exception as exc:
                         log.debug("Codex WebSocket client_to_upstream error: %s", exc)
 
