@@ -15,8 +15,22 @@ Last reviewed: 2026-08-01.
 
 ## Now
 
-No approved current epic. Promote a candidate into this roadmap and create a
-ready atomic child before claiming new work.
+### Faster local mock iteration
+
+Coordination epic [#643](https://github.com/echoares-lab/ai-gateway/issues/643)
+(C-AUD-9) is approved to preserve the in-memory Gate B path, add focused
+local pytest selection, and prevent clean-db or mock-stack overhead from
+returning.
+
+| Delivery order | Tracking issue | Status / dependency |
+|----------------|----------------|---------------------|
+| 1. Guard focused in-memory mock iteration | [#644](https://github.com/echoares-lab/ai-gateway/issues/644) | `status:blocked`; becomes ready after this promotion merges and Gate D passes |
+
+Scope is limited to an optional `MOCK_TEST_ARGS` selector, an offline Make
+dry-run contract, and Obsidian usage/closeout notes. The default
+`make test-mock` remains the complete Gate B suite. No Docker, Compose,
+database, dev-slot, runtime, API, marker, membership, or CI-filter changes
+are permitted.
 
 ## Next
 
