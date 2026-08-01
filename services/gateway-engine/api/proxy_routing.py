@@ -10,6 +10,7 @@ import os
 import time
 
 import httpx
+from api.policy_hooks import PolicyHookBoundary, redact_policy_decision
 from api.proxy_common import (
     _deps,
     _enable_virtual_providers,
@@ -555,6 +556,18 @@ async def _apply_policy_engine(token: str | None, body: dict) -> dict:
     except Exception as exc:
         log.warning("policy apply failed (%s) — fail-open", exc)
         return body
+
+
+def create_policy_hooks() -> PolicyHookBoundary:
+    """Create the explicit policy boundary from configured request-path hooks."""
+    return PolicyHookBoundary(
+        enabled=lambda: _deps().policy_engine_enabled(),
+        build_context=_build_routing_context,
+        evaluate=_evaluate_policy_engine,
+        apply=_apply_policy_engine,
+        record_trace=lambda *args, **kwargs: _deps().record_policy_trace(*args, **kwargs),
+        redact_decision=redact_policy_decision,
+    )
 
 
 def _record_token_usage(model: str, response_json: dict, headers: dict | httpx.Headers | None = None) -> None:

@@ -31,7 +31,7 @@ def test_http_call_sites_use_shared_policy_apply_hook():
     """All HTTP adapters must retain one shared policy application seam."""
     for module, function_name in HTTP_CALL_SITES.items():
         source = inspect.getsource(getattr(module, function_name))
-        assert "_apply_policy_engine" in source, (module.__name__, function_name)
+        assert "_policy_hooks" in source, (module.__name__, function_name)
         assert "_extract_and_apply_tenancy" in source, (module.__name__, function_name)
 
 

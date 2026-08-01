@@ -12,6 +12,7 @@ from api.proxy_common import (
     _deps,
     _http_client,
     _log_safe_headers,
+    _policy_hooks,
     _tee_lines,
     log,
     router,
@@ -22,7 +23,6 @@ from api.proxy_normalize import (
     _responses_input_to_messages,
 )
 from api.proxy_routing import (
-    _apply_policy_engine,
     _auth_fingerprint,
     _extract_and_apply_tenancy,
     _maybe_force_model,
@@ -351,7 +351,7 @@ async def responses_proxy(request: Request):
     # Extract and apply tenancy metadata
     auth = request.headers.get("authorization")
     oai_body = _extract_and_apply_tenancy(auth, oai_body)
-    oai_body = await _apply_policy_engine(auth, oai_body)
+    oai_body = await _policy_hooks().apply(auth, oai_body)
     oai_body = _maybe_force_model(request, oai_body)
 
     oai_bytes = json.dumps(oai_body).encode()

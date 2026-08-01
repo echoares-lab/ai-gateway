@@ -10,13 +10,13 @@ from api.proxy_common import (
     _aiter_list,
     _deps,
     _http_client,
+    _policy_hooks,
     _tee_lines,
     log,
     router,
 )
 from api.proxy_normalize import _resolve_model
 from api.proxy_routing import (
-    _apply_policy_engine,
     _auth_fingerprint,
     _extract_and_apply_tenancy,
     _maybe_force_model,
@@ -72,7 +72,7 @@ async def claude_proxy(request: Request):
     )
     # Extract and apply tenancy metadata
     oai_body = _extract_and_apply_tenancy(api_key, oai_body)
-    oai_body = await _apply_policy_engine(api_key, oai_body)
+    oai_body = await _policy_hooks().apply(api_key, oai_body)
     oai_body = _maybe_force_model(request, oai_body)
 
     oai_bytes = json.dumps(oai_body).encode()

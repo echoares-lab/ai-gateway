@@ -11,6 +11,7 @@ from api.proxy_common import (
     _enable_virtual_providers,
     _http_client,
     _log_safe_headers,
+    _policy_hooks,
     log,
 )
 from api.proxy_normalize import (
@@ -19,7 +20,6 @@ from api.proxy_normalize import (
     _strip_prefix,
 )
 from api.proxy_routing import (
-    _apply_policy_engine,
     _auth_fingerprint,
     _extract_and_apply_tenancy,
     _maybe_force_model,
@@ -92,7 +92,7 @@ async def proxy(path: str, request: Request):
             bd = json.loads(body)
             auth_token = request.headers.get("authorization", "")
             bd = _extract_and_apply_tenancy(auth_token, bd)
-            bd = await _apply_policy_engine(auth_token, bd)
+            bd = await _policy_hooks().apply(auth_token, bd)
             bd = _maybe_force_model(request, bd)
             body = json.dumps(bd).encode()
             changed = True
