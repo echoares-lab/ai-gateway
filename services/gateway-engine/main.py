@@ -697,8 +697,11 @@ app.include_router(model_runtime_router)
 
 
 def _load_unified_config_litellm_text() -> str:
-    with open(LITELLM_CONFIG_PATH, encoding="utf-8") as handle:
-        return handle.read(_MAX_SOURCE_BYTES + 1)
+    with open(LITELLM_CONFIG_PATH, "rb") as handle:
+        raw = handle.read(_MAX_SOURCE_BYTES + 1)
+    if len(raw) > _MAX_SOURCE_BYTES:
+        raise ValueError("deployed config exceeds byte limit")
+    return raw.decode("utf-8", errors="strict")
 
 
 def _load_unified_config_registry_model_ids() -> tuple[str, ...]:

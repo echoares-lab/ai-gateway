@@ -1541,10 +1541,10 @@ components:
           type: object
           additionalProperties: false
           properties:
-            routing_strategy: {}
-            cooldown_time: {}
-            allowed_fails: {}
-            num_retries: {}
+            routing_strategy: {$ref: '#/components/schemas/UnifiedConfigRouterScalar'}
+            cooldown_time: {$ref: '#/components/schemas/UnifiedConfigRouterScalar'}
+            allowed_fails: {$ref: '#/components/schemas/UnifiedConfigRouterScalar'}
+            num_retries: {$ref: '#/components/schemas/UnifiedConfigRouterScalar'}
         mcp:
           type: array
           maxItems: 256
@@ -1596,6 +1596,11 @@ components:
             properties:
               source: {type: string, enum: [litellm-config, model-registry, runtime-visible-models]}
               code: {type: string, enum: [source_missing, source_invalid, source_timeout, source_unavailable]}
+    UnifiedConfigRouterScalar:
+      anyOf:
+        - {type: string, maxLength: 512}
+        - {type: number}
+        - {type: boolean}
     BoundedStringList:
       type: array
       maxItems: 256

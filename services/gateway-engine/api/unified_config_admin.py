@@ -23,7 +23,7 @@ _SCOPE = "config:read"
 _MAX_SOURCE_BYTES = 1024 * 1024
 _MAX_RESPONSE_BYTES = 64 * 1024
 _TOTAL_TIMEOUT_SECONDS = 5.0
-_CONNECT_TIMEOUT_SECONDS = 2.0
+_SOURCE_TIMEOUT_SECONDS = 2.0
 _FLAG_NAMES = ("UNIFIED_CONFIG_ADMIN_API_ENABLED", "GATEWAY_ENGINE_UNIFIED_CONFIG_ADMIN_API_ENABLED")
 _deps: UnifiedConfigAdminDeps | None = None
 
@@ -76,6 +76,62 @@ def _source_error(source: str, code: str) -> tuple[str, str]:
     return source, code
 
 
+def _ascii_key(value: str) -> bytes | None:
+    try:
+        return value.encode("ascii")
+    except UnicodeEncodeError:
+        return None
+
+
+async def _load_litellm_source(deps: UnifiedConfigAdminDeps) -> tuple[str | None, str, str | None]:
+    try:
+        litellm_yaml = await asyncio.wait_for(
+            asyncio.to_thread(deps.load_litellm_text),
+            timeout=_SOURCE_TIMEOUT_SECONDS,
+        )
+        if not isinstance(litellm_yaml, str) or len(litellm_yaml.encode("utf-8")) > _MAX_SOURCE_BYTES:
+            return None, "invalid", "source_invalid"
+        return litellm_yaml, "ok", None
+    except FileNotFoundError:
+        return None, "missing", "source_missing"
+    except (UnicodeError, ValueError):
+        return None, "invalid", "source_invalid"
+    except (TimeoutError, asyncio.TimeoutError):
+        return None, "unavailable", "source_timeout"
+    except Exception:
+        return None, "unavailable", "source_unavailable"
+
+
+async def _load_registry_source(
+    deps: UnifiedConfigAdminDeps,
+) -> tuple[tuple[str, ...] | None, str, str | None]:
+    try:
+        model_ids = await asyncio.wait_for(
+            asyncio.to_thread(deps.load_registry_model_ids),
+            timeout=_SOURCE_TIMEOUT_SECONDS,
+        )
+        return tuple(model_ids), "ok", None
+    except (TimeoutError, asyncio.TimeoutError):
+        return None, "unavailable", "source_timeout"
+    except Exception:
+        return None, "unavailable", "source_unavailable"
+
+
+async def _load_runtime_source(
+    deps: UnifiedConfigAdminDeps,
+) -> tuple[tuple[str, ...] | None, str, str | None]:
+    try:
+        model_ids = await asyncio.wait_for(
+            deps.fetch_runtime_model_ids(),
+            timeout=_TOTAL_TIMEOUT_SECONDS,
+        )
+        return tuple(model_ids), "ok", None
+    except (TimeoutError, asyncio.TimeoutError):
+        return None, "unavailable", "source_timeout"
+    except Exception:
+        return None, "unavailable", "source_unavailable"
+
+
 @router.get("/admin/config")
 async def get_unified_config(request: Request) -> Response:
     if not _enabled():
@@ -84,8 +140,16 @@ async def get_unified_config(request: Request) -> Response:
     configured_key = resolve_gateway_admin_key()
     if not configured_key:
         return _error("config_snapshot_unavailable", "Configuration snapshot is unavailable", 503)
+    configured_key_bytes = _ascii_key(configured_key)
+    if configured_key_bytes is None:
+        return _error("config_snapshot_unavailable", "Configuration snapshot is unavailable", 503)
     supplied_key = request.headers.get("x-admin-key", "")
-    if not supplied_key or not hmac.compare_digest(supplied_key, configured_key):
+    supplied_key_bytes = _ascii_key(supplied_key)
+    if (
+        not supplied_key
+        or supplied_key_bytes is None
+        or not hmac.compare_digest(supplied_key_bytes, configured_key_bytes)
+    ):
         return _error("config_snapshot_auth_required", "Configuration snapshot authentication required", 401)
     if request.headers.get("x-management-scope", "") != _SCOPE:
         return _error("config_snapshot_scope_forbidden", "Configuration snapshot scope is not permitted", 403)
@@ -98,51 +162,32 @@ async def get_unified_config(request: Request) -> Response:
 
     source_errors: list[tuple[str, str]] = []
     try:
-        try:
-            litellm_yaml = deps.load_litellm_text()
-            if not isinstance(litellm_yaml, str) or len(litellm_yaml.encode("utf-8")) > _MAX_SOURCE_BYTES:
-                litellm_yaml = None
-                litellm_status = "invalid"
-                source_errors.append(_source_error("litellm-config", "source_invalid"))
-            else:
-                litellm_status = "ok"
-        except FileNotFoundError:
-            litellm_yaml = None
-            litellm_status = "missing"
-            source_errors.append(_source_error("litellm-config", "source_missing"))
-        except (UnicodeError, ValueError):
-            litellm_yaml = None
-            litellm_status = "invalid"
-            source_errors.append(_source_error("litellm-config", "source_invalid"))
-        except Exception:
-            litellm_yaml = None
-            litellm_status = "unavailable"
-            source_errors.append(_source_error("litellm-config", "source_unavailable"))
+        litellm_task = asyncio.create_task(_load_litellm_source(deps))
+        registry_task = asyncio.create_task(_load_registry_source(deps))
+        runtime_task = asyncio.create_task(_load_runtime_source(deps))
+        tasks = (litellm_task, registry_task, runtime_task)
+        done, pending = await asyncio.wait(tasks, timeout=_TOTAL_TIMEOUT_SECONDS)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
-        try:
-            registry_model_ids = tuple(deps.load_registry_model_ids())
-            registry_status = "ok"
-        except Exception:
-            registry_model_ids = None
-            registry_status = "unavailable"
-            source_errors.append(_source_error("model-registry", "source_unavailable"))
-
-        try:
-            runtime_model_ids = tuple(
-                await asyncio.wait_for(
-                    deps.fetch_runtime_model_ids(),
-                    timeout=_TOTAL_TIMEOUT_SECONDS,
-                )
-            )
-            runtime_status = "ok"
-        except (TimeoutError, asyncio.TimeoutError):
-            runtime_model_ids = None
-            runtime_status = "unavailable"
-            source_errors.append(_source_error("runtime-visible-models", "source_timeout"))
-        except Exception:
-            runtime_model_ids = None
-            runtime_status = "unavailable"
-            source_errors.append(_source_error("runtime-visible-models", "source_unavailable"))
+        litellm_yaml, litellm_status, litellm_error = (
+            litellm_task.result() if litellm_task in done else (None, "unavailable", "source_timeout")
+        )
+        registry_model_ids, registry_status, registry_error = (
+            registry_task.result() if registry_task in done else (None, "unavailable", "source_timeout")
+        )
+        runtime_model_ids, runtime_status, runtime_error = (
+            runtime_task.result() if runtime_task in done else (None, "unavailable", "source_timeout")
+        )
+        for source, code in (
+            ("litellm-config", litellm_error),
+            ("model-registry", registry_error),
+            ("runtime-visible-models", runtime_error),
+        ):
+            if code is not None:
+                source_errors.append(_source_error(source, code))
 
         environment = dict(deps.environment())
         generated_at = deps.now()
