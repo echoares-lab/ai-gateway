@@ -11,21 +11,13 @@ pull requests, closed issues, or items that appear only in
 | **This file** | Approved Now / Next / Parked / Completed work |
 | [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md) | Unapproved ideas; not claimable until promoted here and given atomic issues |
 
-Last reviewed: 2026-07-31.
+Last reviewed: 2026-08-01.
 
 ## Now
 
-### Policy hook extraction
-
-Coordination epic [#586](https://github.com/echoares-lab/ai-gateway/issues/586)
-(C-AUD-8) is approved and sequenced before deeper policy/routing work. Claim
-only the ready contract child; the implementation child must be opened after the
-contract is accepted and must serialize changes to the shared request-path
-hotspots.
-
-| Atomic scope | Issue | Status | Dependency |
-|--------------|-------|--------|------------|
-| Define policy hook extraction contract and regression matrix | [#587](https://github.com/echoares-lab/ai-gateway/issues/587) | Ready to claim | None |
+No active approved implementation is currently in progress. The next approved
+work is the C-RT-3 contract child listed below; do not claim it until its
+dependencies and issue status are confirmed.
 
 ## Next
 
@@ -41,7 +33,7 @@ until their predecessors have Gate D evidence.
 
 | Atomic scope | Issue | Status | Dependency |
 |--------------|-------|--------|------------|
-| Define strict policy and WebSocket parity contract | [#592](https://github.com/echoares-lab/ai-gateway/issues/592) | Ready to claim | C-AUD-8 #586 and seam implementation |
+| Define strict policy and WebSocket parity contract | [#592](https://github.com/echoares-lab/ai-gateway/issues/592) | Ready to claim (unblocked; do not claim yet) | C-AUD-8 #586 closed; seam implementation PR #596 merged |
 | Enforce policy decisions on HTTP protocol paths | [#593](https://github.com/echoares-lab/ai-gateway/issues/593) | Blocked | #592; C-AUD-8 seam implementation |
 | Add opt-in Codex WebSocket policy parity | [#594](https://github.com/echoares-lab/ai-gateway/issues/594) | Blocked | #593; #592 |
 
@@ -53,6 +45,16 @@ No approved parked work. See [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 for the unapproved inventory.
 
 ## Completed
+
+### Policy hook extraction
+
+Coordination epic [#586](https://github.com/echoares-lab/ai-gateway/issues/586)
+(C-AUD-8) and both sequenced children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Policy hook extraction contract and regression matrix | [#587](https://github.com/echoares-lab/ai-gateway/issues/587) | [PR #589](https://github.com/echoares-lab/ai-gateway/pull/589); heartbeat [30674347708](https://github.com/echoares-lab/ai-gateway/actions/runs/30674347708) |
+| Injectable request-path policy hook boundary | [#590](https://github.com/echoares-lab/ai-gateway/issues/590) | [PR #596](https://github.com/echoares-lab/ai-gateway/pull/596); heartbeat [30674825464](https://github.com/echoares-lab/ai-gateway/actions/runs/30674825464) |
 
 ### Adaptive routing runtime
 
