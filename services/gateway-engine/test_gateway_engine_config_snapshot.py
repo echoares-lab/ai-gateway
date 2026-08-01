@@ -151,6 +151,23 @@ router_settings:
     }
 
 
+def test_router_projection_rejects_command_like_strings():
+    fixture = {
+        **HEALTHY_INPUT,
+        "litellm_yaml": """model_list: []
+router_settings:
+  routing_strategy: curl https://secret.example/run
+  allowed_fails: rm -rf /
+  cooldown_time: etc/keys
+  num_retries: 3
+""",
+        "registry_model_ids": [],
+        "runtime_model_ids": [],
+    }
+
+    assert build_config_snapshot(_inputs(fixture))["routing"] == {"num_retries": 3}
+
+
 def test_mcp_projection_contains_only_alias_and_transport_kind():
     fixture = {
         **HEALTHY_INPUT,
@@ -208,22 +225,129 @@ def test_sanitized_source_digest_is_stable_when_only_secrets_change():
     assert first["sources"][0]["digest"] == second["sources"][0]["digest"]
 
 
-def test_collections_and_strings_are_bounded():
-    aliases = [f"model-{number:03d}" for number in range(MAX_ENTRIES + 20)]
-    long_alias = "x" * (MAX_STRING + 20)
+def test_public_aliases_reject_credentials_paths_jwts_and_commands_from_every_projection():
+    good_alias = "gpt-4o.mini_2026:preview+canary"
+    rejected_aliases = (
+        "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890",
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature1234",
+        "etc/keys",
+        "rm -rf /",
+    )
+    fixture = {
+        **HEALTHY_INPUT,
+        "litellm_yaml": "\n".join(
+            [
+                "model_list:",
+                f"  - model_name: {good_alias}",
+                f"    litellm_params: {{model: openai/{good_alias}}}",
+                *[
+                    f"  - model_name: {alias}\n    litellm_params: {{model: openai/gpt-safe}}"
+                    for alias in rejected_aliases
+                ],
+                "fallbacks:",
+                *[f"  - {alias}: [{good_alias}]" for alias in rejected_aliases],
+                f"  - {good_alias}: [{', '.join(rejected_aliases)}]",
+                "mcp_servers:",
+                f"  {good_alias}: {{transport: stdio}}",
+                *[f"  {alias}: {{transport: sse}}" for alias in rejected_aliases],
+                "",
+            ]
+        ),
+        "registry_model_ids": [good_alias, *rejected_aliases],
+        "runtime_model_ids": [f"AI-Gateway:{good_alias}", *(f"AI-Gateway:{alias}" for alias in rejected_aliases)],
+    }
+
+    first = build_config_snapshot(_inputs(fixture))
+    changed_fixture = {
+        **fixture,
+        "litellm_yaml": fixture["litellm_yaml"].replace(
+            "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890", "ghp_ZYXWVUTSRQPONMLKJIHGFEDCBA9876543210"
+        ),
+        "registry_model_ids": [good_alias, *(f"changed-{index}/keys" for index in range(len(rejected_aliases)))],
+        "runtime_model_ids": [
+            f"AI-Gateway:{good_alias}",
+            *(f"AI-Gateway:changed-{index}/keys" for index in range(len(rejected_aliases))),
+        ],
+    }
+    second = build_config_snapshot(_inputs(changed_fixture))
+
+    assert first["models"]["configured"] == [good_alias]
+    assert first["models"]["registry"] == [good_alias]
+    assert first["models"]["runtime"] == [good_alias]
+    assert first["models"]["fallbacks"] == []
+    assert first["mcp"] == [{"alias": good_alias, "transport": "stdio"}]
+    assert first == second
+    serialized = json.dumps(first)
+    assert all(alias not in serialized for alias in rejected_aliases)
+
+
+def test_overlong_aliases_survive_collection_caps_but_are_rejected_everywhere():
+    aliases = [f"model-{number:03d}" for number in range(MAX_ENTRIES - 1)]
+    long_alias = "z" * (MAX_STRING + 20)
+    yaml_models = "\n".join(
+        f"  - model_name: {alias}\n    litellm_params: {{model: openai/{alias}}}" for alias in [*aliases, long_alias]
+    )
     snapshot = build_config_snapshot(
         _inputs(
             {
                 **HEALTHY_INPUT,
-                "litellm_yaml": "model_list: []\n",
+                "litellm_yaml": f"""model_list:
+{yaml_models}
+fallbacks:
+  - {long_alias}: [model-000]
+mcp_servers:
+  {long_alias}: {{transport: stdio}}
+""",
                 "registry_model_ids": [*aliases, long_alias],
                 "runtime_model_ids": [*aliases, long_alias],
             }
         )
     )
 
-    assert len(snapshot["models"]["registry"]) == MAX_ENTRIES
-    assert all(len(alias) <= MAX_STRING for alias in snapshot["models"]["registry"])
+    assert snapshot["models"]["configured"] == aliases
+    assert len(snapshot["models"]["registry"]) == MAX_ENTRIES - 1
+    assert snapshot["models"]["registry"] == aliases
+    assert snapshot["models"]["runtime"] == aliases
+    assert snapshot["models"]["fallbacks"] == []
+    assert snapshot["mcp"] == []
+    assert long_alias not in json.dumps(snapshot)
+
+
+def test_rejected_alias_collisions_and_duplicate_source_errors_are_order_independent():
+    long_prefix = "z" * MAX_STRING
+    first_yaml = f"""model_list: []
+fallbacks:
+  - {long_prefix}a: [model-safe]
+  - {long_prefix}b: [model-safe]
+mcp_servers:
+  {long_prefix}a: {{transport: stdio}}
+  {long_prefix}b: {{transport: sse}}
+"""
+    second_yaml = f"""model_list: []
+fallbacks:
+  - {long_prefix}b: [model-safe]
+  - {long_prefix}a: [model-safe]
+mcp_servers:
+  {long_prefix}b: {{transport: sse}}
+  {long_prefix}a: {{transport: stdio}}
+"""
+    first = build_config_snapshot(
+        _inputs(
+            {**HEALTHY_INPUT, "litellm_yaml": first_yaml, "registry_model_ids": [], "runtime_model_ids": []},
+            source_errors=(("litellm-config", "source_timeout"), ("litellm-config", "source_invalid")),
+        )
+    )
+    second = build_config_snapshot(
+        _inputs(
+            {**HEALTHY_INPUT, "litellm_yaml": second_yaml, "registry_model_ids": [], "runtime_model_ids": []},
+            source_errors=(("litellm-config", "source_invalid"), ("litellm-config", "source_timeout")),
+        )
+    )
+
+    assert first == second
+    assert first["models"]["fallbacks"] == []
+    assert first["mcp"] == []
+    assert first["errors"] == [{"source": "litellm-config", "code": "source_invalid"}]
 
 
 def test_configured_models_are_deduplicated_sorted_then_capped():

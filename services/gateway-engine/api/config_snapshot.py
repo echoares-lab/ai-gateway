@@ -45,6 +45,12 @@ _SENSITIVE_KEY = re.compile(
     r"(?:api[_-]?key|authorization|credential|password|secret|token|url|uri|host|path|command|args)", re.I
 )
 _SENSITIVE_VALUE = re.compile(r"(?:https?://|(?:sk|pk)-|secret|/home/|/root/)", re.I)
+_SAFE_PUBLIC_ALIAS = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._:+@=-]{0,511})\Z")
+_CREDENTIAL_LIKE_ALIAS = re.compile(
+    r"^(?:gh[opsur]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,}|(?:sk|pk|rk|api)[_-][A-Za-z0-9_-]{12,}|xox[baprs]-[A-Za-z0-9-]{12,}|AKIA[A-Z0-9]{12,})",
+    re.I,
+)
+_JWT_LIKE_ALIAS = re.compile(r"^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$")
 
 
 @dataclass(frozen=True)
@@ -128,9 +134,15 @@ def _source_status(value: object) -> str:
 
 
 def _safe_alias(value: object) -> str | None:
-    if not isinstance(value, str) or not value:
+    """Return a public model/server token, rejecting instead of redacting unsafe input."""
+    if (
+        not isinstance(value, str)
+        or not _SAFE_PUBLIC_ALIAS.fullmatch(value)
+        or _CREDENTIAL_LIKE_ALIAS.match(value)
+        or _JWT_LIKE_ALIAS.fullmatch(value)
+    ):
         return None
-    return _bounded_text(value)
+    return value
 
 
 def _normalised_aliases(values: tuple[str, ...] | None, *, strip_public_prefix: bool = False) -> list[str]:
@@ -150,7 +162,7 @@ def _safe_router_value(value: object) -> bool | int | float | str | None:
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
-        return _bounded_text(value)
+        return _safe_alias(value)
     return None
 
 
@@ -165,13 +177,13 @@ def _project_mcp(document: Mapping[str, Any]) -> list[dict[str, str]]:
             continue
         transport = server.get("transport")
         if isinstance(transport, str) and transport.lower() in _SAFE_MCP_TRANSPORTS:
-            projected[safe_alias] = transport.lower()
+            projected[safe_alias] = min(projected.get(safe_alias, transport.lower()), transport.lower())
     return [{"alias": alias, "transport": transport} for alias, transport in sorted(projected.items())[:MAX_ENTRIES]]
 
 
 def _project_fallbacks(document: Mapping[str, Any]) -> list[dict[str, Any]]:
     raw_fallbacks = document.get("fallbacks")
-    pairs: dict[str, list[str]] = {}
+    pairs: dict[str, set[str]] = {}
     if not isinstance(raw_fallbacks, list):
         return []
     for entry in raw_fallbacks:
@@ -181,10 +193,12 @@ def _project_fallbacks(document: Mapping[str, Any]) -> list[dict[str, Any]]:
             safe_source = _safe_alias(source)
             if not safe_source or not isinstance(targets, (list, tuple)):
                 continue
-            safe_targets = sorted({alias for target in targets if (alias := _safe_alias(target))})[:MAX_ENTRIES]
+            safe_targets = {alias for target in targets if (alias := _safe_alias(target))}
             if safe_targets:
-                pairs[safe_source] = safe_targets
-    return [{"from": source, "to": targets} for source, targets in sorted(pairs.items())[:MAX_ENTRIES]]
+                pairs.setdefault(safe_source, set()).update(safe_targets)
+    return [
+        {"from": source, "to": sorted(targets)[:MAX_ENTRIES]} for source, targets in sorted(pairs.items())[:MAX_ENTRIES]
+    ]
 
 
 def _parse_document(raw_yaml: str | None) -> tuple[Mapping[str, Any], bool]:
@@ -271,7 +285,7 @@ def build_config_snapshot(inputs: SnapshotInputs) -> dict[str, Any]:
     source_errors: dict[str, str] = {}
     for source, code in inputs.source_errors[:MAX_ENTRIES]:
         if source in statuses and code in _SOURCE_ERROR_CODES:
-            source_errors[source] = code
+            source_errors[source] = min(source_errors.get(source, code), code)
     for source, status in statuses.items():
         if status != "ok" and source not in source_errors:
             source_errors[source] = _error_code_for_status(status)
