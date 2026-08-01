@@ -20,7 +20,7 @@ Scoring keys:
 | Need/fit | high / med / low / unclear — relative to current direction |
 | Status | `candidate` until explicitly promoted and given atomic issues |
 
-Last reviewed: 2026-07-31.
+Last reviewed: 2026-08-01.
 
 ## Promoted to roadmap (active; not candidates)
 
@@ -37,7 +37,8 @@ tracked through its ready atomic children rather than claimed from this file.
 | C-AUD-5 | Narrow broad gateway exception handlers with typed boundaries | Epic [#531](https://github.com/echoares-lab/ai-gateway/issues/531); children [#532](https://github.com/echoares-lab/ai-gateway/issues/532), [#533](https://github.com/echoares-lab/ai-gateway/issues/533) |
 | C-SVC-1 | Evolve `cliproxy-setup.sh` into management API service | Closed epic [#609](https://github.com/echoares-lab/ai-gateway/issues/609); children [#610](https://github.com/echoares-lab/ai-gateway/issues/610), [#613](https://github.com/echoares-lab/ai-gateway/issues/613); PRs [#612](https://github.com/echoares-lab/ai-gateway/pull/612), [#614](https://github.com/echoares-lab/ai-gateway/pull/614) |
 | C-SVC-2 | `/v1/config/generate` from `gen-client-config.sh` | Closed epic [#615](https://github.com/echoares-lab/ai-gateway/issues/615); children [#616](https://github.com/echoares-lab/ai-gateway/issues/616), [#619](https://github.com/echoares-lab/ai-gateway/issues/619); PRs [#618](https://github.com/echoares-lab/ai-gateway/pull/618), [#620](https://github.com/echoares-lab/ai-gateway/pull/620) |
-| C-RT-5 | Codex WebSocket frame translation (Option B) | Approved epic [#621](https://github.com/echoares-lab/ai-gateway/issues/621); ready contract child [#622](https://github.com/echoares-lab/ai-gateway/issues/622) |
+| C-RT-5 | Codex WebSocket frame translation (Option B) | Closed epic [#621](https://github.com/echoares-lab/ai-gateway/issues/621); children [#622](https://github.com/echoares-lab/ai-gateway/issues/622), [#625](https://github.com/echoares-lab/ai-gateway/issues/625); PRs [#624](https://github.com/echoares-lab/ai-gateway/pull/624), [#626](https://github.com/echoares-lab/ai-gateway/pull/626) |
+| C-RT-2 | Evaluation-driven quality routing at request time | Approved epic [#627](https://github.com/echoares-lab/ai-gateway/issues/627); ready contract child [#628](https://github.com/echoares-lab/ai-gateway/issues/628) |
 
 ## Delivered / historical (not candidates)
 
@@ -94,7 +95,6 @@ Cheap-drift check and `/model/new` / `/model/delete` hot-add shipped on `main`
 
 | ID | Summary | Effort | Risk | Need/fit | Deps / links | Status |
 |----|---------|--------|------|----------|--------------|--------|
-| C-RT-2 | Evaluation-driven quality routing at request time | L | H | low | Closed [#37](https://github.com/echoares-lab/ai-gateway/issues/37); [EVAL_DRIVEN_ROUTING.md](./EVAL_DRIVEN_ROUTING.md) | candidate |
 | C-RT-3 | Deeper policy engine (WS parity, stricter enforcement, separate service?) | L | H | med | Closed [#38](https://github.com/echoares-lab/ai-gateway/issues/38); [POLICY_ENGINE_AND_ROUTING_REFACTOR.md](./POLICY_ENGINE_AND_ROUTING_REFACTOR.md) | candidate |
 | C-RT-4 | MCP visibility and deeper local tool hosting | M | M | med | Closed [#29](https://github.com/echoares-lab/ai-gateway/issues/29); [MCP_TOOL_VISIBILITY.md](./MCP_TOOL_VISIBILITY.md); [ARCHITECTURE.md](./ARCHITECTURE.md) | candidate |
 ---
