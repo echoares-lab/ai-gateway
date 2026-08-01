@@ -6,6 +6,7 @@ import json
 import time
 import uuid
 
+from api.policy_hooks import PolicyDeniedError, policy_denial_response
 from api.proxy_common import (
     _aiter_list,
     _deps,
@@ -72,7 +73,10 @@ async def claude_proxy(request: Request):
     )
     # Extract and apply tenancy metadata
     oai_body = _extract_and_apply_tenancy(api_key, oai_body)
-    oai_body = await _policy_hooks().apply(api_key, oai_body)
+    try:
+        oai_body = await _policy_hooks().apply(api_key, oai_body)
+    except PolicyDeniedError:
+        return policy_denial_response("claude")
     oai_body = _maybe_force_model(request, oai_body)
 
     oai_bytes = json.dumps(oai_body).encode()

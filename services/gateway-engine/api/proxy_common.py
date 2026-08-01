@@ -39,6 +39,7 @@ class ProxyRouterDeps:
     policy_engine_enabled: Callable[[], bool]
     team_budget_snapshot_enabled: Callable[[], bool]
     team_budget_cache_ttl_sec: int
+    policy_engine_strict: Callable[[], bool] | None = None
     request_model_reconciliation: Callable[..., Any] | None = None
     validate_client_auth: Callable[[str], Any] | None = None
     policy_hooks: PolicyHookBoundary | None = None

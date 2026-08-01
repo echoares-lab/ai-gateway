@@ -74,3 +74,20 @@ existing credential redaction/stripping rules.
 
 The contract matrix is captured by
 `services/gateway-engine/test_gateway_engine_policy_enforcement_contract.py`.
+
+## HTTP rollout and operator controls (#593)
+
+HTTP enforcement is controlled independently from evaluation:
+
+| Env var | Default | Effect |
+| --- | --- | --- |
+| `POLICY_ENGINE_ENABLED` | `false` | Evaluate HTTP requests and attach allow decisions as metadata. |
+| `POLICY_ENGINE_STRICT` | `false` | When enabled with `POLICY_ENGINE_ENABLED`, return typed HTTP 403 responses for `gate=deny`. |
+| `POLICY_ENGINE_TIMEOUT_MS` | `100` | Maximum evaluator budget; timeout is fail-open and forwards without metadata. |
+
+The emergency rollback is `POLICY_ENGINE_STRICT=false` (or
+`POLICY_ENGINE_ENABLED=false` to skip evaluation entirely); both changes restore
+the static forwarding path without a deploy rollback. `/admin/status` remains
+the operator surface for the latest bounded decision/error and redacted policy
+fields. Denial responses intentionally omit `deny_reason`, authorization, and
+request contents.

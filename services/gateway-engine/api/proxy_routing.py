@@ -10,7 +10,7 @@ import os
 import time
 
 import httpx
-from api.policy_hooks import PolicyHookBoundary, redact_policy_decision
+from api.policy_hooks import PolicyDeniedError, PolicyHookBoundary, redact_policy_decision
 from api.proxy_common import (
     _deps,
     _enable_virtual_providers,
@@ -526,18 +526,70 @@ async def _evaluate_policy_engine(context: dict) -> dict | None:
         _deps().record_policy_trace(None, (time.monotonic() - start) * 1000, error="evaluator unavailable")
         return None
     try:
-        decision = await evaluator.evaluate(context)
+        decision = await asyncio.wait_for(evaluator.evaluate(context), timeout=_policy_engine_timeout_seconds())
         elapsed_ms = (time.monotonic() - start) * 1000
         if decision is None:
             _deps().record_policy_trace(None, elapsed_ms, error="evaluate failed")
             return None
+        if not _valid_policy_decision(decision):
+            _deps().record_policy_trace(None, elapsed_ms, error="malformed decision")
+            return None
         _deps().record_policy_trace(decision, elapsed_ms)
         return decision
+    except asyncio.TimeoutError:
+        elapsed_ms = (time.monotonic() - start) * 1000
+        log.warning("policy evaluate timed out — fail-open")
+        _deps().record_policy_trace(None, elapsed_ms, error="timeout")
+        return None
     except Exception as exc:
         elapsed_ms = (time.monotonic() - start) * 1000
-        log.warning("policy evaluate failed (%s) — fail-open", exc)
-        _deps().record_policy_trace(None, elapsed_ms, error=str(exc))
+        log.warning("policy evaluate failed (%s) — fail-open", type(exc).__name__)
+        # Keep the existing bounded diagnostic for operator compatibility while
+        # avoiding raw exception reprs that may contain credentials or prompts.
+        detail = str(exc).replace("\n", " ").strip()[:120] or "error"
+        _deps().record_policy_trace(None, elapsed_ms, error=detail)
         return None
+
+
+def _policy_engine_timeout_seconds() -> float:
+    override = _main_override("POLICY_ENGINE_TIMEOUT_MS", None)
+    if override is not None:
+        try:
+            return max(0.001, float(override) / 1000)
+        except (TypeError, ValueError):
+            pass
+    for key in ("POLICY_ENGINE_TIMEOUT_MS", "GATEWAY_ENGINE_POLICY_ENGINE_TIMEOUT_MS"):
+        raw = os.environ.get(key)
+        if raw:
+            try:
+                return max(0.001, float(raw) / 1000)
+            except ValueError:
+                continue
+    return 0.1
+
+
+def _policy_engine_strict_enabled() -> bool:
+    # Environment aliases are checked first so an operator can disable strict
+    # mode immediately without replacing the running dependency graph.
+    for key in ("POLICY_ENGINE_STRICT", "GATEWAY_ENGINE_POLICY_ENGINE_STRICT", "POLICY_ENGINE_ENFORCE"):
+        raw = os.environ.get(key)
+        if raw is not None and raw != "":
+            return raw.lower() in ("1", "true", "yes")
+    try:
+        deps = _deps()
+    except RuntimeError:
+        deps = None
+    strict_getter = getattr(deps, "policy_engine_strict", None)
+    if strict_getter is not None:
+        return bool(strict_getter())
+    override = _main_override("POLICY_ENGINE_STRICT", None)
+    if override is not None:
+        return bool(override)
+    return False
+
+
+def _valid_policy_decision(decision: object) -> bool:
+    return isinstance(decision, dict) and decision.get("gate") in {"allow", "deny"}
 
 
 async def _apply_policy_engine(token: str | None, body: dict) -> dict:
@@ -549,10 +601,14 @@ async def _apply_policy_engine(token: str | None, body: dict) -> dict:
         decision = await _evaluate_policy_engine(_build_routing_context(token, body, budget=budget))
         if decision is None:
             return body
+        if decision.get("gate") == "deny" and _policy_engine_strict_enabled():
+            raise PolicyDeniedError(decision)
         if "metadata" not in body or not isinstance(body["metadata"], dict):
             body["metadata"] = {}
         body["metadata"]["routing_decision"] = decision
         return body
+    except PolicyDeniedError:
+        raise
     except Exception as exc:
         log.warning("policy apply failed (%s) — fail-open", exc)
         return body

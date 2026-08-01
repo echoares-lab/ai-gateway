@@ -319,6 +319,7 @@ policy-engine evaluate and proxies directly to CLIProxy.
 
 `policy_engine` (issue 38-15): nested under `panels.routing.data` when
 `ADMIN_POLICY_TRACE_ENABLED=true` (default). Exposes `POLICY_ENGINE_ENABLED`,
+`POLICY_ENGINE_STRICT`,
 `last_evaluate_ms`, bounded `last_decision` (`rules_applied`, `quota_aware_mode`,
 `deprioritized_credentials` when quota-aware), Redis connectivity, and
 `policy_version` from policy-engine health or last decision. `session_key` is
@@ -355,7 +356,8 @@ shape the gateway-engine injects as `metadata.routing_decision` on HTTP paths (i
 
 ### Source(s)
 
-- Gateway Engine env: `POLICY_ENGINE_ENABLED`, `POLICY_ENGINE_WS_EVALUATE`
+- Gateway Engine env: `POLICY_ENGINE_ENABLED`, `POLICY_ENGINE_STRICT`,
+  `POLICY_ENGINE_TIMEOUT_MS`, `POLICY_ENGINE_WS_EVALUATE`
 - Policy-engine `GET /health` (optional reachability)
 - Bounded recent rows from `routing_decisions_log` (issue 38-16, sampled audit)
 

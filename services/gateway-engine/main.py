@@ -116,6 +116,8 @@ log = logging.getLogger("gateway-engine")
 UPSTREAM_TIMEOUT = config.UPSTREAM_TIMEOUT
 ENABLE_VIRTUAL_PROVIDERS = config.ENABLE_VIRTUAL_PROVIDERS
 POLICY_ENGINE_ENABLED = config.POLICY_ENGINE_ENABLED
+POLICY_ENGINE_STRICT = config.POLICY_ENGINE_STRICT
+POLICY_ENGINE_TIMEOUT_MS = config.POLICY_ENGINE_TIMEOUT_MS
 TEAM_BUDGET_SNAPSHOT_ENABLED = config.TEAM_BUDGET_SNAPSHOT_ENABLED
 TEAM_BUDGET_CACHE_TTL_SEC = config.TEAM_BUDGET_CACHE_TTL_SEC
 LITELLM_ADMIN_URL = config.LITELLM_ADMIN_URL.rstrip("/")
@@ -668,6 +670,7 @@ configure_admin_routes(
         process_credential_event=lambda event: process_credential_event_async(event),
         admin_policy_trace_enabled=lambda: ADMIN_POLICY_TRACE_ENABLED,
         policy_engine_enabled=lambda: POLICY_ENGINE_ENABLED,
+        policy_engine_strict=lambda: POLICY_ENGINE_STRICT,
         policy_engine_ws_evaluate_enabled=_policy_engine_ws_evaluate_enabled,
         codex_ws_policy_bypass=codex_ws_policy_bypass,
         policy_history=_policy_history,
@@ -706,6 +709,7 @@ configure_proxy_routes(
         policy_engine_enabled=lambda: POLICY_ENGINE_ENABLED,
         team_budget_snapshot_enabled=lambda: TEAM_BUDGET_SNAPSHOT_ENABLED,
         team_budget_cache_ttl_sec=TEAM_BUDGET_CACHE_TTL_SEC,
+        policy_engine_strict=lambda: POLICY_ENGINE_STRICT,
         request_model_reconciliation=_request_model_reconciliation,
         validate_client_auth=lambda token: _validate_ws_auth_token_async(token),
         policy_hooks=proxy_routes.create_policy_hooks(),

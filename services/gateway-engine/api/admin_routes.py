@@ -142,6 +142,7 @@ class AdminRouteDeps:
     process_credential_event: Callable[[CredentialEvent], Awaitable[bool]]
     admin_policy_trace_enabled: Callable[[], bool]
     policy_engine_enabled: Callable[[], bool]
+    policy_engine_strict: Callable[[], bool]
     policy_engine_ws_evaluate_enabled: Callable[[], bool]
     codex_ws_policy_bypass: Callable[[], bool]
     policy_history: list[dict]

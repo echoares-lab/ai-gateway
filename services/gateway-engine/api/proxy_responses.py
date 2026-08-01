@@ -7,6 +7,7 @@ import time
 import uuid
 
 import httpx
+from api.policy_hooks import PolicyDeniedError, policy_denial_response
 from api.proxy_common import (
     _aiter_list,
     _deps,
@@ -351,7 +352,10 @@ async def responses_proxy(request: Request):
     # Extract and apply tenancy metadata
     auth = request.headers.get("authorization")
     oai_body = _extract_and_apply_tenancy(auth, oai_body)
-    oai_body = await _policy_hooks().apply(auth, oai_body)
+    try:
+        oai_body = await _policy_hooks().apply(auth, oai_body)
+    except PolicyDeniedError:
+        return policy_denial_response("responses")
     oai_body = _maybe_force_model(request, oai_body)
 
     oai_bytes = json.dumps(oai_body).encode()

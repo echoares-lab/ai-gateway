@@ -29,7 +29,7 @@ This repo uses `repo-ai-gateway` for repo-local credentials and shared platform 
 | `BRAVE_API_KEY`, `TAVILY_API_KEY`, `EXA_API_KEY`, `SERPER_API_KEY` | secret | optional MCP/search tools | `op://platform-ai-providers/ai-provider-keys/<FIELD>` |
 | `GITHUB_PERSONAL_ACCESS_TOKEN` | secret | optional GitHub MCP | `op://platform-github-runners/github-runners/GITHUB_PERSONAL_ACCESS_TOKEN` |
 | `SLACK_WEBHOOK_URL` | secret | optional alerting | `op://platform-notifications/slack/SLACK_WEBHOOK_URL` |
-| `POLICY_ENGINE_ENABLED`, `POLICY_ENGINE_WS_EVALUATE`, `POLICY_ENGINE_TIMEOUT_MS`, `CACHE_ENABLED`, `CACHE_TTL_SECONDS`, `TEAM_BUDGET_SNAPSHOT_ENABLED`, `BUDGET_*`, `WEB_CONCURRENCY`, `HTTPX_*` | plain config | no | Keep in `.env.example` or deployment config |
+| `POLICY_ENGINE_ENABLED`, `POLICY_ENGINE_STRICT`, `POLICY_ENGINE_WS_EVALUATE`, `POLICY_ENGINE_TIMEOUT_MS`, `CACHE_ENABLED`, `CACHE_TTL_SECONDS`, `TEAM_BUDGET_SNAPSHOT_ENABLED`, `BUDGET_*`, `WEB_CONCURRENCY`, `HTTPX_*` | plain config | no | Keep in `.env.example` or deployment config |
 | `LITELLM_URL`, `LITELLM_ADMIN_URL`, `GATEWAY_ENGINE_URL`, `POLICY_ENGINE_URL` | sensitive config | runtime | `op://repo-ai-gateway/prod/<FIELD>` |
 
 ## Production backing-service contract
