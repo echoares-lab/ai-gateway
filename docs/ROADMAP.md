@@ -15,24 +15,12 @@ Last reviewed: 2026-08-01.
 
 ## Now
 
-No active approved implementation is currently in progress. C-RT-2 is the next
-approved epic; claim only its ready contract child after confirming issue status
-and dependency evidence.
+No active approved implementation is currently in progress.
 
 ## Next
 
-### Evaluation-driven quality routing
-
-Coordination epic [#627](https://github.com/echoares-lab/ai-gateway/issues/627)
-(C-RT-2) is approved as the next routing epic. It defines an opt-in,
-fail-open quality-score reorder layer within the existing eligible model set;
-health, capability, safety, and cost safeguards remain authoritative. Claim the
-contract child first. Serialize changes to the policy evaluator/routing
-hotspots; require Gate C for runtime routing behavior.
-
-| Atomic scope | Issue | Status | Dependency |
-|--------------|-------|--------|------------|
-| Define evaluation-driven quality routing contract and fixtures | [#628](https://github.com/echoares-lab/ai-gateway/issues/628) | Ready to claim | C-RT-3 #591 and adaptive routing #579 completed; C-RT-2 #627 approved |
+No approved next epic. Promote a candidate into this roadmap and create a
+ready contract child before claiming new work.
 
 ## Parked
 
@@ -40,6 +28,16 @@ No approved parked work. See [FEATURE_CANDIDATES.md](./FEATURE_CANDIDATES.md)
 for the unapproved inventory.
 
 ## Completed
+
+### Evaluation-driven quality routing
+
+Coordination epic [#627](https://github.com/echoares-lab/ai-gateway/issues/627)
+(C-RT-2) and its serialized children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| Evaluation-driven quality routing contract and fixtures | [#628](https://github.com/echoares-lab/ai-gateway/issues/628) | [PR #630](https://github.com/echoares-lab/ai-gateway/pull/630); heartbeat [30681163463](https://github.com/echoares-lab/ai-gateway/actions/runs/30681163463) |
+| Fail-open quality reorder runtime layer | [#631](https://github.com/echoares-lab/ai-gateway/issues/631) | [PR #632](https://github.com/echoares-lab/ai-gateway/pull/632); heartbeat [30681419295](https://github.com/echoares-lab/ai-gateway/actions/runs/30681419295) |
 
 ### Codex WebSocket frame translation
 
