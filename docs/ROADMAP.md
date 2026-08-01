@@ -29,9 +29,23 @@ hotspots.
 
 ## Next
 
-After C-AUD-8, review C-RT-3 (deeper policy engine) as the next candidate; do not
-claim it until promoted here with ready atomic issues and after the C-AUD-8
-request-path seam is merged. C-RT-4 remains the following candidate.
+### Deeper policy enforcement and WebSocket parity
+
+Coordination epic [#591](https://github.com/echoares-lab/ai-gateway/issues/591)
+(C-RT-3) is approved as the next routing/policy epic after C-AUD-8. The
+completed policy-engine #38 remains the in-process foundation; this epic covers
+only the remaining strict-enforcement and optional WebSocket-parity gaps. Claim
+only the contract child after C-AUD-8's request-path seam is merged. The
+implementation children are serialized in the order shown and remain blocked
+until their predecessors have Gate D evidence.
+
+| Atomic scope | Issue | Status | Dependency |
+|--------------|-------|--------|------------|
+| Define strict policy and WebSocket parity contract | [#592](https://github.com/echoares-lab/ai-gateway/issues/592) | Ready to claim | C-AUD-8 #586 and seam implementation |
+| Enforce policy decisions on HTTP protocol paths | [#593](https://github.com/echoares-lab/ai-gateway/issues/593) | Blocked | #592; C-AUD-8 seam implementation |
+| Add opt-in Codex WebSocket policy parity | [#594](https://github.com/echoares-lab/ai-gateway/issues/594) | Blocked | #593; #592 |
+
+C-RT-4 (MCP visibility and local tool hosting) remains the following candidate.
 
 ## Parked
 
