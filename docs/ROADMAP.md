@@ -15,28 +15,24 @@ Last reviewed: 2026-08-01.
 
 ## Now
 
-No active approved implementation is currently in progress. The next approved
-work is the C-SVC-1 contract child listed below; do not claim it until its
-issue status and dependency evidence are confirmed.
+No active approved implementation is currently in progress. C-SVC-2 is the next
+approved epic; claim only its ready contract child after confirming issue status
+and dependency evidence.
 
 ## Next
 
-### CLIProxy management API
+### Client configuration generation service
 
-Coordination epic [#609](https://github.com/echoares-lab/ai-gateway/issues/609)
-(C-SVC-1) is approved as the next operations/service epic after C-RT-4. It
-covers a bounded CLIProxy management API, beginning with a contract and then
-read-only health/session inventory before any authorized mutation. Claim only
-the ready contract child first. Children must be serialized around
-`cliproxy-setup.sh`, compose mounts, and management routes, with Gate D evidence
-between implementations.
+Coordination epic [#615](https://github.com/echoares-lab/ai-gateway/issues/615)
+(C-SVC-2) is approved as the next script-to-service epic. It covers a bounded,
+placeholder-only `/v1/config/generate` API derived from
+`scripts/ops/gen-client-config.sh`; the shell script remains the rollback path.
+Claim only the ready contract child first. Keep inputs allowlisted and prevent
+secret lookup, arbitrary template/path access, or shell execution.
 
 | Atomic scope | Issue | Status | Dependency |
 |--------------|-------|--------|------------|
-| Define CLIProxy management API contract and fixtures | [#610](https://github.com/echoares-lab/ai-gateway/issues/610) | Ready to claim | C-RT-4 #601 closed; PR #608 merged; heartbeat [30677455796](https://github.com/echoares-lab/ai-gateway/actions/runs/30677455796) |
-
-Read-only health/session inventory and authorized mutation children will be
-opened only after #610 is merged and Gate D is recorded.
+| Define `/v1/config/generate` contract and fixtures | [#616](https://github.com/echoares-lab/ai-gateway/issues/616) | Ready to claim | C-SVC-2 #615 approved; C-SVC-1 #609 closed |
 
 ## Parked
 
@@ -55,6 +51,16 @@ Coordination epic [#601](https://github.com/echoares-lab/ai-gateway/issues/601)
 | MCP visibility and local tool-hosting contract | [#602](https://github.com/echoares-lab/ai-gateway/issues/602) | [PR #604](https://github.com/echoares-lab/ai-gateway/pull/604); heartbeat [30676607560](https://github.com/echoares-lab/ai-gateway/actions/runs/30676607560) |
 | Opt-in HTTP MCP visibility enforcement | [#605](https://github.com/echoares-lab/ai-gateway/issues/605) | [PR #606](https://github.com/echoares-lab/ai-gateway/pull/606); heartbeat [30676958148](https://github.com/echoares-lab/ai-gateway/actions/runs/30676958148) |
 | Isolated local MCP tool-host boundary | [#607](https://github.com/echoares-lab/ai-gateway/issues/607) | [PR #608](https://github.com/echoares-lab/ai-gateway/pull/608); heartbeat [30677455796](https://github.com/echoares-lab/ai-gateway/actions/runs/30677455796) |
+
+### CLIProxy management API
+
+Coordination epic [#609](https://github.com/echoares-lab/ai-gateway/issues/609)
+(C-SVC-1) and both serialized children are closed and production-verified.
+
+| Completed scope | Closed issue | Implementation evidence |
+|-----------------|--------------|-------------------------|
+| CLIProxy management API contract and fixtures | [#610](https://github.com/echoares-lab/ai-gateway/issues/610) | [PR #612](https://github.com/echoares-lab/ai-gateway/pull/612); heartbeat [30677758671](https://github.com/echoares-lab/ai-gateway/actions/runs/30677758671) |
+| Read-only CLIProxy status adapter | [#613](https://github.com/echoares-lab/ai-gateway/issues/613) | [PR #614](https://github.com/echoares-lab/ai-gateway/pull/614); heartbeat [30678251118](https://github.com/echoares-lab/ai-gateway/actions/runs/30678251118) |
 
 ### Deeper policy enforcement and WebSocket parity
 
