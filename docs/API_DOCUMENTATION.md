@@ -18,6 +18,16 @@ Automatic model reconciliation is documented by `GET /admin/status` at
 The latter previews changes with `dry_run: true` and enqueues an authenticated
 manual scheduler run with `dry_run: false`.
 
+### Unified configuration admin API contract (C-SVC-4)
+
+The disabled-by-default, read-only future `GET /admin/config` endpoint is
+defined by the [Unified Config Admin API Contract](UNIFIED_CONFIG_ADMIN_API_CONTRACT.md).
+The contract establishes `config-snapshot.v1`, strict management credentials,
+safe configuration projections, redaction, and rollback semantics before any
+runtime implementation is introduced. Before the runtime endpoint merges, it
+must be registered in `docs/openapi/gateway-engine.yaml` (and its required
+exposure documentation).
+
 ### Stable launcher key administration
 
 Gateway-engine owns stable launcher-key creation and OpenBao recovery through
