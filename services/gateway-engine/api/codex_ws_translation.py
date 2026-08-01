@@ -45,6 +45,8 @@ def enabled() -> bool:
 def requested(ws: WebSocket) -> bool:
     """Return true when the client requested the translator subprotocol."""
     offered = ws.scope.get("subprotocols") or []
+    if not offered:
+        offered = [item.strip() for item in ws.headers.get("sec-websocket-protocol", "").split(",") if item.strip()]
     return SUBPROTOCOL in offered
 
 
