@@ -67,6 +67,7 @@ from api.admin_routes import (
 from api.admin_routes import (
     router as extracted_admin_router,
 )
+from api.config_generation import router as config_generation_router
 from api.model_runtime_routes import router as model_runtime_router
 from api.policy_hooks import PolicyHookBoundary
 from api.ws_router import (
@@ -119,6 +120,7 @@ POLICY_ENGINE_ENABLED = config.POLICY_ENGINE_ENABLED
 POLICY_ENGINE_STRICT = config.POLICY_ENGINE_STRICT
 MCP_VISIBILITY_ENABLED = config.MCP_VISIBILITY_ENABLED
 LOCAL_MCP_TOOL_HOST_ENABLED = config.LOCAL_MCP_TOOL_HOST_ENABLED
+CONFIG_GENERATION_API_ENABLED = config.CONFIG_GENERATION_API_ENABLED
 CLIPROXY_MANAGEMENT_API_ENABLED = config.CLIPROXY_MANAGEMENT_API_ENABLED
 POLICY_ENGINE_TIMEOUT_MS = config.POLICY_ENGINE_TIMEOUT_MS
 TEAM_BUDGET_SNAPSHOT_ENABLED = config.TEAM_BUDGET_SNAPSHOT_ENABLED
@@ -389,6 +391,7 @@ async def _lifespan(application: FastAPI):
 
 app = FastAPI(lifespan=_lifespan)
 app.include_router(admin_router)
+app.include_router(config_generation_router)
 LITELLM = config.LITELLM_URL
 MODEL_PREFIX = "AI-Gateway:"
 

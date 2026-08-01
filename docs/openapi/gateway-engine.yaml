@@ -94,6 +94,67 @@ paths:
       responses:
         '200':
           description: Successful response
+  /v1/config/generate:
+    post:
+      operationId: generateClientConfig
+      summary: Generate a bounded placeholder-only client configuration
+      description: >-
+        Generates deterministic copy/paste profiles equivalent to
+        gen-client-config.sh. This operator-only route is disabled by default;
+        it never reads keys, invokes a shell, writes files, or calls an
+        upstream. Generated output is bounded to 64 KiB and uses a key-variable
+        placeholder rather than a credential.
+      tags: [Admin]
+      security:
+        - AdminKey: []
+      parameters:
+        - name: x-admin-key
+          in: header
+          required: true
+          schema: {type: string}
+        - name: x-management-scope
+          in: header
+          required: true
+          schema: {type: string, enum: [config:generate]}
+        - name: idempotency-key
+          in: header
+          required: false
+          description: Optional visible ASCII retry key, at most 128 characters.
+          schema: {type: string, maxLength: 128}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                client: {type: string, enum: [cursor, claude-code, codex, gemini, openai-sdk, all], default: all}
+                base_url: {type: string, format: uri, maxLength: 512, default: http://localhost:4000}
+                key_var: {type: string, pattern: '^[A-Z_][A-Z0-9_]{0,63}$', default: AI_GATEWAY_KEY}
+                org: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$', default: echoares}
+                workspace: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$', default: core}
+                team: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$', default: eng}
+                repo: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$', default: my-repo}
+                env: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$', default: dev}
+      responses:
+        '200':
+          description: Deterministic placeholder-only client configuration
+          headers:
+            Cache-Control: {schema: {type: string, enum: [no-store]}}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema_version, client, base_url, key_var, tenant_key_example, content_type]
+                additionalProperties: true
+        '400': {description: Request validation failed}
+        '401': {description: Management authentication is missing or invalid}
+        '403': {description: Management scope is not permitted}
+        '404': {description: Config generation is disabled}
+        '409': {description: Idempotency key conflicts with another request}
+        '413': {description: Request or generated response exceeds its bound}
+        '500': {description: Bounded renderer failure}
   /metrics:
     get:
       summary: Prometheus metrics endpoint
