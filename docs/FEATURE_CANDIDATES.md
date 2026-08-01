@@ -24,9 +24,10 @@ Last reviewed: 2026-08-01.
 
 ## Promoted to roadmap (active; not candidates)
 
-These candidates were promoted into approved coordination epic
-[#517](https://github.com/echoares-lab/ai-gateway/issues/517) and must be
-tracked through its ready atomic children rather than claimed from this file.
+These candidates were promoted into approved coordination epics and must be
+tracked through their linked atomic children rather than claimed from this
+file. The C-AUD-1 through C-AUD-3 entries are coordinated by
+[#517](https://github.com/echoares-lab/ai-gateway/issues/517).
 
 | ID | Summary | Approved tracking issues |
 |----|---------|--------------------------|
@@ -39,6 +40,7 @@ tracked through its ready atomic children rather than claimed from this file.
 | C-SVC-2 | `/v1/config/generate` from `gen-client-config.sh` | Closed epic [#615](https://github.com/echoares-lab/ai-gateway/issues/615); children [#616](https://github.com/echoares-lab/ai-gateway/issues/616), [#619](https://github.com/echoares-lab/ai-gateway/issues/619); PRs [#618](https://github.com/echoares-lab/ai-gateway/pull/618), [#620](https://github.com/echoares-lab/ai-gateway/pull/620) |
 | C-RT-5 | Codex WebSocket frame translation (Option B) | Closed epic [#621](https://github.com/echoares-lab/ai-gateway/issues/621); children [#622](https://github.com/echoares-lab/ai-gateway/issues/622), [#625](https://github.com/echoares-lab/ai-gateway/issues/625); PRs [#624](https://github.com/echoares-lab/ai-gateway/pull/624), [#626](https://github.com/echoares-lab/ai-gateway/pull/626) |
 | C-RT-2 | Evaluation-driven quality routing at request time | Closed epic [#627](https://github.com/echoares-lab/ai-gateway/issues/627); children [#628](https://github.com/echoares-lab/ai-gateway/issues/628), [#631](https://github.com/echoares-lab/ai-gateway/issues/631); PRs [#630](https://github.com/echoares-lab/ai-gateway/pull/630), [#632](https://github.com/echoares-lab/ai-gateway/pull/632) |
+| C-SVC-4 | Read-only, default-off unified configuration snapshot API | Epic [#634](https://github.com/echoares-lab/ai-gateway/issues/634); ready contract child [#635](https://github.com/echoares-lab/ai-gateway/issues/635); blocked builder [#636](https://github.com/echoares-lab/ai-gateway/issues/636) and guarded API [#637](https://github.com/echoares-lab/ai-gateway/issues/637) |
 
 ## Delivered / historical (not candidates)
 
@@ -104,7 +106,6 @@ Cheap-drift check and `/model/new` / `/model/delete` hot-add shipped on `main`
 | ID | Summary | Effort | Risk | Need/fit | Deps / links | Status |
 |----|---------|--------|------|----------|--------------|--------|
 | C-SVC-3 | Team/key manager API from `setup_litellm_teams.py` | M | M | unclear | SCRIPT_TO_SERVICE_ROADMAP; tenancy | candidate |
-| C-SVC-4 | Unified config admin API (re-implement vs stale `feat/unified-config`) | L | M | med | [UNMERGED_FEATURES.md](./UNMERGED_FEATURES.md) | candidate |
 
 ---
 
