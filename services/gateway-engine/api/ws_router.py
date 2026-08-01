@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 import websockets
+from api import codex_ws_translation
 from api.policy_hooks import PolicyHookBoundary
 from api.proxy_common import _log_safe_headers
 from fastapi import APIRouter, WebSocket
@@ -221,7 +222,11 @@ def create_ws_router(deps: WsRouterDeps) -> APIRouter:
     @router.websocket("/v1/responses")
     async def responses_websocket(ws: WebSocket):
         # Accept client WebSocket connection
-        await ws.accept()
+        translation_requested = codex_ws_translation.active(ws)
+        if translation_requested:
+            await ws.accept(subprotocol=codex_ws_translation.SUBPROTOCOL)
+        else:
+            await ws.accept()
 
         log.info("WebSocket headers: %s", _ws_log_safe_mapping(dict(ws.headers)))
         log.info("WebSocket query params: %s", _ws_log_safe_mapping(dict(ws.query_params)))
@@ -310,6 +315,10 @@ def create_ws_router(deps: WsRouterDeps) -> APIRouter:
                 connect_kwargs["extra_headers"] = headers
 
             async with websockets.connect(cliproxy_ws_url, **connect_kwargs) as upstream:
+                if translation_requested:
+                    translator = codex_ws_translation.CodexWsTranslator(ws, upstream, first_frame)
+                    await translator.run()
+                    return
 
                 async def client_to_upstream():
                     try:
