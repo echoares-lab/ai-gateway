@@ -8,7 +8,7 @@ why_now: |
   Phase 5 optional. TENANCY.md child #4 and Epic #30 depend on a concrete filter model;
   policy profiles (38-5) and LiteLLM mcp_servers registry are in place.
 scope: |
-  - Design doc: docs/MCP_TOOL_VISIBILITY.md
+  - Design doc: 01 Projects/AI-Gateway/Specs/MCP_TOOL_VISIBILITY.md
   - policy_json.mcp schema (allowlist/denylist, server aliases)
   - Runtime placement options (LiteLLM-centric per ADR)
   - Phased implementation breakdown (5b–5e)
@@ -28,9 +28,9 @@ risks: |
   LiteLLM version may lack native per-key MCP filtering — fallback post-filter path needed.
 dependencies:
   - docs/TENANCY.md
-  - docs/ARCHITECTURE.md
+  - 01 Projects/AI-Gateway/Specs/ARCHITECTURE.md
 files:
-  - docs/MCP_TOOL_VISIBILITY.md
+  - 01 Projects/AI-Gateway/Specs/MCP_TOOL_VISIBILITY.md
   - issues/policy-engine-38-20-mcp-visibility.md
   - docs/TENANCY.md
 claim_status: done
@@ -47,7 +47,7 @@ github_issue: #139
 
 **Epic:** [#38](https://github.com/echoares-lab/ai-gateway/issues/38)  
 **Tenancy parent:** [#30](https://github.com/echoares-lab/ai-gateway/issues/30) (TENANCY-4)  
-**Design:** [docs/MCP_TOOL_VISIBILITY.md](../docs/MCP_TOOL_VISIBILITY.md)
+**Design:** `01 Projects/AI-Gateway/Specs/MCP_TOOL_VISIBILITY.md`
 
 ## Claim
 

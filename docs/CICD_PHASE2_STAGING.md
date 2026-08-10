@@ -1,7 +1,7 @@
 # CI/CD Phase 2 — Staging Deployment to k3s
 
 This document specifies a **staging** deployment of the ai-gateway stack on the `k3s-01`
-cluster. It mirrors the production design in [`CICD_PHASE2_CD_K3S.md`](CICD_PHASE2_CD_K3S.md)
+cluster. It mirrors the production design in `01 Projects/AI-Gateway/Specs/CICD_PHASE2_CD_K3S.md`
 but targets a fully isolated staging environment so changes can be validated on real
 infrastructure before promotion to prod.
 
@@ -46,13 +46,13 @@ Support: credential-prober, docs-server, cpa-manager (Deployments)
 ```
 
 The component → Kubernetes object mapping is identical to production
-([`CICD_PHASE2_CD_K3S.md` § Components → Kubernetes objects](CICD_PHASE2_CD_K3S.md#components--kubernetes-objects));
+(`01 Projects/AI-Gateway/Specs/CICD_PHASE2_CD_K3S.md`);
 only the namespace, hostnames, database names, secrets path, and image tags differ.
 
 Third-party runtime versions, Renovate automation rules, and per-component promotion gates
-are inventoried in [`docs/DEPENDENCY_INVENTORY.md`](DEPENDENCY_INVENTORY.md). Executable
+are inventoried in `01 Projects/AI-Gateway/Specs/DEPENDENCY_INVENTORY.md`. Executable
 update steps (gates, staging `--full`, prod pin, rollback) live in
-[`docs/ops/DEPENDENCY_UPDATES.md`](ops/DEPENDENCY_UPDATES.md). Staging may float first-party
+`01 Projects/AI-Gateway/Runbooks/DEPENDENCY_UPDATES.md`. Staging may float first-party
 `:latest` tags; third-party images should still be digest-pinned before a production promote PR.
 
 ## Namespace
@@ -74,7 +74,7 @@ CREATE DATABASE langfuse_staging;
 -- create a staging app role with scoped grants; store its password in OpenBao
 ```
 
-Wiring mirrors production ([`CICD_PHASE2_CD_K3S.md` § Databases](CICD_PHASE2_CD_K3S.md#databases-on-the-shared-cnpg-cluster)):
+Wiring mirrors production (`01 Projects/AI-Gateway/Specs/CICD_PHASE2_CD_K3S.md`):
 
 - A bootstrap **Job** (ArgoCD `PreSync` hook) connects to `platform-postgres-rw` as the
   superuser and creates `litellm_staging` + `langfuse_staging` idempotently.
@@ -90,7 +90,7 @@ logical DB index / key prefix or auth to avoid cache-key collisions with prod.
 
 Path **`staging/workloads/ai-gateway/*`**, surfaced as k8s Secrets in the
 `ai-gateway-staging` namespace via `ExternalSecret` (ClusterSecretStore `openbao`). Keys match
-production ([`CICD_PHASE2_CD_K3S.md` § Secrets](CICD_PHASE2_CD_K3S.md#secrets-openbao--external-secrets)):
+production (`01 Projects/AI-Gateway/Specs/CICD_PHASE2_CD_K3S.md`):
 `litellm_master_key`, `gateway_engine_admin_key`, `cliproxy_api_key`,
 `cliproxy_management_key`, `litellm_db_url` (→ `litellm_staging`),
 `langfuse_db_url` (→ `langfuse_staging`), `redis_auth`, `clickhouse_password`,
@@ -222,7 +222,7 @@ Authorization headers. Production enablement is blocked until these staging chec
 ## CLIProxy OAuth token persistence
 
 Identical mechanism to production
-([`CICD_PHASE2_CD_K3S.md` § CLIProxy OAuth](CICD_PHASE2_CD_K3S.md#cliproxy-oauth-token-persistence)):
+(`01 Projects/AI-Gateway/Specs/CICD_PHASE2_CD_K3S.md`):
 a `storage-fast` RWO PVC mounted at `/home/dev/.cli-proxy-api`, seeded by an initContainer
 from `cliproxy_auth_tar_b64` **only if empty**. Staging uses its own PVC and its own OAuth
 seed from `staging/workloads/ai-gateway/*`, so staging token refreshes never touch prod
@@ -288,7 +288,7 @@ staging overlay; ArgoCD reconciles it into the cluster.
 
 Staging is the pre-prod gate. The promotion flow (see also epic
 [#396](https://github.com/echoares-lab/ai-gateway/issues/396) and
-[`docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md`](superpowers/specs/2026-07-17-staging-deep-smoke-design.md)):
+`01 Projects/AI-Gateway/Specs/2026-07-17-staging-deep-smoke-design.md`):
 
 1. **Merge to `main`** in this repo — application/config changes (including
    `litellm-config.yaml`) land on `main` via PR with CI green.
@@ -338,7 +338,7 @@ Staging is the pre-prod gate. The promotion flow (see also epic
    `ai-gateway` namespace. Prod stays on pinned digests (not `:latest`) so promotion is an
    explicit, reviewed change.
 7. **Gate D on prod (thin)** — after prod sync, run the advisory post-merge smokes from
-   [`CICD_PHASE2_CD_K3S.md` § Verification](CICD_PHASE2_CD_K3S.md#verification) against
+   `01 Projects/AI-Gateway/Specs/CICD_PHASE2_CD_K3S.md` against
    `gateway.infra.plexplease.com`. Gate D stays intentionally thin; deep coverage belongs on
    staging step 4.
 

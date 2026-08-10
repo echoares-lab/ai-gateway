@@ -26,7 +26,7 @@ risks: |
   Procedures may reference features not yet wired in gateway-engine (38-04) — marked design-only.
 dependencies:
   - policy-engine-38-16-audit-log.md
-  - docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md
+  - 01 Projects/AI-Gateway/Specs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md
 files:
   - RUNBOOK.md
 claim_status: done
@@ -43,4 +43,4 @@ github_issue: #137
 
 **GitHub:** #137  
 **PR:** https://github.com/echoares-lab/ai-gateway/pull/151  
-**Design:** [docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md](../docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md)
+**Design:** `01 Projects/AI-Gateway/Specs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md`

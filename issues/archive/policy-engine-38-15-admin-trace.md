@@ -25,7 +25,7 @@ dependencies:
   - policy-engine-38-04-gateway-engine.md
 files:
   - services/gateway-engine/main.py
-  - docs/ADMIN_CONSOLE_DATA_CONTRACT.md
+  - 01 Projects/AI-Gateway/Specs/ADMIN_CONSOLE_DATA_CONTRACT.md
 claim_status: in-review
 claimed_by: cursor-575k-20260605
 blocks: []

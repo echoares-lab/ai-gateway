@@ -4,7 +4,7 @@
 The command accepts a dotenv-style file containing *names and values* supplied
 to a deployment. It never prints values, making it safe to use in CI logs.
 The source of truth for these names is the OpenBao contract documented in
-``docs/CICD_PHASE2_CD_K3S.md``.
+``01 Projects/AI-Gateway/Specs/CICD_PHASE2_CD_K3S.md``.
 """
 
 from __future__ import annotations

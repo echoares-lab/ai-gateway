@@ -4,7 +4,7 @@
 deep-smoke.sh shells out to this helper (stdin -> JSON payload, exit code ->
 pass/fail/warn) so the response-shape assertions live in testable Python
 instead of fragile pure-bash JSON parsing. See
-docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md.
+01 Projects/AI-Gateway/Specs/2026-07-17-staging-deep-smoke-design.md.
 
 Exit code convention for every ``check-*`` subcommand:
     0 = pass, 1 = fail, 2 = warn (soft — non-fatal unless the caller runs

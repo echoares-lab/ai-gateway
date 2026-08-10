@@ -33,7 +33,7 @@ github_issue: #141
 
 **Epic:** [policy-engine-epic-38.md](./policy-engine-epic-38.md)  
 **Phase 0 gate:** [policy-engine-phase0-prerequisites.md](./policy-engine-phase0-prerequisites.md)  
-**Design:** [docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md](../docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md)
+**Design:** `01 Projects/AI-Gateway/Specs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md`
 
 ## Epic status (2026-06-05)
 
@@ -113,7 +113,7 @@ Phase 5 (optional, parallel when unblocked):
 | 38-11 | Pool routing sets quota_aware_mode for CLIProxy path |
 | 38-02 | Evaluator stub documents quota-aware path |
 
-Reference: [ROUTING_AND_FAILOVER_STRATEGY.md](../docs/ROUTING_AND_FAILOVER_STRATEGY.md) §3.
+Reference: `01 Projects/AI-Gateway/Specs/ROUTING_AND_FAILOVER_STRATEGY.md` §3.
 
 ## Claim status board
 

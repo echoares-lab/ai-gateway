@@ -32,7 +32,7 @@
     "",
     "- [ ] Old and new version/digest recorded below",
     "- [ ] Release notes reviewed for breaking changes and migrations",
-    "- [ ] Required gates from [`docs/DEPENDENCY_INVENTORY.md`](docs/DEPENDENCY_INVENTORY.md) identified",
+    "- [ ] Required gates from `01 Projects/AI-Gateway/Specs/DEPENDENCY_INVENTORY.md` identified",
     "- [ ] Staging promotion path understood (compose validate → dev slot or k3s-staging)",
     "- [ ] Rollback target (previous digest/tag) documented",
     "",

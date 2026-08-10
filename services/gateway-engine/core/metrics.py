@@ -142,7 +142,7 @@ def record_model_lifecycle(models: list[ModelRegistryRecord]) -> None:
 
 
 # ── Per-provider / per-model routing signals (issue #59) ──────────────────────
-# Passive, in-traffic signals for adaptive routing (see docs/ADAPTIVE_ROUTING.md).
+# Passive, in-traffic signals for adaptive routing (see 01 Projects/AI-Gateway/Specs/ADAPTIVE_ROUTING.md).
 # Captured on every upstream LiteLLM call; never via active background probing.
 PROVIDER_LATENCY = Histogram(
     "gateway_engine_provider_request_duration_seconds",

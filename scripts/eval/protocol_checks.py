@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Direct gateway protocol checks — no client CLI involved.
 
-Tests the two gaps identified against docs/FEATURE_CANDIDATES.md C-RT-6:
+Tests the two gaps identified against 01 Projects/AI-Gateway/Specs/FEATURE_CANDIDATES.md C-RT-6:
   1. Reasoning-token usage accounting on /v1/chat/completions vs the Codex
      /v1/responses shape (proxy_responses.py hardcodes
      output_tokens_details.reasoning_tokens to 0 — this check confirms
@@ -14,7 +14,7 @@ Tests the two gaps identified against docs/FEATURE_CANDIDATES.md C-RT-6:
      delta accumulation across concurrent calls, the risk flagged against
      providers/gemini.py's tool_buffers heuristic).
 
-See docs/tool-use-eval.md and scripts/eval/README.md for context.
+See 01 Projects/AI-Gateway/Specs/tool-use-eval.md and scripts/eval/README.md for context.
 """
 
 from __future__ import annotations

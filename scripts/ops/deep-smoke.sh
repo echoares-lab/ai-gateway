@@ -4,7 +4,7 @@
 #
 # Staging `--full` is the promote gate before pinning digests to production;
 # `--quick` covers the incident / health-check path on staging or prod. See
-# docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md.
+# 01 Projects/AI-Gateway/Specs/2026-07-17-staging-deep-smoke-design.md.
 #
 # Usage:
 #   ./scripts/ops/deep-smoke.sh [--env staging|prod] [--quick|--full] \

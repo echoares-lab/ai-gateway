@@ -9,7 +9,7 @@ why_now: |
   Phase 5 optional. Audit log (38-16) stores repo/agent context; TENANCY.md
   defines Langfuse metadata tags; TOKEN_USAGE_ANALYTICS.md sketches cost panels.
 scope: |
-  - Design doc: docs/CHARGEBACK_ATTRIBUTION.md
+  - Design doc: 01 Projects/AI-Gateway/Specs/CHARGEBACK_ATTRIBUTION.md
   - policy_json.chargeback schema (rollup schedule, environment filters)
   - Join model: routing_decisions_log.request_id ↔ Langfuse trace metadata
   - Phased implementation breakdown (5b–5e)
@@ -30,9 +30,9 @@ risks: |
 dependencies:
   - issues/policy-engine-38-16-audit-log.md
   - docs/TENANCY.md
-  - docs/TOKEN_USAGE_ANALYTICS.md
+  - 01 Projects/AI-Gateway/Specs/TOKEN_USAGE_ANALYTICS.md
 files:
-  - docs/CHARGEBACK_ATTRIBUTION.md
+  - 01 Projects/AI-Gateway/Specs/CHARGEBACK_ATTRIBUTION.md
   - issues/policy-engine-38-21-chargeback-attribution.md
 claim_status: in-review
 blocks: []
@@ -46,7 +46,7 @@ github_issue: #140
 # 38-21 — Chargeback Attribution (Optional)
 
 **Epic:** [#38](https://github.com/echoares-lab/ai-gateway/issues/38)  
-**Design:** [docs/CHARGEBACK_ATTRIBUTION.md](../docs/CHARGEBACK_ATTRIBUTION.md)
+**Design:** `01 Projects/AI-Gateway/Specs/CHARGEBACK_ATTRIBUTION.md`
 
 ## Claim
 

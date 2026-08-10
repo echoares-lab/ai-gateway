@@ -67,4 +67,4 @@ Use this file as the source of truth when re-creating repo settings.
 
 This repo uses **`main` only** (no long-lived integration branch). Feature worktrees branch from `main` and merge back via PR.
 
-See [`TESTING_AND_PROMOTION_POLICY.md`](../docs/process/TESTING_AND_PROMOTION_POLICY.md), [`docs/TESTING.md`](../docs/TESTING.md), and [`REPO_IMPROVEMENT_APPENDIX.md`](../docs/process/REPO_IMPROVEMENT_APPENDIX.md) for gate commands.
+See `01 Projects/AI-Gateway/Specs/TESTING_AND_PROMOTION_POLICY.md`, `01 Projects/AI-Gateway/Specs/TESTING.md`, and `01 Projects/AI-Gateway/Specs/REPO_IMPROVEMENT_APPENDIX.md` for gate commands.

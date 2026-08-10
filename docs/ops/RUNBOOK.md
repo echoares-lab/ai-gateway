@@ -198,7 +198,7 @@ Shows: CLIProxyAPI reachability, per-provider token status, Docker container sta
 source .env && curl -s http://localhost:4000/admin/status \
   -H "Authorization: Bearer $LITELLM_MASTER_KEY" | jq .
 ```
-Returns the `admin-console.v1` JSON contract (see `docs/ADMIN_CONSOLE_DATA_CONTRACT.md`)
+Returns the `admin-console.v1` JSON contract (see `01 Projects/AI-Gateway/Specs/ADMIN_CONSOLE_DATA_CONTRACT.md`)
 with health, models, providers, routing, and config-drift panels aggregated from the
 gateway-engine, `litellm-config.yaml`, `/metrics`, and (best-effort) `cliproxy-setup.sh health`.
 Read-only and operator-local: it never mutates state and redacts secrets. Degraded sources
@@ -246,7 +246,7 @@ inline. New additions are probed against their exact CLIProxy `upstream_model` b
 their LiteLLM alias exists.
 
 **Lifecycle glossary:** see
-[`docs/superpowers/specs/2026-07-23-model-registry-lifecycle-never-delete-design.md`](../superpowers/specs/2026-07-23-model-registry-lifecycle-never-delete-design.md)
+`01 Projects/AI-Gateway/Specs/2026-07-23-model-registry-lifecycle-never-delete-design.md`
 for `advertised`, `retired`, `absent_since`, and the legacy `enabled` shim
 (`enabled := advertised && !retired`). Registry rows are never hard-deleted; operator
 `DELETE /admin/models/{id}` retires in place.
@@ -656,7 +656,7 @@ Read-only admin endpoints are unauthenticated by default (operator-local convent
 
 Gateway-engine preserves launcher key identity in OpenBao KV v2 at
 `kv/data/launcher-keys/<sha256(alias)>`. Operators use the protected contracts documented
-in [`API_DOCUMENTATION.md`](../API_DOCUMENTATION.md); do not read or copy escrow payloads
+in `01 Projects/AI-Gateway/Specs/API_DOCUMENTATION.md`; do not read or copy escrow payloads
 for routine recovery. Every successful secret response is `Cache-Control: no-store`.
 
 **Legacy import (key exists in LiteLLM but was created before escrow):** obtain the
@@ -695,17 +695,17 @@ provisioning.
 
 The least-privilege policy, staging allow/deny check, workload-auth model, and GitOps
 ownership boundary are defined in
-[`CICD_PHASE2_CD_K3S.md`](../CICD_PHASE2_CD_K3S.md#launcher-stable-key-escrow) and
+`01 Projects/AI-Gateway/Specs/CICD_PHASE2_CD_K3S.md` and
 [`CICD_PHASE2_STAGING.md`](../CICD_PHASE2_STAGING.md#staging-launcher-key-escrow-gate).
 
 ---
 
 Maintainers should periodically check for new releases and pin them in the repo to ensure stability.
 
-> **Canonical inventory:** [`docs/DEPENDENCY_INVENTORY.md`](../DEPENDENCY_INVENTORY.md) lists every
+> **Canonical inventory:** `01 Projects/AI-Gateway/Specs/DEPENDENCY_INVENTORY.md` lists every
 > third-party runtime pin, risk tier, Renovate policy, and rollback target. Renovate opens PRs
 > from [`.github/renovate.json`](../../.github/renovate.json). The step-by-step update playbook
-> is [`docs/ops/DEPENDENCY_UPDATES.md`](DEPENDENCY_UPDATES.md) (#417) — gates, staging
+> is `01 Projects/AI-Gateway/Runbooks/DEPENDENCY_UPDATES.md` (#417) — gates, staging
 > deep-smoke promote path, per-component rollback, and the dependency PR checklist. CLIProxy
 > updates flow through the weekly upstream-track job (#11), not Renovate.
 
@@ -819,7 +819,7 @@ Print ready-to-paste connection settings for any supported client profile
 ```
 
 Clients: `cursor`, `claude-code`, `codex`, `gemini`, `openai-sdk`, `all`.
-Profiles are sourced from [docs/CLIENT_COMPATIBILITY.md](./docs/CLIENT_COMPATIBILITY.md) §2.
+Profiles are sourced from `01 Projects/AI-Gateway/Specs/CLIENT_COMPATIBILITY.md` §2.
 
 ### Cursor
 Settings → Models → Custom:
@@ -952,7 +952,7 @@ docker compose up -d
 ## Policy Engine (operator)
 
 Central routing evaluator for repo/agent affinity, budget gates, rate-limit state, and
-fallback ordering. Design: [POLICY_ENGINE_AND_ROUTING_REFACTOR.md](./docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md).
+fallback ordering. Design: `01 Projects/AI-Gateway/Specs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md`.
 OpenAPI: [docs/openapi/policy-engine.yaml](./docs/openapi/policy-engine.yaml).
 
 > **Rollout status:** Epic #38 is complete on `main`. Policy evaluation runs **in-process**
@@ -1033,7 +1033,7 @@ Only after HTTP Stage 2 is stable and Gate C WS smoke passes:
 POLICY_ENGINE_WS_EVALUATE=true   # requires POLICY_ENGINE_ENABLED=true
 ```
 
-See [CLIENT_COMPATIBILITY.md](./docs/CLIENT_COMPATIBILITY.md) and design doc §9 for Codex
+See `01 Projects/AI-Gateway/Specs/CLIENT_COMPATIBILITY.md` and design doc §9 for Codex
 WS bypass semantics.
 
 ### Dependencies (Redis + Postgres)
@@ -1125,7 +1125,7 @@ WHERE p.provider = 'anthropic' AND m.tier = 'native' AND m.enabled;
 **Emergency demotion** (native tier exhausted): update `credential_tier_preference` to
 `antigravity` or `emergency`, or let fallback evaluator shift when all native-tier
 credentials are in cooldown / deprioritized. Follow staged promotion per
-[CONFIG_PROMOTION.md](./docs/CONFIG_PROMOTION.md) — test in dev slot before production.
+`01 Projects/AI-Gateway/Specs/CONFIG_PROMOTION.md` — test in dev slot before production.
 
 ### Quota-aware mode
 
@@ -1135,7 +1135,7 @@ CLIProxy drains highest-priority credential until 429, then fails over).
 **Quota-aware:** when `credential_pools.affinity_mode = 'quota-aware'`, the evaluator sets
 `RoutingDecision.quota_aware_mode = true` and populates `deprioritized_credentials[]`
 from rolling 429 counts and `QuotaHeadroom` soft thresholds — CLIProxy switches
-credentials *before* hard 429 ([ROUTING_AND_FAILOVER_STRATEGY.md](./docs/ROUTING_AND_FAILOVER_STRATEGY.md) §3).
+credentials *before* hard 429 (`01 Projects/AI-Gateway/Specs/ROUTING_AND_FAILOVER_STRATEGY.md` §3).
 
 **Enable for a pool:**
 
@@ -1243,7 +1243,7 @@ on the policy-engine container and restart. Revert to `0.01` after resolution.
 | `services/gateway-engine/Dockerfile` | Builds the gateway-engine container |
 | `services/gateway-engine/gemini-model-map.json` | Dotted→dashed Gemini model alias map (auto-managed by sync-models) |
 | `Dockerfile.cliproxy` | Builds the CLIProxyAPI container image |
-| `docs/ARCHITECTURE.md` | Architecture Decision Record (ADR) — MCP Control Plane Hosting |
+| `01 Projects/AI-Gateway/Specs/ARCHITECTURE.md` | Architecture Decision Record (ADR) — MCP Control Plane Hosting |
 | `litellm-config.yaml` | Model routing (auto-managed by sync-models) |
 | `.env` | Secrets (keys, passwords) — never commit |
 | `cliproxy-setup.sh` | Setup, auth, sync, health CLI |

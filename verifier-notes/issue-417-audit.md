@@ -5,9 +5,9 @@ Verified commit: `cd74336` docs(ops): add dependency update and rollback playboo
 
 ## Checks run
 
-1. Relative-link validation on `docs/ops/DEPENDENCY_UPDATES.md`
+1. Relative-link validation on `01 Projects/AI-Gateway/Runbooks/DEPENDENCY_UPDATES.md`
    - 18 relative links checked, 0 broken.
-2. Component coverage vs `docs/DEPENDENCY_INVENTORY.md`
+2. Component coverage vs `01 Projects/AI-Gateway/Specs/DEPENDENCY_INVENTORY.md`
    - Inventory rows: cliproxy, LiteLLM, CPA-Manager, Langfuse web, Langfuse worker,
      ClickHouse, MinIO, Redis, Postgres (compose), Postgres (k3s CNPG).
    - Playbook H3 sections (9): cliproxy, LiteLLM, CPA-Manager, Langfuse (web+worker),
