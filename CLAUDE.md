@@ -260,3 +260,11 @@ scripts/ops/generate-staging-configmap.sh > /tmp/litellm-config.staging.yaml
 ```
 
 It is POSIX sh + python3 (stdlib `yaml`) and validates the embedded YAML parses before output.
+
+## Repository Documentation Minimalism (Obsidian-First)
+
+Per [[02 Areas/Policies/Master-Policy.md|Master-Policy §1.6]] and Engineering-Standards ADR 0001, **all** project documentation — epics, backlogs, ADRs, specs, architecture, runbooks, reports, and design/implementation plans — lives **exclusively** in `/home/dev/obsidian-vault/01 Projects/<Project>/`.
+
+Permitted markdown in a repo (exhaustive): `README.md` (brief orientation + vault pointer only), `AGENTS.md`/`CLAUDE.md`, standard `LICENSE`/`CHANGELOG`/`CONTRIBUTING`/`SECURITY`, and minimal format notes adjacent to the artifacts they describe (e.g. a data directory schema note).
+
+**Prohibited:** `docs/` trees mirroring vault content, `TODO.md`, epic/sprint files, ADR folders, plans, reports, status docs. Redirect agent tooling that defaults to writing plans into the repo (e.g. `docs/superpowers/plans/`) to the vault project folder. "Self-contained repo" is **not** a valid exception — move such content to the vault rather than duplicating it.
