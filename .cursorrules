@@ -1,0 +1,30 @@
+# Mandatory Policy & Agent Behavior Directives for AGY, Codex, Cursor & Claude
+
+## 1. Knowledge Authority & Discovery Protocol (Self-Contained Project Model)
+All project documentation, architectures, tech stack choices, ADR decisions, active work, and epics live **exclusively inside self-contained project folders** in the Obsidian vault at:
+`/home/dev/obsidian-vault/01 Projects/<Project-Name>/`
+
+### Standardized Project Folder Schema:
+- **Overview.md**: Project summary, scope, and any project-specific **Policy Exceptions**.
+- **Architecture.md**: System architecture & design specs for this project.
+- **Tech-Stack.md**: Approved technologies & dependency choices for this project.
+- **Todo.md**: Active sprint tasks & epic backlog for this project.
+- **ADRs/**: Architectural Decision Records specific to this project (e.g. `0001-title.md`).
+- **Runbooks/**: Operational runbooks, deployment guides, and troubleshooting specs.
+- **Specs/**: Technical design specs, API contracts, and feature specifications.
+
+### Fast Context Discovery & Recall Rules:
+1. **Context Load Order:** Read `/home/dev/obsidian-vault/02 Areas/Policies/Master-Policy.md` first, then inspect `01 Projects/<Project>/Overview.md` for local `## Policy Exceptions`.
+2. **LSP over Regex:** Use Language Server Protocol (Serena LSP) or `obsidian-mcp-server` tools over raw regex grep for fast, accurate symbol and note lookups.
+3. **Wikilink Traversal:** Follow Obsidian wikilinks `[[Note-Name]]` directly via `obsidian_get_note` or `view_file` rather than searching blindly.
+4. **Offload Heavy Research:** Use `invoke_subagent` (`research` / `investigator`) for multi-file research to preserve main thread context window.
+
+## 2. Mandatory Toolchains & Infrastructure Mandates
+1. **Python Toolchain (`uv`):** All Python package management, virtual environment creation, and execution MUST use `uv` (`uv pip`, `uv venv`, `uv run`, `uv sync`). Traditional `pip` and `poetry` are deprecated.
+2. **Nexus PyPI Index:** All `uv` operations MUST target the local Nexus repository index at `https://nexus.infra.plexplease.com/repository/pypi-group/simple`.
+3. **Container Registry & Versioning:** All container images MUST be published exclusively to local Nexus Registry (`https://nexus-registry.infra.plexplease.com`) using **Semantic Versioning ONLY** (`v1.0.0`). Mutable tags (`latest`) and Git SHAs are strictly prohibited.
+4. **GitOps First:** All K3s cluster deployments MUST be managed via **ArgoCD** and `homelab-gitops`. Direct manual `kubectl` or `docker` execution on production nodes is prohibited.
+
+## 3. Strict Code Execution & Diagnostics
+1. **No Masking Errors:** Fix underlying root causes. Never swallow exceptions, return dummy fallbacks, or comment out failing unit tests.
+2. **Mandatory Run Verification:** Always execute build and test commands (`npm test`, `pytest`, `go test`, `cargo test`) before declaring completion.
