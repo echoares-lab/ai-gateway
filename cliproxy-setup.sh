@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LITELLM_CONFIG="${LITELLM_CONFIG:-$SCRIPT_DIR/litellm-config.yaml}"
 LITELLM_KEY="${LITELLM_MASTER_KEY:-$(grep '^LITELLM_MASTER_KEY=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2 || true)}"
 GATEWAY_ENGINE_URL="${GATEWAY_ENGINE_URL:-http://localhost:${GATEWAY_ENGINE_PORT:-4000}}"
-# Set to reach https://ai.plexplease.com's Cloudflare WAF -- see docs/ops/RUNBOOK.md
+# Set to reach https://ai.plexplease.com's Cloudflare WAF -- see 01 Projects/AI-Gateway/Runbooks/RUNBOOK.md
 # "Production endpoints" for where this key lives. Not needed for localhost or
 # gateway.infra.plexplease.com (internal, no Cloudflare hop).
 GATEWAY_EDGE_AUTH_KEY="${GATEWAY_EDGE_AUTH_KEY:-}"
@@ -1246,7 +1246,7 @@ case "$cmd" in
     echo "Testing gateway-engine → LiteLLM → CLIProxyAPI with model: $MODEL"
     echo "Target: ${GATEWAY_ENGINE_URL%/} (override GATEWAY_ENGINE_URL for k8s prod: internal"
     echo "  gateway.infra.plexplease.com needs nothing extra; external ai.plexplease.com needs"
-    echo "  GATEWAY_EDGE_AUTH_KEY set too -- see docs/ops/RUNBOOK.md 'Production endpoints')"
+    echo "  GATEWAY_EDGE_AUTH_KEY set too -- see 01 Projects/AI-Gateway/Runbooks/RUNBOOK.md 'Production endpoints')"
     mapfile -t EDGE_ARGS < <(edge_auth_curl_args)
     curl -s -X POST "${GATEWAY_ENGINE_URL%/}/v1/chat/completions" \
       -H "Content-Type: application/json" \
@@ -1280,7 +1280,7 @@ case "$cmd" in
     echo "=== Provider flow test (gateway-engine → LiteLLM → CLIProxy) ==="
     echo "Target: ${GATEWAY_ENGINE_URL%/} (override GATEWAY_ENGINE_URL for k8s prod: internal"
     echo "  gateway.infra.plexplease.com needs nothing extra; external ai.plexplease.com needs"
-    echo "  GATEWAY_EDGE_AUTH_KEY set too -- see docs/ops/RUNBOOK.md 'Production endpoints')"
+    echo "  GATEWAY_EDGE_AUTH_KEY set too -- see 01 Projects/AI-Gateway/Runbooks/RUNBOOK.md 'Production endpoints')"
     mapfile -t EDGE_ARGS < <(edge_auth_curl_args)
     for provider in claude gemini openai xai kimi; do
       model="${PROVIDER_MODELS[$provider]}"
@@ -1345,7 +1345,7 @@ Operations:
                           - external: GATEWAY_ENGINE_URL=https://ai.plexplease.com AND
                             GATEWAY_EDGE_AUTH_KEY=<key> (Cloudflare WAF requires it, else
                             you get a challenge page, not your response)
-                        See docs/ops/RUNBOOK.md "Production endpoints" for where the edge
+                        See 01 Projects/AI-Gateway/Runbooks/RUNBOOK.md "Production endpoints" for where the edge
                         key lives and which Authorization key to pair it with.
   test-direct [model]  Test model directly against CLIProxyAPI (always local -- no k8s
                         equivalent, CLIProxy isn't part of k8s's public ingress)

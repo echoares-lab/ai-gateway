@@ -76,7 +76,7 @@
 #   DEEP_SMOKE_PG_NAMESPACE     kube namespace to exec into for the
 #                               LiteLLM_SpendLogs check (default: "database";
 #                               staging/prod share a central Postgres — see
-#                               docs/CICD_PHASE2_STAGING.md § Databases)
+#                               01 Projects/AI-Gateway/Specs/CICD_PHASE2_STAGING.md § Databases)
 #   DEEP_SMOKE_PG_POD           exact Postgres pod name; when set, skips the
 #                               label-selector lookup below entirely
 #   DEEP_SMOKE_PG_POD_SELECTOR  label selector used to find the Postgres pod
@@ -523,7 +523,7 @@ check_pods() {
 
 # Cluster Job checks (issue #401, bundle #396): bootstrap/migration Jobs
 # (e.g. a Postgres bootstrap PreSync hook, litellm-migrate, gateway-migrate —
-# see docs/CICD_PHASE2_STAGING.md) must not be Failed when present. Pods
+# see 01 Projects/AI-Gateway/Specs/CICD_PHASE2_STAGING.md) must not be Failed when present. Pods
 # Ready is already covered by check_pods above; this only adds the
 # Job-specific Failed-condition assertion. Unlike check_pods (WARN on
 # missing kubectl even on staging), a missing kubectl here is a hard FAIL on

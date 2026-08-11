@@ -294,7 +294,7 @@ def check_jobs_payload(payload: object, allowlist: list[str] | None = None) -> C
     already treats as ok). This check adds the Job-specific assertion the
     design calls for: any bootstrap/migration Jobs *present* (e.g. a
     Postgres bootstrap PreSync hook, ``litellm-migrate``, ``gateway-migrate``
-    — see docs/CICD_PHASE2_STAGING.md) must not be in a ``Failed`` state.
+    — see 01 Projects/AI-Gateway/Specs/CICD_PHASE2_STAGING.md) must not be in a ``Failed`` state.
 
     Jobs are often one-shot and may already be pruned by the time an
     operator runs deep-smoke, so *no* Jobs present is not a failure. A Job
