@@ -4,7 +4,7 @@
 # AI Gateway client profiles (issue #78, epic #36).
 #
 # Profiles and their connection details are derived from
-# docs/CLIENT_COMPATIBILITY.md §2 (Integration Profiles). This script only PRINTS
+# 01 Projects/AI-Gateway/Specs/CLIENT_COMPATIBILITY.md §2 (Integration Profiles). This script only PRINTS
 # configuration; it never reads secrets, never writes files, and never calls the
 # gateway. The API key is always a placeholder the operator substitutes.
 #
@@ -166,7 +166,7 @@ EOF
 
 echo "# AI Gateway client config — base: ${BASE_ROOT}  key var: ${KEY_VAR}"
 echo "# Example tenant key label: ${TENANT_KEY_EXAMPLE}  (docs/TENANCY.md, setup-repo-env.sh)"
-echo "# (placeholders only; substitute your own key. See docs/CLIENT_COMPATIBILITY.md)"
+echo "# (placeholders only; substitute your own key. See 01 Projects/AI-Gateway/Specs/CLIENT_COMPATIBILITY.md)"
 echo
 
 case "$CLIENT" in

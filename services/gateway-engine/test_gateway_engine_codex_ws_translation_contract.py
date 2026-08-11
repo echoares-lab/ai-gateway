@@ -8,44 +8,17 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
-_CONTRACT = {
-    "subprotocol": "codex-ws.v1",
-    "route": "/v1/responses",
-    "flag": "CODEX_WS_TRANSLATION_ENABLED",
-    "frame_bytes": 64 * 1024,
-    "input_bytes": 32 * 1024,
-    "inflight": 16,
-    "queue": 128,
-    "request_timeout_seconds": 30,
-    "handshake_timeout_seconds": 5,
-    "idle_timeout_seconds": 120,
-    "close_codes": {
-        "auth": 1008,
-        "unsupported": 1003,
-        "too_large": 1009,
-        "internal": 1011,
-        "normal": 1000,
-    },
-    "frames": {
-        "request.start",
-        "request.delta",
-        "request.cancel",
-        "response.delta",
-        "response.tool_call",
-        "response.completed",
-        "response.error",
-    },
-}
+# contracts/codex_ws_translation.yaml is the single source of truth for these
+# values and ships inside the service tree, so this file is always present —
+# including in the gateway-engine unit-test image.
+CONTRACT_PATH = Path(__file__).parent / "contracts" / "codex_ws_translation.yaml"
+_CONTRACT = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
+_CONTRACT["frames"] = set(_CONTRACT["frames"])
+
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
-_SAFE_ERRORS = {
-    "protocol_error",
-    "timeout",
-    "rate_limited",
-    "policy_denied",
-    "upstream_unavailable",
-    "translation_error",
-}
+_SAFE_ERRORS = set(_CONTRACT["safe_error_codes"])
 
 
 def _frame_hash(frame: dict) -> str:
@@ -153,15 +126,18 @@ def test_cancellation_is_idempotent_and_request_hash_does_not_expose_payload():
         _accept_frame(state, {"type": "request.cancel", "request_id": "r-2", "sequence": 2})
 
 
-def test_contract_document_requires_rollback_policy_and_observability_boundaries():
-    path = Path(__file__)
-    if len(path.parents) < 3:
-        pytest.skip("repository docs are not mounted in the service test image")
-    document = path.parents[2] / "docs" / "CODEX_WEBSOCKET_TRANSLATION_CONTRACT.md"
-    if not document.exists():
-        pytest.skip("repository docs are not mounted in the service test image")
-    text = document.read_text()
-    assert "CODEX_WS_TRANSLATION_ENABLED=false" in text
-    assert "codex-ws.v1" in text
-    assert "1009" in text
-    assert "never" in text.lower() and "credentials" in text.lower()
+def test_contract_requires_rollback_policy_and_observability_boundaries():
+    # Rollback is the flag default: false means the pre-existing direct proxy.
+    assert _CONTRACT["flag"] == "CODEX_WS_TRANSLATION_ENABLED"
+    assert _CONTRACT["flag_default"] is False
+    assert _CONTRACT["subprotocol"] == "codex-ws.v1"
+    assert _CONTRACT["close_codes"]["too_large"] == 1009
+    # Nothing sensitive may reach a client frame, a metric, or a log line.
+    assert "credentials" in _CONTRACT["never_disclosed"]
+    assert "raw exception text" in _CONTRACT["never_disclosed"]
+
+
+def test_contract_source_module_gates_translation_behind_the_flag():
+    source = Path(__file__).parent / "api" / "codex_ws_translation.py"
+    assert source.exists(), f"{_CONTRACT['source']} is missing"
+    assert _CONTRACT["flag"] in source.read_text(encoding="utf-8")

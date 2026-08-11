@@ -1,0 +1,67 @@
+# Machine-checked contract for the C-RT-5 opt-in Codex WebSocket translation
+# boundary.
+#
+# This file is the single source of truth for the values asserted by
+# services/gateway-engine/test_gateway_engine_codex_ws_translation_contract.py.
+# It lives in the service tree (not docs/) so the gateway-engine unit-test image
+# carries it and the assertions actually execute in Gate A/B.
+#
+# Prose rationale, the frame/field narrative, and the close matrix live in the
+# vault:
+#   01 Projects/AI-Gateway/Specs/CODEX_WEBSOCKET_TRANSLATION_CONTRACT.md
+#
+# Status: implemented by services/gateway-engine/api/codex_ws_translation.py.
+# The translation boundary is entered only when the flag is true; the default
+# remains the pre-existing direct CLIProxy WebSocket proxy.
+subprotocol: codex-ws.v1
+implementation_state: implemented
+source: services/gateway-engine/api/codex_ws_translation.py
+
+route: /v1/responses
+flag: CODEX_WS_TRANSLATION_ENABLED
+# When false the existing direct CLIProxy WebSocket proxy is unchanged.
+flag_default: false
+
+frame_bytes: 65536
+input_bytes: 32768
+inflight: 16
+queue: 128
+request_timeout_seconds: 30
+handshake_timeout_seconds: 5
+idle_timeout_seconds: 120
+
+close_codes:
+  auth: 1008
+  unsupported: 1003
+  too_large: 1009
+  internal: 1011
+  normal: 1000
+
+frames:
+  - request.start
+  - request.delta
+  - request.cancel
+  - response.delta
+  - response.tool_call
+  - response.completed
+  - response.error
+
+safe_error_codes:
+  - protocol_error
+  - timeout
+  - rate_limited
+  - policy_denied
+  - upstream_unavailable
+  - translation_error
+
+# Error messages are fixed safe strings. Nothing in this list may ever reach a
+# client frame, a metric, or a log line.
+never_disclosed:
+  - credentials
+  - prompts
+  - frame input
+  - authorization values
+  - callback URLs
+  - filesystem paths
+  - provider response bodies
+  - raw exception text

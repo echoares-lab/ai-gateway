@@ -10,7 +10,7 @@ info:
     exposed through gateway-engine admin status endpoints; this document is
     retained for RoutingDecision and profile schema compatibility.
 
-    Design: docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md
+    Design: 01 Projects/AI-Gateway/Specs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md
   version: 0.1.0
 x-lifecycle:
   status: historical

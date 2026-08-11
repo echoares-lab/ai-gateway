@@ -1,5 +1,5 @@
 # Machine-checked inventory for administrative and operational gateway routes.
-# Production ingress references: docs/ops/RUNBOOK.md and docs/CICD_PHASE2_CD_K3S.md.
+# Production ingress references: 01 Projects/AI-Gateway/Runbooks/RUNBOOK.md and 01 Projects/AI-Gateway/Specs/CICD_PHASE2_CD_K3S.md.
 routes:
   - {method: GET, path: /admin/teams, source: services/gateway-engine/admin_api.py, exposure: internal-ingress, auth: x-admin-key, boundary: "Traefik internal ingress; GATEWAY_ENGINE_ADMIN_KEY"}
   - {method: POST, path: /admin/teams, source: services/gateway-engine/admin_api.py, exposure: internal-ingress, auth: x-admin-key, boundary: "Traefik internal ingress; GATEWAY_ENGINE_ADMIN_KEY"}

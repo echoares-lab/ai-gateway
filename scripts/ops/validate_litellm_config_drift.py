@@ -49,7 +49,7 @@ def compare_configs(yaml_config: dict[str, Any], postgres_snapshot: dict[str, An
     Postgres wins for an explicitly listed model setting override. All other
     model state must match the Git-tracked YAML. Non-model settings such as
     routing and MCP topology remain YAML-authoritative and are documented in
-    ``docs/CONFIG_PROMOTION.md``.
+    ``01 Projects/AI-Gateway/Specs/CONFIG_PROMOTION.md``.
     """
 
     yaml_models = _model_map(yaml_config, "yaml")

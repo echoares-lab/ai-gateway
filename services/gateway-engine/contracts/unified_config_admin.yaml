@@ -1,0 +1,71 @@
+# Machine-checked contract for the C-SVC-4 read-only configuration snapshot API.
+#
+# This file is the single source of truth for the values asserted by
+# services/gateway-engine/test_gateway_engine_unified_config_contract.py. It
+# lives in the service tree (not docs/) so the gateway-engine unit-test image
+# carries it and the assertions actually execute in Gate A/B.
+#
+# Prose rationale, projection allowlists, and drift semantics live in the vault:
+#   01 Projects/AI-Gateway/Specs/UNIFIED_CONFIG_ADMIN_API_CONTRACT.md
+#
+# Unlike the other two contracts in this directory, GET /admin/config is
+# currently implemented (C-SVC-4 task 3 / #637).
+schema: config-snapshot.v1
+implementation_state: implemented
+source: services/gateway-engine/api/unified_config_admin.py
+
+route: /admin/config
+method: GET
+flag: UNIFIED_CONFIG_ADMIN_API_ENABLED
+flag_default: false
+management_scope: config:read
+# Every response, including every error, carries this header.
+cache_control: no-store
+
+limits:
+  deployed_config_input_bytes: 1048576   # 1 MiB, before parsing
+  serialized_response_bytes: 65536       # 64 KiB, before returning
+  collection_entries: 256
+  string_characters: 512
+  nesting_depth: 8
+  live_source_total_timeout_seconds: 5
+  live_source_connect_timeout_seconds: 2
+
+http_errors:
+  disabled: {status: 404, code: config_snapshot_disabled}
+  auth_unavailable: {status: 503, code: config_snapshot_unavailable}
+  auth_required: {status: 401, code: config_snapshot_auth_required}
+  scope_forbidden: {status: 403, code: config_snapshot_scope_forbidden}
+  invalid_request: {status: 400, code: config_snapshot_invalid_request}
+  too_large: {status: 502, code: config_snapshot_too_large}
+
+# Reported inside an HTTP 200 snapshot; they set `status: degraded`.
+source_errors:
+  - source_missing
+  - source_invalid
+  - source_timeout
+  - source_unavailable
+
+snapshot_fields:
+  - schema
+  - status
+  - generated_at
+  - sources
+  - models
+  - routing
+  - mcp
+  - environment
+  - validation
+  - drift
+  - errors
+
+# `digest` is present if and only if source `status` is `ok`; it is omitted for
+# missing, invalid, and unavailable sources.
+digest_present_when_source_status: ok
+
+# Only these router settings are projected; unknown settings are omitted.
+routing_allowlist: [routing_strategy, cooldown_time, allowed_fails, num_retries]
+
+registration_required:
+  - docs/openapi/gateway-engine.yaml
+  - docs/ADMIN_ENDPOINT_EXPOSURE.yaml

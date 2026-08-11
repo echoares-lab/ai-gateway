@@ -4,7 +4,7 @@
 deep-smoke.sh shells out to this helper (stdin -> JSON payload, exit code ->
 pass/fail/warn) so the response-shape assertions live in testable Python
 instead of fragile pure-bash JSON parsing. See
-docs/superpowers/specs/2026-07-17-staging-deep-smoke-design.md.
+01 Projects/AI-Gateway/Specs/2026-07-17-staging-deep-smoke-design.md.
 
 Exit code convention for every ``check-*`` subcommand:
     0 = pass, 1 = fail, 2 = warn (soft — non-fatal unless the caller runs
@@ -294,7 +294,7 @@ def check_jobs_payload(payload: object, allowlist: list[str] | None = None) -> C
     already treats as ok). This check adds the Job-specific assertion the
     design calls for: any bootstrap/migration Jobs *present* (e.g. a
     Postgres bootstrap PreSync hook, ``litellm-migrate``, ``gateway-migrate``
-    — see docs/CICD_PHASE2_STAGING.md) must not be in a ``Failed`` state.
+    — see 01 Projects/AI-Gateway/Specs/CICD_PHASE2_STAGING.md) must not be in a ``Failed`` state.
 
     Jobs are often one-shot and may already be pruned by the time an
     operator runs deep-smoke, so *no* Jobs present is not a failure. A Job
