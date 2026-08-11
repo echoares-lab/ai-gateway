@@ -7,34 +7,16 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
+import yaml
 
-_CONTRACT = {
-    "route": "/v1/config/generate",
-    "scope": "config:generate",
-    "flag": "CONFIG_GENERATION_API_ENABLED",
-    "clients": ("cursor", "claude-code", "codex", "gemini", "openai-sdk", "all"),
-    "profiles": ("cursor", "claude-code", "codex", "gemini", "openai-sdk"),
-    "defaults": {
-        "base_url": "http://localhost:4000",
-        "key_var": "AI_GATEWAY_KEY",
-        "org": "echoares",
-        "workspace": "core",
-        "team": "eng",
-        "repo": "my-repo",
-        "env": "dev",
-    },
-    "limits": {"request_bytes": 8192, "response_bytes": 65536, "idempotency_key_chars": 128},
-    "errors": {
-        "disabled": (404, "config_generation_disabled"),
-        "unauthorized": (401, "config_auth_required"),
-        "forbidden": (403, "config_scope_forbidden"),
-        "invalid": (400, "invalid_request"),
-        "request_too_large": (413, "request_too_large"),
-        "response_too_large": (413, "response_too_large"),
-        "duplicate_same": (200, None),
-        "duplicate_different": (409, "idempotency_conflict"),
-    },
-}
+# contracts/client_config_generation.yaml is the single source of truth for
+# these values and ships inside the service tree, so this file is always
+# present — including in the gateway-engine unit-test image.
+CONTRACT_PATH = Path(__file__).parent / "contracts" / "client_config_generation.yaml"
+_CONTRACT = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
+_CONTRACT["clients"] = tuple(_CONTRACT["clients"])
+_CONTRACT["profiles"] = tuple(_CONTRACT["profiles"])
+_CONTRACT["errors"] = {name: (item["status"], item["code"]) for name, item in _CONTRACT["errors"].items()}
 
 _SAFE_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _KEY_VAR = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
@@ -176,18 +158,39 @@ def test_hard_limits_and_failure_matrix_are_contractual():
     assert _CONTRACT["errors"]["duplicate_different"] == (409, "idempotency_conflict")
 
 
-def test_contract_document_requires_openapi_and_rollback_without_routes():
-    # The gateway unit-test image intentionally copies only the service tree;
-    # run this assertion locally when the repository docs are available.
+def test_contract_requires_registration_and_a_disabled_default():
+    assert _CONTRACT["method"] == "POST"
+    assert _CONTRACT["route"] == "/v1/config/generate"
+    assert _CONTRACT["implementation_state"] == "implemented"
+    assert _CONTRACT["registered_in"] == [
+        "docs/openapi/gateway-engine.yaml",
+        "docs/ADMIN_ENDPOINT_EXPOSURE.yaml",
+    ]
+    # The shell generator is the rollback path while the flag is off.
+    assert _CONTRACT["rollback_command"] == "gen-client-config.sh"
+    assert _CONTRACT["flag_default"] is False
+
+
+def test_contract_source_module_registers_the_documented_route():
+    source = Path(__file__).parent / "api" / "config_generation.py"
+    assert source.exists(), f"{_CONTRACT['source']} is missing"
+    text = source.read_text(encoding="utf-8")
+    assert f'@router.post("{_CONTRACT["route"]}")' in text
+
+
+def test_registered_exposure_matches_the_contract_route():
+    """The exposure inventory must agree with the contract on route and scope."""
     path = Path(__file__)
     if len(path.parents) < 3:
         pytest.skip("repository docs are not mounted in the service test image")
-    document = path.parents[2] / "docs" / "CLIENT_CONFIG_GENERATION_CONTRACT.md"
-    if not document.exists():
+    inventory = path.parents[2] / "docs" / "ADMIN_ENDPOINT_EXPOSURE.yaml"
+    if not inventory.exists():
         pytest.skip("repository docs are not mounted in the service test image")
-    text = document.read_text()
-    assert "POST /v1/config/generate" in text
-    assert "docs/openapi/gateway-engine.yaml" in text
-    assert "gen-client-config.sh" in text
-    assert "CONFIG_GENERATION_API_ENABLED=false" in text
-    assert "No implementation" in text or "do not add a route" in text
+    routes = yaml.safe_load(inventory.read_text(encoding="utf-8"))["routes"]
+    entry = next(
+        (r for r in routes if r["path"] == _CONTRACT["route"] and r["method"] == _CONTRACT["method"]),
+        None,
+    )
+    assert entry is not None, f"{_CONTRACT['route']} is missing from ADMIN_ENDPOINT_EXPOSURE.yaml"
+    assert f"{_CONTRACT['flag']}=true" in entry["auth"]
+    assert f"x-management-scope={_CONTRACT['scope']}" in entry["auth"]

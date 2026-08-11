@@ -1,9 +1,12 @@
 from pathlib import Path
 
-import pytest
+import yaml
 
-_PATH = Path(__file__)
-CONTRACT = _PATH.parents[2] / "docs" / "UNIFIED_CONFIG_ADMIN_API_CONTRACT.md" if len(_PATH.parents) >= 3 else None
+# contracts/unified_config_admin.yaml is the single source of truth for these
+# values and ships inside the service tree, so this file is always present —
+# including in the gateway-engine unit-test image.
+CONTRACT_PATH = Path(__file__).parent / "contracts" / "unified_config_admin.yaml"
+CONTRACT = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
 
 HEALTHY_INPUT = {
     "litellm_yaml": "model_list:\n  - model_name: gpt-safe\n    litellm_params:\n      model: openai/gpt-safe\nrouter_settings:\n  routing_strategy: simple-shuffle\n",
@@ -57,19 +60,15 @@ SECRET_LOOKING_INPUT = {
 
 
 def test_contract_defines_exact_boundary():
-    if CONTRACT is None or not CONTRACT.exists():
-        pytest.skip("repository docs are not mounted in the service test image")
-    text = CONTRACT.read_text(encoding="utf-8")
-    for required in (
-        "GET /admin/config",
-        "config-snapshot.v1",
-        "UNIFIED_CONFIG_ADMIN_API_ENABLED=false",
-        "x-management-scope: config:read",
-        "64 KiB",
-        "1 MiB",
-        "Cache-Control: no-store",
-    ):
-        assert required in text
+    assert CONTRACT["method"] == "GET"
+    assert CONTRACT["route"] == "/admin/config"
+    assert CONTRACT["schema"] == "config-snapshot.v1"
+    assert CONTRACT["flag"] == "UNIFIED_CONFIG_ADMIN_API_ENABLED"
+    assert CONTRACT["flag_default"] is False
+    assert CONTRACT["management_scope"] == "config:read"
+    assert CONTRACT["cache_control"] == "no-store"
+    assert CONTRACT["limits"]["serialized_response_bytes"] == 64 * 1024
+    assert CONTRACT["limits"]["deployed_config_input_bytes"] == 1024 * 1024
 
 
 def test_contract_fixture_names_are_stable():
@@ -84,18 +83,15 @@ def test_contract_fixture_names_are_stable():
 
 
 def test_contract_describes_the_current_route_and_invalid_request_error():
-    if CONTRACT is None or not CONTRACT.exists():
-        pytest.skip("repository docs are not mounted in the service test image")
-    text = CONTRACT.read_text(encoding="utf-8")
-
-    assert "currently implemented" in text
-    assert "config_snapshot_invalid_request" in text
-    assert "future read-only" not in text
+    assert CONTRACT["implementation_state"] == "implemented"
+    assert CONTRACT["http_errors"]["invalid_request"] == {
+        "status": 400,
+        "code": "config_snapshot_invalid_request",
+    }
 
 
 def test_contract_defines_digest_presence_invariant():
-    if CONTRACT is None or not CONTRACT.exists():
-        pytest.skip("repository docs are not mounted in the service test image")
-    text = CONTRACT.read_text(encoding="utf-8")
-
-    assert "`digest` is present if and only if source `status` is `ok`" in text
+    # `digest` is present if and only if source `status` is `ok`; it is omitted
+    # for missing, invalid, and unavailable sources.
+    assert CONTRACT["digest_present_when_source_status"] == "ok"
+    assert "digest" not in CONTRACT["source_errors"]

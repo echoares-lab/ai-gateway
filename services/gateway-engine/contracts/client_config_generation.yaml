@@ -1,0 +1,55 @@
+# Machine-checked contract for the C-SVC-2 client configuration generation API.
+#
+# This file is the single source of truth for the values asserted by
+# services/gateway-engine/test_gateway_engine_client_config_contract.py. It lives
+# in the service tree (not docs/) so the gateway-engine unit-test image carries
+# it and the assertions actually execute in Gate A/B.
+#
+# Prose rationale, failure narrative, and child sequencing live in the vault:
+#   01 Projects/AI-Gateway/Specs/CLIENT_CONFIG_GENERATION_CONTRACT.md
+#
+# Status: implemented by services/gateway-engine/api/config_generation.py. The
+# route stays disabled by default and is not enabled in production.
+schema_version: client-config.v1
+implementation_state: implemented
+source: services/gateway-engine/api/config_generation.py
+
+route: /v1/config/generate
+method: POST
+scope: config:generate
+flag: CONFIG_GENERATION_API_ENABLED
+flag_default: false
+
+# Operators fall back to the shell generator while the API is disabled.
+rollback_command: gen-client-config.sh
+registered_in:
+  - docs/openapi/gateway-engine.yaml
+  - docs/ADMIN_ENDPOINT_EXPOSURE.yaml
+
+clients: [cursor, claude-code, codex, gemini, openai-sdk, all]
+# Rendered order for `client: all`; must match the shell script's order.
+profiles: [cursor, claude-code, codex, gemini, openai-sdk]
+
+defaults:
+  base_url: http://localhost:4000
+  key_var: AI_GATEWAY_KEY
+  org: echoares
+  workspace: core
+  team: eng
+  repo: my-repo
+  env: dev
+
+limits:
+  request_bytes: 8192
+  response_bytes: 65536
+  idempotency_key_chars: 128
+
+errors:
+  disabled: {status: 404, code: config_generation_disabled}
+  unauthorized: {status: 401, code: config_auth_required}
+  forbidden: {status: 403, code: config_scope_forbidden}
+  invalid: {status: 400, code: invalid_request}
+  request_too_large: {status: 413, code: request_too_large}
+  response_too_large: {status: 413, code: response_too_large}
+  duplicate_same: {status: 200, code: null}
+  duplicate_different: {status: 409, code: idempotency_conflict}

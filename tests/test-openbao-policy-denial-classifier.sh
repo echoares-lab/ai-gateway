@@ -2,18 +2,15 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-staging_doc="${repo_root}/docs/CICD_PHASE2_STAGING.md"
-classifier="$({
-  sed -n \
-    -e '/^require_permission_denied() {$/,/^}$/p' \
-    -e '/^require_denied_with_valid_token() {$/,/^}$/p' \
-    "${staging_doc}"
-})"
-eval "${classifier}"
+# shellcheck source=lib/openbao-policy-denial-classifier.sh
+source "${repo_root}/tests/lib/openbao-policy-denial-classifier.sh"
 
-grep -Fqx 'GATEWAY_ENGINE_OPENBAO_AUTH_MOUNT=kubernetes-k3s-01' "${staging_doc}"
-grep -Fqx 'gateway_service_account="gateway-engine-openbao"' "${staging_doc}"
-grep -Fqx 'openbao_auth_mount="kubernetes-k3s-01"' "${staging_doc}"
+# The staging identity must stay pinned to the GitOps manifest for the
+# ai-gateway-staging namespace; changing it is a deliberate, reviewed act.
+[[ "${OPENBAO_STAGING_NAMESPACE}" == "ai-gateway-staging" ]]
+[[ "${OPENBAO_GATEWAY_SERVICE_ACCOUNT}" == "gateway-engine-openbao" ]]
+[[ "${OPENBAO_AUTH_MOUNT}" == "kubernetes-k3s-01" ]]
+[[ "${OPENBAO_WORKLOAD_ROLE}" == "ai-gateway-staging-launcher-keys" ]]
 
 test_path="launcher-keys/policy-check/test"
 allowed_read_status=0
