@@ -120,7 +120,7 @@ Reference: ADR 0001 - Obsidian-First Centralized Documentation Model.
 |---|---|---|
 | Tier 1 — Static analysis & lint | Whole repo | No separate cap; counts toward the CI gate total |
 | Tier 2 — Unit | Whole repo, entire unit suite | **10 seconds** |
-| Tier 3 — Integration | Counts toward the CI gate total | *see open question below* |
+| Tier 3 — Integration | Per suite, inside the CI gate total | **45 seconds** |
 | Tier 4 — E2E (mocked) | Own job, not part of the PR gate | **60 seconds** per suite |
 | **CI gate total (Tiers 1–3)** | One PR run — the number CI actually enforces | **60 seconds** |
 
@@ -128,13 +128,12 @@ Notes:
 - Tier 4 E2E runs against the `CLIProxyAPI` mock in its own job and is **excluded** from the Tiers 1–3 gate total.
 - A suite exceeding its cap MUST be refactored or parallelized. Raising a cap requires a documented Policy Exception per Policy-Exceptions §2.
 
-> **OPEN — needs an owner decision (raised 2026-08-12).** The superseded text set
-> *both* "individual test suite ≤ 60s" and "Tiers 1–3 combined ≤ 60s". These cannot both
-> hold: if integration alone may consume 60s, the combined budget is already blown by
-> Tier 2. The combined 60s gate is recorded here as authoritative because it is the figure
-> CI enforces (CICD-Policy §1.1), leaving Tier 3 with
-> an implied ~50s sub-budget. Confirm that sub-budget or raise the gate total — do not
-> reintroduce a second standalone 60s figure.
+**Why 45s for Tier 3 (resolved 2026-08-13).** The superseded text set *both* "individual
+test suite ≤ 60s" and "Tiers 1–3 combined ≤ 60s", which cannot both hold — if integration
+alone may consume the full 60s, Tier 2's 10s already blows the combined budget. The combined
+gate is authoritative because it is the figure CI enforces
+(CICD-Policy §1.1), so Tier 3 gets the remainder:
+60s total − 10s unit − ~5s lint ≈ **45s**. Do not reintroduce a second standalone 60s figure.
 
 ## Automated Quality Gates
 
@@ -245,9 +244,10 @@ Co-authored-by: Reviewer Agent <reviewer@users.noreply.github.com>
 | `Git-Policy.md` | 1.0 | 2026-07-29 |
 | `Master-Policy.md` | 2.1 | 2026-08-12 |
 | `Secrets-Policy.md` | 3.1 | 2026-08-12 |
-| `Testing-Policy.md` | 1.1 | 2026-08-12 |
+| `Testing-Policy.md` | 1.2 | 2026-08-13 |
 
 <!-- END GENERATED — repo-specific directives may follow and are preserved. -->
+
 
 
 
