@@ -1,0 +1,22 @@
+# Master-Policy §1.6 migration backlog — pre-existing violations.
+# The CI gate fails on any file NOT listed here, so this file may only
+# ever SHRINK. Removing a line means that file was migrated to the vault.
+# Tracked in 02 Areas/Policies/Documentation-Migration-Roadmap.md
+.orchestrate/ops-cutover-subplan/BLOCKER.md
+.superpowers/sdd/escrow-task-2-report.md
+.superpowers/sdd/escrow-task-3-report.md
+.superpowers/sdd/escrow-task-4-report.md
+.superpowers/sdd/escrow-task-5-report.md
+.superpowers/sdd/model-task-1-report.md
+.superpowers/sdd/model-task-2-report.md
+.superpowers/sdd/model-task-3-report.md
+.superpowers/sdd/model-task-6-report.md
+.superpowers/sdd/model-whole-branch-review-fixes-report.md
+packages/repo-improvement-kit/.github/BRANCH_PROTECTION_POLICY.md
+packages/repo-improvement-kit/.github/pull_request_template.md
+packages/repo-improvement-kit/ADOPTION_GUIDE.md
+packages/repo-improvement-kit/AGENT_DISPATCH.template.md
+packages/repo-improvement-kit/REPO_IMPROVEMENT_APPENDIX.template.md
+packages/repo-improvement-kit/REPO_IMPROVEMENT_WORKFLOW.md
+packages/repo-improvement-kit/TESTING_AND_PROMOTION_POLICY.md
+requirements/README-ci-runner.md

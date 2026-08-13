@@ -1,0 +1,14 @@
+name: policy-check
+
+# Calls the shared Master-Policy gates (CICD-Policy §1.1). Definition lives in
+# echoares-lab/dev-policies/.github/workflows/reusable-homelab-policy-check.yml —
+# edit it there, not here, so all repos move together.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  policy:
+    uses: echoares-lab/dev-policies/.github/workflows/reusable-homelab-policy-check.yml@master

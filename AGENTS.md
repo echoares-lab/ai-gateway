@@ -1,514 +1,253 @@
-# AI Gateway — Agent Instructions
+<!-- BEGIN GENERATED — dev-policies/tooling/scripts/render-agents-md.py. Do not edit by hand. -->
 
-See the [API Documentation System](docs/API_DOCUMENTATION.md) for technical endpoint references.
-**Mandatory**: Any new API endpoints created or discovered must be documented in `docs/openapi/` and registered in the system.
-See [`docs/process/REPO_IMPROVEMENT_APPENDIX.md`](docs/process/REPO_IMPROVEMENT_APPENDIX.md) and [`docs/TESTING.md`](docs/TESTING.md).
+# Agent Directives — `ai-gateway`
 
-These instructions apply to **any AI coding agent** working in this repo
-(Claude Code, Cursor Agent, Codex, Amp, or similar). For deep-dive detail
-on architecture and commands, see `CLAUDE.md`. For operational procedures,
-see [`docs/ops/RUNBOOK.md`](docs/ops/RUNBOOK.md) (root stub: `RUNBOOK.md`).
+> **Generated from the Obsidian vault. Do not edit this region by hand** — run `dev-policies/tooling/scripts/render-agents-md.py --repo . --profile multi-service-stack`. Edits here are overwritten and CI fails on drift.
 
-Repo improvement and PR processing are governed by:
-- [`docs/process/REPO_IMPROVEMENT_WORKFLOW.md`](docs/process/REPO_IMPROVEMENT_WORKFLOW.md) — process rules (discovery, approval, claim, PR, merge, closeout).
-- [`docs/process/TESTING_AND_PROMOTION_POLICY.md`](docs/process/TESTING_AND_PROMOTION_POLICY.md) — gate definitions (A/B/C/D), risk tiers, parallel-agent isolation, and the new [Epic-Based Development and Release Policy](#epic-based-development-and-release-policy).
-- [`docs/process/REPO_IMPROVEMENT_APPENDIX.md`](docs/process/REPO_IMPROVEMENT_APPENDIX.md) — this repo's branch policy, environment slots, and test commands.
-- [`docs/process/AGENT_DISPATCH.md`](docs/process/AGENT_DISPATCH.md) — the copy-paste prompt agents run to claim an issue and ship it.
-- [`packages/repo-improvement-kit/`](packages/repo-improvement-kit/) — portable source for the above; see its `README.md` for deployment.
+**Operative authority:** `/home/dev/obsidian-vault/02 Areas/Policies/Master-Policy.md` and its linked policy notes. On any conflict between this file and the vault, **the vault wins** — this file is a rendering of it, not a second source of truth.
 
-**Roadmap vs candidates:** Claim work only from approved items in
-[`docs/ROADMAP.md`](docs/ROADMAP.md) (and their ready GitHub child issues).
-[`docs/FEATURE_CANDIDATES.md`](docs/FEATURE_CANDIDATES.md) is an unapproved
-inventory — do not claim or implement from it until an item is promoted into
-the roadmap and atomic issues are opened.
+**Repo profile:** `multi-service-stack`
+
+## Context load order
+
+1. This file.
+2. `/home/dev/obsidian-vault/01 Projects/<Project>/Overview.md` — check its `## Policy Exceptions` section.
+3. The specific vault policy, when you need detail beyond what is rendered here.
 
 ---
 
-## Stack at a glance
+## Preserving Code Integrity & Documentation
 
-All services run as Docker containers — no `requirements.txt` or `package.json`
-to install. Docker must be running before any `docker compose` commands.
+*Source: `Master-Policy.md` — do not edit here.*
 
-| Service | Port | Role |
-|---------|------|------|
-| gateway-engine | 4000 | Public entry point — all client traffic |
-| litellm | 4001 | Model proxy UI |
-| cliproxy | 8317 | OAuth relay to LLM providers |
-| cpa-manager | 18317 | Usage analytics UI |
-| langfuse-web | 3000 | Observability UI |
-| postgres | 5432 | LiteLLM DB (localhost only) |
-| redis | 6379 | Cache (localhost only) |
+- **No Blanket Deletions:** Never delete existing docstrings, structural comments, or unit tests unless explicitly authorized by user intent.
+- **Strict Conditional Scoping:** When modifying conditional logic or adding experimental features, ensure logic is strictly scoped and tested against all execution paths.
+- **Maintain Public API Signatures:** Do not alter function signatures or parameter keys without searching and updating every invocation site in the codebase.
 
-Port 4000 is the optional local `docker-compose.yml` stack (not production — see
-[`CLAUDE.md`](CLAUDE.md)); it isn't running by default. Dev stacks use slots (port 4010, 4020, …).
+## Diagnostic Integrity & Log Analysis
+
+*Source: `Master-Policy.md` — do not edit here.*
+
+- **Empirical Diagnostics Only:** Never form a diagnostic hypothesis for a runtime failure without fetching and reading the un-truncated error log.
+- **No Masking Symptoms:** Resolving errors by catching silent exceptions, swallowing errors, returning dummy fallback data, or commenting out failing assertions is **strictly forbidden**.
+
+## Verification & Definition of Done
+
+*Source: `Master-Policy.md` — do not edit here.*
+
+- **Mandatory Runtime Verification:** Editing code is NOT completing the task. No task is resolved until build, test, or lint commands are executed and verified with `0` exit code.
+- **Acknowledge Command Failures:** Never gloss over build timeouts or permission errors. Acknowledge and resolve every build issue explicitly.
+
+## Mandatory MCP Tool Suite & Subagent Equipping Governance
+
+*Source: `Master-Policy.md` — do not edit here.*
+
+- **Local Agent Memory (`memory`)**: Every repository MUST include `.mcp.json` with `@modelcontextprotocol/server-memory` configured to write to `/home/dev/.local/share/agent-memory/memory.json`. Agents MUST log facts, user preferences, and key architectural entities for sub-second retrieval across sessions.
+- **Obsidian Vault Memory (`obsidian`)**: Every repository MUST include `.mcp.json` with Obsidian MCP configured (`obsidian-mcp-server` or `mcp-obsidian`). Agents MUST read/write specs, ADRs, and project documentation in `/home/dev/obsidian-vault/01 Projects/<Project>/`.
+- **New Repository Scaffolding Mandate**: Whenever creating, scaffolding, or cloning a new repository, agents MUST automatically create a root `.mcp.json` file preconfigured with `memory` and `obsidian` MCP servers.
+- **`.mcp.json` is LOCAL and gitignored; `.mcp.json.example` is COMMITTED (resolved 2026-08-12).** The working `.mcp.json` carries a live `OBSIDIAN_API_KEY` and MUST NOT be committed — §4.1 forbids it, and it is gitignored in every repository. This directly contradicted the CI gate in CICD-Policy §1.1.1, which required CI to verify a file CI can never legitimately see: the gate was unsatisfiable without leaking a credential, and `.mcp.json` is in fact untracked in 11 of 13 repositories.
+  - **What is committed:** `.mcp.json.example` — same server definitions, every credential replaced by a `<PLACEHOLDER>`. This is what CI verifies.
+  - **What is not:** the working `.mcp.json`, supplied per-machine from the secret manager.
+  - **The scaffolding requirement is unchanged** — a repository must still be *able* to run `memory` and `obsidian`; the example file is the committed evidence that it is configured to.
+- **Documentation MCPs (`context7`, `cf-docs`)**: Agents MUST query `context7` for open-source library/framework specs and `cf-docs`/`cf-bindings` for Cloudflare platform specs before generating implementation code.
+- **Database & Persistence MCPs (`postgres`, `redis`)**: Agents MUST use `postgres` and `redis` MCP tools to inspect table schemas, indexes, constraints, and cache keys instead of writing manual debug scripts.
+- **Infra & DevOps MCPs (`kubernetes`, `docker`, `homarr`)**: Agents MUST use `kubernetes` and `docker` MCP tools for checking container builds, pod statuses, and service health during development.
+- **Subagent MCP Equipping**: Every spawned subagent (`invoke_subagent` / `define_subagent`) MUST be initialized with `enable_mcp_tools: true` so background agents can leverage the full MCP suite (including `memory` and `obsidian`).
+
+#### 1.5.1 Memory Tiering & Retrieval Protocol
+- **Tier 1 (Fast Operational Memory - `memory`)**: Use `@modelcontextprotocol/server-memory` (JSON Knowledge Graph) for user preferences, tech stack choices, active sprint goals, entity relationships, and sub-second key-value lookups.
+- **Tier 2 (Persistent Vault Documentation - `obsidian`)**: Use Obsidian Markdown notes for long-term project specs, ADRs (`0001-title.md`), Runbooks, API contract specs, and post-mortems.
+
+## Repository Documentation Minimalism
+
+*Source: `Master-Policy.md` — do not edit here.*
+
+Reference: ADR 0001 - Obsidian-First Centralized Documentation Model.
+
+- **Vault is the only documentation authority.** All project documentation — epics, task backlogs, ADRs, specs, architecture, runbooks, research reports, design/implementation plans, and status notes — lives **exclusively** in `/home/dev/obsidian-vault/01 Projects/<Project>/`.
+- **Permitted markdown in a code repository (exhaustive list):**
+  1. `README.md` — short orientation only: what the project is, how to run/test it, and a pointer to its vault folder. Not a place for architecture, epics, or status.
+  2. `AGENTS.md` — the **canonical, version-controlled** agent-directive file (vendor-neutral: Claude, AGY, Codex, Cursor). This is the only directive file committed to a repository.
+     - `CLAUDE.md` and other tool-specific directive files are **thin pointers to `AGENTS.md`**, kept **untracked and gitignored** (adopted 2026-08-10). They are local convenience only; never duplicate policy text into them, or the two copies drift.
+  3. `CHANGELOG.md`, `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md` where the project genuinely needs them.
+  4. Format/interface notes physically adjacent to the artifacts they describe (e.g. a data directory's `README.md` documenting a file schema consumed by code), kept to the minimum needed to use the files.
+  5. `TOOLING.md` — the human-audited tooling/dependency surface for the repository (amended 2026-08-12). This is deliberate fleet infrastructure, not drift: it follows a shared template, is indexed across repos, and pairs with the `sbom.yml` workflow. Native manifests remain the dependency source of truth; `TOOLING.md` is the audit view over them.
+  6. Files under `.github/` that GitHub itself consumes or that document repository settings (e.g. `BRANCH_PROTECTION_POLICY.md`, issue templates) — amended 2026-08-12.
+- **Prohibited in repositories:** `docs/` trees mirroring vault content, `TODO.md`, epic or sprint files, ADR folders, design/implementation plans, research reports, and status/progress documents. Agent tooling that defaults to writing plans or specs into the repo (e.g. `docs/superpowers/plans/`) MUST be redirected to the project's vault folder.
+- **No "self-contained repo" exceptions.** Making a repo readable by agents lacking vault access is **not** a valid justification — agents have vault access, and duplication reproduces exactly the copy-drift ADR 0001 exists to prevent. Any pre-existing exception of this kind is revoked; migrate the content to the vault and delete the repo copy.
+- **Vendored / upstream repositories are exempt.** Forks or vendored copies of third-party projects (currently `CLIProxyAPI`, `Cli-Proxy-API-Management-Center`) keep their upstream documentation in-repo: migrating it fights every upstream merge and destroys provenance. Only *locally authored* project documentation for such repos goes to the vault.
+- **Code- and CI-consumed markdown is not documentation.** Files read at runtime, asserted by tests, served by an application, or targeted by an alert `runbook_url` are application/interface artifacts and stay in the repo (e.g. AI-Gateway's `docs/openapi/` served by `docs-server`; K3s-Cluster's four alert-linked runbooks; Cloudflare-Access-Automation's OpenAPI artifact and test fixtures). Where such a file must also exist in the vault, keep **one** authority and make the other a pointer stub — never two maintained copies.
+  - **Clarified 2026-08-12:** `docs/runbooks/` and `docs/openapi/` are permitted **by path**, so this stops being re-litigated per file. A runbook qualifies when an alert's `runbook_url` (or equivalent live consumer) points at it — a runbook nothing links to is documentation and belongs in the vault.
+- **Migration rule:** when removing documentation from a repo, **move** it into the vault (preserving content and history in the commit message), never delete outright.
+
+## Modern Toolchain & Language Guidelines
+
+*Source: `Coding-Standards-Policy.md` — do not edit here.*
+
+### 2.1 Python (Modern Toolchain Mandate: `uv` & `ruff`)
+- **Runtime Target:** Python 3.12+.
+- **Mandatory Package & Environment Manager (`uv`):** Use **`uv`** (`uv pip`, `uv venv`, `uv sync`, `uv run`) for ultra-fast dependency resolution and virtual environment management. Traditional `pip` and `poetry` are deprecated.
+- **Nexus PyPI Index Mandate:** All `uv` operations MUST target the local Nexus repository index at `https://nexus.infra.plexplease.com/repository/pypi-group/simple` via global `~/.config/uv/uv.toml` or repository-level `uv.toml`. *(Corrected 2026-08-12: this previously read `pypi-all`, which returns HTTP 404. Verified live — `pypi-group` returns 200.)*
+- **Mandatory Formatter & Linter (`ruff`):** Use **`ruff check .`** and **`ruff format .`** for linting and code formatting.
+- **Type Annotations:** Full type hinting (`typing` / Python 3.12 generic syntax).
+- **Data Models:** Use Pydantic v2 for data parsing, schema validation, and config loading.
+- **Database Access:** Async ORM or Repository pattern (`SQLAlchemy async` / `tortoise-orm`). Synchronous database calls in async routes are strictly prohibited.
+
+### 2.2 TypeScript / Node.js (Modern Toolchain: `bun` & `biome`)
+- **Runtime Target:** Node.js 22 LTS or **`bun`**.
+- **Package Manager:** Prefer **`bun`** or `pnpm` for fast dependency resolution.
+- **Imports & Modules:** ESM imports only (`import ... from '...'`). CommonJS `require()` is forbidden unless interfacing with legacy scripts.
+- **Formatter & Linter:** **`Biome`** or ESLint configured with strict zero-warning enforcement.
+- **State & Validation:** Use `Zod` or `TypeBox` for API payload and environment variable validation.
+- **Async Pattern:** Standardize on `async`/`await` over chained raw promises or callback handlers.
+
+### 2.3 Go (Golang)
+- **Runtime Target:** Go 1.22+.
+- **Formatter & Linter:** `gofmt -s` and `golangci-lint run`.
+- **Project Structure:** Follow standard Go project layout (`cmd/`, `internal/`, `pkg/`).
+- **Error Handling:** Check `if err != nil` explicitly. Never ignore returned errors (`_ = func()`).
+- **Concurrency Safety:** Always pass `context.Context` as the first argument in long-running or network functions for timeout propagation.
 
 ---
 
-## Environment requirements
-
-- `.env` must exist (copy from `.env.example`); it is gitignored — never commit it
-- `~/.cliproxy/config.yaml` and `~/.cli-proxy-api/` must exist for cliproxy volume mounts
-- On a remote server: open SSH port forwards before OAuth login (see [`docs/ops/RUNBOOK.md`](docs/ops/RUNBOOK.md))
-
----
-
-## ⚠️ The non-negotiable rule
-
-**Never edit files in the main checkout (`/home/dev/repos/ai-gateway`) directly.**
-
-All development must happen in an isolated worktree with its own dev stack slot. Real
-production and staging run on k3s-01, not this host — the main checkout must stay clean
-because it's what Gate D (`git pull origin main`) and epic-closeout tooling operate
-against, and because a dirty main checkout blocks pulling in the latest `main` for the
-next session. This is enforced by convention, not by tooling — agents must follow it.
-
----
-
-## Development workflow
-
-Every session follows this sequence. Do not skip steps. This workflow is designed to align with the [Epic-Based Development and Release Policy](#epic-based-development-and-release-policy) in [`docs/process/TESTING_AND_PROMOTION_POLICY.md`](docs/process/TESTING_AND_PROMOTION_POLICY.md) and the detailed worktree instructions in [`docs/process/WORKTREES.md`](docs/process/WORKTREES.md).
-
-### Step 1 — Create a feature worktree
-
-```bash
-# Always branch off main
-mkdir -p /home/dev/worktrees
-git checkout main
-git worktree add /home/dev/worktrees/ai-gateway-<feature> -b feat/<feature>
-ln -s /home/dev/repos/ai-gateway/.env /home/dev/worktrees/ai-gateway-<feature>/.env
-cd /home/dev/worktrees/ai-gateway-<feature>
-```
-
-### Step 2 — Start an isolated dev stack
-
-```bash
-# Find a free slot first
-./dev-env.sh list
-
-# Start your slot (1, 2, 3, …  — slot 0 is the optional local stack, reserved)
-./dev-env.sh start 1
-```
-
-Dev slots map to ports:
-| Slot | gateway-engine | litellm UI | cliproxy |
-|------|-----------|------------|----------|
-| 1 | :4010 | :4011 | :8327 |
-| 2 | :4020 | :4021 | :8337 |
-
-### Step 3 — Make changes (hot-reload is automatic)
-
-- `services/gateway-engine/main.py` edits → uvicorn reloads in ~1 second (no action needed)
-- `Dockerfile` or pip dependency changes → `./dev-env.sh rebuild <slot>`
-
-### Step 4 — Test after each significant change (Gate A)
-
-Run unit tests inside the dev gateway-engine container or via Make:
-
-```bash
-docker exec aidev1-gateway-engine-1 pytest test_gateway_engine*.py -v
-# or locally without a running stack:
-make test-unit
-```
-
-All unit tests must pass before continuing. Fix failures before moving on.
-
-For mock integration during development (Gate B):
-
-```bash
-make test-mock    # in-memory ASGI; no compose / no OAuth
-```
-
-### Step 5 — Commit checkpoints
-
-Commit before risky changes and at logical stopping points — not just at the end.
-This keeps session history recoverable.
-
-```bash
-git add -p
-git commit -m "feat(scope): short imperative description"
-```
-
-See [Commit message format](#commit-message-format) below.
-
-### Step 6 — Pre-PR verification (Gates A + B)
-
-Before opening a PR, run the fast local tier (mirrors required CI):
-
-```bash
-make test-fast    # lint + unit + mock integration
-```
-
-For **high-risk** changes (auth, `litellm-config.yaml`, compose, cliproxy), also run Gate C
-(recommended; CI does not require it to merge):
-
-```bash
-make test-e2e     # real OAuth stack + smoke subset
-# or: gh pr edit <num> --add-label run-e2e   # triggers CI real-provider-e2e
-```
-
-Resolve all failures before merging. Do not proceed with a broken dev stack.
-
-### Step 7 — Open a PR to main (required)
-
-**Never push directly to main.** Open a PR so CI runs and leaves a review trail.
-
-```bash
-gh pr create --base main --head feat/<feature> \
-  --title "feat(scope): description" \
-  --body "$(cat <<'EOF'
-## Summary
-- What changed and why
-
-## Test plan
-Risk level: medium
-
-### Gate A + B (required)
-- [ ] `make test-fast` pass (lint, unit, mock integration)
-
-### Gate C (high-risk — recommended, opt-in in CI)
-- [ ] `make test-e2e` or PR label `run-e2e`
-
-### Gate D (post-merge — not pre-merge)
-- [ ] Record in closeout after merge to main
-
-🤖 Generated with Claude Code
-EOF
-)"
-```
-
-Wait for required CI checks to pass:
-- `lint-and-syntax`, `unit-tests`, `multi-repo-isolation`, `mock-integration`
-
-If `main` moved since your last green CI (e.g. a dependency PR merged), rebase first —
-see [`docs/process/WORKTREES.md`](docs/process/WORKTREES.md) and [`docs/process/TESTING_AND_PROMOTION_POLICY.md`](docs/process/TESTING_AND_PROMOTION_POLICY.md) for detailed rebase guidance in an epic-based workflow.
-
-Then merge:
-
-```bash
-gh pr merge --merge --auto   # or --squash; use manual --merge if auto-merge is disabled
-git checkout main
-git pull origin main
-```
-
-### Step 8 — Gate D: verify production after merge
-
-Real production runs on k3s-01, not this host. The
-[`production-health-heartbeat.yml`](../.github/workflows/production-health-heartbeat.yml) workflow runs
-automatically on every push to `main` — it hits `https://ai.plexplease.com` (k8s
-production) directly with a health check, a models-list check, and a smoke completion
-per model. No manual local action is required.
-
-Check the workflow run (or its job summary) for the commit that merged your PR; if any
-check failed, investigate and fix before the session ends. Record the result in the
-issue closeout.
-
-(There is no local "stable stack" to smoke-test on this host — the optional
-`docker-compose.yml` stack, if you ever bring it up manually, is not production.)
-
-### Step 9 — Clean up (after PR merge only)
-
-**When:** Run cleanup only after the PR is merged to `main` and Gate D passes (Step 8).
-Do not tear down the worktree or dev stack while the PR is still open — you may need
-to push fixes or rebase.
-
-**Closeout checklist:**
-
-```bash
-# 1. Stop the isolated dev stack (use your claimed slot, not 0)
-./dev-env.sh stop <slot>
-
-# 2. Remove the feature worktree from the main repo checkout
-cd /home/dev/repos/ai-gateway
-git worktree remove /home/dev/worktrees/ai-gateway-<feature>
-
-# 3. Delete the local feature branch (only after merge)
-git branch -d feat/<feature>
-
-# 4. Verify nothing is left behind
-git worktree list
-./dev-env.sh list
-```
-
-**If `git worktree remove` fails** (dirty tree, uncommitted changes, or running containers):
-
-```bash
-# Commit or stash changes in the feature worktree first
-cd /home/dev/worktrees/ai-gateway-<feature>
-git status
-git stash push -m "cleanup-stash"   # or commit and push if still needed for the PR
-
-# Force-stop the dev stack if containers are still running
-./dev-env.sh stop <slot>
-
-# Retry removal; use --force only when the directory is clean but metadata is stale
-cd /home/dev/repos/ai-gateway
-git worktree remove /home/dev/worktrees/ai-gateway-<feature>
-# git worktree remove --force /home/dev/worktrees/ai-gateway-<feature>  # last resort
-
-git worktree prune
-```
-
-**Coordinator / parent agent:** When dispatching subagents, verify cleanup before
-closing the parent epic or session: `git worktree list` shows only the stable checkout,
-`./dev-env.sh list` shows no orphaned slot for the claim, and the issue closeout
-comment records the cleanup.
-
----
-
-## Parallel agents, rebase, and stacking
-
-When multiple agents work the same repo concurrently, enforce **one issue = one agent = one slot = one worktree**. For a full explanation of the workflow, including dependencies and rebasing, refer to [`docs/process/WORKTREES.md`](docs/process/WORKTREES.md) and the [Epic-Based Development and Release Policy](#epic-based-development-and-release-policy) in [`docs/process/TESTING_AND_PROMOTION_POLICY.md`](docs/process/TESTING_AND_PROMOTION_POLICY.md).
-
-### Slot and claim rules
-
-- Run `./dev-env.sh list` **before** `./dev-env.sh start <slot>` — never use slot 0.
-- Record slot, worktree path, branch, and a unique `Claim-ID` in the issue claim comment.
-- `Claim-ID` must identify the **agent session**, not just the GitHub account
-  (e.g. `Claim-ID: cursor-epic1-2-20260606T143000Z`).
-
-### Branching with dependencies
-
-| Situation | Branch from |
-|-----------|-------------|
-| No open dependency, or dependency already merged to `main` | `main` |
-| Dependency PR is open and stable; your issue explicitly stacks on it | The dependency feature branch (e.g. `feat/epic-1-1`) |
-
-**Before claiming:** Poll dependency state — issue closed, or `gh pr view <num> --json state,mergedAt`.
-
-```bash
-gh issue view <dep-issue> --json state,closed
-gh pr list --repo echoares-lab/ai-gateway --head feat/<dep-branch> --json state,mergedAt
-```
-
-Do not start implementation on a stacked branch until the dependency PR is reviewable
-and CI-green unless the issue explicitly allows parallel draft work.
-
-### Rebase after a dependency merges
-
-When your branch was stacked on a dependency that has since merged to `main`, rebase
-onto current `main` **before** enabling merge (and after CI on the dependency PR completes):
-
-```bash
-cd /home/dev/worktrees/ai-gateway-<feature>
-git fetch origin
-git rebase origin/main
-# resolve conflicts, then:
-git add <resolved-files>
-git rebase --continue
-make test-fast    # re-verify after conflict resolution
-git push --force-with-lease origin feat/<feature>
-```
-
-Re-run `make test-fast` after any conflict resolution. Example: Epic 1.2 rebased onto
-`main` after Epic 1.1 merged, then force-pushed with `--force-with-lease`.
-
-### Hotspot serialization
-
-If two issues touch the same hotspot (e.g. `services/gateway-engine/**`,
-`litellm-config.yaml`), **serialize** them:
-
-- Declare `Depends on: #N` in the issue, or
-- Stack the second PR on the first branch until the first merges, then rebase onto `main`.
-
-Do not let two agents edit the same hotspot without an explicit dependency or stack order.
-
-### CI flakes and merge fallback
-
-- If CI `mock-integration` fails on infra (timeouts, runner issues) but local Gate B passes,
-  run `make test-mock` in the feature worktree and note the result in the PR thread.
-- Auto-merge may be disabled on the repo. If `gh pr merge --auto` does nothing, merge
-  manually once required checks are green:
-
-```bash
-gh pr checks <num> --watch
-gh pr merge <num> --merge
-```
-
-### Stable worktree hygiene
-
-Gate D runs from `/home/dev/repos/ai-gateway` on `main`. Before `git pull origin main`:
-
-```bash
-cd /home/dev/repos/ai-gateway
-git status    # must be clean — no local edits on stable
-git pull origin main
-```
-
-Never leave uncommitted changes in the stable worktree; they block pulls and Gate D.
-
----
-
-## Test commands reference
-
-| Gate | Command | When |
-|------|---------|------|
-| A — unit | `make test-unit` (gateway-engine `-n auto` + policy-engine) | After each significant change |
-| A — lint | `make lint` | Before commit / push |
-| B — mock integration | `make test-mock` or `make test-fast` | Before PR; required CI parity |
-| C — real providers | `make test-e2e` or label `run-e2e` | Opt-in only (high-risk changes) |
-| D — production smoke | Automated `production-health-heartbeat` workflow (hits k8s prod directly) | After merge to main |
-| Full integration | `./dev-env.sh test <slot>` | When Gate C needs broader coverage |
-| YAML validation | `python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"` | After editing litellm-config.yaml |
-
-Optional pre-push hook: `make lint && make test-unit` (see `.githooks/pre-push`).
-
----
-
-## Commit message format
-
-The repo uses [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-<type>(<scope>): <short imperative description>
-```
-
-| Type | Use for |
-|------|---------|
-| `feat` | New capability |
-| `fix` | Bug fix |
-| `docs` | Documentation only |
-| `chore` | Maintenance, deps, tooling |
-| `refactor` | Code restructure, no behaviour change |
-| `test` | Test additions/changes |
-
-Examples from this repo:
-```
-feat(observability): add Prometheus metrics endpoint to gateway-engine
-fix(reliability): discriminate sync-models probe failures by HTTP status code
-docs: update stale AGENTS/WORKTREES/RUNBOOK to reflect current state
+## Test Time Caps
+
+*Source: `Testing-Policy.md` — do not edit here.*
+
+**This table is the only place test time caps are defined.** Master-Policy §2.1 and CICD-Policy §1.1 point here rather than restating a number — previously the same two numbers appeared with four different scopes across those documents.
+
+| Tier | Scope of the cap | Cap |
+|---|---|---|
+| Tier 1 — Static analysis & lint | Whole repo | No separate cap; counts toward the CI gate total |
+| Tier 2 — Unit | Whole repo, entire unit suite | **10 seconds** |
+| Tier 3 — Integration | Counts toward the CI gate total | *see open question below* |
+| Tier 4 — E2E (mocked) | Own job, not part of the PR gate | **60 seconds** per suite |
+| **CI gate total (Tiers 1–3)** | One PR run — the number CI actually enforces | **60 seconds** |
+
+Notes:
+- Tier 4 E2E runs against the `CLIProxyAPI` mock in its own job and is **excluded** from the Tiers 1–3 gate total.
+- A suite exceeding its cap MUST be refactored or parallelized. Raising a cap requires a documented Policy Exception per Policy-Exceptions §2.
+
+> **OPEN — needs an owner decision (raised 2026-08-12).** The superseded text set
+> *both* "individual test suite ≤ 60s" and "Tiers 1–3 combined ≤ 60s". These cannot both
+> hold: if integration alone may consume 60s, the combined budget is already blown by
+> Tier 2. The combined 60s gate is recorded here as authoritative because it is the figure
+> CI enforces (CICD-Policy §1.1), leaving Tier 3 with
+> an implied ~50s sub-budget. Confirm that sub-budget or raise the gate total — do not
+> reintroduce a second standalone 60s figure.
+
+## Automated Quality Gates
+
+*Source: `CICD-Policy.md` — do not edit here.*
+
+Every Pull Request and commit MUST pass the following automated CI quality gates before code can be merged:
+1. **MCP Scaffolding Gate:** Verification that root **`.mcp.json.example`** exists and defines the `memory` (`@modelcontextprotocol/server-memory`) and `obsidian` (`obsidian-mcp-server` / `mcp-obsidian`) servers. **Corrected 2026-08-12:** this gate previously named `.mcp.json`, which is gitignored in every repo because it carries a live `OBSIDIAN_API_KEY` — CI could never see it, so the gate was unsatisfiable without violating §4.1. See Master-Policy §1.5.
+2. **Static Analysis & Linting:** Code formatting and zero-warning lint checks (`ruff`, `biome`, `gofmt`).
+3. **Security & Secret Scanning:** `gitleaks` over the checked-out tree, using a repo-local `.gitleaks.toml`, on every push and PR — **and in the Obsidian vault on the same footing**. Scope, allowlist discipline, and the sensitive-non-secret rules are defined in Secrets-Policy §7.
+4. **Automated Test Matrix:** Execution of Unit and Integration test suites (Tiers 1–3). **Time caps are defined once in Testing-Policy §3.1** — do not restate a number here.
+5. **Build Validation:** Compilation check of container images or binary packages.
+
+## Authorized Artifact Repository
+
+*Source: `CICD-Policy.md` — do not edit here.*
+
+- **Mandatory Container Registry:** All container images across all projects MUST be published exclusively to the local **Nexus Registry**. Nexus exposes two Docker endpoints with different roles (clarified 2026-08-10 during the MLflow deployment):
+  - **Push (hosted repo):** `nexus-docker.infra.plexplease.com` — the writable endpoint; all `docker push` operations target this host, and in-cluster deployment manifests reference it (with the `nexus-docker-pull` imagePullSecret).
+  - **Pull-through (group repo):** `nexus-registry.infra.plexplease.com` — read-only aggregation over the hosted repo + upstream proxies. Pushing to a group endpoint is a Nexus PRO feature and is rejected on our OSS install ("Deploying to groups is a PRO-licensed feature").
+- **Binary Packages & Helm Charts:** Staged exclusively in the local Nexus Repository (`https://nexus.infra.plexplease.com`).
+- Use of external public registries (e.g. Docker Hub, GHCR) for finished project images is strictly prohibited without an explicit project policy exception.
+
+## OpenBao Pathing & Metadata Standard
+
+*Source: `Secrets-Policy.md` — do not edit here.*
+
+### 2.1 KV-v2 Secret Path Taxonomy
+All KV-v2 secret paths in OpenBao MUST follow this exact taxonomy:
+
+`secret/data/agents/{agent_type}/{agent_id}/{environment}/`
+
+- **`agent_type`**:
+  - `autonomous`: Unattended background workers, cron jobs, K3s pod workloads, CI/CD pipelines.
+  - `interactive`: Local developer coding agents (AGY, Codex, Cursor, Claude Code, Aider), interactive CLI tools.
+- **`environment`**:
+  - `prod`: Production cluster and live service workloads.
+  - `staging`: Staging test environments.
+  - `homelab`: Local homelab dev nodes and testing environments.
+  - `global`: Environment-agnostic developer tools and global credentials.
+
+### 2.2 Standardized `_metadata` Payload Schema
+Every secret payload stored in OpenBao MUST include a standard `_metadata` JSON object alongside credential keys:
+
+```json
+{
+  "api_key": "[SECRET_VALUE]",
+  "_metadata": {
+    "owner": "team-or-handle",
+    "repository": "https://github.com/org/repo-name",
+    "allowed_agent_roles": ["k3s-01-external-secrets", "hardware-collector"],
+    "max_ttl_seconds": 3600,
+    "migrated_from": "kv/data/prod/platform/cloudflare",
+    "created_at": "2026-08-11T00:00:00Z"
+  }
+}
 ```
 
 ---
 
-## What NOT to do
+## Commit
 
-- ❌ **Do not push directly to `main`** — always via PR with CI passing
-- ❌ **Do not edit files in the stable worktree** (`/home/dev/repos/ai-gateway`) during development
-- ❌ **Do not create feature worktrees under `/home/dev/repos/` or inside the repo** (use `/home/dev/worktrees/ai-gateway-<feature>` — see [`docs/process/WORKTREES.md`](docs/process/WORKTREES.md))
-- ❌ **Do not skip unit tests** after changes to `services/gateway-engine/main.py`
-- ❌ **Do not hardcode API keys** in `litellm-config.yaml` — use `os.environ/CLIPROXY_API_KEY`
-- ❌ **Do not set `CACHE_ENABLED=true`** in production — LiteLLM's auth-aware cache is preferred
-- ❌ **Do not force-push** to `main`
-- ❌ **Do not merge with uncommitted changes** in the worktree
-- ❌ **Do not touch `~/.cli-proxy-api/` directly** — dev stacks seed their own isolated auth volume
-- ❌ **Do not remove a worktree or stop its dev stack before the PR merges** — keep the environment for fixes and rebase
-- ❌ **Do not share a dev slot** between concurrent agents without an explicit handoff in the issue thread
-- ❌ **Do not leave the stable worktree dirty** — it blocks `git pull` and Gate D verification
+*Source: `Git-Policy.md` — do not edit here.*
 
----
+### 2.1 Conventional Commits Specification
+All commit messages MUST follow the **Conventional Commits** format in present imperative tense:
 
-## Linting
+```
+<type>(<scope>): <short description in present tense>
+
+[optional body explaining rationale]
+```
+
+#### Allowed Types:
+- **`feat`**: A new feature for the user or system.
+- **`fix`**: A bug fix.
+- **`refactor`**: Code change that neither fixes a bug nor adds a feature.
+- **`docs`**: Documentation changes only.
+- **`test`**: Adding missing tests or correcting existing tests.
+- **`chore`**: Maintenance, build configs, or dependency updates.
+- **`security`**: Security patches, secret scrubbing, or permission updates.
+
+### 2.2 Agent Commit Identification & Co-Authorship
+When an AI agent (AGY, Codex, Cursor, Claude) creates a commit, it MUST configure appropriate git identity and include co-authorship metadata:
 
 ```bash
-pip install ruff                                                   # one-time install
-ruff check services/gateway-engine/main.py                            # lint
-ruff format --check services/gateway-engine/main.py                   # format check
-bash -n cliproxy-setup.sh                                         # shell syntax
-python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"  # YAML
+git config user.name "AGY Agent"
+git config user.email "agy-agent@users.noreply.github.com"
 ```
 
-Pre-commit hooks (install once: `pip install pre-commit && pre-commit install`)
-cover ruff, YAML validation, and hardcoded API key detection automatically.
+For collaborative edits between human and agent (or subagents):
+```git
+feat(ai-gateway): implement quota-aware routing logic
 
-Optional pre-push hook (Gate A fast checks): `git config core.hooksPath .githooks`
-runs `make lint && make test-unit` before each push.
-
-CI (GitHub Actions `.github/workflows/ci.yml`) uses tiered gates on every push/PR to `main`:
-
-- **Required — Fast (A):** `lint-and-syntax`, `unit-tests` (image build is inside `unit-tests`)
-- **Required — Conditional:** `mock-integration`, `multi-repo-isolation`, `credential-prober` (path-filtered)
-- **Advisory (Gate C — opt-in):** `real-provider-e2e` via `run-e2e` label or `workflow_dispatch` only
-- **Advisory:** `nightly-integration`, `production-health-heartbeat`, `hotspot-e2e-reminder`
-
-See `docs/TESTING.md`, `docs/process/TESTING_AND_PROMOTION_POLICY.md`, and `docs/process/REPO_IMPROVEMENT_APPENDIX.md` for full gate mapping.
-
----
-
-## Regression prevention guardrails
-
-| Risk | Guard |
-|------|-------|
-| Broken YAML config | Pre-commit hook + CI `lint-and-syntax` |
-| Hardcoded secrets committed | `.githooks/prevent-hardcoded-keys.sh` |
-| Lint regressions | `ruff` in CI on every push |
-| Gateway Engine logic broken | Unit tests (`test_gateway_engine*.py`) in CI |
-| Multi-repo isolation broken | `multi-repo-isolation` job in CI |
-| Wire-format / routing broken | `mock-integration` job (0 skips) |
-| Real provider regressions | Gate C: opt-in via `run-e2e` label or nightly schedule |
-| Post-merge production drift | Gate D: automated `production-health-heartbeat` workflow against k8s prod |
-| Main checkout accidentally modified during dev | Worktree isolation (step 1) |
-| Direct push bypasses review | Branch protection + PR requirement |
-| Image version drift | Pinned in docker-compose files; upgrade via PR + test |
-| Cross-user cache hits | `CACHE_ENABLED=false` default in gateway-engine |
-| Two agents on same slot | Slot registry in claim comments; `./dev-env.sh list` |
-| Orphaned worktrees / occupied slots | Post-merge cleanup checklist (Step 9); coordinator verifies `git worktree list` |
-| Dirty stable worktree blocks Gate D | Never edit stable checkout; `git status` before `git pull` |
-| Stacked PR conflicts after dependency merge | Rebase onto `origin/main`, `make test-fast`, `--force-with-lease` push |
-
----
-
-## Kubernetes / k3s deployment
-
-The stack also runs on the `k3s-01` cluster via ArgoCD/Kustomize. The design specs live in
-this repo; the authoritative manifests live in the external `k3s-01` GitOps repo.
-
-- `docs/CICD_PHASE2_CD_K3S.md` — **production** deployment (namespace `ai-gateway`,
-  OpenBao `prod/workloads/ai-gateway/*`, ingress `gateway.infra.plexplease.com`).
-- `docs/CICD_PHASE2_STAGING.md` — **staging** deployment (namespace `ai-gateway-staging`,
-  OpenBao `staging/workloads/ai-gateway/*`, ingress `gateway-staging.infra.plexplease.com`,
-  `litellm_staging` + `langfuse_staging` databases, `:latest`/dev images, and the
-  staging → prod promotion flow).
-- `scripts/ops/generate-staging-configmap.sh` renders `litellm-config.yaml` into the staging
-  `litellm-config` ConfigMap (namespace `ai-gateway-staging`) and validates the embedded YAML.
-
----
-
-## Architecture (brief)
-
-```
-Client → gateway-engine:4000 → litellm:4000 (internal) → cliproxy:8317
-                                                         ├── Anthropic (Claude OAuth)
-                                                         ├── OpenAI (Codex OAuth)
-                                                         ├── Antigravity (Gemini OAuth)
-                                                         ├── xAI (Grok OAuth)
-                                                         └── Moonshot (Kimi OAuth)
+Co-authored-by: AGY Agent <agy-agent@users.noreply.github.com>
+Co-authored-by: Reviewer Agent <reviewer@users.noreply.github.com>
 ```
 
-The `gateway-engine` is the real entry point. It handles format translation
-(Responses API → Chat Completions, Gemini CLI format, Claude Messages API)
-and adds the `AI-Gateway:` model prefix. See `CLAUDE.md` for full detail.
+---
 
 ---
 
-## Cursor Cloud specific instructions
+## Provenance
 
-The Docker-based workflow above (`docker compose`, `./dev-env.sh`, `./cliproxy-setup.sh`,
-worktrees/slots) is the canonical dev path, but the Cursor Cloud VM has **no Docker daemon**
-and **no provider OAuth** (`~/.cli-proxy-api/`). The full stack additionally needs the external
-CLIProxy fork image from Nexus (built by the `CLIProxyAPI` repo). So the Docker full stack and
-**Gate C** (`make test-e2e`) are **not runnable here** — don't try to run them in the cloud VM.
-(Gate D is fully automated post-merge against k8s prod and isn't manually run anywhere.)
+| Policy | Version | Updated |
+|---|---|---|
+| `CICD-Policy.md` | 1.2 | 2026-08-12 |
+| `Coding-Standards-Policy.md` | 1.1 | 2026-08-12 |
+| `Git-Policy.md` | 1.0 | 2026-07-29 |
+| `Master-Policy.md` | 2.1 | 2026-08-12 |
+| `Secrets-Policy.md` | 3.1 | 2026-08-12 |
+| `Testing-Policy.md` | 1.1 | 2026-08-12 |
 
-What *does* run here is a Python-only local workflow that covers lint, both test tiers, and the
-flagship `gateway-engine` service:
+<!-- END GENERATED — repo-specific directives may follow and are preserved. -->
 
-- The update script provisions a venv at `.venv-ci/` (Python 3.12). Prefix commands with
-  `.venv-ci/bin/` (or activate it). Deps mirror `requirements/ci-runner-venv.txt` plus
-  `redis[asyncio]` and `pytest-xdist`.
-- **Lint (Gate A):** `.venv-ci/bin/ruff check services/gateway-engine/` and
-  `.venv-ci/bin/ruff format --check services/gateway-engine/` (this is what `make lint` runs).
-- **Mock integration (Gate B):** `.venv-ci/bin/python -m pytest tests/integration/ -m mock -v`
-  — in-memory ASGI, no Docker/OAuth. Equivalent to `make test-mock`.
-- **Unit tests (Gate A):** `make test-unit` builds a Docker image and won't work here. Run the
-  same suite directly instead: `cd services/gateway-engine && /workspace/.venv-ci/bin/python -m
-  pytest test_gateway_engine*.py test_token_analytics.py -n auto -v`.
-- Other non-Docker `make test-fast` pieces also work via the venv:
-  `scripts/policy/validate_policy_profiles.py`, `pytest tests/test_sync_models_probe_classify.py`,
-  `pytest tests/test_litellm_compose_migration.py`. The `docker compose ... config` half of
-  `test-compose-config` needs Docker and is skipped here.
-- **Run the flagship service locally (no Docker):** from `services/gateway-engine`,
-  `LITELLM_URL=<upstream> CACHE_ENABLED=false POLICY_ENGINE_ENABLED=false /workspace/.venv-ci/bin/uvicorn main:app --host 127.0.0.1 --port 4000`.
-  It needs a LiteLLM-compatible upstream (real one is unavailable here; use a small mock that
-  answers `GET /v1/models` and `POST /v1/chat/completions`). Redis is optional and only used when
-  `CACHE_ENABLED=true`. The gateway adds the `AI-Gateway:` prefix on `/v1/models`, strips it before
-  forwarding, and translates `/v1/messages` (Claude) and `/v1/responses` (Codex) to Chat Completions.
+
+
