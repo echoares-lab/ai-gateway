@@ -35,3 +35,22 @@ repos:
         language: system
         files: litellm-config.yaml$
         pass_filenames: false
+
+  # ── Master-Policy gates (added 2026-08-12) ─────────────────────────────
+  # The AGENTS.md drift check lives here rather than in CI because it needs the
+  # Obsidian vault, which GitHub-hosted runners cannot reach.
+  - repo: local
+    hooks:
+      - id: doc-minimalism
+        name: Master-Policy 1.6 documentation minimalism
+        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/check-doc-minimalism.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: agents-md-drift
+        name: AGENTS.md matches the vault
+        entry: bash -c 'python3 /home/dev/repos/dev-policies/tooling/scripts/render-agents-md.py --all --check'
+        language: system
+        pass_filenames: false
+        always_run: true

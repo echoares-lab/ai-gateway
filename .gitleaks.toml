@@ -1,0 +1,39 @@
+# Secret scanning config (Secrets-Policy §7, CICD-Policy §1.1 gate 3).
+#
+# CI runs `gitleaks dir` over the checked-out tree; local pre-commit runs the
+# gitleaks hook with this same file, so the two never disagree.
+
+[extend]
+useDefault = true
+
+# --- Sensitive non-secret information -----------------------------------
+[[rules]]
+id = "operator-home-ip"
+description = "Operator residential IP must come from env/secrets, never source"
+regex = '''173\.48\.47\.166'''
+
+[[rules]]
+id = "internal-hostname-with-credentialed-scheme"
+description = "Internal endpoints with embedded credentials (user:pass@host)"
+regex = '''[a-z]+://[^/\s:]+:[^/\s@]+@[a-zA-Z0-9.-]+\.(infra\.)?plexplease\.com'''
+
+[allowlist]
+description = "Test fixtures — verified 2026-08-12"
+paths = [
+  '''\.gitleaks\.toml''',
+]
+regexes = [
+  # Redaction tests assert these values are NEVER emitted by the admin API.
+  # Their presence in the suite is the point — removing them removes the test.
+  '''sk-do-not-return''',
+  '''sk-valid-key-12345''',
+  '''abcdefgh12345678''',
+  # Obviously-fake alphabet-sequence PATs in the config-snapshot redaction test.
+  '''ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890''',
+  '''ghp_ZYXWVUTSRQPONMLKJIHGFEDCBA9876543210''',
+  # Structurally valid but meaningless JWT: header {"alg":"HS256"}, payload
+  # {"sub":"model"}, literal "signature1234" — not a real signature.
+  '''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiJtb2RlbCJ9\.signature1234''',
+  # RFC 6455 §1.3's published example Sec-WebSocket-Key ("the sample nonce").
+  '''dGhlIHNhbXBsZSBub25jZQ==''',
+]

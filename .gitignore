@@ -29,3 +29,6 @@ __pycache__/
 .venv-ci/
 .venv/
 ai-gateway-python.cdx.json
+
+# Tool-specific agent directive pointer (Master-Policy §1.6) — untracked
+.cursorrules

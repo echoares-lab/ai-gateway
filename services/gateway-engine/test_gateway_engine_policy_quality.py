@@ -1,5 +1,7 @@
 """Unit tests for eval-quality reorder layer (issue 38-19 Phase 5b)."""
 
+from datetime import datetime, timedelta, timezone
+
 from core.policy.evaluate import evaluate
 from core.policy.fallback import evaluate_fallback_layers
 from core.policy.profile_store import ProfileStore
@@ -19,13 +21,19 @@ from core.policy.schemas import (
 )
 
 
-def _record(score: float, *, observed_at: str = "2026-08-01T00:00:00Z", samples: int = 50):
+def _record(score: float, *, observed_at: str | None = None, samples: int = 50):
+    # `observed_at` must default to a *relative* timestamp. _record_usable()
+    # rejects a record older than min(config.window_days, window_days), so a
+    # hardcoded date silently expires and turns these fixtures unusable — which
+    # made the reorder assertions start failing once the pinned date aged past
+    # the 7-day window. Callers testing staleness pass an explicit old value.
     return {
         "version": "eval-quality.v1",
         "score": score,
         "sample_count": samples,
         "confidence": 0.9,
-        "observed_at": observed_at,
+        "observed_at": observed_at
+        or (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace("+00:00", "Z"),
         "window_days": 7,
     }
 
