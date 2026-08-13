@@ -127,6 +127,17 @@ jobs:
           VENDORED = {"CLIProxyAPI", "Cli-Proxy-API-Management-Center"}
 
 
+          def is_policy_kit(repo: Path) -> bool:
+              """Identify dev-policies by its CONTENT, not its directory name.
+
+              Directory name is not a reliable identity: a git worktree is named after the
+              branch, and `hardware`'s checkout directory does not match its repo name
+              (`server-partpicker`). Name-based detection silently dropped the kit's
+              product exemption and reported 91 false violations inside a worktree.
+              """
+              return (repo / "schemas" / "policy.schema.json").is_file() and (repo / "policies" / "baseline").is_dir()
+
+
           def tracked_markdown(repo: Path):
               try:
                   out = subprocess.run(["git", "-C", str(repo), "ls-files", "*.md", "*.markdown"],
@@ -136,13 +147,13 @@ jobs:
               return [l for l in out.splitlines() if l.strip()]
 
 
-          def is_permitted(repo_name: str, rel: str) -> bool:
+          def is_permitted(is_kit: bool, rel: str) -> bool:
               if Path(rel).name in PERMITTED_BASENAMES:
                   return True
               for pat in PERMITTED_PATTERNS:
                   if re.search(pat, rel):
                       return True
-              if repo_name == "dev-policies" and re.match(DEVPOLICIES_PRODUCT, rel):
+              if is_kit and re.match(DEVPOLICIES_PRODUCT, rel):
                   return True
               # Format notes adjacent to the artifacts they describe: a README.md inside a
               # data/asset directory is explicitly allowed by §1.6.
@@ -169,7 +180,8 @@ jobs:
                   print(f"SKIP {name}: vendored upstream fork, exempt per Master-Policy §1.6")
                   return 0
 
-              violations = [f for f in tracked_markdown(repo) if not is_permitted(name, f)]
+              kit = is_policy_kit(repo)
+              violations = [f for f in tracked_markdown(repo) if not is_permitted(kit, f)]
 
               # Baseline: the pre-existing migration backlog, tracked in
               # Documentation-Migration-Roadmap. The gate blocks NEW violations immediately;
