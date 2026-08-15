@@ -17,10 +17,20 @@
 #
 # Install:  pre-commit install --hook-type pre-commit --hook-type pre-push
 repos:
+# rev tracks the ruff that `make lint` and CI actually run. Neither pins a
+# version -- the Makefile calls bare `ruff` and .github/workflows/ci.yml
+# installs `ruff` unpinned via requirements/ci-runner-venv.txt -- so this rev is
+# the one place a version is written down, and it must be bumped to whatever
+# `ruff --version` resolves to when they disagree. The old v0.3.5 pin predated
+# the hooks ever running; it and the current ruff format code differently, so
+# leaving it would have made `pre-commit run --all-files` and `make lint`
+# permanently revert each other.
 - repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: v0.3.5
+  rev: v0.15.15
   hooks:
-  - id: ruff
+  # `ruff-check`, not `ruff`: as of the pinned rev the bare `ruff` id is a
+  # deprecated legacy alias that pre-commit reports as "ruff (legacy alias)".
+  - id: ruff-check
     args:
     - --fix
     stages: [pre-commit]
