@@ -140,7 +140,7 @@ gate is authoritative because it is the figure CI enforces
 *Source: `CICD-Policy.md` — do not edit here.*
 
 Every Pull Request and commit MUST pass the following automated CI quality gates before code can be merged:
-1. **MCP Scaffolding Gate — RETIRED 2026-08-14.** MCP servers are now configured once at user scope in `~/.claude.json`; repositories carry no `.mcp.json` or `.mcp.json.example`, so there is nothing in a checkout for CI to verify. Remove this gate from workflows and drop the `.mcp.json` checks from `scripts/setup_git_hooks.sh`. Rationale — including why per-repo scaffolding never delivered its guarantee — is in Master-Policy §1.5.
+1. **MCP Scaffolding Gate — RETIRED 2026-08-14; guard relocated, clarified 2026-08-15.** MCP servers are configured once at user scope in `~/.claude.json`; repositories carry no `.mcp.json` or `.mcp.json.example`, so there is nothing in a checkout for CI to verify and the gate is removed from workflows. What retirement dropped is the requirement to **have** the file — it never licensed re-introducing one. The original instruction to "drop the `.mcp.json` checks from `scripts/setup_git_hooks.sh`" was accurate only about *where* the check lives: the guard moved rather than disappeared. It is now the `no-mcp-json` hook in each repo's `.pre-commit-config.yaml`, which fails any commit that stages `.mcp.json` or `.mcp.json.example`; `scripts/setup_git_hooks.sh` no longer writes hook bodies inline and only runs `pre-commit install` (reference implementation: `hardware`). A checkout whose hooks are not installed has no protection at all — running `pre-commit install` per clone and per worktree is what makes the ban real. Rationale — including why per-repo scaffolding never delivered its guarantee — is in Master-Policy §1.5.
 2. **Static Analysis & Linting:** Code formatting and zero-warning lint checks (`ruff`, `biome`, `gofmt`).
 3. **Security & Secret Scanning:** `gitleaks` over the checked-out tree, using a repo-local `.gitleaks.toml`, on every push and PR — **and in the Obsidian vault on the same footing**. Scope, allowlist discipline, and the sensitive-non-secret rules are defined in Secrets-Policy §7.
 4. **Automated Test Matrix:** Execution of Unit and Integration test suites (Tiers 1–3). **Time caps are defined once in Testing-Policy §3.1** — do not restate a number here.
@@ -247,8 +247,3 @@ Co-authored-by: Reviewer Agent <reviewer@users.noreply.github.com>
 | `Testing-Policy.md` | 1.2 | 2026-08-13 |
 
 <!-- END GENERATED — repo-specific directives may follow and are preserved. -->
-
-
-
-
-
