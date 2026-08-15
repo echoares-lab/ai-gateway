@@ -1,56 +1,96 @@
+# Every commit-time gate here is pinned to `stages: [pre-commit]`. Without it a
+# hook runs in EVERY installed stage, so installing the pre-push hook would
+# silently re-run all of them on every push -- work already done at commit
+# time.
+#
+# This file is the SINGLE source of truth for local hooks. Gate A was reachable
+# only through .githooks/pre-push plus `git config core.hooksPath .githooks` --
+# and pre-commit refuses to install at all while core.hooksPath is set, which
+# is why none of the hooks below had ever actually run here. Gate A is now a
+# pre-push stage below and core.hooksPath is unset, so both stages work.
+#
+# .githooks/pre-push is left on disk but is no longer wired up; do NOT follow
+# its "Install: git config core.hooksPath .githooks" comment, which would
+# disable every hook in this file again. Deleting it is a follow-up.
+#
+# Install:  pre-commit install --hook-type pre-commit --hook-type pre-push
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.3.5
-    hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format
-
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
-    hooks:
-      - id: check-yaml
-      - id: end-of-file-fixer
-      - id: trailing-whitespace
-
-  - repo: local
-    hooks:
-      - id: validate-litellm-config
-        name: Validate litellm-config.yaml
-        entry: python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"
-        language: system
-        files: litellm-config.yaml$
-        pass_filenames: false
-
-      - id: prevent-hardcoded-api-keys
-        name: Prevent hardcoded API keys
-        entry: bash .githooks/prevent-hardcoded-keys.sh
-        language: system
-        files: ^(litellm-config\.yaml|services/gateway-engine/main\.py|services/credential-prober/.*\.py|docker-compose\.yml|docker-compose\.dev\.yml)$
-        pass_filenames: false
-
-      - id: validate-yaml-syntax
-        name: Validate YAML syntax in litellm-config.yaml
-        entry: bash .githooks/validate-yaml.sh
-        language: system
-        files: litellm-config.yaml$
-        pass_filenames: false
-
-  # ── Master-Policy gates (added 2026-08-12) ─────────────────────────────
-  # The AGENTS.md drift check lives here rather than in CI because it needs the
-  # Obsidian vault, which GitHub-hosted runners cannot reach.
-  - repo: local
-    hooks:
-      - id: doc-minimalism
-        name: Master-Policy 1.6 documentation minimalism
-        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/check-doc-minimalism.py
-        language: system
-        pass_filenames: false
-        always_run: true
-
-      - id: agents-md-drift
-        name: AGENTS.md matches the vault
-        entry: bash -c 'python3 /home/dev/repos/dev-policies/tooling/scripts/render-agents-md.py --all --check'
-        language: system
-        pass_filenames: false
-        always_run: true
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.3.5
+  hooks:
+  - id: ruff
+    args:
+    - --fix
+    stages: [pre-commit]
+  - id: ruff-format
+    stages: [pre-commit]
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.5.0
+  hooks:
+  - id: check-yaml
+    stages: [pre-commit]
+  - id: end-of-file-fixer
+    stages: [pre-commit]
+  - id: trailing-whitespace
+    stages: [pre-commit]
+- repo: local
+  hooks:
+  - id: validate-litellm-config
+    name: Validate litellm-config.yaml
+    entry: python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"
+    language: system
+    files: litellm-config.yaml$
+    pass_filenames: false
+    stages: [pre-commit]
+  - id: prevent-hardcoded-api-keys
+    name: Prevent hardcoded API keys
+    entry: bash .githooks/prevent-hardcoded-keys.sh
+    language: system
+    files: ^(litellm-config\.yaml|services/gateway-engine/main\.py|services/credential-prober/.*\.py|docker-compose\.yml|docker-compose\.dev\.yml)$
+    pass_filenames: false
+    stages: [pre-commit]
+  - id: validate-yaml-syntax
+    name: Validate YAML syntax in litellm-config.yaml
+    entry: bash .githooks/validate-yaml.sh
+    language: system
+    files: litellm-config.yaml$
+    pass_filenames: false
+    stages: [pre-commit]
+- repo: local
+  hooks:
+  - id: doc-minimalism
+    name: Master-Policy 1.6 documentation minimalism
+    entry: python3 /home/dev/repos/dev-policies/tooling/scripts/check-doc-minimalism.py
+    language: system
+    pass_filenames: false
+    always_run: true
+    stages: [pre-commit]
+  # Scoped to THIS repo (was --all, changed 2026-08-15). --all checked the
+  # drift state of all 13 repos in dev-policies/tooling/repos.yaml, so a commit
+  # here failed whenever any unrelated repo drifted -- it blocked two unrelated
+  # commits on the day it was changed. A hook can only gate the commit in front
+  # of it; the committer cannot fix another repo's AGENTS.md from here, so the
+  # failure is unactionable and trains people to reach for --no-verify. Fleet
+  # coverage comes from installing this same hook in every repo, each guarding
+  # its own file.
+  #
+  # No --profile: render-agents-md.py resolves it from dev-policies/tooling/
+  # repos.yaml, the single source of truth for repo shape, and errors out if
+  # this repo is missing there.
+  - id: agents-md-drift
+    name: AGENTS.md matches the vault
+    entry: python3 /home/dev/repos/dev-policies/tooling/scripts/render-agents-md.py --repo . --check
+    language: system
+    pass_filenames: false
+    always_run: true
+    stages: [pre-commit]
+  # The body of .githooks/pre-push, verbatim. pre-push, not
+  # pre-commit: it builds a container image and runs the unit suite (~1-2 min),
+  # which is too slow to pay on every commit.
+  - id: gate-a
+    name: Gate A fast checks (make lint + make test-unit)
+    entry: bash -c 'make lint && make test-unit'
+    language: system
+    pass_filenames: false
+    always_run: true
+    stages: [pre-push]
