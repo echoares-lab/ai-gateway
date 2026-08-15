@@ -32,3 +32,6 @@ ai-gateway-python.cdx.json
 
 # Tool-specific agent pointer; AGENTS.md is the canonical directive (Master-Policy 1.6)
 CLAUDE.md
+
+# Tool-specific agent directive pointer (Master-Policy §1.6) — untracked
+.cursorrules
