@@ -7,7 +7,7 @@ problem: |
   implemented or still in flight. Starting policy-engine service integration before
   these foundations land would produce stubbed state sources and premature contracts.
 why_now: |
-  docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md and docs/ROADMAP.md now formalize Epic #38
+  01 Projects/AI-Gateway/Specs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md and 01 Projects/AI-Gateway/Specs/ROADMAP.md now formalize Epic #38
   as planned-but-blocked. This issue tracks the explicit gate checklist.
 scope: |
   Track completion status of Phase 0 items. No implementation in this issue — child
@@ -20,7 +20,7 @@ acceptance:
   - [ ] Epic #38 Phase 1 child issues (38-2..38-4) remain unclaimed until gate clears
   - [ ] ROADMAP.md "Planned — blocked on Phase 0" section references this file
 dependencies:
-  - docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md
+  - 01 Projects/AI-Gateway/Specs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md
 parent_epic: "#38 Policy engine for routing & credential governance"
 github_issue: #119
 ---
@@ -31,7 +31,7 @@ Epic #38 **must not** enter Phase 1 implementation until every row in this table
 **Done** or **Waived** (with documented rationale). Schema design (38-1) and pool
 migration design (38-10) may proceed in parallel.
 
-Design reference: [docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md](../docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md)
+Design reference: `01 Projects/AI-Gateway/Specs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md`
 
 ## Gate checklist
 
@@ -53,7 +53,7 @@ Design reference: [docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md](../docs/POLICY_EN
 | Pool schema migration design | 38-10 | **Done** — `affinity_mode` includes `quota-aware`; see [38-10](./policy-engine-38-10-credential-pool-schema.md) |
 | Policy-engine stub scaffold | 38-2 | **Done** — `services/policy-engine/main.py`; see [38-02](./policy-engine-38-02-scaffold.md) |
 | Agent dispatch index | — | [policy-engine-dispatch.md](./policy-engine-dispatch.md) |
-| Design document | — | `docs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md` |
+| Design document | — | `01 Projects/AI-Gateway/Specs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md` |
 | Policy-engine stub service | 38-2 | Scaffold only; do not wire gateway-engine until P0-1..P0-3 minimum |
 
 ## Minimum gate for gateway-engine integration (38-4)

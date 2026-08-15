@@ -319,7 +319,7 @@ async def admin_quota_status(request: Request):
         provider = cred.get("provider", "")
         # Retired Gemini CLI tier + orphaned bare Gemini API-key auth files never
         # route production traffic; hide them from the display layer instead of
-        # confusing operators with dead-account rows (see docs/ROADMAP.md).
+        # confusing operators with dead-account rows (see 01 Projects/AI-Gateway/Specs/ROADMAP.md).
         if provider in _QUOTA_STATUS_HIDDEN_PROVIDERS:
             continue
         auth = auth_by_id.get(cred_id, {})

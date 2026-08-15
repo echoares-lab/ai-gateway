@@ -8,7 +8,7 @@ why_now: |
   Phase 5 optional. Fallback evaluator (38-8) and audit log (38-16) provide hooks;
   roadmap epic #37 defines the quality-loop direction.
 scope: |
-  - Design doc: docs/EVAL_DRIVEN_ROUTING.md
+  - Design doc: 01 Projects/AI-Gateway/Specs/EVAL_DRIVEN_ROUTING.md
   - Task categories, KPIs, signal sources, policy_json.eval schema sketch
   - Optional layer 5b placement in fallback evaluator (design only)
   - Phased implementation breakdown (5b–5d)
@@ -29,7 +29,7 @@ dependencies:
   - policy-engine-38-08-fallback-evaluator.md
   - issues/policy-engine-38-16-audit-log.md
 files:
-  - docs/EVAL_DRIVEN_ROUTING.md
+  - 01 Projects/AI-Gateway/Specs/EVAL_DRIVEN_ROUTING.md
   - issues/policy-engine-38-19-eval-routing.md
 claim_status: in-review
 blocks: []
@@ -44,7 +44,7 @@ github_issue: #138
 
 **Epic:** [#38](https://github.com/echoares-lab/ai-gateway/issues/38)  
 **Roadmap parent:** [#37](https://github.com/echoares-lab/ai-gateway/issues/37)  
-**Design:** [docs/EVAL_DRIVEN_ROUTING.md](../docs/EVAL_DRIVEN_ROUTING.md)
+**Design:** `01 Projects/AI-Gateway/Specs/EVAL_DRIVEN_ROUTING.md`
 
 ## Claim
 

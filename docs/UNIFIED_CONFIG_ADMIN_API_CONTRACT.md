@@ -3,8 +3,7 @@
 ## Purpose and source of truth
 
 This is the executable contract for C-SVC-4's currently implemented read-only
-configuration snapshot API. It consumes the approved [Unified Config Admin API
-Design](superpowers/specs/2026-08-01-unified-config-admin-api-design.md). Git is
+configuration snapshot API. It consumes the approved `01 Projects/AI-Gateway/Specs/2026-08-01-unified-config-admin-api-design.md`. Git is
 authoritative for structural configuration; the documented runtime model registry
 exception is authoritative for explicit model overrides. The pure builder remains
 the only component allowed to create `config-snapshot.v1`; the guarded adapter
@@ -26,7 +25,7 @@ owns fixed-source acquisition, authentication, and HTTP bounds.
 - Only `routing_strategy`, `cooldown_time`, `allowed_fails`, and `num_retries` are exposed from router settings.
 - MCP projection contains alias and transport kind only.
 - Production enablement, writes, reloads, GitOps promotion, policy mutation, team/key lifecycle, and UI changes are out of scope.
-- Any new endpoint must be documented in `docs/openapi/`, `docs/ADMIN_ENDPOINT_EXPOSURE.yaml`, and `docs/API_DOCUMENTATION.md`.
+- Any new endpoint must be documented in `docs/openapi/`, `docs/ADMIN_ENDPOINT_EXPOSURE.yaml`, and `01 Projects/AI-Gateway/Specs/API_DOCUMENTATION.md`.
 
 ## Route, authentication, and flag matrix
 
@@ -172,4 +171,4 @@ registry, and GitOps flow remain unchanged.
    including OpenAPI and exposure registration.
 
 The endpoint is registered in `docs/openapi/gateway-engine.yaml`,
-`docs/ADMIN_ENDPOINT_EXPOSURE.yaml`, and `docs/API_DOCUMENTATION.md`.
+`docs/ADMIN_ENDPOINT_EXPOSURE.yaml`, and `01 Projects/AI-Gateway/Specs/API_DOCUMENTATION.md`.

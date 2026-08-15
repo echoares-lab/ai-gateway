@@ -1108,7 +1108,7 @@ _PROVIDER_MODEL_SCOPE: dict[str, str] = {
 }
 
 # CLIProxy provider tags to exclude from /admin/quota/status entirely. `gemini-cli`
-# is the deployment's retired Gemini CLI OAuth tier (docs/ROADMAP.md "Gemini CLI
+# is the deployment's retired Gemini CLI OAuth tier (01 Projects/AI-Gateway/Specs/ROADMAP.md "Gemini CLI
 # retirement", issue #386); `gemini` covers legacy bare Gemini API-key auth files
 # that are not part of gateway routing. Antigravity Gemini OAuth credentials use
 # the distinct `antigravity` provider tag and are unaffected by this filter.

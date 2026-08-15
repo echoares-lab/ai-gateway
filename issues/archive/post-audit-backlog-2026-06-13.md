@@ -22,19 +22,19 @@ acceptance:
   - [ ] High/medium items split into atomic GitHub issues before agent claim
   - [ ] ROADMAP.md references this file
 dependencies:
-  - docs/ROADMAP.md
+  - 01 Projects/AI-Gateway/Specs/ROADMAP.md
   - scripts/create-security-hardening-epics.sh
 claim_status: not-claimable
 github_issue: null
 audit_ref: origin/main @ 50da01c (2026-06-13)
 ---
 
-> **ARCHIVED (historical only).** GitHub issues + `docs/ROADMAP.md` /
-> `docs/FEATURE_CANDIDATES.md` are the SSOT. Do not claim work from this file.
+> **ARCHIVED (historical only).** GitHub issues + `01 Projects/AI-Gateway/Specs/ROADMAP.md` /
+> `01 Projects/AI-Gateway/Specs/FEATURE_CANDIDATES.md` are the SSOT. Do not claim work from this file.
 >
 > **Superseded / done (do not reopen):** D-5, D-8, D-13; security-hardening epics
 > #305–#323; Stability Foundation track (#377). Remaining useful leftovers are
-> folded into `docs/FEATURE_CANDIDATES.md` under **C-AUD-***.
+> folded into `01 Projects/AI-Gateway/Specs/FEATURE_CANDIDATES.md` under **C-AUD-***.
 >
 > Original body retained below for archaeology.
 
@@ -58,7 +58,7 @@ Audit baseline: **228 unit tests passing**, CI green on `main`, lint clean on
 
 Run `./scripts/create-security-hardening-epics.sh` to open GitHub epics if not yet created.
 
-**Already on main:** `codex/1password-secrets-governance` merged via [#298](https://github.com/echoares-lab/ai-gateway/pull/298) (`docs/1password-secrets.md`, `.env.op`).
+**Already on main:** `codex/1password-secrets-governance` merged via [#298](https://github.com/echoares-lab/ai-gateway/pull/298) (`01 Projects/AI-Gateway/Specs/1password-secrets.md`, `.env.op`).
 
 ---
 
@@ -138,7 +138,7 @@ make test-fast
 
 ## Related docs
 
-- [docs/ROADMAP.md](../docs/ROADMAP.md)
-- [TESTING_AND_PROMOTION_POLICY.md](../TESTING_AND_PROMOTION_POLICY.md)
+- `01 Projects/AI-Gateway/Specs/ROADMAP.md`
+- `01 Projects/AI-Gateway/Specs/TESTING_AND_PROMOTION_POLICY.md`
 - [issues/policy-engine-dispatch.md](./policy-engine-dispatch.md)
 - [scripts/create-security-hardening-epics.sh](../scripts/create-security-hardening-epics.sh)

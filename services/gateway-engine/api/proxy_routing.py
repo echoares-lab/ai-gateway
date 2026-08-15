@@ -784,7 +784,7 @@ async def _post_with_retry(url: str, headers: dict, content: bytes, retries: int
     """POST to LiteLLM with retry on transient 502/503.
 
     Records passive per-provider/model routing signals (latency, outcome,
-    rate-limit) for every attempt — see docs/ADAPTIVE_ROUTING.md (issue #59).
+    rate-limit) for every attempt — see 01 Projects/AI-Gateway/Specs/ADAPTIVE_ROUTING.md (issue #59).
     """
     override = _main_override("_post_with_retry", _post_with_retry)
     if override is not None:

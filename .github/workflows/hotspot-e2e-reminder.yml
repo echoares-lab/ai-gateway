@@ -47,7 +47,7 @@ jobs:
             - Add the \`run-e2e\` label to trigger CI \`real-provider-e2e\`, or
             - Run \`make test-e2e\` locally against a dev slot
 
-            See \`docs/TESTING.md\` and \`REPO_IMPROVEMENT_APPENDIX.md\`.
+            See \`01 Projects/AI-Gateway/Specs/TESTING.md\` and \`REPO_IMPROVEMENT_APPENDIX.md\`.
             `;
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,

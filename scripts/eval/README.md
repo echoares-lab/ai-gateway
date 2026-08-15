@@ -4,9 +4,9 @@ Runbook for the benchmark harness that measures how well Claude Code's
 file-editing tools (and, protocol-level, other client wire formats) hold up
 when the AI Gateway routes a session to a non-native backend model.
 
-Design background: [`docs/tool-use-eval.md`](../../docs/tool-use-eval.md).
+Design background: `01 Projects/AI-Gateway/Specs/tool-use-eval.md`.
 Any follow-on work belongs in the current unapproved
-[`docs/FEATURE_CANDIDATES.md`](../../docs/FEATURE_CANDIDATES.md) inventory
+`01 Projects/AI-Gateway/Specs/FEATURE_CANDIDATES.md` inventory
 before it can be promoted and claimed.
 
 ---

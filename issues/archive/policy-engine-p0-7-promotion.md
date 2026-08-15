@@ -11,7 +11,7 @@ acceptance:
   - [x] Unit tests cover valid/invalid profile documents
 dependencies:
   - issues/policy-engine-phase0-prerequisites.md (P0-7)
-  - docs/CONFIG_PROMOTION.md
+  - 01 Projects/AI-Gateway/Specs/CONFIG_PROMOTION.md
   - services/policy-engine/schemas.py (PolicyProfile)
 ---
 
