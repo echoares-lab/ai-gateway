@@ -48,6 +48,12 @@ make test-fast     # full pre-PR gate: lint + unit + validators + mock
 make test-e2e      # real-provider E2E (requires a running stack + credentials)
 ```
 
+> [!WARNING]
+> **Always invoke a named target.** There is no `help` target and no default
+> goal, so a bare `make` falls through to the first rule in the `Makefile` —
+> `clean-db` — which runs `docker volume rm ai_langfuse_postgres_data` and
+> `docker volume prune -f`, destroying your local Langfuse database.
+
 ## Documentation
 
 All project documentation — architecture, specs, ADRs, runbooks, roadmap, and

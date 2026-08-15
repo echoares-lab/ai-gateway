@@ -94,8 +94,9 @@ jobs:
           PERMITTED_BASENAMES = {
               "README.md", "AGENTS.md", "CLAUDE.md", "GEMINI.md",
               "LICENSE", "LICENSE.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md",
-              "TOOLING.md",
           }
+          # TOOLING.md was retired 2026-08-15 (Master-Policy §1.6) — write-once inventory
+          # nothing consumed; native manifests are the tooling surface.
 
           # Paths permitted regardless of basename.
           PERMITTED_PATTERNS = [
