@@ -30,26 +30,14 @@ jobs:
         with:
           python-version: "3.11"
 
-      # ── Gate 1: MCP scaffolding (CICD-Policy §1.1.1) ────────────────────────
-      - name: "Gate 1 — MCP scaffolding (.mcp.json.example)"
-        # Checks .mcp.json.example, NOT .mcp.json: the working file carries a live
-        # OBSIDIAN_API_KEY and is gitignored, so CI can never see it. Requiring it
-        # here made the gate unsatisfiable without violating Master-Policy §4.1.
-        run: |
-          if [ ! -f .mcp.json.example ]; then
-            echo "::error::Master-Policy §1.5 requires a committed .mcp.json.example defining the 'memory' and 'obsidian' MCP servers (the working .mcp.json stays local and gitignored)."
-            exit 1
-          fi
-          python3 - <<'PY'
-          import json, sys
-          cfg = json.load(open(".mcp.json.example"))
-          servers = cfg.get("mcpServers", cfg)
-          missing = [s for s in ("memory", "obsidian") if s not in servers]
-          if missing:
-              print(f"::error::.mcp.json.example is missing required MCP server(s): {missing}. See Master-Policy §1.5.")
-              sys.exit(1)
-          print("ok: .mcp.json.example defines memory + obsidian")
-          PY
+      # ── Gate 1: RETIRED 2026-08-14 (CICD-Policy §1.1.1) ────────────────────
+      # MCP servers are configured once at user scope in ~/.claude.json, so no
+      # repository carries a .mcp.json or .mcp.json.example and there is nothing
+      # in a checkout to verify. Enforcing a repo-local file never delivered its
+      # guarantee anyway: MCP resolves from the session's startup directory, so
+      # the file only applied when a session happened to start in that repo.
+      # See Master-Policy §1.5. Re-introducing a .mcp.json is blocked by the
+      # pre-commit hook instead.
 
       # ── Gate 3: Secret scanning (CICD-Policy §1.1.3, Secrets-Policy §7) ─────
       - name: "Gate 3 — install gitleaks (pinned)"
