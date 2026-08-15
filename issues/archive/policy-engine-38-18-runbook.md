@@ -41,6 +41,6 @@ github_issue: #137
 
 # 38-18 — Operator Runbook Extension
 
-**GitHub:** #137  
-**PR:** https://github.com/echoares-lab/ai-gateway/pull/151  
+**GitHub:** #137
+**PR:** https://github.com/echoares-lab/ai-gateway/pull/151
 **Design:** `01 Projects/AI-Gateway/Specs/POLICY_ENGINE_AND_ROUTING_REFACTOR.md`

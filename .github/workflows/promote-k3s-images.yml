@@ -579,4 +579,3 @@ jobs:
             '
           )
           curl -s -X POST -H 'Content-type: application/json' --data "$PAYLOAD" "$WEBHOOK_URL"
-

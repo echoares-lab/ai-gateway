@@ -1,7 +1,7 @@
 # Client Integration Profile Schema
 
 client_name: str
-signature: 
+signature:
   user_agent_contains: str | None
   headers_require: dict[str, str] | None
   path_pattern: str | None

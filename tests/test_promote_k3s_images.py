@@ -144,10 +144,7 @@ def test_pin_file_for_image_prefers_component_subdir(tmp_path: Path) -> None:
     component = overlay / "cliproxy" / "kustomization.yaml"
     component.write_text(COMPONENT_PIN, encoding="utf-8")
 
-    assert (
-        _pin_file_for_image(parent, "nexus-docker.infra.plexplease.com/cli-proxy-api")
-        == component
-    )
+    assert _pin_file_for_image(parent, "nexus-docker.infra.plexplease.com/cli-proxy-api") == component
 
 
 def test_gateway_workload_path_prefers_split_layout(tmp_path: Path) -> None:

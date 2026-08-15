@@ -46,7 +46,7 @@ jobs:
                 -H "Content-Type: application/json" \
                 "$GATEWAY_URL/v1/chat/completions" \
                 -d "{\"model\":\"AI-Gateway:$m\",\"messages\":[{\"role\":\"user\",\"content\":\"reply ok\"}],\"max_tokens\":8}")
-              
+
               if [ "$http_status" = "200" ]; then
                 out=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('choices',[{}])[0].get('message',{}).get('content','ERR: '+str(d)))" < "$tmp_stdout" 2>&1)
                 if [ -n "$out" ] && ! echo "$out" | grep -qi "^ERR"; then
