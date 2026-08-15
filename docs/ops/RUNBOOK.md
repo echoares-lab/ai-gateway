@@ -2,10 +2,10 @@
 
 Unified access to Claude Pro, ChatGPT Plus, and Gemini consumer accounts via LiteLLM.
 
-**Stack**: CLIProxyAPI (Docker) → LiteLLM (Docker) → Langfuse (Docker)  
-**Local API endpoint** (this host, optional dev stack — not production): `http://localhost:4000`  
-**Production API endpoints**: see [Production endpoints](#production-endpoints) below  
-**LiteLLM master key**: in `.env` as `LITELLM_MASTER_KEY`  
+**Stack**: CLIProxyAPI (Docker) → LiteLLM (Docker) → Langfuse (Docker)
+**Local API endpoint** (this host, optional dev stack — not production): `http://localhost:4000`
+**Production API endpoints**: see [Production endpoints](#production-endpoints) below
+**LiteLLM master key**: in `.env` as `LITELLM_MASTER_KEY`
 **CLIProxyAPI key**: in `~/.cliproxy/config.yaml` under `api-keys`
 
 ---
@@ -443,7 +443,7 @@ docker compose logs langfuse-web -f  # Langfuse UI logs
 
 CLIProxyAPI ships a built-in web UI at `/management.html` since v6.0.19.
 
-**URL**: `http://<server-ip>:8317/management.html`  
+**URL**: `http://<server-ip>:8317/management.html`
 **Management key**: stored in `~/.cliproxy/config.yaml` under `management-key`
 
 > This key is separate from the `api-keys` list used by LiteLLM. Keep it private.

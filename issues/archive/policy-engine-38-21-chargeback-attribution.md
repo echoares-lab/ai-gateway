@@ -45,7 +45,7 @@ github_issue: #140
 
 # 38-21 — Chargeback Attribution (Optional)
 
-**Epic:** [#38](https://github.com/echoares-lab/ai-gateway/issues/38)  
+**Epic:** [#38](https://github.com/echoares-lab/ai-gateway/issues/38)
 **Design:** `01 Projects/AI-Gateway/Specs/CHARGEBACK_ATTRIBUTION.md`
 
 ## Claim

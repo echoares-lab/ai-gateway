@@ -42,8 +42,8 @@ github_issue: #138
 
 # 38-19 — Evaluation-Driven Routing (Optional)
 
-**Epic:** [#38](https://github.com/echoares-lab/ai-gateway/issues/38)  
-**Roadmap parent:** [#37](https://github.com/echoares-lab/ai-gateway/issues/37)  
+**Epic:** [#38](https://github.com/echoares-lab/ai-gateway/issues/38)
+**Roadmap parent:** [#37](https://github.com/echoares-lab/ai-gateway/issues/37)
 **Design:** `01 Projects/AI-Gateway/Specs/EVAL_DRIVEN_ROUTING.md`
 
 ## Claim

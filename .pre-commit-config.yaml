@@ -9,16 +9,28 @@
 # is why none of the hooks below had ever actually run here. Gate A is now a
 # pre-push stage below and core.hooksPath is unset, so both stages work.
 #
-# .githooks/pre-push is left on disk but is no longer wired up; do NOT follow
-# its "Install: git config core.hooksPath .githooks" comment, which would
-# disable every hook in this file again. Deleting it is a follow-up.
+# .githooks/pre-push has been deleted: it was unreachable after the migration
+# and its "Install: git config core.hooksPath .githooks" comment was an active
+# trap -- following it would disable every hook in this file again. Do NOT set
+# core.hooksPath in this repo. The scripts that remain under .githooks/ are
+# helper scripts invoked by the `local` hooks below, not git hooks themselves.
 #
 # Install:  pre-commit install --hook-type pre-commit --hook-type pre-push
 repos:
+# rev tracks the ruff that `make lint` and CI actually run. Neither pins a
+# version -- the Makefile calls bare `ruff` and .github/workflows/ci.yml
+# installs `ruff` unpinned via requirements/ci-runner-venv.txt -- so this rev is
+# the one place a version is written down, and it must be bumped to whatever
+# `ruff --version` resolves to when they disagree. The old v0.3.5 pin predated
+# the hooks ever running; it and the current ruff format code differently, so
+# leaving it would have made `pre-commit run --all-files` and `make lint`
+# permanently revert each other.
 - repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: v0.3.5
+  rev: v0.15.15
   hooks:
-  - id: ruff
+  # `ruff-check`, not `ruff`: as of the pinned rev the bare `ruff` id is a
+  # deprecated legacy alias that pre-commit reports as "ruff (legacy alias)".
+  - id: ruff-check
     args:
     - --fix
     stages: [pre-commit]
@@ -84,9 +96,12 @@ repos:
     pass_filenames: false
     always_run: true
     stages: [pre-commit]
-  # The body of .githooks/pre-push, verbatim. pre-push, not
-  # pre-commit: it builds a container image and runs the unit suite (~1-2 min),
-  # which is too slow to pay on every commit.
+  # The body of the former .githooks/pre-push, preserved. That script did
+  # `set -euo pipefail; cd "$(git rev-parse --show-toplevel)"; make lint;
+  # make test-unit` -- `&&` reproduces its abort-on-first-failure, and
+  # pre-commit already runs hooks from the repo root, so the cd is redundant.
+  # pre-push, not pre-commit: it builds a container image and runs the unit
+  # suite (~1-2 min), which is too slow to pay on every commit.
   - id: gate-a
     name: Gate A fast checks (make lint + make test-unit)
     entry: bash -c 'make lint && make test-unit'

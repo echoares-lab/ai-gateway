@@ -45,8 +45,8 @@ github_issue: #139
 
 # 38-20 — MCP Tool Visibility (Optional)
 
-**Epic:** [#38](https://github.com/echoares-lab/ai-gateway/issues/38)  
-**Tenancy parent:** [#30](https://github.com/echoares-lab/ai-gateway/issues/30) (TENANCY-4)  
+**Epic:** [#38](https://github.com/echoares-lab/ai-gateway/issues/38)
+**Tenancy parent:** [#30](https://github.com/echoares-lab/ai-gateway/issues/30) (TENANCY-4)
 **Design:** `01 Projects/AI-Gateway/Specs/MCP_TOOL_VISIBILITY.md`
 
 ## Claim
