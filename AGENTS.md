@@ -250,7 +250,7 @@ Co-authored-by: Reviewer Agent <reviewer@users.noreply.github.com>
 
 | Policy | Version | Updated |
 |---|---|---|
-| `CICD-Policy.md` | 1.3 | 2026-08-16 |
+| `CICD-Policy.md` | 1.4 | 2026-08-16 |
 | `Coding-Standards-Policy.md` | 1.1 | 2026-08-12 |
 | `Git-Policy.md` | 1.0 | 2026-07-29 |
 | `Master-Policy.md` | 2.1 | 2026-08-12 |
