@@ -163,7 +163,18 @@ Every Pull Request and commit MUST pass the following automated CI quality gates
 ### 2.1 KV-v2 Secret Path Taxonomy
 All KV-v2 secret paths in OpenBao MUST follow this exact taxonomy:
 
-`secret/data/agents/{agent_type}/{agent_id}/{environment}/`
+`kv/data/agents/{agent_type}/{agent_id}/{environment}/`
+
+> **Mount corrected 2026-08-16.** This clause previously mandated a `secret/` mount, which
+> does not exist. `bao secrets list` returns exactly four mounts — `cubbyhole/`,
+> `identity/`, `kv/` (KV-v2) and `sys/` — and the `openbao` ClusterSecretStore in `k3s-01`
+> is configured `path: kv, version: v2`. Every `secret/data/agents/...` path written
+> anywhere in this estate was unresolvable as stated. The policy was wrong; the
+> infrastructure was consistent. Corrected here and in the Infra secrets-migration epics
+> and audit. **Note the KV-v2 API quirk:** the `data/` segment appears in the HTTP path but
+> **not** in `bao kv` commands or in an ExternalSecret `remoteRef.key`. The path above is
+> addressed as `bao kv get kv/agents/...` and as `key: agents/...` with `path: kv` on the
+> store.
 
 - **`agent_type`**:
   - `autonomous`: Unattended background workers, cron jobs, K3s pod workloads, CI/CD pipelines.
@@ -239,11 +250,11 @@ Co-authored-by: Reviewer Agent <reviewer@users.noreply.github.com>
 
 | Policy | Version | Updated |
 |---|---|---|
-| `CICD-Policy.md` | 1.2 | 2026-08-12 |
+| `CICD-Policy.md` | 1.3 | 2026-08-16 |
 | `Coding-Standards-Policy.md` | 1.1 | 2026-08-12 |
 | `Git-Policy.md` | 1.0 | 2026-07-29 |
 | `Master-Policy.md` | 2.1 | 2026-08-12 |
-| `Secrets-Policy.md` | 3.1 | 2026-08-12 |
+| `Secrets-Policy.md` | 3.2 | 2026-08-16 |
 | `Testing-Policy.md` | 1.2 | 2026-08-13 |
 
 <!-- END GENERATED — repo-specific directives may follow and are preserved. -->
