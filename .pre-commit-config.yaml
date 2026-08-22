@@ -25,58 +25,106 @@ repos:
 # the hooks ever running; it and the current ruff format code differently, so
 # leaving it would have made `pre-commit run --all-files` and `make lint`
 # permanently revert each other.
-- repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: v0.15.15
-  hooks:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.15
+    hooks:
   # `ruff-check`, not `ruff`: as of the pinned rev the bare `ruff` id is a
   # deprecated legacy alias that pre-commit reports as "ruff (legacy alias)".
-  - id: ruff-check
-    args:
-    - --fix
-    stages: [pre-commit]
-  - id: ruff-format
-    stages: [pre-commit]
-- repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v4.5.0
-  hooks:
-  - id: check-yaml
-    stages: [pre-commit]
-  - id: end-of-file-fixer
-    stages: [pre-commit]
-  - id: trailing-whitespace
-    stages: [pre-commit]
-- repo: local
-  hooks:
-  - id: validate-litellm-config
-    name: Validate litellm-config.yaml
-    entry: python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"
-    language: system
-    files: litellm-config.yaml$
-    pass_filenames: false
-    stages: [pre-commit]
-  - id: prevent-hardcoded-api-keys
-    name: Prevent hardcoded API keys
-    entry: bash .githooks/prevent-hardcoded-keys.sh
-    language: system
-    files: ^(litellm-config\.yaml|services/gateway-engine/main\.py|services/credential-prober/.*\.py|docker-compose\.yml|docker-compose\.dev\.yml)$
-    pass_filenames: false
-    stages: [pre-commit]
-  - id: validate-yaml-syntax
-    name: Validate YAML syntax in litellm-config.yaml
-    entry: bash .githooks/validate-yaml.sh
-    language: system
-    files: litellm-config.yaml$
-    pass_filenames: false
-    stages: [pre-commit]
-- repo: local
-  hooks:
-  - id: doc-minimalism
-    name: Master-Policy 1.6 documentation minimalism
-    entry: python3 /home/dev/repos/dev-policies/tooling/scripts/check-doc-minimalism.py
-    language: system
-    pass_filenames: false
-    always_run: true
-    stages: [pre-commit]
+      - id: ruff-check
+        args:
+          - --fix
+        stages: [pre-commit]
+      - id: ruff-format
+        stages: [pre-commit]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-yaml
+        stages: [pre-commit]
+      - id: end-of-file-fixer
+        stages: [pre-commit]
+      - id: trailing-whitespace
+        stages: [pre-commit]
+  - repo: local
+    hooks:
+  # Master-Policy 1.5 (2026-08-14): MCP servers are configured once at user
+  # scope in ~/.claude.json. A repo-local .mcp.json only applies when the
+  # session happens to start in this repo, and it is how OBSIDIAN_API_KEY
+  # previously spread in plaintext across 19 checkouts.
+  #
+  # `language: fail` + `files:` rather than a `git diff --cached` walk:
+  # pre-commit already hands a hook only the files staged for this commit.
+  # Neither path is tracked anywhere in the fleet, so any match at all is a
+  # re-introduction. `pre-commit run --all-files` enumerates via `git
+  # ls-files`, so an untracked scratch .mcp.json cannot trip this spuriously.
+      - id: no-mcp-json
+        name: no repo-local .mcp.json (Master-Policy 1.5)
+        language: fail
+        entry: >-
+          .mcp.json is no longer used -- configure servers at user scope with
+          `claude mcp add -s user <name> -- <command>`. See Master-Policy 1.5.
+          Offending path:
+        files: '^\.mcp\.json(\.example)?$'
+        stages: [pre-commit]
+
+      - id: validate-litellm-config
+        name: Validate litellm-config.yaml
+        entry: python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"
+        language: system
+        files: litellm-config.yaml$
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: prevent-hardcoded-api-keys
+        name: Prevent hardcoded API keys
+        entry: bash .githooks/prevent-hardcoded-keys.sh
+        language: system
+        files: ^(litellm-config\.yaml|services/gateway-engine/main\.py|services/credential-prober/.*\.py|docker-compose\.yml|docker-compose\.dev\.yml)$
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: validate-yaml-syntax
+        name: Validate YAML syntax in litellm-config.yaml
+        entry: bash .githooks/validate-yaml.sh
+        language: system
+        files: litellm-config.yaml$
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: doc-minimalism
+        name: Master-Policy 1.6 documentation minimalism
+        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/check-doc-minimalism.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: doc-minimalism-ratchet
+        name: Master-Policy 1.6 baseline ratchet (may only shrink)
+        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/check-doc-minimalism.py --ratchet
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: container-notices
+        name: container builds carry the notices they owe (Licensing-Policy 3)
+        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/check-container-notices.py
+        language: system
+        pass_filenames: false
+        files: '(^|/)(Dockerfile|Containerfile)(\..+)?$|(^|/).+\.Dockerfile$'
+        stages: [pre-commit]
+      - id: agents-md-drift
+        name: AGENTS.md matches the vault
+        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/render-agents-md.py --repo . --check
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+  - repo: local
+    hooks:
+      - id: doc-minimalism
+        name: Master-Policy 1.6 documentation minimalism
+        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/check-doc-minimalism.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
   # Scoped to THIS repo (was --all, changed 2026-08-15). --all checked the
   # drift state of all 13 repos in dev-policies/tooling/repos.yaml, so a commit
   # here failed whenever any unrelated repo drifted -- it blocked two unrelated
@@ -89,23 +137,35 @@ repos:
   # No --profile: render-agents-md.py resolves it from dev-policies/tooling/
   # repos.yaml, the single source of truth for repo shape, and errors out if
   # this repo is missing there.
-  - id: agents-md-drift
-    name: AGENTS.md matches the vault
-    entry: python3 /home/dev/repos/dev-policies/tooling/scripts/render-agents-md.py --repo . --check
-    language: system
-    pass_filenames: false
-    always_run: true
-    stages: [pre-commit]
+      - id: agents-md-drift
+        name: AGENTS.md matches the vault
+        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/render-agents-md.py --repo . --check
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
   # The body of the former .githooks/pre-push, preserved. That script did
   # `set -euo pipefail; cd "$(git rev-parse --show-toplevel)"; make lint;
   # make test-unit` -- `&&` reproduces its abort-on-first-failure, and
   # pre-commit already runs hooks from the repo root, so the cd is redundant.
   # pre-push, not pre-commit: it builds a container image and runs the unit
   # suite (~1-2 min), which is too slow to pay on every commit.
-  - id: gate-a
-    name: Gate A fast checks (make lint + make test-unit)
-    entry: bash -c 'make lint && make test-unit'
-    language: system
-    pass_filenames: false
-    always_run: true
-    stages: [pre-push]
+      - id: gate-a
+        name: Gate A fast checks (make lint + make test-unit)
+        entry: bash -c 'make lint && make test-unit'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.28.0
+    hooks:
+      # Deliberately no `--config .gitleaks.toml`. Hooks are shared across git
+      # worktrees but .gitleaks.toml is per-branch, so an explicit --config
+      # aborts on a branch that predates the file, and the abort reads as a
+      # secret finding. The upstream entry omits --config, so gitleaks
+      # auto-discovers .gitleaks.toml when present and falls back to its
+      # built-in rules when it is not.
+      - id: gitleaks
+        args: ["--redact"]
+        stages: [pre-commit]
