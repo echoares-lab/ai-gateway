@@ -7,13 +7,22 @@ ARG ENVIRONMENT=production
 LABEL org.opencontainers.image.source="https://github.com/echoares-lab/ai-gateway" \
       org.opencontainers.image.revision=$GIT_SHA \
       ai-gateway.service="cliproxy" \
-      ai-gateway.environment=$ENVIRONMENT
+      ai-gateway.environment=$ENVIRONMENT \
+      org.opencontainers.image.licenses="MIT"
 
+# This image redistributes an upstream MIT-licensed binary (router-for-me/CLIProxyAPI).
+# MIT requires the copyright notice and permission text to accompany every redistributed
+# copy, so the LICENSE is extracted from the SAME release tarball as the binary — it is
+# version-matched by construction and needs no second network fetch. Do not drop the
+# LICENSE extraction below; without it the image is a licence breach
+# (Licensing-Policy s3, /home/dev/obsidian-vault/02 Areas/Policies/Licensing-Policy.md).
 ARG CLIPROXY_VERSION=7.1.50
 RUN apk add --no-cache ca-certificates wget gcompat && \
     wget -O /tmp/cliproxy.tar.gz \
       "https://github.com/router-for-me/CLIProxyAPI/releases/download/v${CLIPROXY_VERSION}/CLIProxyAPI_${CLIPROXY_VERSION}_linux_amd64.tar.gz" && \
     tar -xzf /tmp/cliproxy.tar.gz -C /usr/local/bin cli-proxy-api && \
+    mkdir -p /usr/share/licenses/cliproxy && \
+    tar -xzf /tmp/cliproxy.tar.gz -C /usr/share/licenses/cliproxy LICENSE && \
     rm /tmp/cliproxy.tar.gz && \
     chmod +x /usr/local/bin/cli-proxy-api && \
     apk del wget

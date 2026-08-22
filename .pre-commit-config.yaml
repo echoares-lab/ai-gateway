@@ -47,6 +47,26 @@ repos:
     stages: [pre-commit]
 - repo: local
   hooks:
+  # Master-Policy 1.5 (2026-08-14): MCP servers are configured once at user
+  # scope in ~/.claude.json. A repo-local .mcp.json only applies when the
+  # session happens to start in this repo, and it is how OBSIDIAN_API_KEY
+  # previously spread in plaintext across 19 checkouts.
+  #
+  # `language: fail` + `files:` rather than a `git diff --cached` walk:
+  # pre-commit already hands a hook only the files staged for this commit.
+  # Neither path is tracked anywhere in the fleet, so any match at all is a
+  # re-introduction. `pre-commit run --all-files` enumerates via `git
+  # ls-files`, so an untracked scratch .mcp.json cannot trip this spuriously.
+  - id: no-mcp-json
+    name: no repo-local .mcp.json (Master-Policy 1.5)
+    language: fail
+    entry: >-
+      .mcp.json is no longer used -- configure servers at user scope with
+      `claude mcp add -s user <name> -- <command>`. See Master-Policy 1.5.
+      Offending path:
+    files: '^\.mcp\.json(\.example)?$'
+    stages: [pre-commit]
+
   - id: validate-litellm-config
     name: Validate litellm-config.yaml
     entry: python3 -c "import yaml; yaml.safe_load(open('litellm-config.yaml'))"

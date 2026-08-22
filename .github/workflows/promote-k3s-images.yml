@@ -486,13 +486,40 @@ jobs:
             echo "No pin changes (already up to date)."
             exit 0
           fi
-          BRANCH="chore/promote-ai-gateway-images-${{ steps.pins.outputs.branch_suffix }}"
+          # ONE stable branch, not one per source commit.
+          #
+          # This previously read:
+          #   BRANCH="chore/promote-ai-gateway-images-${SHA:0:7}"
+          # a unique branch per source commit, followed by an unconditional
+          # `gh pr create`. There is no close-superseded step and no auto-merge
+          # anywhere in either repo, so every promotion opened a PR that nothing
+          # ever closed. By 2026-08-22 that was 72 open promotion PRs (#203 on
+          # 2026-07-31 through #306 on 2026-08-16) out of 76 open PRs total —
+          # all with passing checks, none merged. The merge step was never
+          # broken; the bot simply had no notion of superseding itself.
+          #
+          # Force-pushing one branch is safe here: the PR body states it must be
+          # reviewed and merged manually, the content is fully regenerated from
+          # staging pins on every run, and an older un-merged promotion is by
+          # definition superseded by a newer one.
+          BRANCH="chore/promote-ai-gateway-images"
           git config user.name "ai-gateway-ci"
           git config user.email "ci@echoares-lab.invalid"
-          git checkout -b "$BRANCH"
+          git checkout -B "$BRANCH"
           git add kubernetes/workloads/home/ai-gateway/overlays/k3s-01/
           git commit -m "chore(ai-gateway): promote image and release metadata"
-          git push -u origin "$BRANCH"
+          git push --force-with-lease -u origin "$BRANCH"
+
+          # An open PR on this branch already reflects the push above, so
+          # creating a second one is what caused the accretion.
+          EXISTING=$(gh pr list --repo echoares-lab/k3s-01 --head "$BRANCH" \
+                       --state open --json number --jq '.[0].number // empty')
+          if [[ -n "${EXISTING}" ]]; then
+            echo "Updated existing promotion PR #${EXISTING} — not opening another."
+            gh pr comment "${EXISTING}" --repo echoares-lab/k3s-01 \
+              --body "Superseded by a newer promotion: branch force-updated to \`${{ steps.pins.outputs.branch_suffix }}\`." || true
+            exit 0
+          fi
 
           SMOKE_NOTE="Staging deep-smoke --full: **passed** (CI promote gate #410)."
           if [[ "${DEEP_SMOKE_SKIPPED}" == "true" ]]; then

@@ -2,6 +2,13 @@
 # The CI gate fails on any file NOT listed here, so this file may only
 # ever SHRINK. Removing a line means that file was migrated to the vault.
 # Tracked in 02 Areas/Policies/Documentation-Migration-Roadmap.md
+#
+# Amnesty is DATED and ratcheted (check-doc-minimalism.py --ratchet):
+#   expires: after this date every line below is a live CI failure.
+#   target:  a burn-down checkpoint; exceeding the cap after the date fails.
+# expires: 2027-02-28
+# target: 9 by 2026-11-30
+# target: 0 by 2027-02-28
 .orchestrate/ops-cutover-subplan/BLOCKER.md
 .superpowers/sdd/escrow-task-2-report.md
 .superpowers/sdd/escrow-task-3-report.md
