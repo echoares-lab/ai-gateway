@@ -60,25 +60,12 @@
 
 ## Repository Documentation Minimalism
 
-*Source: `Master-Policy.md` — do not edit here.*
+*Source: `Master-Policy.md` — summary; the full section is in the vault. Do not edit here.*
 
-Reference: ADR 0001 - Obsidian-First Centralized Documentation Model.
-
-- **Vault is the only documentation authority.** All project documentation — epics, task backlogs, ADRs, specs, architecture, runbooks, research reports, design/implementation plans, and status notes — lives **exclusively** in `/home/dev/obsidian-vault/01 Projects/<Project>/`.
-- **Permitted markdown in a code repository (exhaustive list):**
-  1. `README.md` — short orientation only: what the project is, how to run/test it, and a pointer to its vault folder. Not a place for architecture, epics, or status.
-  2. `AGENTS.md` — the **canonical, version-controlled** agent-directive file (vendor-neutral: Claude, AGY, Codex, Cursor). This is the only directive file committed to a repository.
-     - `CLAUDE.md` and other tool-specific directive files are **thin pointers to `AGENTS.md`**, kept **untracked and gitignored** (adopted 2026-08-10). They are local convenience only; never duplicate policy text into them, or the two copies drift.
-  3. `CHANGELOG.md`, `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md` where the project genuinely needs them.
-  4. Format/interface notes physically adjacent to the artifacts they describe (e.g. a data directory's `README.md` documenting a file schema consumed by code), kept to the minimum needed to use the files.
-  5. Files under `.github/` that GitHub itself consumes or that document repository settings (e.g. `BRANCH_PROTECTION_POLICY.md`, issue templates) — amended 2026-08-12.
-- **`TOOLING.md` — RETIRED 2026-08-15.** The per-repo tooling inventory admitted by the 2026-08-12 amendment is removed from the permitted list, deleted fleet-wide, and its template, index, and validator are dropped from `dev-policies`. It was write-once documentation that nothing consumed: 9 of 10 copies had a single commit and were never updated, no CI job or hook ever ran `validate-tooling-inventory.py`, and the first real run found the inventory already wrong. A stale inventory is worse than none — `ai-gateway`'s copy documented a `make help` target that does not exist. The dependency and tooling surface is `pyproject.toml` / `Makefile` / `package.json`, which are executable and cannot drift silently.
-- **Prohibited in repositories:** `docs/` trees mirroring vault content, `TODO.md`, epic or sprint files, ADR folders, design/implementation plans, research reports, and status/progress documents. Agent tooling that defaults to writing plans or specs into the repo (e.g. `docs/superpowers/plans/`) MUST be redirected to the project's vault folder.
-- **No "self-contained repo" exceptions.** Making a repo readable by agents lacking vault access is **not** a valid justification — agents have vault access, and duplication reproduces exactly the copy-drift ADR 0001 exists to prevent. Any pre-existing exception of this kind is revoked; migrate the content to the vault and delete the repo copy.
-- **Vendored / upstream repositories are exempt.** Forks or vendored copies of third-party projects (currently `CLIProxyAPI`, `Cli-Proxy-API-Management-Center`) keep their upstream documentation in-repo: migrating it fights every upstream merge and destroys provenance. Only *locally authored* project documentation for such repos goes to the vault.
-- **Code- and CI-consumed markdown is not documentation.** Files read at runtime, asserted by tests, served by an application, or targeted by an alert `runbook_url` are application/interface artifacts and stay in the repo (e.g. AI-Gateway's `docs/openapi/` served by `docs-server`; K3s-Cluster's four alert-linked runbooks; Cloudflare-Access-Automation's OpenAPI artifact and test fixtures). Where such a file must also exist in the vault, keep **one** authority and make the other a pointer stub — never two maintained copies.
-  - **Clarified 2026-08-12:** `docs/runbooks/` and `docs/openapi/` are permitted **by path**, so this stops being re-litigated per file. A runbook qualifies when an alert's `runbook_url` (or equivalent live consumer) points at it — a runbook nothing links to is documentation and belongs in the vault.
-- **Migration rule:** when removing documentation from a repo, **move** it into the vault (preserving content and history in the commit message), never delete outright.
+- **Rule:** project documentation — epics, backlogs, ADRs, specs, architecture, runbooks, research reports, design/implementation plans, status notes — lives **exclusively** in `/home/dev/obsidian-vault/01 Projects/<Project>/`, never in a code repository. When removing documentation from a repo, **move** it to the vault; never delete.
+- **Permitted markdown in a repo (exhaustive):** `README.md` (orientation + vault pointer), `AGENTS.md` (`CLAUDE.md` is an untracked pointer to it), `CHANGELOG.md` / `LICENSE` / `CONTRIBUTING.md` / `SECURITY.md`, format notes adjacent to the artifacts they describe, `.github/` files GitHub consumes, and code-/CI-consumed markdown with a live consumer (`docs/runbooks/`, `docs/openapi/`). Vendored upstream forks are exempt.
+- **Enforced mechanically, not by memory:** a `PreToolUse` hook (`.claude/settings.json` in every repo, `block-prohibited-docs.py`) denies the write and names the vault destination; `pre-commit` (`doc-minimalism` + the shrink-only baseline ratchet) and the `policy-check` CI gate catch anything that gets past it.
+- **Full text and placement rules:** Master-Policy §1.6 in the vault, or the `policy-doc-placement` skill.
 
 ## Modern Toolchain & Language Guidelines
 
@@ -161,50 +148,25 @@ Every Pull Request and commit MUST pass the following automated CI quality gates
 *Source: `Secrets-Policy.md` — do not edit here.*
 
 ### 2.1 KV-v2 Secret Path Taxonomy
+
 All KV-v2 secret paths in OpenBao MUST follow this exact taxonomy:
 
 `kv/data/agents/{agent_type}/{agent_id}/{environment}/`
 
-> **Mount corrected 2026-08-16.** This clause previously mandated a `secret/` mount, which
-> does not exist. `bao secrets list` returns exactly four mounts — `cubbyhole/`,
-> `identity/`, `kv/` (KV-v2) and `sys/` — and the `openbao` ClusterSecretStore in `k3s-01`
-> is configured `path: kv, version: v2`. Every `secret/data/agents/...` path written
-> anywhere in this estate was unresolvable as stated. The policy was wrong; the
-> infrastructure was consistent. Corrected here and in the Infra secrets-migration epics
-> and audit. **Note the KV-v2 API quirk:** the `data/` segment appears in the HTTP path but
-> **not** in `bao kv` commands or in an ExternalSecret `remoteRef.key`. The path above is
-> addressed as `bao kv get kv/agents/...` and as `key: agents/...` with `path: kv` on the
-> store.
+- `agent_type` — `autonomous` (unattended workers, cron, K3s pods, CI/CD) or
+  `interactive` (local coding agents, interactive CLI tools).
+- `environment` — `prod`, `staging`, `homelab`, or `global` (environment-agnostic).
 
-- **`agent_type`**:
-  - `autonomous`: Unattended background workers, cron jobs, K3s pod workloads, CI/CD pipelines.
-  - `interactive`: Local developer coding agents (AGY, Codex, Cursor, Claude Code, Aider), interactive CLI tools.
-- **`environment`**:
-  - `prod`: Production cluster and live service workloads.
-  - `staging`: Staging test environments.
-  - `homelab`: Local homelab dev nodes and testing environments.
-  - `global`: Environment-agnostic developer tools and global credentials.
+**The mount is `kv`, not `secret`.** The `data/` segment is an HTTP-API artifact: the same
+secret is `kv/data/agents/…` over REST, `bao kv get kv/agents/…` on the CLI, and
+`remoteRef.key: agents/…` with `path: kv` on the store.
 
-### 2.2 Standardized `_metadata` Payload Schema
+`bao secrets list` returns four mounts and `secret/` is not among them, so every
+`secret/data/agents/...` path this estate ever wrote was unresolvable as stated.
 
-> **Known conflict with §2.1's commonest consumer pattern (recorded 2026-08-16).** Putting
-> `_metadata` *inside* the payload means any consumer that reads the WHOLE secret receives it
-> as a data key. In Kubernetes, a `dataFrom: extract:` ExternalSecret gains `_metadata` as an
-> extra Secret key — observed on `ai-gateway-secrets` (29 → 30 keys) and its staging twin
-> (18 → 19). It was inert in every case checked, because all consumers read by explicit
-> `secretKeyRef` and nothing `envFrom`s a Secret — but that is a property of today's
-> manifests, not a guarantee.
->
-> **Until this is resolved, prefer explicit `data[].property` selection over
-> `dataFrom: extract:` for any ExternalSecret reading an agent-scoped path.** Explicit
-> selection is also what protects against the consolidation hazard in §2.4.
->
-> Options for resolution, none yet chosen: exclude `_metadata` at extraction time; move
-> provenance to OpenBao KV **custom metadata** (`kv metadata put`) instead of the payload,
-> which keeps it out of every consumer entirely; or accept the extra key and state so
-> explicitly.
+### 2.2 `_metadata` payload
 
-Every secret payload stored in OpenBao MUST include a standard `_metadata` JSON object alongside credential keys:
+Every secret payload carries a `_metadata` object alongside its credential keys.
 
 ```json
 {
@@ -213,6 +175,8 @@ Every secret payload stored in OpenBao MUST include a standard `_metadata` JSON 
     "owner": "team-or-handle",
     "repository": "https://github.com/org/repo-name",
     "allowed_agent_roles": ["k3s-01-external-secrets", "hardware-collector"],
+    "class": "derived",
+    "parent": "Cloudflare - Account API Token - Prod",
     "max_ttl_seconds": 3600,
     "migrated_from": "kv/data/prod/platform/cloudflare",
     "created_at": "2026-08-11T00:00:00Z"
@@ -220,40 +184,55 @@ Every secret payload stored in OpenBao MUST include a standard `_metadata` JSON 
 }
 ```
 
-### 2.3 Writers MUST merge, never replace (added 2026-08-16)
+`class` is `native` (this estate is the issuer — internal CA, database roles, service
+accounts it controls) or `derived` (minted from a core external credential held in
+1Password). A `derived` secret also carries `parent`, naming the 1Password item it was
+minted from.
 
-The KV-v2 write endpoint (`bao kv put`, `POST /v1/kv/data/<path>`) **replaces the entire
-payload**. Any script that writes a subset of a secret's keys with `put` will silently delete
-every key it does not set — including `_metadata`.
+Everything in OpenBao is internal to this estate, because core external credentials stay
+in 1Password (§1). What differs is who can reissue the thing: a native credential this
+estate rotates on its own, while rotating a derived one means going back to its parent, in
+a vendor console, as a human. Without `parent` recorded, that trail has to be
+reconstructed from memory during an incident.
 
-This is not hypothetical. Two scripts were caught mid-migration in the same week:
+**Use explicit `data[].property` selection, not `dataFrom: extract:`**, for any
+ExternalSecret reading an agent-scoped path.
 
-- `homelab-gitops/scripts/seed-openbao-kv.py` — one key into `cloudflare-platform/prod`
-  (5 keys) and `truenas-storage/prod` (14 keys); a `put` would have taken down cert-manager,
-  alertmanager, the breakglass SES watchdog, democratic-csi and the postgres backups.
-- `k3s-01/scripts/create_nexus_service_account.py` — only `dockerconfigjson` into
-  `nexus-registry/prod`, which also holds `username`, `password` and `_metadata` and is read
-  by seven ExternalSecrets.
+Because `_metadata` sits inside the payload, a consumer that reads the whole secret
+receives it as a data key — observed widening `ai-gateway-secrets` from 29 keys to 30.
 
-**Therefore: any writer that does not own every key at its path MUST use `bao kv patch`, or
-a read-modify-write.** `put` is permitted only where the writer authoritatively owns the
-whole payload.
+### 2.3 Writers merge, never replace
 
-### 2.4 Consolidated destinations (added 2026-08-16)
+**Any writer that does not own every key at its path MUST use `bao kv patch` or a
+read-modify-write.** `put` is permitted only where the writer owns the whole payload.
 
-The 2026-08-11 dual-write **merged several legacy sources into single agent-scoped paths**.
-Destinations are therefore not always one-to-one copies of their source, and may be
-supersets:
+`bao kv put` and `POST /v1/kv/data/<path>` replace the entire payload — a writer that sets
+a subset silently deletes the rest, `_metadata` included. Two scripts were caught
+mid-migration about to do exactly this to paths holding 5 and 14 keys.
 
-| Destination | Holds | Consequence |
-|---|---|---|
-| `truenas-storage/prod` | TrueNAS + TrueNAS-S3 + MinIO (14 keys) | `prod/platform/truenas-s3` has no separate destination |
-| `github-runner/prod` | 6 keys where the source had 1 | — |
-| `server-partpicker/prod` | **31 keys where the source had 4** | a `dataFrom: extract:` repoint would have widened that namespace's Secret from 4 keys to 32, adding eBay and SES credentials |
-| `aws-ses/prod` | 21 eBay/collector keys belonging to server-partpicker | **believed to be a mis-consolidation; needs review** |
+### 2.4 Compare key sets before repointing
 
-Before repointing any consumer, compare the **key sets**, not just the values, and prefer
-explicit key selection.
+Agent-scoped paths may be supersets of the legacy sources they replaced. Before repointing
+any consumer, diff the **key sets**, not just the values, and select keys explicitly.
+
+One consolidated destination holds 31 keys where its source had 4; a naive repoint would
+have widened that namespace's Secret to 32 keys.
+
+### 2.5 Generated credentials MUST be URL-safe
+
+Generate machine credentials from the RFC 3986 unreserved set (`A-Z a-z 0-9 - . _ ~`) and
+assert the result before storing it. Applies to `class: native` credentials, whose
+alphabet this estate chooses. A `derived` credential takes whatever form the vendor
+issues: store it verbatim and URL-encode at the point of use.
+
+`openssl rand -base64` emits `+`, `/` and `=`, all reserved in a URI. A base64 password
+authenticated fine natively and put Langfuse staging into CrashLoopBackOff only through
+the URL its migration built — so the failure is invisible to any check that asks merely
+whether the credential works.
+
+```bash
+case "$NEW" in *[+/=\&\#?%@\ ]*) echo "FATAL: unsafe char generated"; exit 1;; esac
+```
 
 ---
 
@@ -306,8 +285,8 @@ Co-authored-by: Reviewer Agent <reviewer@users.noreply.github.com>
 | `CICD-Policy.md` | 1.4 | 2026-08-16 |
 | `Coding-Standards-Policy.md` | 1.1 | 2026-08-12 |
 | `Git-Policy.md` | 1.0 | 2026-07-29 |
-| `Master-Policy.md` | 2.1 | 2026-08-12 |
-| `Secrets-Policy.md` | 3.3 | 2026-08-16 |
+| `Master-Policy.md` | 2.2 | 2026-08-22 |
+| `Secrets-Policy.md` | 4.0 | 2026-08-21 |
 | `Testing-Policy.md` | 1.2 | 2026-08-13 |
 
 <!-- END GENERATED — repo-specific directives may follow and are preserved. -->

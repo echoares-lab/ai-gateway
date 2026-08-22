@@ -72,4 +72,7 @@ Thumbs.db
 # Logs / local scratch
 *.log
 .env
+
+# Test artefacts
+.coverage
 # <<< END repo-pack managed block (dev-policies) <<<
