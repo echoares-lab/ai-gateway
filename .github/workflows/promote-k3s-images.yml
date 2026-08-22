@@ -156,10 +156,34 @@ jobs:
         with:
           version: v1.34.1
 
-      - name: Bump staging image pins and push
+      - name: Install verified GitHub CLI for PR creation
+        run: |
+          set -euo pipefail
+          GH_CLI_VERSION=2.46.0
+          GH_CLI_SHA256=c671d450d7c0e95c84fbc6996591fc851d396848acd53e589ee388031cee9330
+          ARCHIVE="gh_${GH_CLI_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL \
+            "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/${ARCHIVE}" \
+            -o "${RUNNER_TEMP}/${ARCHIVE}"
+          echo "${GH_CLI_SHA256}  ${RUNNER_TEMP}/${ARCHIVE}" | sha256sum --check --status
+          tar -xzf "${RUNNER_TEMP}/${ARCHIVE}" -C "${RUNNER_TEMP}"
+          GH_BIN="${RUNNER_TEMP}/gh_${GH_CLI_VERSION}_linux_amd64/bin"
+          echo "${GH_BIN}" >> "$GITHUB_PATH"
+          PATH="${GH_BIN}:${PATH}" gh --version
+
+      # k3s-01 `production` is branch-protected (required checks validate /
+      # sbom / policy, enforce_admins on), so a direct `git push HEAD:production`
+      # is rejected with GH006 -- which is exactly how this job used to fail,
+      # leaving staging-deep-smoke `skipped` and the promote job free to open an
+      # UNVALIDATED promotion PR (#306). The bump now goes through a PR with
+      # auto-merge: k3s-01 has allow_auto_merge + delete_branch_on_merge, so a
+      # green PR merges itself and this job waits for that merge before the
+      # rollout wait below. A red PR fails this job, and the gate chain stops.
+      - name: Bump staging image pins via auto-merged PR
         id: bump
         env:
           GIT_SHA: ${{ needs.resolve-sha.outputs.expect_git_sha }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
         run: |
           set -euo pipefail
           python3 -m scripts.k3s.promote_k3s_images \
@@ -176,11 +200,50 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          BRANCH="chore/staging-ai-gateway-images-${GIT_SHA:0:7}"
           git config user.name "ai-gateway-ci"
           git config user.email "ci@echoares-lab.invalid"
+          git checkout -B "$BRANCH"
           git add kubernetes/workloads/home/ai-gateway/overlays/staging/
           git commit -m "chore(staging): bump ai-gateway image pins to ${GIT_SHA}"
-          git push origin HEAD:production
+          git push --force-with-lease -u origin "$BRANCH"
+
+          PR=$(gh pr list --repo echoares-lab/k3s-01 --head "$BRANCH" --state open \
+                 --json number --jq '.[0].number // empty')
+          if [[ -z "${PR}" ]]; then
+            gh pr create --repo echoares-lab/k3s-01 --base production --head "$BRANCH" \
+              --title "chore(staging): bump ai-gateway image pins to ${GIT_SHA:0:7}" \
+              --body "Automated staging pin bump from ai-gateway CI for \`${GIT_SHA}\`. Auto-merges when validate / sbom / policy pass; the staging deep-smoke gate runs after the merge."
+            PR=$(gh pr view "$BRANCH" --repo echoares-lab/k3s-01 --json number --jq .number)
+          fi
+          gh pr merge "$PR" --repo echoares-lab/k3s-01 --auto --squash \
+            || gh pr merge "$PR" --repo echoares-lab/k3s-01 --auto --merge
+          echo "Waiting for k3s-01#${PR} to auto-merge on green checks"
+          for i in $(seq 1 60); do
+            STATE=$(gh pr view "$PR" --repo echoares-lab/k3s-01 --json state,mergeStateStatus \
+                      --jq '"\(.state) \(.mergeStateStatus)"')
+            case "$STATE" in
+              MERGED*) echo "merged"; break ;;
+              CLOSED*) echo "::error::k3s-01#${PR} was closed without merging"; exit 1 ;;
+              *" DIRTY")
+                echo "::error::k3s-01#${PR} conflicts with production; staging not bumped"
+                exit 1 ;;
+              *" BLOCKED"|*" UNSTABLE")
+                # The normal state while checks run; only a terminal failed
+                # check fails the job.
+                FAILED=$(gh pr view "$PR" --repo echoares-lab/k3s-01 --json statusCheckRollup \
+                           --jq '[.statusCheckRollup[] | select((.conclusion // .state) | IN("FAILURE","ERROR","CANCELLED","TIMED_OUT"))] | length')
+                if [[ "${FAILED}" != "0" ]]; then
+                  echo "::error::${FAILED} required check(s) on k3s-01#${PR} failed; staging not bumped"
+                  exit 1
+                fi ;;
+            esac
+            sleep 20
+          done
+          if [[ "${STATE:-}" != MERGED* ]]; then
+            echo "::error::k3s-01#${PR} did not merge within 20 minutes"
+            exit 1
+          fi
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Wait for ArgoCD sync and rollout
@@ -225,11 +288,16 @@ jobs:
 
   promote:
     needs: [resolve-sha, staging-deep-smoke]
+    # `skipped` is accepted ONLY on an explicit workflow_dispatch with
+    # skip_deep_smoke=true (the documented emergency path). It used to be
+    # accepted unconditionally, so a failed staging bump -> skipped deep-smoke
+    # -> promotion PR with no validation behind it (#306 was produced this way).
     if: >
       always() &&
       needs.resolve-sha.result == 'success' &&
       (needs.staging-deep-smoke.result == 'success' ||
-       needs.staging-deep-smoke.result == 'skipped') &&
+       (needs.staging-deep-smoke.result == 'skipped' &&
+        needs.resolve-sha.outputs.skip_deep_smoke == 'true')) &&
       (github.event_name == 'workflow_dispatch' ||
        github.event_name == 'repository_dispatch' ||
        (github.event_name == 'workflow_run' &&
@@ -552,16 +620,16 @@ jobs:
           - credential-prober: \`${{ steps.pins.outputs.credential_prober }}\`
           - docs-server: \`${{ steps.pins.outputs.docs_server }}\`
           - cliproxy (digest): \`${{ steps.pins.outputs.cliproxy }}\`
-          $( [[ -n "${LITELLM_PIN}" ]] && echo "- litellm: \`\${LITELLM_PIN}\`" )
-          $( [[ -n "${LANGFUSE_PIN}" ]] && echo "- langfuse: \`\${LANGFUSE_PIN}\`" )
+          $( [[ -n "${LITELLM_PIN}" ]] && echo "- litellm: \`${LITELLM_PIN}\`" )
+          $( [[ -n "${LANGFUSE_PIN}" ]] && echo "- langfuse: \`${LANGFUSE_PIN}\`" )
 
           ## Staging deep-smoke (promote gate)
-          \${SMOKE_NOTE}
+          ${SMOKE_NOTE}
 
           \`\`\`
-          \${DEEP_SMOKE_SUMMARY:-"(no summary — skipped or empty)"}
+          ${DEEP_SMOKE_SUMMARY:-(no summary — skipped or empty)}
           \`\`\`
-          \${EXTRA_CHECKLIST}
+          ${EXTRA_CHECKLIST}
 
           ## Test plan
           - [ ] \`kubectl kustomize kubernetes/workloads/home/ai-gateway/overlays/k3s-01\`
