@@ -62,9 +62,11 @@
 
 *Source: `Master-Policy.md` — summary; the full section is in the vault. Do not edit here.*
 
-- **Rule:** project documentation — epics, backlogs, ADRs, specs, architecture, runbooks, research reports, design/implementation plans, status notes — lives **exclusively** in `/home/dev/obsidian-vault/01 Projects/<Project>/`, never in a code repository. When removing documentation from a repo, **move** it to the vault; never delete.
-- **Permitted markdown in a repo (exhaustive):** `README.md` (orientation + vault pointer), `AGENTS.md` (`CLAUDE.md` is an untracked pointer to it), `CHANGELOG.md` / `LICENSE` / `CONTRIBUTING.md` / `SECURITY.md`, format notes adjacent to the artifacts they describe, `.github/` files GitHub consumes, and code-/CI-consumed markdown with a live consumer (`docs/runbooks/`, `docs/openapi/`). Vendored upstream forks are exempt.
-- **Enforced mechanically, not by memory:** a `PreToolUse` hook (`.claude/settings.json` in every repo, `block-prohibited-docs.py`) denies the write and names the vault destination; `pre-commit` (`doc-minimalism` + the shrink-only baseline ratchet) and the `policy-check` CI gate catch anything that gets past it.
+- **Rule:** project documentation — epics, backlogs, ADRs, specs, architecture, runbooks, research reports, design/implementation plans, status notes — lives **exclusively** in `/home/dev/obsidian-vault/01 Projects/<Project>/`, never in a code repository.
+- **Permitted markdown in a repo (exhaustive):** `README.md` (orientation + vault pointer), `AGENTS.md` (`CLAUDE.md` is an untracked pointer to it), `CHANGELOG.md` / `LICENSE` / `CONTRIBUTING.md` / `SECURITY.md`, format/interface notes physically adjacent to the artifacts they describe, and files under `.github/` that GitHub consumes.
+- **Carve-outs — these STAY in the repo; never migrate or delete them:** vendored/upstream forks (currently `CLIProxyAPI`, `Cli-Proxy-API-Management-Center`) keep their upstream documentation in-repo; `docs/runbooks/` and `docs/openapi/` are permitted by path, and any markdown with a live consumer (an alert `runbook_url`, a test, a served route) is an interface artifact, not documentation; format notes adjacent to the artifacts they describe stay with them.
+- **Migrating:** when documentation does leave a repo, **move** it into the vault (naming the destination in the commit message) — never delete outright.
+- **Enforced mechanically, not by memory:** a `PreToolUse` hook (`.claude/settings.json` in every repo, `block-prohibited-docs.py`) denies a prohibited write and names the vault destination; `pre-commit` (`doc-minimalism` + the shrink-only baseline ratchet) and the `policy-check` CI gate catch the rest. The hook cannot stop a wrong *deletion* — the carve-outs above are what stop that.
 - **Full text and placement rules:** Master-Policy §1.6 in the vault, or the `policy-doc-placement` skill.
 
 ## Modern Toolchain & Language Guidelines
