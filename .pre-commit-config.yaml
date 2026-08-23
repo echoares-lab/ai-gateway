@@ -96,7 +96,7 @@ repos:
         always_run: true
         stages: [pre-commit]
       - id: doc-minimalism-ratchet
-        name: Master-Policy 1.6 baseline ratchet (may only shrink)
+        name: Master-Policy 1.6 exception ratchet (dated, may only shrink)
         entry: python3 /home/dev/repos/dev-policies/tooling/scripts/check-doc-minimalism.py --ratchet
         language: system
         pass_filenames: false

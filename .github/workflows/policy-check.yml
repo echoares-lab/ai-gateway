@@ -111,17 +111,25 @@ jobs:
           false && ARGS="--exempt-vendored"
           python3 "$POLICY_TOOLING/tooling/scripts/check-doc-minimalism.py" . $ARGS
 
-      # ── §1.6 baseline ratchet ───────────────────────────────────────────────
-      # The gate above only blocks markdown that is NOT in .doc-minimalism-baseline.
-      # Without this step the baseline is permanent amnesty: green forever while
-      # the debt never shrinks. This step enforces that the baseline is dated,
-      # cannot gain an entry, and self-cleans as files are migrated.
-      # Same checker as the gate above — no second copy to drift.
-      - name: "Gate — documentation minimalism baseline ratchet (§1.6)"
+      # ── §1.6 exception ratchet ──────────────────────────────────────────────
+      # The gate above only blocks markdown that is NOT covered by a live entry in
+      # dev-policies/policy/exceptions.yaml. Without this step an exception is
+      # permanent amnesty: green forever while the debt never shrinks. This step
+      # enforces that the exception is dated, that its scope cannot grow, that it
+      # self-cleans as files are migrated, and that its `shrink_to` checkpoints
+      # are met. Same checker as the gate above — no second copy to drift.
+      #
+      # The store is read from $POLICY_TOOLING (the App-token checkout of
+      # dev-policies above), so a repository carries no exception file of its
+      # own. Replaced the per-repo .doc-minimalism-baseline files 2026-08-23.
+      - name: "Gate — documentation minimalism exception ratchet (§1.6)"
         env:
           # On pull_request the base commit is the ratchet reference; on push
-          # there is none and the checker falls back to HEAD, which still
-          # enforces expiry, self-clean and the burn-down schedule.
+          # there is none and the checker falls back to HEAD. The growth arm is
+          # a no-op here either way -- $POLICY_TOOLING is a fresh clone of
+          # dev-policies' default branch -- because growth is caught in the
+          # dev-policies PR that causes it, where it is actionable. Expiry,
+          # self-clean and the burn-down schedule are enforced fully.
           DOC_MINIMALISM_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           ARGS=""
