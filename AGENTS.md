@@ -62,7 +62,7 @@
 
 *Source: `Master-Policy.md` — summary; the full section is in the vault. Do not edit here.*
 
-- **Rule:** project documentation — epics, backlogs, ADRs, specs, architecture, runbooks, research reports, design/implementation plans, status notes — lives **exclusively** in `/home/dev/obsidian-vault/01 Projects/<Project>/`, never in a code repository.
+- **Rule:** project documentation — epic/backlog views (the authored task record is `dev-policies/work/<project>.yaml`, Work-Tracking-Policy §1), ADRs, specs, architecture, runbooks, research reports, design/implementation plans, status notes — lives **exclusively** in `/home/dev/obsidian-vault/01 Projects/<Project>/`, never in a code repository.
 - **Permitted markdown in a repo (exhaustive):** `README.md` (orientation + vault pointer), `AGENTS.md` (`CLAUDE.md` is an untracked pointer to it), `CHANGELOG.md` / `LICENSE` / `CONTRIBUTING.md` / `SECURITY.md`, format/interface notes physically adjacent to the artifacts they describe, and files under `.github/` that GitHub consumes.
 - **Carve-outs — these STAY in the repo; never migrate or delete them:** vendored/upstream forks (currently `CLIProxyAPI`, `Cli-Proxy-API-Management-Center`) keep their upstream documentation in-repo; `docs/runbooks/` and `docs/openapi/` are permitted by path, and any markdown with a live consumer (an alert `runbook_url`, a test, a served route) is an interface artifact, not documentation; format notes adjacent to the artifacts they describe stay with them.
 - **Migrating:** when documentation does leave a repo, **move** it into the vault (naming the destination in the commit message) — never delete outright.
@@ -288,7 +288,7 @@ Co-authored-by: Reviewer Agent <reviewer@users.noreply.github.com>
 | `CICD-Policy.md` | 1.4 | 2026-08-16 |
 | `Coding-Standards-Policy.md` | 1.1 | 2026-08-12 |
 | `Git-Policy.md` | 1.0 | 2026-07-29 |
-| `Master-Policy.md` | 2.2 | 2026-08-22 |
+| `Master-Policy.md` | 2.3 | 2026-08-23 |
 | `Secrets-Policy.md` | 4.0 | 2026-08-21 |
 | `Testing-Policy.md` | 1.2 | 2026-08-13 |
 
