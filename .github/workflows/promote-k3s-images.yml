@@ -636,9 +636,13 @@ jobs:
           - [ ] After merge, confirm ArgoCD sync and pod imageIDs
           - [ ] Thin prod Gate D / post-merge smoke after sync
 
-          **No Auto-Merge**: This PR must be reviewed and merged manually.
+          This PR auto-merges once the required production checks (validate, sbom, policy / Master-Policy gates) pass; staging deep-smoke has already passed above.
           EOF
           )"
+
+          PR_URL=$(gh pr view "$BRANCH" --repo echoares-lab/k3s-01 --json url --jq .url)
+          gh pr merge --auto --squash "$PR_URL" \
+            || gh pr merge --auto --merge "$PR_URL"
 
   notify-failure:
     needs: [resolve-sha, bump-staging, staging-deep-smoke, promote]
