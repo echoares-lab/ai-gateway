@@ -1,0 +1,2 @@
+# uv repo configuration targeting Nexus PyPI index
+index-url = "https://nexus.infra.plexplease.com/repository/pypi-group/simple"
