@@ -70,7 +70,7 @@ promotion.
 `ai-gateway` AppRole (role_id/secret_id in 1Password item **"ai-gateway - OpenBao AppRole
 (kv/ai-gateway/*)"**, same vault) is scoped exactly to `kv/data/ai-gateway/*` read/write.
 Login: `bao write auth/approle/login role_id=<role_id> secret_id=<secret_id>` against
-`http://openbao.plexplease.com:8201` (or `http://127.0.0.1:8200` on a host running the
+`http://openbao.infra.plexplease.com:8201` (or `http://127.0.0.1:8200` on a host running the
 Vault Agent), then `bao kv get kv/ai-gateway/edge-auth`. Its `secret_id` has a 1-year TTL
 (expires ~2027-07-19) — regenerate before then via the `secrets-generator` bootstrap role
 (see next paragraph) or root.
@@ -102,7 +102,7 @@ sys/policies/acl/<name>`) fails with `permission denied` when going through the 
 Vault Agent proxy (`http://127.0.0.1:8200`), even for policies the calling token has full
 `sudo` capability on — confirmed 2026-07-19 to be a proxy-specific issue, not a real ACL
 restriction: the identical token against the real server
-(`http://openbao.plexplease.com:8201`) reads policy documents fine. Point `VAULT_ADDR` at
+(`http://openbao.infra.plexplease.com:8201`) reads policy documents fine. Point `VAULT_ADDR` at
 the real server directly for this specific operation; the local proxy is fine for
 everything else tried so far (`kv` read/write, `auth/approle/*`, policy *write*).
 
