@@ -90,28 +90,28 @@ repos:
         stages: [pre-commit]
       - id: doc-minimalism
         name: Master-Policy 1.6 documentation minimalism
-        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/check-doc-minimalism.py
+        entry: python3 /home/dev/repos/homelab-policies/tooling/scripts/check-doc-minimalism.py
         language: system
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
       - id: doc-minimalism-ratchet
         name: Master-Policy 1.6 exception ratchet (dated, may only shrink)
-        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/check-doc-minimalism.py --ratchet
+        entry: python3 /home/dev/repos/homelab-policies/tooling/scripts/check-doc-minimalism.py --ratchet
         language: system
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
       - id: container-notices
         name: container builds carry the notices they owe (Licensing-Policy 3)
-        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/check-container-notices.py
+        entry: python3 /home/dev/repos/homelab-policies/tooling/scripts/check-container-notices.py
         language: system
         pass_filenames: false
         files: '(^|/)(Dockerfile|Containerfile)(\..+)?$|(^|/).+\.Dockerfile$'
         stages: [pre-commit]
       - id: agents-md-drift
         name: AGENTS.md matches the vault
-        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/render-agents-md.py --repo . --check
+        entry: python3 /home/dev/repos/homelab-policies/tooling/scripts/render-agents-md.py --repo . --check
         language: system
         pass_filenames: false
         always_run: true
@@ -120,7 +120,7 @@ repos:
     hooks:
       - id: doc-minimalism
         name: Master-Policy 1.6 documentation minimalism
-        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/check-doc-minimalism.py
+        entry: python3 /home/dev/repos/homelab-policies/tooling/scripts/check-doc-minimalism.py
         language: system
         pass_filenames: false
         always_run: true
@@ -139,7 +139,7 @@ repos:
   # this repo is missing there.
       - id: agents-md-drift
         name: AGENTS.md matches the vault
-        entry: python3 /home/dev/repos/dev-policies/tooling/scripts/render-agents-md.py --repo . --check
+        entry: python3 /home/dev/repos/homelab-policies/tooling/scripts/render-agents-md.py --repo . --check
         language: system
         pass_filenames: false
         always_run: true

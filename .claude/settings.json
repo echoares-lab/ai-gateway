@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /home/dev/repos/dev-policies/tooling/hooks/block-prohibited-docs.py",
+            "command": "python3 /home/dev/repos/homelab-policies/tooling/hooks/block-prohibited-docs.py",
             "timeout": 10,
             "statusMessage": "Checking Master-Policy §1.6"
           }
