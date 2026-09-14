@@ -237,7 +237,7 @@ services:
       start_period: 20m
   clickhouse:
     container_name: PROD-clickhouse
-    image: docker.io/clickhouse/clickhouse-server@sha256:1d1f6508eba2dccce2cee9913907c5f7766327debc57a6b1991f2c9e3176c163
+    image: docker.io/clickhouse/clickhouse-server@sha256:b1d9f9baec7727c779a6febb2a95eb08a8e1de3f463294e3ebb35c3d3fb30360
     restart: always
     user: 101:101
     environment:
